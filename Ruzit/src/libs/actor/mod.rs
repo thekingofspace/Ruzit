@@ -8,32 +8,38 @@ use mlua::{
     UserDataMethods, Value,
 };
 
+use crate::vfs::{Fs, read_module};
+
 const MAX_DEPTH: u32 = 64;
 const FALLBACK_THREADS: usize = 4;
 
-pub fn create(lua: &Lua) -> mlua::Result<Table> {
+pub fn create(lua: &Lua, fs: Fs) -> mlua::Result<Table> {
     let t = lua.create_table()?;
-    t.set("new", lua.create_function(actor_new)?)?;
+    let fs_clone = fs.clone();
+    t.set(
+        "new",
+        lua.create_function(move |lua, args: MultiValue| -> mlua::Result<ActorHandle> {
+            actor_new(lua, args, &fs_clone)
+        })?,
+    )?;
     Ok(t)
 }
 
-fn actor_new(_lua: &Lua, args: MultiValue) -> mlua::Result<ActorHandle> {
+fn actor_new(lua: &Lua, args: MultiValue, fs: &Fs) -> mlua::Result<ActorHandle> {
     let mut iter = args.into_iter();
     let body = iter.next().ok_or_else(|| {
         mlua::Error::RuntimeError(
-            "Actor.new: pass a Luau source string whose chunk returns a function".into(),
+            "Actor.new: pass a function or a Luau source string".into(),
         )
     })?;
     let thread_arg = iter.next();
 
     let source = match body {
         Value::String(s) => s.to_str()?.to_string(),
+        Value::Function(f) => function_to_source(lua, &f, fs)?,
         other => {
             return Err(mlua::Error::RuntimeError(format!(
-                "Actor.new: first arg must be a Luau source string (got {}). \
-                 Functions can't cross threads — Luau forbids dumping bytecode out of a live \
-                 closure, so you pass the chunk text and the worker compiles it. Wrap your \
-                 logic like: Actor.new([[ return function(...) ... end ]])",
+                "Actor.new: first arg must be a function or a Luau source string (got {})",
                 other.type_name()
             )));
         }
@@ -151,26 +157,52 @@ impl UserData for ActorHandle {
             Ok(())
         });
 
-        // Pop() — non-blocking: returns the next ready result's values, or
-        // nothing if the queue is empty. Order is "first to finish first
-        // out", not Push order, since work runs in parallel. If a worker
-        // raised an error, that error propagates here on Pop.
-        m.add_method("Pop", |lua, this, _: ()| -> mlua::Result<MultiValue> {
-            let outbox = this.inner.outbox.lock().unwrap();
-            match outbox.try_recv() {
-                Ok(WorkerResult::Ok(bytes)) => {
-                    this.inner.pending.fetch_sub(1, Ordering::SeqCst);
-                    deserialize_multi(lua, &bytes)
+        // Pop(yield_for_result) — retrieve the next ready result.
+        //   Pop(false) (default): non-blocking. Returns no values if nothing
+        //                          is ready. Use this from heart ticks /
+        //                          render loops where you can't afford to
+        //                          stall.
+        //   Pop(true):  blocking. Sleeps the calling thread until a worker
+        //                          finishes a job or every worker has
+        //                          exited (returns no values in that case).
+        //                          Workers keep running on other OS threads,
+        //                          but Window/RunService/etc. on the main
+        //                          thread stop pumping until Pop returns —
+        //                          only use it from a script that's already
+        //                          intentionally waiting (e.g. a startup
+        //                          loader gathering parallel work).
+        // Order is "first to finish, first out", not Push order, since work
+        // runs in parallel. If a worker raised an error, it propagates here.
+        m.add_method(
+            "Pop",
+            |lua, this, yield_wait: Option<bool>| -> mlua::Result<MultiValue> {
+                let yield_wait = yield_wait.unwrap_or(false);
+                let outbox = this.inner.outbox.lock().unwrap();
+                let result = if yield_wait {
+                    match outbox.recv() {
+                        Ok(wr) => wr,
+                        Err(_) => return Ok(MultiValue::new()),
+                    }
+                } else {
+                    match outbox.try_recv() {
+                        Ok(wr) => wr,
+                        Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => {
+                            return Ok(MultiValue::new());
+                        }
+                    }
+                };
+                match result {
+                    WorkerResult::Ok(bytes) => {
+                        this.inner.pending.fetch_sub(1, Ordering::SeqCst);
+                        deserialize_multi(lua, &bytes)
+                    }
+                    WorkerResult::Err(msg) => {
+                        this.inner.pending.fetch_sub(1, Ordering::SeqCst);
+                        Err(mlua::Error::RuntimeError(format!("Actor worker: {msg}")))
+                    }
                 }
-                Ok(WorkerResult::Err(msg)) => {
-                    this.inner.pending.fetch_sub(1, Ordering::SeqCst);
-                    Err(mlua::Error::RuntimeError(format!("Actor worker: {msg}")))
-                }
-                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => {
-                    Ok(MultiValue::new())
-                }
-            }
-        });
+            },
+        );
 
         // Pending() — count of jobs in flight + queued results not yet
         // popped. Useful for "drain everything" loops:
@@ -436,4 +468,359 @@ fn read_slice<'a>(buf: &'a [u8], pos: &mut usize, len: usize) -> mlua::Result<&'
     let s = &buf[*pos..*pos + len];
     *pos += len;
     Ok(s)
+}
+
+// Luau forbids dumping bytecode out of a live closure (no `string.dump` /
+// `Function::dump`), so to support `Actor.new(function(...) ... end)` we go
+// the other way around: ask the VM where the function was defined, read the
+// caller's script back through the VFS, find the function literal in those
+// lines, and recompile it as a fresh chunk.
+fn function_to_source(lua: &Lua, f: &Function, fs: &Fs) -> mlua::Result<String> {
+    if has_upvalues(lua, f)? {
+        return Err(mlua::Error::RuntimeError(
+            "Actor.new: this function captures upvalues from its outer scope. Workers run \
+             in an isolated Luau state and can't see those — make the function self-contained \
+             (no references to outer locals) or pass the captured values as arguments to Push."
+                .into(),
+        ));
+    }
+
+    let info = f.info();
+    let source_name = info.source.as_deref().ok_or_else(|| {
+        mlua::Error::RuntimeError(
+            "Actor.new: function has no source info. Define it inline in a script — Actor \
+             can't recover the body of a function created via loadstring / dynamic loaders."
+                .into(),
+        )
+    })?;
+    // mlua-luau only fills line_defined; last_line_defined is always missing
+    // for the Luau backend, so we don't bound the scan window — the
+    // block-balancing scanner walks forward from `function` until it finds
+    // the matching `end`.
+    let line_defined = info.line_defined.unwrap_or(0);
+    if line_defined <= 0 {
+        return Err(mlua::Error::RuntimeError(format!(
+            "Actor.new: missing line info for function from '{source_name}' — pass a string \
+             form like Actor.new([[ return function(...) ... end ]]) instead"
+        )));
+    }
+
+    // runtime.rs sets chunk names as `@<vfs-key>`; strip the `@` to get a key
+    // we can re-read through the VFS. If it doesn't start with `@`, the
+    // function came from a non-script chunk (e.g. an internal eval) and we
+    // can't recover its body.
+    let key = source_name.strip_prefix('@').ok_or_else(|| {
+        mlua::Error::RuntimeError(format!(
+            "Actor.new: function source '{source_name}' isn't a script — can't recover its \
+             body. Move it into a .luau file or pass a string form."
+        ))
+    })?;
+
+    let text = read_module(fs, key).ok_or_else(|| {
+        mlua::Error::RuntimeError(format!(
+            "Actor.new: could not read script '{key}' to extract the function body"
+        ))
+    })?;
+
+    let extracted = extract_function_block(&text, line_defined as u32).ok_or_else(|| {
+        mlua::Error::RuntimeError(format!(
+            "Actor.new: could not isolate the function literal in '{key}' starting at line \
+             {line_defined}. Method-syntax (`function obj:m(...)`) isn't supported — declare \
+             it as a regular `function name(...)` or pass a string form."
+        ))
+    })?;
+
+    Ok(format!("return {extracted}"))
+}
+
+fn has_upvalues(lua: &Lua, f: &Function) -> mlua::Result<bool> {
+    // mlua doesn't expose `n_upvalues` for the Luau backend, so go through
+    // the debug library — `debug.getupvalue(f, 1)` returns nil for a function
+    // with no upvalues, otherwise (name, value).
+    let debug: Table = match lua.globals().get("debug") {
+        Ok(t) => t,
+        Err(_) => return Ok(false),
+    };
+    let getupvalue: Function = match debug.get("getupvalue") {
+        Ok(f) => f,
+        Err(_) => return Ok(false),
+    };
+    let v: Value = getupvalue.call((f.clone(), 1i32))?;
+    Ok(!matches!(v, Value::Nil))
+}
+
+// Walks the caller's source between line_defined and last_line_defined,
+// skipping strings and comments correctly, balancing block-openers
+// (`function`, `if`, `while`, `for`, `do`, `repeat`) against `end`/`until`
+// to find the function literal's matching `end`. If the function happened
+// to be declared with a name (`function compute(x) ... end`), the name is
+// stripped so the result is an anonymous expression suitable for
+// `return <text>`.
+fn extract_function_block(source: &str, line_defined: u32) -> Option<String> {
+    let mut line_starts = vec![0usize];
+    for (i, b) in source.bytes().enumerate() {
+        if b == b'\n' {
+            line_starts.push(i + 1);
+        }
+    }
+    line_starts.push(source.len());
+
+    let start_line_idx = (line_defined as usize).saturating_sub(1);
+    if start_line_idx >= line_starts.len() {
+        return None;
+    }
+
+    // No upper bound — we walk forward from `function` and let the
+    // block-balancing scanner find the matching `end` regardless of how many
+    // lines the body spans.
+    let scan_start = line_starts[start_line_idx];
+    let segment = &source[scan_start..];
+
+    let mut tok = LuauTokens::new(segment);
+    let mut start_off: Option<usize> = None;
+    let mut end_off: Option<usize> = None;
+    let mut depth: i32 = 0;
+    // Counter rather than bool so nested `while`/`for` chains correctly:
+    // each one queues exactly one `do` to be absorbed.
+    let mut pending_do: i32 = 0;
+
+    while let Some((kw, off, len)) = tok.next_keyword() {
+        match kw {
+            "function" => {
+                if start_off.is_none() {
+                    start_off = Some(off);
+                }
+                depth += 1;
+            }
+            "if" => {
+                depth += 1;
+            }
+            "while" | "for" => {
+                depth += 1;
+                pending_do += 1;
+            }
+            "do" => {
+                if pending_do > 0 {
+                    pending_do -= 1;
+                } else {
+                    depth += 1;
+                }
+            }
+            "repeat" => {
+                depth += 1;
+            }
+            "until" => {
+                depth -= 1;
+            }
+            "end" => {
+                depth -= 1;
+                if depth == 0 && start_off.is_some() {
+                    end_off = Some(off + len);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let s = start_off?;
+    let e = end_off?;
+    let raw = &segment[s..e];
+    strip_function_name(raw)
+}
+
+fn strip_function_name(text: &str) -> Option<String> {
+    if !text.starts_with("function") {
+        return None;
+    }
+    let bytes = text.as_bytes();
+    let mut p = "function".len();
+    while p < bytes.len() && bytes[p].is_ascii_whitespace() {
+        p += 1;
+    }
+    if p < bytes.len() && bytes[p] == b'(' {
+        return Some(text.to_string());
+    }
+    let mut saw_colon = false;
+    loop {
+        if p >= bytes.len() {
+            return None;
+        }
+        let b = bytes[p];
+        if b == b'_' || b.is_ascii_alphabetic() {
+            while p < bytes.len()
+                && (bytes[p] == b'_' || bytes[p].is_ascii_alphanumeric())
+            {
+                p += 1;
+            }
+        } else if b == b'.' {
+            p += 1;
+        } else if b == b':' {
+            saw_colon = true;
+            p += 1;
+        } else if b.is_ascii_whitespace() {
+            p += 1;
+        } else if b == b'(' {
+            break;
+        } else {
+            return None;
+        }
+    }
+    if saw_colon {
+        return None;
+    }
+    Some(format!("function{}", &text[p..]))
+}
+
+struct LuauTokens<'a> {
+    src: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> LuauTokens<'a> {
+    fn new(src: &'a str) -> Self {
+        Self { src: src.as_bytes(), pos: 0 }
+    }
+
+    fn next_keyword(&mut self) -> Option<(&'static str, usize, usize)> {
+        loop {
+            self.skip_ws_comments();
+            if self.pos >= self.src.len() {
+                return None;
+            }
+            let c = self.src[self.pos];
+
+            if c == b'"' || c == b'\'' {
+                self.skip_short_string(c);
+                continue;
+            }
+            if c == b'[' {
+                let saved = self.pos;
+                if let Some(level) = self.try_long_open() {
+                    self.skip_long_close(level);
+                    continue;
+                }
+                self.pos = saved;
+            }
+
+            if c == b'_' || c.is_ascii_alphabetic() {
+                let start = self.pos;
+                while self.pos < self.src.len()
+                    && (self.src[self.pos] == b'_'
+                        || self.src[self.pos].is_ascii_alphanumeric())
+                {
+                    self.pos += 1;
+                }
+                let word = &self.src[start..self.pos];
+                if let Some(kw) = match_kw(word) {
+                    return Some((kw, start, word.len()));
+                }
+                continue;
+            }
+
+            if c.is_ascii_digit() {
+                while self.pos < self.src.len()
+                    && (self.src[self.pos].is_ascii_alphanumeric()
+                        || self.src[self.pos] == b'.')
+                {
+                    self.pos += 1;
+                }
+                continue;
+            }
+
+            self.pos += 1;
+        }
+    }
+
+    fn skip_ws_comments(&mut self) {
+        loop {
+            while self.pos < self.src.len() && self.src[self.pos].is_ascii_whitespace() {
+                self.pos += 1;
+            }
+            if self.pos + 1 < self.src.len()
+                && self.src[self.pos] == b'-'
+                && self.src[self.pos + 1] == b'-'
+            {
+                self.pos += 2;
+                let saved = self.pos;
+                if let Some(level) = self.try_long_open() {
+                    self.skip_long_close(level);
+                    continue;
+                }
+                self.pos = saved;
+                while self.pos < self.src.len() && self.src[self.pos] != b'\n' {
+                    self.pos += 1;
+                }
+                continue;
+            }
+            return;
+        }
+    }
+
+    fn try_long_open(&mut self) -> Option<usize> {
+        if self.pos >= self.src.len() || self.src[self.pos] != b'[' {
+            return None;
+        }
+        let mut p = self.pos + 1;
+        let mut level = 0usize;
+        while p < self.src.len() && self.src[p] == b'=' {
+            level += 1;
+            p += 1;
+        }
+        if p < self.src.len() && self.src[p] == b'[' {
+            self.pos = p + 1;
+            return Some(level);
+        }
+        None
+    }
+
+    fn skip_long_close(&mut self, level: usize) {
+        loop {
+            while self.pos < self.src.len() && self.src[self.pos] != b']' {
+                self.pos += 1;
+            }
+            if self.pos >= self.src.len() {
+                return;
+            }
+            self.pos += 1;
+            let mut count = 0usize;
+            while self.pos < self.src.len() && self.src[self.pos] == b'=' {
+                count += 1;
+                self.pos += 1;
+            }
+            if count == level && self.pos < self.src.len() && self.src[self.pos] == b']' {
+                self.pos += 1;
+                return;
+            }
+        }
+    }
+
+    fn skip_short_string(&mut self, quote: u8) {
+        self.pos += 1;
+        while self.pos < self.src.len() {
+            let c = self.src[self.pos];
+            if c == b'\\' {
+                self.pos = (self.pos + 2).min(self.src.len());
+                continue;
+            }
+            self.pos += 1;
+            if c == quote || c == b'\n' {
+                return;
+            }
+        }
+    }
+}
+
+fn match_kw(word: &[u8]) -> Option<&'static str> {
+    match word {
+        b"function" => Some("function"),
+        b"end" => Some("end"),
+        b"if" => Some("if"),
+        b"while" => Some("while"),
+        b"for" => Some("for"),
+        b"do" => Some("do"),
+        b"repeat" => Some("repeat"),
+        b"until" => Some("until"),
+        _ => None,
+    }
 }

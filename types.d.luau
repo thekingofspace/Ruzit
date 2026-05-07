@@ -798,11 +798,19 @@ declare class Actor
 	-- only those types as keys/values). Functions, userdata, threads, etc.
 	-- are rejected — workers can't share Luau state with the main thread.
 	function Push(self, ...: any): ()
-	-- Non-blocking. Returns the next ready result's values if a worker has
-	-- finished, or no values if nothing is ready yet. Order is "first to
-	-- finish, first out" (NOT Push order — work runs in parallel).
-	-- Re-raises any error a worker hit while running its function.
-	function Pop(self): ...any
+	-- Pop the next ready result.
+	--   Pop()  / Pop(false) — non-blocking. Returns no values if nothing
+	--                          is ready. Use this from a heart tick or
+	--                          render loop you can't afford to stall.
+	--   Pop(true)            — blocking. Sleeps until a worker finishes
+	--                          (or every worker has exited, in which case
+	--                          it returns no values). The main thread
+	--                          stops pumping while it waits, so only use
+	--                          this from a script that's intentionally
+	--                          waiting (e.g. a startup loader).
+	-- Order is "first to finish, first out" (NOT Push order — work runs
+	-- in parallel). Re-raises any error a worker hit while running.
+	function Pop(self, yield_for_result: boolean?): ...any
 	-- Number of jobs currently in flight + ready results not yet popped.
 	-- Drain pattern:
 	--   while actor:Pending() > 0 do
@@ -819,36 +827,49 @@ declare class Actor
 end
 
 export type Actor_API = {
-	-- Spawn a worker pool that runs the given Luau chunk in parallel on
-	-- other CPU cores. The chunk is plain Luau source (compiled once on the
-	-- main thread, bytecode shipped to every worker) and MUST evaluate to
-	-- a function — that function is what each Push invokes.
+	-- Spawn a worker pool that runs the given function in parallel on other
+	-- CPU cores. You can pass either the function directly (Actor reads its
+	-- source out of the script and recompiles it for each worker) or a Luau
+	-- source string whose chunk evaluates to a function.
+	--
+	-- Restrictions on the function form:
+	--   * Must be defined inline in a .luau script, not via loadstring.
+	--   * Must NOT reference upvalues from the outer scope. Workers run in
+	--     an isolated Luau state and can't see your locals — pass anything
+	--     they need as arguments to Push.
+	--   * Method shorthand (`function obj:m(...)`) isn't supported.
 	--
 	-- Workers run in completely isolated Luau states: they get math, table,
 	-- string, bit32, buffer, utf8, coroutine, and the basic library — but
 	-- NO `import`, `require`, `print`, `loadstring`, `dofile`, or
 	-- `__dirname`. Workers cannot touch the main thread's globals, GUI,
-	-- assets, sockets, or anything else import-shaped. Pass everything they
-	-- need as arguments to Push.
+	-- assets, sockets, or anything else import-shaped.
 	--
 	-- threads defaults to the number of CPU cores. Pass an explicit count
 	-- for fine control (e.g. 1 for serial, 2 for I/O-bound work, etc.).
 	--
-	-- Example:
+	-- Example (function form):
+	--   local fib = Actor.new(function(n)
+	--       if n < 2 then return n end
+	--       local a, b = 0, 1
+	--       for _ = 2, n do a, b = b, a + b end
+	--       return b
+	--   end)
+	--   for i = 1, 32 do fib:Push(i) end
+	--
+	-- Example (string form, useful when you want to do worker-local setup):
 	--   local fib = Actor.new([[
+	--       local memo = {}
 	--       return function(n)
-	--           if n < 2 then return n end
+	--           if memo[n] then return memo[n] end
 	--           local a, b = 0, 1
 	--           for _ = 2, n do a, b = b, a + b end
+	--           memo[n] = b
 	--           return b
 	--       end
 	--   ]])
-	--   for i = 1, 32 do fib:Push(i) end
-	--   while fib:Pending() > 0 do
-	--       local v = fib:Pop()
-	--       if v ~= nil then print(v) end
-	--   end
-	new: (source: string, threads: number?) -> Actor,
+	new: ((fn: (...any) -> ...any, threads: number?) -> Actor)
+		& ((source: string, threads: number?) -> Actor),
 }
 
 export type Imports = {

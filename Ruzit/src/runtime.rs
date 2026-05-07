@@ -117,7 +117,7 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
     let owner = owner.to_string();
     let import = lua.create_function(move |lua, name: String| -> mlua::Result<Value> {
         match name.as_str() {
-            "Actor" => Ok(Value::Table(libs::actor::create(lua)?)),
+            "Actor" => Ok(Value::Table(libs::actor::create(lua, fs.clone())?)),
             "Asset" => Ok(Value::Table(libs::asset::create(
                 lua,
                 fs.clone(),
