@@ -8,8 +8,10 @@ Creator = ""
 [exe]
 # name = "{name}"     # output exe name when running `Ruzit Build` (defaults to entry stem)
 # icon = "logo"       # looks for <icon>.ico next to build.toml and embeds it as the exe icon
-# windowed = false    # true → no console flash from Explorer (needs --console for prints).
-                      #         Default leaves prints visible from cmd or Explorer.
+# windowed = true     # default. Launcher is windows-subsystem — no console
+                      # window unless --console is passed. Set to false to
+                      # ship a console-subsystem launcher whose stdout is
+                      # always visible.
 "#;
 
 pub const MAIN_LUAU: &str = r#"--!strict
@@ -19,6 +21,39 @@ local IO = import("IO")
 print("Hello from {name}!")
 print("project root =", __dirname)
 print("IO available:", typeof(IO) == "table")
+"#;
+
+pub const MANAGED_INFO_TOML: &str = r#"ID = "{id}"
+Name = "{name}"
+Version = "0.1.0"
+Creator = ""
+Entry = "init.luau"
+
+[configs]
+"File Type" = "Relative"
+"#;
+
+pub const MANAGED_INIT_LUAU: &str = r#"--!strict
+--
+-- {name} package entry point.
+-- The host game loads this module via:
+--     local Managed = import("Managed")
+--     local pkg = Managed.GetPackage("{id}")
+--     local mod = (require :: any)(pkg.Origin)
+--
+-- The require runs this file once and caches the returned table — every
+-- caller (including other packages) sees the same instance, so any state
+-- you put on `M` is shared across the whole program.
+
+local M = {}
+
+M.greeting = "hello from {id}"
+
+function M.add(a: number, b: number): number
+	return a + b
+end
+
+return M
 "#;
 
 pub const VSCODE_SETTINGS: &str = r#"{
@@ -157,7 +192,8 @@ type Asset_API = {
 	GetAsset: ((kind: "Image", path: string) -> ImageAsset)
 		& ((kind: "Sound", path: string) -> SoundData)
 		& ((kind: "Shader", path: string) -> ShaderAsset)
-		& ((kind: "Fragment", path: string) -> FragmentAsset),
+		& ((kind: "Fragment", path: string) -> FragmentAsset)
+		& ((kind: "Model", path: string) -> ModelAsset),
 }
 
 type WindowOptions = {
@@ -206,6 +242,7 @@ declare class WindowHandle
 	function Title(self): string
 	function IsFullscreen(self): boolean
 	function IsOpen(self): boolean
+	function GetViewport(self): Camera
 end
 
 type Window_API = { Open: (opts: WindowOptions?) -> WindowHandle }
@@ -261,15 +298,178 @@ type Managed_API = {
 	Default: () -> Package?,
 }
 
-declare import: ((name: "Asset") -> Asset_API)
-	& ((name: "IO") -> IO_API)
-	& ((name: "Managed") -> Managed_API)
-	& ((name: "Net") -> Net_API)
-	& ((name: "Process") -> Process_API)
-	& ((name: "Serde") -> Serde_API)
-	& ((name: "SFX") -> SFX_API)
-	& ((name: "Signal") -> Signal_API)
-	& ((name: "Window") -> Window_API)
+declare class Dim
+	X: number
+	Y: number
+	function Lerp(self, other: Dim, t: number): Dim
+end
+
+declare class Color3
+	R: number
+	G: number
+	B: number
+	function Lerp(self, other: Color3, t: number): Color3
+end
+
+declare class Vector
+	X: number
+	Y: number
+	Z: number
+	Magnitude: number
+	function Lerp(self, other: Vector, t: number): Vector
+end
+
+declare class ModelAsset
+	function VertexCount(self): number
+	function TriangleCount(self): number
+	function Source(self): string
+end
+
+declare class BasePart
+	Shape: string
+	CFrame: CFrame
+	Size: Vector
+	Color: Color3
+	Render: boolean
+	Texture: ImageAsset?
+	Changed: Signal
+	function Destroy(self): ()
+	function AttachShader(self, asset: ShaderAsset | FragmentAsset): ()
+	function DetachShader(self, asset: ShaderAsset | FragmentAsset): ()
+	function ClearShaders(self): ()
+	function SetData(self, asset: ShaderAsset | FragmentAsset, name: string, value: number): ()
+	function GetData(self, asset: ShaderAsset | FragmentAsset, name: string): number?
+end
+
+declare class Camera
+	CFrame: CFrame
+	FOV: number
+	Near: number
+	Far: number
+end
+
+type Renderable_API = {
+	BasePart: (shape: string?) -> BasePart,
+	BaseModel: (asset: ModelAsset) -> BasePart,
+	Camera: Camera,
+}
+
+declare class CFrame
+	Position: Vector
+	Rotation: Vector
+	function Lerp(self, other: CFrame, t: number): CFrame
+	function __mul(self, other: CFrame): CFrame
+	function __add(self, other: CFrame): CFrame
+	function __sub(self, other: CFrame): CFrame
+end
+
+type Dim_API = { new: (x: number, y: number) -> Dim }
+type Color3_API = {
+	new: (r: number, g: number, b: number) -> Color3,
+	fromHex: (hex: string) -> Color3,
+}
+type Vector_API = {
+	new: ((x: number?, y: number?, z: number?) -> Vector),
+	zero: () -> Vector,
+	one: () -> Vector,
+}
+type CFrame_API = {
+	new: (position: Vector?, rotation: Vector?) -> CFrame,
+	Angles: (rx: number, ry: number, rz: number) -> CFrame,
+}
+
+type Primitives_API = {
+	Dim: Dim_API,
+	Color3: Color3_API,
+	Vector: Vector_API,
+	CFrame: CFrame_API,
+}
+
+declare class Primitive
+	Shape: string
+	Size: Dim
+	Position: Dim
+	Color: Color3
+	Transparency: number
+	ZIndex: number
+	Visible: boolean
+	Changed: Signal
+	function Destroy(self): ()
+	function AttachShader(self, asset: ShaderAsset | FragmentAsset): ()
+	function DetachShader(self, asset: ShaderAsset | FragmentAsset): ()
+	function ClearShaders(self): ()
+	function SetData(self, asset: ShaderAsset | FragmentAsset, name: string, value: number): ()
+	function GetData(self, asset: ShaderAsset | FragmentAsset, name: string): number?
+end
+
+declare class SceneShader
+	function SetData(self, name: string, value: number): ()
+	function GetData(self, name: string): number?
+	function Destroy(self): ()
+end
+
+type GUI_API = {
+	Basic: {
+		Circle: () -> Primitive,
+		Square: () -> Primitive,
+		Triangle: () -> Primitive,
+		Image: (asset: ImageAsset) -> Primitive,
+	},
+	SetSkybox: (asset: ShaderAsset | FragmentAsset) -> SceneShader,
+	ClearSkybox: () -> (),
+	SetPostEffect: (asset: ShaderAsset | FragmentAsset) -> SceneShader,
+	ClearPostEffect: () -> (),
+}
+
+type Mouse_API = {
+	Position: Dim,
+	Visible: boolean,
+	Locked: boolean,
+	Cursor: string,
+	Moved: Signal,
+	InputReceived: Signal,
+	SetCursor: (self: Mouse_API, name: string) -> (),
+	Lock: (self: Mouse_API) -> (),
+	Unlock: (self: Mouse_API) -> (),
+	IsButtonDown: (self: Mouse_API, button: string) -> boolean,
+}
+
+type Keyboard_API = {
+	InputChanged: Signal,
+	IsKeyDown: (self: Keyboard_API, key: string | number) -> boolean,
+	GetKeyId: (self: Keyboard_API, name: string) -> number,
+}
+
+type RunService_API = {
+	Heartbeat: Signal,
+	RenderStepped: Signal,
+}
+
+-- One row per importable lib; the solver indexes into this rather than
+-- trying to pick a winner from a 13-way function intersection (which blew
+-- the type-complexity limit and made `import(...)` unresolvable).
+type Imports = {
+	Asset: Asset_API,
+	GUI: GUI_API,
+	IO: IO_API,
+	Keyboard: Keyboard_API,
+	Managed: Managed_API,
+	Mouse: Mouse_API,
+	Net: Net_API,
+	Primitives: Primitives_API,
+	Process: Process_API,
+	Renderable: Renderable_API,
+	RunService: RunService_API,
+	Serde: Serde_API,
+	SFX: SFX_API,
+	Signal: Signal_API,
+	Window: Window_API,
+}
+
+-- `keyof<Imports> & K` constrains the literal arg to a key, `index<Imports, K>`
+-- looks up the matching row's type. Requires the new Luau type solver
+-- (luau-lsp >= 1.50). If your LSP is older, replace with `(name: string) -> any`.
+declare import: <K>(name: keyof<Imports> & K) -> index<Imports, K>
 
 declare __dirname: string
 "#;

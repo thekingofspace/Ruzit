@@ -1,3 +1,10 @@
+// Windowed subsystem on Windows. Without this, every dev-tool invocation
+// (Ruzit Test/Build/...) opens a fresh console window even when the user
+// just wanted to launch silently. console::setup still attaches to the
+// parent terminal when one exists, so `cmd> Ruzit Test` still prints.
+// Pass `--console` to force AllocConsole when there's no parent console.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 mod commands;
 mod config;
 mod console;
@@ -21,10 +28,11 @@ use crate::vfs::{Fs, Package};
 fn print_usage() {
     eprintln!("Ruzit — Luau runner & packager\n");
     eprintln!("Usage:");
-    eprintln!("  Ruzit Init    [path]            scaffold a new project");
-    eprintln!("  Ruzit Test    [path]            run a Luau file (default: Main.luau next to the exe / in CWD)");
-    eprintln!("  Ruzit Build   [path] [-o out]   produce Generated/<exe> + Generated/Managed/*.managed");
-    eprintln!("  Ruzit Package [folder] [-o]     produce <id>.scripts.managed + <id>.assets.managed from a folder containing ManagedInfo.toml");
+    eprintln!("  Ruzit Init        [path]        scaffold a new project");
+    eprintln!("  Ruzit InitPackage [path]        scaffold a Managed package folder (ManagedInfo.toml + init.luau)");
+    eprintln!("  Ruzit Test        [path]        run a Luau file (default: Main.luau next to the exe / in CWD)");
+    eprintln!("  Ruzit Build       [path] [-o]   produce Generated/<exe> + Generated/Managed/*.managed");
+    eprintln!("  Ruzit Package     [folder] [-o] produce <id>.scripts.managed + <id>.assets.managed from a folder containing ManagedInfo.toml");
     eprintln!("\nGlobal flags:");
     eprintln!("  --console                       attach/allocate a console window (for windowed launchers)");
 }
@@ -33,6 +41,9 @@ fn dispatch(args: &[String]) -> Result<(), String> {
     let cmd = args.get(1).map(String::as_str).unwrap_or("Test");
     match cmd {
         "Init" | "init" => commands::cmd_init(args.get(2)),
+        "InitPackage" | "initpackage" | "Init-Package" | "init-package" => {
+            commands::cmd_init_package(args.get(2))
+        }
         "Test" | "test" => commands::cmd_test(args.get(2)),
         "Build" | "build" => {
             let (entry, output) = parse_path_and_output(&args[2..]);
@@ -147,9 +158,10 @@ fn main() -> ExitCode {
     let args: Vec<String> = raw_args.into_iter().filter(|a| a != "--console").collect();
 
     let launcher = package::try_self_launcher();
-    // Dev tool always wants console; launcher only attaches when --console is passed.
-    let want_console = launcher.is_none() || console_flag;
-    console::setup(want_console);
+    // `--console` is the single switch in both dev tool + launcher modes.
+    // Without it: silent unless we have a parent terminal to attach to.
+    // With it: force-allocate a console window if we don't already have one.
+    console::setup(console_flag);
 
     if let Some(info) = launcher {
         return match run_launcher(info) {

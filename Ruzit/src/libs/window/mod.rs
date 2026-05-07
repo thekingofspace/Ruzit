@@ -1,7 +1,6 @@
 use std::cell::RefCell;
-use std::num::NonZeroU32;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use mlua::{
     AnyUserData, Function, Lua, MultiValue, RegistryKey, Table, UserData, UserDataFields,
@@ -15,6 +14,8 @@ use winit::platform::pump_events::EventLoopExtPumpEvents;
 use winit::window::{Fullscreen, Icon, Window as WinitWindow, WindowId, WindowLevel};
 
 use crate::libs::asset::ImageAsset;
+use crate::libs::gui::{self, render::GpuState};
+use crate::libs::input;
 use crate::libs::signal;
 
 const CHANGED_KEY: &str = "ruzit_window_changed";
@@ -61,6 +62,16 @@ pub fn pump(lua: &Lua) {
             }
         })
     });
+
+    // Repaint every tick — fragment shaders may use `U.time` and we want
+    // smooth animation without a dirty-flag bookkeeping layer.
+    if !close_now {
+        APP.with(|a| {
+            if let Some(app) = a.borrow_mut().as_mut() {
+                app.paint_frame();
+            }
+        });
+    }
 
     // Fire Changed events first (skip if we're already closing — handlers shouldn't run mid-shutdown).
     if !close_now && !pending.is_empty() {
@@ -174,7 +185,7 @@ fn parse_opts(t: Option<&Table>) -> mlua::Result<Opts> {
 
 fn build_icon_from_userdata(ud: &AnyUserData) -> Option<Icon> {
     let img = ud.borrow::<ImageAsset>().ok()?;
-    Icon::from_rgba(img.data.clone(), img.width, img.height).ok()
+    Icon::from_rgba((*img.data).clone(), img.width, img.height).ok()
 }
 
 fn open(lua: &Lua, opts_arg: Option<Table>) -> mlua::Result<WindowHandle> {
@@ -208,9 +219,12 @@ fn open(lua: &Lua, opts_arg: Option<Table>) -> mlua::Result<WindowHandle> {
 struct WindowApp {
     opts: Opts,
     window: Option<Arc<WinitWindow>>,
-    surface: Option<softbuffer::Surface<Arc<WinitWindow>, Arc<WinitWindow>>>,
+    gpu: Option<GpuState>,
     close_requested: bool,
     pending: Vec<WindowChange>,
+    /// Wall-clock anchor for time-based GUI shaders. Exposed to fragment
+    /// shaders as `U.time` (seconds since the window opened).
+    start: Instant,
 }
 
 impl WindowApp {
@@ -218,30 +232,21 @@ impl WindowApp {
         Self {
             opts,
             window: None,
-            surface: None,
+            gpu: None,
             close_requested: false,
             pending: Vec::new(),
+            start: Instant::now(),
         }
     }
 
-    fn paint_black(&mut self) {
-        let (Some(window), Some(surface)) = (&self.window, self.surface.as_mut()) else {
+    fn paint_frame(&mut self) {
+        let Some(gpu) = self.gpu.as_mut() else {
             return;
         };
-        let size = window.inner_size();
-        let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
-        else {
-            return;
-        };
-        if surface.resize(w, h).is_err() {
-            return;
-        }
-        if let Ok(mut buf) = surface.buffer_mut() {
-            for px in buf.iter_mut() {
-                *px = 0;
-            }
-            let _ = buf.present();
-        }
+        let items = gui::snapshot();
+        let t = self.start.elapsed().as_secs_f32();
+        // Black background — engine doesn't currently expose a clear color.
+        gpu.render(&items, t, [0.0, 0.0, 0.0]);
     }
 }
 
@@ -286,26 +291,18 @@ impl ApplicationHandler for WindowApp {
                 return;
             }
         };
-        let context = match softbuffer::Context::new(window.clone()) {
-            Ok(c) => c,
+        let gpu = match GpuState::new(window.clone()) {
+            Ok(g) => g,
             Err(e) => {
-                eprintln!("[Window] softbuffer context: {e}");
-                self.close_requested = true;
-                return;
-            }
-        };
-        let surface = match softbuffer::Surface::new(&context, window.clone()) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("[Window] softbuffer surface: {e}");
+                eprintln!("[Window] GPU init failed: {e}");
                 self.close_requested = true;
                 return;
             }
         };
 
         self.window = Some(window);
-        self.surface = Some(surface);
-        self.paint_black();
+        self.gpu = Some(gpu);
+        self.paint_frame();
     }
 
     fn window_event(
@@ -321,9 +318,12 @@ impl ApplicationHandler for WindowApp {
                     width: size.width,
                     height: size.height,
                 });
-                self.paint_black();
+                if let Some(gpu) = self.gpu.as_mut() {
+                    gpu.resize(size.width, size.height);
+                }
+                self.paint_frame();
             }
-            WindowEvent::RedrawRequested => self.paint_black(),
+            WindowEvent::RedrawRequested => self.paint_frame(),
             WindowEvent::Moved(pos) => {
                 self.pending.push(WindowChange::Moved {
                     x: pos.x,
@@ -332,9 +332,32 @@ impl ApplicationHandler for WindowApp {
             }
             WindowEvent::Focused(focused) => {
                 self.pending.push(WindowChange::Focused(focused));
+                if let Some(window) = self.window.as_ref() {
+                    input::on_focus(window.as_ref(), focused);
+                }
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.pending.push(WindowChange::ScaleFactor(scale_factor));
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                if let Some(window) = self.window.as_ref() {
+                    input::on_cursor_moved(
+                        window.as_ref(),
+                        position.x as f32,
+                        position.y as f32,
+                    );
+                }
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                input::on_mouse_input(button, state);
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                input::on_keyboard_input(
+                    event.physical_key,
+                    &event.logical_key,
+                    event.state,
+                    event.repeat,
+                );
             }
             _ => {}
         }
@@ -370,6 +393,14 @@ impl UserData for WindowHandle {
             let key = lua.create_registry_value(func)?;
             CLOSE_CB.with(|c| *c.borrow_mut() = Some(key));
             Ok(())
+        });
+
+        // Singleton viewport handle: same underlying camera state as
+        // Renderable.Camera. Lets 3D games drive the camera through the
+        // window object — `win:GetViewport().CFrame = ...` shifts what's
+        // shown without touching every part.
+        m.add_method("GetViewport", |lua, _, _: ()| -> mlua::Result<AnyUserData> {
+            lua.create_userdata(crate::libs::renderable::CameraHandle)
         });
 
         m.add_method("Resize", |_, _, (w, h): (u32, u32)| {
@@ -456,6 +487,19 @@ fn with_window<F: FnOnce(&Arc<WinitWindow>)>(f: F) {
         if let Some(app) = a.borrow().as_ref() {
             if let Some(window) = app.window.as_ref() {
                 f(window);
+            }
+        }
+    });
+}
+
+/// Public sibling for other libs (Mouse, Keyboard) that need to call into
+/// winit. Hands a `&WinitWindow` rather than the `Arc` so the closure can't
+/// extend its lifetime past the borrow.
+pub fn with_window_static<F: FnOnce(&WinitWindow)>(f: F) {
+    APP.with(|a| {
+        if let Some(app) = a.borrow().as_ref() {
+            if let Some(window) = app.window.as_ref() {
+                f(window.as_ref());
             }
         }
     });

@@ -1,9 +1,17 @@
 pub mod asset;
+pub mod gui;
+pub mod input;
 pub mod io;
+pub mod keyboard;
 pub mod managed;
+pub mod mouse;
 pub mod net;
+pub mod primitives;
 pub mod process;
+pub mod renderable;
+pub mod runservice;
 pub mod serde;
 pub mod sfx;
+pub mod shader;
 pub mod signal;
 pub mod window;

@@ -122,7 +122,8 @@ type Asset_API = {
 	GetAsset: ((kind: "Image", path: string) -> ImageAsset)
 		& ((kind: "Sound", path: string) -> SoundData)
 		& ((kind: "Shader", path: string) -> ShaderAsset)
-		& ((kind: "Fragment", path: string) -> FragmentAsset),
+		& ((kind: "Fragment", path: string) -> FragmentAsset)
+		& ((kind: "Model", path: string) -> ModelAsset),
 }
 
 type WindowOptions = {
@@ -171,6 +172,9 @@ declare class WindowHandle
 	function Title(self): string
 	function IsFullscreen(self): boolean
 	function IsOpen(self): boolean
+	-- Returns the singleton viewport (= Renderable.Camera). Set its CFrame
+	-- and FOV to drive what 3D parts the window renders.
+	function GetViewport(self): Camera
 end
 
 type Window_API = { Open: (opts: WindowOptions?) -> WindowHandle }
@@ -226,14 +230,190 @@ type Managed_API = {
 	Default: () -> Package?,
 }
 
-declare import: ((name: "Asset") -> Asset_API)
-	& ((name: "IO") -> IO_API)
-	& ((name: "Managed") -> Managed_API)
-	& ((name: "Net") -> Net_API)
-	& ((name: "Process") -> Process_API)
-	& ((name: "Serde") -> Serde_API)
-	& ((name: "SFX") -> SFX_API)
-	& ((name: "Signal") -> Signal_API)
-	& ((name: "Window") -> Window_API)
+declare class Dim
+	X: number
+	Y: number
+	function Lerp(self, other: Dim, t: number): Dim
+end
+
+declare class Color3
+	R: number
+	G: number
+	B: number
+	function Lerp(self, other: Color3, t: number): Color3
+end
+
+declare class Vector
+	X: number
+	Y: number
+	Z: number
+	Magnitude: number
+	function Lerp(self, other: Vector, t: number): Vector
+end
+
+declare class ModelAsset
+	function VertexCount(self): number
+	function TriangleCount(self): number
+	function Source(self): string
+end
+
+declare class BasePart
+	Shape: string
+	CFrame: CFrame
+	Size: Vector
+	Color: Color3
+	Render: boolean
+	Texture: ImageAsset?
+	Changed: Signal
+	function Destroy(self): ()
+	function AttachShader(self, asset: ShaderAsset | FragmentAsset): ()
+	function DetachShader(self, asset: ShaderAsset | FragmentAsset): ()
+	function ClearShaders(self): ()
+	function SetData(self, asset: ShaderAsset | FragmentAsset, name: string, value: number): ()
+	function GetData(self, asset: ShaderAsset | FragmentAsset, name: string): number?
+end
+
+declare class Camera
+	CFrame: CFrame
+	FOV: number
+	Near: number
+	Far: number
+end
+
+type Renderable_API = {
+	-- Pass "Cube" or "Sphere".
+	BasePart: (shape: string?) -> BasePart,
+	-- Loads an OBJ asset (Asset.GetAsset("Model", path)) into a part you
+	-- can pose like any other. Set .Texture to give it a surface image.
+	BaseModel: (asset: ModelAsset) -> BasePart,
+	Camera: Camera,
+}
+
+declare class CFrame
+	Position: Vector
+	Rotation: Vector
+	function Lerp(self, other: CFrame, t: number): CFrame
+	function __mul(self, other: CFrame): CFrame
+	function __add(self, other: CFrame): CFrame
+	function __sub(self, other: CFrame): CFrame
+end
+
+type Dim_API = { new: (x: number, y: number) -> Dim }
+type Color3_API = {
+	new: (r: number, g: number, b: number) -> Color3,
+	fromHex: (hex: string) -> Color3,
+}
+type Vector_API = {
+	new: ((x: number?, y: number?, z: number?) -> Vector),
+	zero: () -> Vector,
+	one: () -> Vector,
+}
+type CFrame_API = {
+	new: (position: Vector?, rotation: Vector?) -> CFrame,
+	Angles: (rx: number, ry: number, rz: number) -> CFrame,
+}
+
+type Primitives_API = {
+	Dim: Dim_API,
+	Color3: Color3_API,
+	Vector: Vector_API,
+	CFrame: CFrame_API,
+}
+
+declare class Primitive
+	Shape: string
+	Size: Dim
+	Position: Dim
+	Color: Color3
+	Transparency: number
+	ZIndex: number
+	Visible: boolean
+	Changed: Signal
+	function Destroy(self): ()
+	function AttachShader(self, asset: ShaderAsset | FragmentAsset): ()
+	function DetachShader(self, asset: ShaderAsset | FragmentAsset): ()
+	function ClearShaders(self): ()
+	function SetData(self, asset: ShaderAsset | FragmentAsset, name: string, value: number): ()
+	function GetData(self, asset: ShaderAsset | FragmentAsset, name: string): number?
+end
+
+declare class SceneShader
+	function SetData(self, name: string, value: number): ()
+	function GetData(self, name: string): number?
+	function Destroy(self): ()
+end
+
+type GUI_API = {
+	Basic: {
+		Circle: () -> Primitive,
+		Square: () -> Primitive,
+		Triangle: () -> Primitive,
+		-- Renders an image asset as a textured quad. Color tint, transparency,
+		-- and attached shaders all still apply (the default pipeline does
+		-- `texture * U.color`).
+		Image: (asset: ImageAsset) -> Primitive,
+	},
+	-- Scene-wide WGSL. Skybox draws fullscreen before primitives (uv ∈ [0,1]
+	-- across the window, IMG = 1×1 white). PostEffect draws after primitives,
+	-- with the rendered scene bound as IMG so the shader can sample + transform
+	-- it (color grading, vignettes, blur, etc.). Both return a SceneShader
+	-- handle whose :SetData drives the live params.
+	SetSkybox: (asset: ShaderAsset | FragmentAsset) -> SceneShader,
+	ClearSkybox: () -> (),
+	SetPostEffect: (asset: ShaderAsset | FragmentAsset) -> SceneShader,
+	ClearPostEffect: () -> (),
+}
+
+type Mouse_API = {
+	Position: Dim,
+	Visible: boolean,
+	Locked: boolean,
+	Cursor: string,
+	Moved: Signal,
+	InputReceived: Signal,
+	SetCursor: (self: Mouse_API, name: string) -> (),
+	Lock: (self: Mouse_API) -> (),
+	Unlock: (self: Mouse_API) -> (),
+	IsButtonDown: (self: Mouse_API, button: string) -> boolean,
+}
+
+type Keyboard_API = {
+	InputChanged: Signal,
+	IsKeyDown: (self: Keyboard_API, key: string | number) -> boolean,
+	GetKeyId: (self: Keyboard_API, name: string) -> number,
+}
+
+type RunService_API = {
+	-- Both fire once per heart tick with the elapsed dt (seconds).
+	-- RenderStepped fires before user heart handlers; Heartbeat fires after.
+	Heartbeat: Signal,
+	RenderStepped: Signal,
+}
+
+-- One row per importable lib; the solver indexes into this rather than
+-- trying to pick a winner from a 13-way function intersection (which blew
+-- the type-complexity limit and made `import(...)` unresolvable).
+type Imports = {
+	Asset: Asset_API,
+	GUI: GUI_API,
+	IO: IO_API,
+	Keyboard: Keyboard_API,
+	Managed: Managed_API,
+	Mouse: Mouse_API,
+	Net: Net_API,
+	Primitives: Primitives_API,
+	Process: Process_API,
+	Renderable: Renderable_API,
+	RunService: RunService_API,
+	Serde: Serde_API,
+	SFX: SFX_API,
+	Signal: Signal_API,
+	Window: Window_API,
+}
+
+-- `keyof<Imports> & K` constrains the literal arg to a key, `index<Imports, K>`
+-- looks up the matching row's type. Requires the new Luau type solver
+-- (luau-lsp ≥ 1.50). If your LSP is older, see the fallback note below.
+declare import: <K>(name: keyof<Imports> & K) -> index<Imports, K>
 
 declare __dirname: string

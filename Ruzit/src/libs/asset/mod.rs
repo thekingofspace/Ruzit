@@ -37,6 +37,7 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
 const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "bmp", "gif", "webp"];
 const SHADER_EXTS: &[&str] = &["shader", "glsl", "wgsl", "hlsl", "vert", "metal"];
 const FRAGMENT_EXTS: &[&str] = &["frag", "fragment", "fs", "glslf"];
+const MODEL_EXTS: &[&str] = &["obj"];
 
 fn get_asset(
     lua: &Lua,
@@ -50,10 +51,28 @@ fn get_asset(
         "Sound" => load_sound(lua, fs, owner, path),
         "Shader" => load_text::<ShaderAsset>(lua, fs, owner, path, SHADER_EXTS, "Shader"),
         "Fragment" => load_text::<FragmentAsset>(lua, fs, owner, path, FRAGMENT_EXTS, "Fragment"),
+        "Model" => load_model(lua, fs, owner, path),
         other => Err(mlua::Error::RuntimeError(format!(
-            "Asset.GetAsset: unknown kind '{other}' (try 'Image', 'Sound', 'Shader', 'Fragment')"
+            "Asset.GetAsset: unknown kind '{other}' (try 'Image', 'Sound', 'Shader', 'Fragment', 'Model')"
         ))),
     }
+}
+
+fn load_model(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value> {
+    let (bytes, source) = read_bytes(fs, owner, path, MODEL_EXTS, "Model")?;
+    let text = String::from_utf8(bytes).map_err(|e| {
+        mlua::Error::RuntimeError(format!("Asset.GetAsset: '{source}' not valid UTF-8: {e}"))
+    })?;
+    let mesh = crate::libs::renderable::mesh::load_obj(&text).map_err(|e| {
+        mlua::Error::RuntimeError(format!("Asset.GetAsset: parse '{source}': {e}"))
+    })?;
+    let asset = ModelAsset {
+        id: next_shader_id(),
+        vertices: Arc::new(mesh.vertices),
+        indices: Arc::new(mesh.indices),
+        source,
+    };
+    Ok(Value::UserData(lua.create_userdata(asset)?))
 }
 
 fn load_sound(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value> {
@@ -98,9 +117,10 @@ fn load_image(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value
     let data = rgba.into_raw();
 
     let asset = ImageAsset {
+        id: next_shader_id(),
         width,
         height,
-        data,
+        data: Arc::new(data),
         source,
     };
     Ok(Value::UserData(lua.create_userdata(asset)?))
@@ -222,9 +242,13 @@ fn dotted_to_path(dotted: &str) -> PathBuf {
 }
 
 pub struct ImageAsset {
+    /// Stable id used by the GUI texture cache to dedupe uploads.
+    pub id: u64,
     pub width: u32,
     pub height: u32,
-    pub data: Vec<u8>,
+    /// RGBA8 bytes (length = width * height * 4). Wrapped in `Arc` so primitives
+    /// can hold a reference without cloning megabytes of pixels.
+    pub data: Arc<Vec<u8>>,
     pub source: String,
 }
 
@@ -233,7 +257,7 @@ impl UserData for ImageAsset {
         m.add_method("Width", |_, this, _: ()| Ok(this.width as i64));
         m.add_method("Height", |_, this, _: ()| Ok(this.height as i64));
         m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
-        m.add_method("Pixels", |lua, this, _: ()| lua.create_string(&this.data));
+        m.add_method("Pixels", |lua, this, _: ()| lua.create_string(this.data.as_slice()));
     }
 }
 
@@ -267,3 +291,21 @@ impl TextAsset for FragmentAsset {
 }
 
 impl UserData for FragmentAsset {}
+
+/// Mesh data loaded from an OBJ. The renderable subsystem caches the actual
+/// GPU vertex/index buffers by `id` so multiple BaseModels sharing the same
+/// asset upload only once.
+pub struct ModelAsset {
+    pub id: u64,
+    pub vertices: Arc<Vec<crate::libs::renderable::mesh::Vertex3D>>,
+    pub indices: Arc<Vec<u32>>,
+    pub source: String,
+}
+
+impl UserData for ModelAsset {
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method("VertexCount", |_, this, _: ()| Ok(this.vertices.len() as i64));
+        m.add_method("TriangleCount", |_, this, _: ()| Ok((this.indices.len() / 3) as i64));
+        m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
+    }
+}

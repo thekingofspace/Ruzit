@@ -1,4 +1,6 @@
-use mlua::{Lua, Table, Value};
+use std::io::Write;
+
+use mlua::{Lua, MultiValue, Table, Value};
 
 use crate::heart;
 use crate::libs;
@@ -13,6 +15,8 @@ pub fn run_entry(fs: Fs, entry_key: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     heart::ensure_registry(&lua).map_err(|e| format!("heart registry: {e}"))?;
     libs::signal::install(&lua).map_err(|e| format!("signal install: {e}"))?;
+    libs::input::install(&lua).map_err(|e| format!("input install: {e}"))?;
+    libs::runservice::install(&lua).map_err(|e| format!("runservice install: {e}"))?;
 
     load_module(&lua, &fs, entry_key)
         .map(|_| ())
@@ -58,8 +62,38 @@ fn build_env(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
     install_require(lua, &env, &fs, &owner)?;
     install_dirname(&env, &fs, &owner)?;
     install_import(lua, &env, &fs, &owner)?;
+    install_print(lua, &env)?;
 
     Ok(env)
+}
+
+/// Override Luau's built-in `print` so output goes through Rust's stdout
+/// instead of the C-runtime FILE*. We're a windows-subsystem process, so
+/// the C runtime cached a null `stdout` at load time and our own
+/// `SetStdHandle` calls in console::setup don't reach it. Rust's
+/// `io::stdout()` reads `GetStdHandle` lazily on first use, so it picks up
+/// the redirected handle correctly.
+fn install_print(lua: &Lua, env: &Table) -> mlua::Result<()> {
+    let print = lua.create_function(|lua, args: MultiValue| -> mlua::Result<()> {
+        let mut buf = String::new();
+        for (i, v) in args.iter().enumerate() {
+            if i > 0 {
+                buf.push('\t');
+            }
+            // Mirror Luau's print: tostring everything, even userdata that
+            // implements __tostring.
+            let s = lua.coerce_string(v.clone())?;
+            match s {
+                Some(s) => buf.push_str(&s.to_str()?),
+                None => buf.push_str(&format!("{v:?}")),
+            }
+        }
+        let mut out = std::io::stdout().lock();
+        let _ = writeln!(out, "{buf}");
+        let _ = out.flush();
+        Ok(())
+    })?;
+    env.set("print", print)
 }
 
 fn install_require(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<()> {
@@ -93,14 +127,20 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
                 fs.clone(),
                 owner.clone(),
             )?)),
+            "GUI" => Ok(Value::Table(libs::gui::create(lua)?)),
             "IO" => Ok(Value::Table(libs::io::create(
                 lua,
                 fs.clone(),
                 owner.clone(),
             )?)),
+            "Keyboard" => Ok(Value::Table(libs::keyboard::create(lua)?)),
             "Managed" => Ok(Value::Table(libs::managed::create(lua, fs.clone())?)),
+            "Mouse" => Ok(Value::Table(libs::mouse::create(lua)?)),
             "Net" => Ok(Value::Table(libs::net::create(lua)?)),
+            "Primitives" => Ok(Value::Table(libs::primitives::create(lua)?)),
             "Process" => Ok(Value::Table(libs::process::create(lua)?)),
+            "Renderable" => Ok(Value::Table(libs::renderable::create(lua)?)),
+            "RunService" => Ok(Value::Table(libs::runservice::create(lua)?)),
             "Serde" => Ok(Value::Table(libs::serde::create(lua)?)),
             "SFX" => Ok(Value::Table(libs::sfx::create(lua)?)),
             "Signal" => Ok(Value::Table(libs::signal::class(lua)?)),

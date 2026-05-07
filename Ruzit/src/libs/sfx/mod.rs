@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -11,7 +10,9 @@ use mlua::{
 };
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 
-use crate::libs::asset::{FragmentAsset, ShaderAsset};
+use crate::libs::shader::{
+    AttachedShader, Params, read_param, shader_attach_spec, shader_id,
+};
 use crate::libs::signal;
 
 pub const SOUND_EXTS: &[&str] = &["wav", "mp3", "ogg", "flac"];
@@ -103,84 +104,6 @@ pub struct Sound {
     attached: Mutex<Vec<AttachedShader>>,
     update_links: Mutex<Vec<UpdateLink>>,
     current_id: Mutex<Option<u64>>,
-}
-
-/// One shader attached to a Sound. `params` is shared across the audio thread
-/// (which reads per sample) and the Lua thread (which writes via `:SetData`),
-/// so live parameter changes take effect mid-playback without re-Play().
-#[derive(Clone)]
-struct AttachedShader {
-    id: u64,
-    kind: String,
-    params: Params,
-}
-
-type Params = Arc<Mutex<HashMap<String, f32>>>;
-
-fn read_param(params: &Params, key: &str, default: f32) -> f32 {
-    params.lock().unwrap().get(key).copied().unwrap_or(default)
-}
-
-fn parse_shader(code: &str, source: &str) -> mlua::Result<(String, HashMap<String, f32>)> {
-    let mut iter = code.lines().filter_map(|raw| {
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
-            None
-        } else {
-            Some(line)
-        }
-    });
-    let kind = iter
-        .next()
-        .ok_or_else(|| {
-            mlua::Error::RuntimeError(format!(
-                "shader '{source}' is empty — first line must be the effect kind"
-            ))
-        })?
-        .to_string();
-    let mut params = HashMap::new();
-    for line in iter {
-        if let Some((k, v)) = line.split_once('=') {
-            if let Ok(n) = v.trim().parse::<f32>() {
-                params.insert(k.trim().to_string(), n);
-            }
-        }
-    }
-    Ok((kind, params))
-}
-
-fn shader_id(asset: &AnyUserData) -> mlua::Result<u64> {
-    if let Ok(s) = asset.borrow::<ShaderAsset>() {
-        return Ok(s.id);
-    }
-    if let Ok(f) = asset.borrow::<FragmentAsset>() {
-        return Ok(f.id);
-    }
-    Err(mlua::Error::RuntimeError(
-        "expected a Shader or Fragment asset".into(),
-    ))
-}
-
-fn shader_attach_spec(asset: &AnyUserData) -> mlua::Result<AttachedShader> {
-    if let Ok(s) = asset.borrow::<ShaderAsset>() {
-        let (kind, params) = parse_shader(&s.code, &s.source)?;
-        return Ok(AttachedShader {
-            id: s.id,
-            kind,
-            params: Arc::new(Mutex::new(params)),
-        });
-    }
-    if let Ok(f) = asset.borrow::<FragmentAsset>() {
-        let (kind, params) = parse_shader(&f.code, &f.source)?;
-        return Ok(AttachedShader {
-            id: f.id,
-            kind,
-            params: Arc::new(Mutex::new(params)),
-        });
-    }
-    Err(mlua::Error::RuntimeError(
-        "expected a Shader or Fragment asset".into(),
-    ))
 }
 
 struct UpdateLink {

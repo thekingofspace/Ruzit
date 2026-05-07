@@ -21,6 +21,7 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         // Pump window events first; this can call std::process::exit if the user
         // closed the window (after running BindToClose, if registered).
         crate::libs::window::pump(lua);
+        crate::libs::input::pump(lua);
         crate::libs::sfx::pump(lua);
 
         let snapshot = snapshot_handlers(lua)?;
@@ -35,6 +36,10 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         let dt = (now - last).as_secs_f64();
         last = now;
 
+        // RenderStepped: fires before user heart handlers so input-driven GUI
+        // updates land before any other per-tick work runs.
+        crate::libs::runservice::fire_render_stepped(lua, dt);
+
         for (id, func) in snapshot {
             if let Err(e) = run_one(lua, &func, dt) {
                 eprintln!("[Ruzit] heart '{id}' error: {e}");
@@ -42,6 +47,9 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
                 registry.set(id, Value::Nil)?;
             }
         }
+
+        // Heartbeat: fires after user handlers so it sees any state they wrote.
+        crate::libs::runservice::fire_heartbeat(lua, dt);
 
         let elapsed = last.elapsed();
         if elapsed < TICK_INTERVAL {

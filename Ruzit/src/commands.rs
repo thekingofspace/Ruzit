@@ -481,3 +481,78 @@ fn display_rel(base: &Path, p: &Path) -> String {
         .to_string_lossy()
         .replace('\\', "/")
 }
+
+/// Scaffold a Managed package folder. Drop this next to a project's build.toml
+/// and Build will auto-package it; the host game can then `Managed.GetPackage("<id>")`.
+pub fn cmd_init_package(arg: Option<&String>) -> Result<(), String> {
+    let target = match arg {
+        Some(s) => PathBuf::from(s),
+        None => env::current_dir().map_err(|e| format!("cwd: {e}"))?,
+    };
+    fs::create_dir_all(&target)
+        .map_err(|e| format!("create {}: {e}", target.display()))?;
+
+    // Folder name → id verbatim (matches how DLCs are looked up at runtime).
+    let id = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("my-package")
+        .to_string();
+    // Display name: title-case the id with spaces in place of `-` / `_`.
+    let display_name = humanize(&id);
+
+    let entries: &[(&str, &str)] = &[
+        ("ManagedInfo.toml", templates::MANAGED_INFO_TOML),
+        ("init.luau", templates::MANAGED_INIT_LUAU),
+    ];
+
+    println!(
+        "[Ruzit] init package → {} (id: {}, name: {})",
+        target.display(),
+        id,
+        display_name
+    );
+
+    let mut created = 0;
+    let mut skipped = 0;
+    for (rel, template) in entries {
+        let path = target.join(rel);
+        if path.exists() {
+            println!("  skip   {}", display_rel(&target, &path));
+            skipped += 1;
+        } else {
+            let content = template.replace("{id}", &id).replace("{name}", &display_name);
+            fs::write(&path, content)
+                .map_err(|e| format!("write {}: {e}", path.display()))?;
+            println!("  create {}", display_rel(&target, &path));
+            created += 1;
+        }
+    }
+
+    println!(
+        "[Ruzit] init package done: {created} created, {skipped} skipped."
+    );
+    println!(
+        "        Drop this folder next to your project's build.toml — Build will auto-package it."
+    );
+    Ok(())
+}
+
+fn humanize(id: &str) -> String {
+    let mut out = String::with_capacity(id.len());
+    let mut start_of_word = true;
+    for ch in id.chars() {
+        if ch == '-' || ch == '_' {
+            out.push(' ');
+            start_of_word = true;
+        } else if start_of_word {
+            for u in ch.to_uppercase() {
+                out.push(u);
+            }
+            start_of_word = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}

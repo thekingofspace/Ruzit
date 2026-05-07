@@ -30,7 +30,7 @@ impl FileType {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BuildConfig {
     pub name: String,
     pub version: String,
@@ -38,10 +38,26 @@ pub struct BuildConfig {
     pub file_type: FileType,
     pub exe_name: Option<String>,
     pub exe_icon: Option<String>,
-    /// `true` → launcher built as windows-subsystem (no console flash from
-    /// Explorer; needs `--console` to see prints). `false` (default) →
+    /// `true` (default) → launcher built as windows-subsystem (no console
+    /// flash from Explorer; needs `--console` to see prints). `false` →
     /// console-subsystem so cmd launches always show output.
     pub exe_windowed: bool,
+}
+
+impl Default for BuildConfig {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            version: String::new(),
+            creator: String::new(),
+            file_type: FileType::default(),
+            exe_name: None,
+            exe_icon: None,
+            // Ship-mode default. Pass `--console` (or set [exe].windowed = false)
+            // to opt back into a console window.
+            exe_windowed: true,
+        }
+    }
 }
 
 impl BuildConfig {

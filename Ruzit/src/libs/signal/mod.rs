@@ -68,9 +68,15 @@ function Signal:Fire(...)
 			table.insert(snapshot, conn)
 		end
 	end
+	-- Each handler runs in its own coroutine so:
+	--   * a handler that yields (e.g. Signal:Wait, sleep helpers) doesn't
+	--     block subsequent handlers;
+	--   * an error in one handler doesn't stop the others — coroutine.resume
+	--     returns the failure to us instead of unwinding into Fire's frame.
 	for _, conn in ipairs(snapshot) do
 		if conn.Connected then
-			local ok, err = pcall(conn._fn, ...)
+			local co = coroutine.create(conn._fn)
+			local ok, err = coroutine.resume(co, ...)
 			if not ok then
 				print("[Signal] handler error:", err)
 			end

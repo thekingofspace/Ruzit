@@ -330,15 +330,14 @@ pub fn write_launcher_exe(
     let self_exe = env::current_exe().map_err(|e| e.to_string())?;
     let mut exe_bytes = fs::read(&self_exe)
         .map_err(|e| format!("read {}: {e}", self_exe.display()))?;
+    // Always rewrite the subsystem byte explicitly. Ruzit.exe ships as
+    // windowed-subsystem so it doesn't pop a console on Explorer launches —
+    // `windowed = false` opts back into a console-subsystem launcher whose
+    // stdout is permanently wired to a console window.
     if windowed {
-        // Switch the PE subsystem to GUI so Explorer launches don't flash a
-        // console. Console output then requires the user passing --console.
         patch_subsystem_to_gui(&mut exe_bytes)?;
     } else {
-        // Default: leave the launcher as console-subsystem (inherited from
-        // Ruzit.exe). cmd launches always show output, double-clicking from
-        // Explorer briefly flashes a console.
-        zero_pe_checksum(&mut exe_bytes)?;
+        patch_subsystem_to_console(&mut exe_bytes)?;
     }
     {
         let mut f = fs::File::create(out_path)
@@ -450,18 +449,18 @@ fn pe_offset(bytes: &[u8]) -> Result<usize, String> {
 }
 
 fn patch_subsystem_to_gui(bytes: &mut [u8]) -> Result<(), String> {
-    let off = pe_offset(bytes)?;
-    let subsys_offset = off + 0x5C;
-    bytes[subsys_offset] = 2;
-    bytes[subsys_offset + 1] = 0;
-    zero_checksum_at(bytes, off);
-    Ok(())
+    write_subsystem(bytes, 2)
 }
 
-/// Zero `OptionalHeader.CheckSum` so editing tools (and our own appended
-/// trailer) don't fail validation against a stale checksum.
-fn zero_pe_checksum(bytes: &mut [u8]) -> Result<(), String> {
+fn patch_subsystem_to_console(bytes: &mut [u8]) -> Result<(), String> {
+    write_subsystem(bytes, 3)
+}
+
+fn write_subsystem(bytes: &mut [u8], value: u8) -> Result<(), String> {
     let off = pe_offset(bytes)?;
+    let subsys_offset = off + 0x5C;
+    bytes[subsys_offset] = value;
+    bytes[subsys_offset + 1] = 0;
     zero_checksum_at(bytes, off);
     Ok(())
 }
