@@ -35,7 +35,7 @@ fn print_usage() {
 }
 
 fn dispatch(args: &[String]) -> Result<(), String> {
-    let cmd = args.get(1).map(String::as_str).unwrap_or("Test");
+    let cmd = args.get(1).map(String::as_str).unwrap_or("help");
     match cmd {
         "Init" | "init" => commands::cmd_init(args.get(2)),
         "InitPackage" | "initpackage" | "Init-Package" | "init-package" => {

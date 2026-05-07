@@ -254,16 +254,18 @@ declare class Connection
 	function Disconnect(self): ()
 end
 
--- Generic over the args it carries: `Signal<number, string>` fires `(number, string)`.
--- Use `Signal<>` for a no-arg signal. Plain `Signal` (no generics) still works
--- for code that doesn't care, defaulting to `...any`.
-declare class Signal<T...>
-	function Connect(self, fn: (T...) -> ()): Connection
-	function Once(self, fn: (T...) -> ()): Connection
-	function Wait(self): T...
-	function Fire(self, T...): ()
-	function DisconnectAll(self): ()
-end
+-- Variadic generics on `declare class` aren't supported by the stable
+-- luau-lsp parser yet, but generic type aliases ARE — so Signal lives as
+-- a parameterized table type instead. Same call shape (signal:Connect(...))
+-- with full callback-arg type narrowing: `Signal<number, string>` makes
+-- `signal:Connect(function(a, b) ... end)` infer `a:number, b:string`.
+export type Signal<T...> = {
+	Connect: (self: Signal<T...>, fn: (T...) -> ()) -> Connection,
+	Once: (self: Signal<T...>, fn: (T...) -> ()) -> Connection,
+	Wait: (self: Signal<T...>) -> T...,
+	Fire: (self: Signal<T...>, T...) -> (),
+	DisconnectAll: (self: Signal<T...>) -> (),
+}
 
 export type Signal_API = { new: <T...>() -> Signal<T...> }
 
@@ -276,7 +278,13 @@ declare class WindowHandle
 	function BindToClose(self, fn: () -> ()): ()
 	function Resize(self, width: number, height: number): ()
 	function SetTitle(self, title: string): ()
+	-- Toggles "borderless fullscreen" — strips decorations AND enters
+	-- Fullscreen::Borderless so the window covers the OS taskbar/dock.
+	-- The Open-time `borderless = true` option does the same thing.
 	function SetBorderless(self, borderless: boolean): ()
+	-- Strips title bar / minimize / close buttons WITHOUT going fullscreen.
+	-- Use this for decorationless tool overlays or floating panels.
+	function SetDecorations(self, decorated: boolean): ()
 	function SetFullscreen(self, fullscreen: boolean): ()
 	function SetResizable(self, resizable: boolean): ()
 	function SetMaximized(self, maximized: boolean): ()

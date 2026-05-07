@@ -537,10 +537,25 @@ pub fn cmd_init(arg: Option<&String>) -> Result<(), String> {
         (".vscode/settings.json", templates::VSCODE_SETTINGS),
     ];
 
+    // Anything under `assets/` is auto-bundled by `Ruzit Build` and
+    // reachable via Asset.GetAsset, so we make sure the top-level folder
+    // exists. We deliberately don't pre-make subfolders (images/sounds/...)
+    // so the project's organization is up to you — group by feature
+    // (`SoundsGuns/`, `ItemsTier1/`) or by type, whichever fits.
+    let assets_dir = target.join("assets");
+
     println!("[Ruzit] init → {} (name: {})", target.display(), project_name);
 
     let mut created = 0;
     let mut skipped = 0;
+    if assets_dir.exists() {
+        skipped += 1;
+    } else {
+        fs::create_dir_all(&assets_dir)
+            .map_err(|e| format!("mkdir {}: {e}", assets_dir.display()))?;
+        println!("  create {}/", display_rel(&target, &assets_dir));
+        created += 1;
+    }
     for (rel, template) in entries {
         let path = target.join(rel);
         if let Some(parent) = path.parent() {

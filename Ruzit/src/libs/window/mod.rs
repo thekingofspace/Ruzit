@@ -255,6 +255,15 @@ impl ApplicationHandler for WindowApp {
             return;
         }
 
+        // Create the window in plain windowed mode first — combining
+        // `with_fullscreen` + `with_maximized` + `with_always_on_top` at
+        // creation time on Windows/DX12 races the surface init and crashes
+        // wgpu with "Invalid surface". We apply those modes AFTER the surface
+        // is fully configured.
+        let want_fullscreen = self.opts.fullscreen || self.opts.borderless;
+        let want_maximized = self.opts.maximized && !want_fullscreen;
+        let want_always_on_top = self.opts.always_on_top && !want_fullscreen;
+
         let mut attrs = WinitWindow::default_attributes()
             .with_title(&self.opts.title)
             .with_inner_size(LogicalSize::new(self.opts.width, self.opts.height))
@@ -262,8 +271,8 @@ impl ApplicationHandler for WindowApp {
             .with_decorations(!self.opts.borderless)
             .with_visible(self.opts.visible)
             .with_transparent(self.opts.transparent)
-            .with_maximized(self.opts.maximized)
-            .with_window_level(if self.opts.always_on_top {
+            .with_maximized(want_maximized)
+            .with_window_level(if want_always_on_top {
                 WindowLevel::AlwaysOnTop
             } else {
                 WindowLevel::Normal
@@ -274,9 +283,6 @@ impl ApplicationHandler for WindowApp {
         }
         if let (Some(w), Some(h)) = (self.opts.max_width, self.opts.max_height) {
             attrs = attrs.with_max_inner_size(LogicalSize::new(w, h));
-        }
-        if self.opts.fullscreen {
-            attrs = attrs.with_fullscreen(Some(Fullscreen::Borderless(None)));
         }
         if let Some(icon) = self.opts.icon.clone() {
             attrs = attrs.with_window_icon(Some(icon));
@@ -298,6 +304,16 @@ impl ApplicationHandler for WindowApp {
                 return;
             }
         };
+
+        // Now that the surface is configured, apply fullscreen / always-on-top
+        // / maximized — same flags as create-time but applied after init so
+        // no mode-switch happens during surface bring-up.
+        if want_fullscreen {
+            window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+            if self.opts.always_on_top {
+                window.set_window_level(WindowLevel::AlwaysOnTop);
+            }
+        }
 
         self.window = Some(window);
         self.gpu = Some(gpu);
@@ -409,8 +425,25 @@ impl UserData for WindowHandle {
             with_window(|win| win.set_title(&title));
             Ok(())
         });
+        // Same semantics as the Open-time `borderless` flag: enters
+        // Fullscreen::Borderless (covers the OS taskbar) on `true`, exits
+        // back to a normal window on `false`. Strips decorations either way.
         m.add_method("SetBorderless", |_, _, b: bool| {
-            with_window(|win| win.set_decorations(!b));
+            with_window(|win| {
+                win.set_decorations(!b);
+                win.set_fullscreen(if b {
+                    Some(Fullscreen::Borderless(None))
+                } else {
+                    None
+                });
+            });
+            Ok(())
+        });
+        // For the rare case of "decorationless but still windowed" (e.g. a
+        // floating tool overlay), this lets you strip the title bar without
+        // going fullscreen.
+        m.add_method("SetDecorations", |_, _, decorated: bool| {
+            with_window(|win| win.set_decorations(decorated));
             Ok(())
         });
         m.add_method("SetFullscreen", |_, _, b: bool| {
