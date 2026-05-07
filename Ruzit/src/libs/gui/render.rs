@@ -250,8 +250,12 @@ pub struct GpuState {
     pipelines_3d: HashMap<u64, wgpu::RenderPipeline>,
     
     frame_uniform: wgpu::Buffer,
-    
-    instance_uniforms: Vec<wgpu::Buffer>,
+
+    instance_buffer: wgpu::Buffer,
+    instance_capacity_bytes: u64,
+    instance_stride: u64,
+
+    bind_group_3d_cache: HashMap<u64, wgpu::BindGroup>,
     
     cube_vertex: wgpu::Buffer,
     cube_index: wgpu::Buffer,
@@ -298,12 +302,22 @@ impl GpuState {
             &wgpu::DeviceDescriptor {
                 label: Some("Ruzit Device"),
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-                memory_hints: wgpu::MemoryHints::default(),
+                required_limits: adapter.limits(),
+                memory_hints: wgpu::MemoryHints::Performance,
             },
             None,
         ))
         .map_err(|e| format!("request_device: {e}"))?;
+        let instance_stride = {
+            let raw = std::mem::size_of::<r3d::InstanceUniform3D>() as u64;
+            let align = device.limits().min_uniform_buffer_offset_alignment as u64;
+            if align == 0 {
+                raw
+            } else {
+                ((raw + align - 1) / align) * align
+            }
+        };
+        let instance_initial_capacity = instance_stride * 64;
 
         let max_dim = device.limits().max_texture_dimension_2d;
         let limits = device.limits();
@@ -476,7 +490,9 @@ impl GpuState {
                         visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
+                            // One big shared buffer; the per-instance offset
+                            // is supplied at set_bind_group time.
+                            has_dynamic_offset: true,
                             min_binding_size: NonZeroU64::new(
                                 std::mem::size_of::<r3d::InstanceUniform3D>() as u64,
                             ),
@@ -534,6 +550,12 @@ impl GpuState {
             label: Some("Ruzit 3D frame uni"),
             contents: bytemuck::bytes_of(&r3d::FrameUniform3D::zeroed()),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Ruzit 3D inst (shared)"),
+            size: instance_initial_capacity,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
         let cube_mesh = renderable::mesh::cube();
         let cube_vertex = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -593,7 +615,10 @@ impl GpuState {
             default_pipeline_3d,
             pipelines_3d: HashMap::new(),
             frame_uniform,
-            instance_uniforms: Vec::new(),
+            instance_buffer,
+            instance_capacity_bytes: instance_initial_capacity,
+            instance_stride,
+            bind_group_3d_cache: HashMap::new(),
             cube_vertex,
             cube_index,
             cube_index_count,
@@ -860,15 +885,50 @@ impl GpuState {
         );
     }
 
-    fn ensure_instance_buffers(&mut self, n: usize) {
-        while self.instance_uniforms.len() < n {
-            let buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Ruzit 3D inst uni"),
-                contents: bytemuck::bytes_of(&r3d::InstanceUniform3D::zeroed()),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            });
-            self.instance_uniforms.push(buf);
+    fn evict_unused_resources(
+        &mut self,
+        parts: &[renderable::PartRender],
+        items: &[RenderItem],
+    ) {
+        use std::collections::HashSet;
+        let mut live_models: HashSet<u64> = HashSet::new();
+        let mut live_textures: HashSet<u64> = HashSet::new();
+        for part in parts {
+            if let Some(model) = &part.model {
+                live_models.insert(model.id);
+            }
+            if let Some(tex) = &part.texture {
+                live_textures.insert(tex.id);
+            }
         }
+        for item in items {
+            if let Some(img) = &item.image {
+                live_textures.insert(img.id);
+            }
+        }
+        self.model_buffers.retain(|id, _| live_models.contains(id));
+        self.image_textures.retain(|id, _| live_textures.contains(id));
+        self.bind_group_3d_cache
+            .retain(|key, _| *key == 0 || live_textures.contains(key));
+    }
+
+    fn ensure_instance_capacity(&mut self, count: usize) {
+        let needed = (count as u64).max(1) * self.instance_stride;
+        if needed <= self.instance_capacity_bytes {
+            return;
+        }
+        let mut new_cap = self.instance_capacity_bytes.max(self.instance_stride);
+        while new_cap < needed {
+            new_cap = new_cap.saturating_mul(2);
+        }
+        self.instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Ruzit 3D inst (shared)"),
+            size: new_cap,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.instance_capacity_bytes = new_cap;
+        self.bind_group_3d_cache.clear();
     }
 
     fn ensure_part_texture(&mut self, tex: &renderable::PartTextureRef) -> &wgpu::TextureView {
@@ -989,7 +1049,8 @@ impl GpuState {
         }
         self.ensure_depth_target(self.size.0, self.size.1);
         self.ensure_uniform_buffers(items.len());
-        self.ensure_instance_buffers(parts.len());
+        self.ensure_instance_capacity(parts.len());
+        self.evict_unused_resources(&parts, items);
         for item in items {
             if let Some(sh) = &item.active_shader {
                 self.ensure_pipeline(sh.id, &sh.wgsl);
@@ -1063,27 +1124,35 @@ impl GpuState {
         };
         self.queue.write_buffer(&self.frame_uniform, 0, bytemuck::bytes_of(&frame));
 
-        for (i, part) in parts.iter().enumerate() {
-            let model_mat = r3d::part_model_matrix(
-                [part.cframe.position.x, part.cframe.position.y, part.cframe.position.z],
-                [part.cframe.rotation.x, part.cframe.rotation.y, part.cframe.rotation.z],
-                [part.size.x, part.size.y, part.size.z],
-            );
-            let color = [part.color.r, part.color.g, part.color.b, 1.0];
-            let mut params = [[0.0_f32; 4]; 4];
-            if let Some(sh) = &part.active_shader {
-                let p = sh.params.lock().unwrap();
-                for j in 0..16 {
-                    params[j / 4][j % 4] = p[j];
+        if !parts.is_empty() {
+            let stride = self.instance_stride as usize;
+            let inst_size = std::mem::size_of::<r3d::InstanceUniform3D>();
+            let total = parts.len() * stride;
+            let mut staging = vec![0u8; total];
+            for (i, part) in parts.iter().enumerate() {
+                let model_mat = r3d::part_model_matrix(
+                    [part.cframe.position.x, part.cframe.position.y, part.cframe.position.z],
+                    [part.cframe.rotation.x, part.cframe.rotation.y, part.cframe.rotation.z],
+                    [part.size.x, part.size.y, part.size.z],
+                );
+                let color = [part.color.r, part.color.g, part.color.b, 1.0];
+                let mut params = [[0.0_f32; 4]; 4];
+                if let Some(sh) = &part.active_shader {
+                    let p = sh.params.lock().unwrap();
+                    for j in 0..16 {
+                        params[j / 4][j % 4] = p[j];
+                    }
                 }
+                let inst = r3d::InstanceUniform3D {
+                    model: r3d::transpose4(model_mat),
+                    color,
+                    params,
+                };
+                let offset = i * stride;
+                staging[offset..offset + inst_size]
+                    .copy_from_slice(bytemuck::bytes_of(&inst));
             }
-            let inst = r3d::InstanceUniform3D {
-                model: r3d::transpose4(model_mat),
-                color,
-                params,
-            };
-            self.queue
-                .write_buffer(&self.instance_uniforms[i], 0, bytemuck::bytes_of(&inst));
+            self.queue.write_buffer(&self.instance_buffer, 0, &staging);
         }
 
         let bind_groups_2d: Vec<wgpu::BindGroup> = items
@@ -1118,41 +1187,48 @@ impl GpuState {
             })
             .collect();
 
-        let bind_groups_3d: Vec<wgpu::BindGroup> = parts
-            .iter()
-            .enumerate()
-            .map(|(i, part)| {
-                let texture_view = match &part.texture {
-                    Some(tex) => self
-                        .image_textures
-                        .get(&tex.id)
-                        .unwrap_or(&self.white_view),
-                    None => &self.white_view,
-                };
-                self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("Ruzit 3D bind"),
-                    layout: &self.bind_group_layout_3d,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: self.frame_uniform.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: self.instance_uniforms[i].as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: wgpu::BindingResource::TextureView(texture_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 3,
-                            resource: wgpu::BindingResource::Sampler(&self.sampler),
-                        },
-                    ],
-                })
-            })
-            .collect();
+        let inst_bind_size =
+            NonZeroU64::new(std::mem::size_of::<r3d::InstanceUniform3D>() as u64);
+        for part in &parts {
+            let key = part.texture.as_ref().map(|t| t.id).unwrap_or(0);
+            if self.bind_group_3d_cache.contains_key(&key) {
+                continue;
+            }
+            let texture_view = match &part.texture {
+                Some(tex) => self
+                    .image_textures
+                    .get(&tex.id)
+                    .unwrap_or(&self.white_view),
+                None => &self.white_view,
+            };
+            let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Ruzit 3D bind"),
+                layout: &self.bind_group_layout_3d,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.frame_uniform.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: &self.instance_buffer,
+                            offset: 0,
+                            size: inst_bind_size,
+                        }),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            });
+            self.bind_group_3d_cache.insert(key, bg);
+        }
 
         let main_target: &wgpu::TextureView = if post_effect.is_some() {
             self.scene_view
@@ -1217,7 +1293,12 @@ impl GpuState {
                     None => &self.default_pipeline_3d,
                 };
                 rpass.set_pipeline(pipeline);
-                rpass.set_bind_group(0, &bind_groups_3d[i], &[]);
+                let key = part.texture.as_ref().map(|t| t.id).unwrap_or(0);
+                let Some(bind_group) = self.bind_group_3d_cache.get(&key) else {
+                    continue;
+                };
+                let dyn_offset = (i as u64 * self.instance_stride) as u32;
+                rpass.set_bind_group(0, bind_group, &[dyn_offset]);
 
                 let (vbuf, ibuf, idx_count) = match part.shape {
                     renderable::PartShape::Cube => {
@@ -1231,7 +1312,7 @@ impl GpuState {
                     renderable::PartShape::Model => match &part.model {
                         Some(m) => match self.model_buffers.get(&m.id) {
                             Some(mb) => (&mb.vertex, &mb.index, mb.index_count),
-                            None => continue, 
+                            None => continue,
                         },
                         None => continue,
                     },

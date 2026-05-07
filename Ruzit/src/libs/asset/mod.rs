@@ -16,6 +16,34 @@ pub(crate) fn next_shader_id() -> u64 {
     SHADER_ID.fetch_add(1, Ordering::Relaxed)
 }
 
+const ASSET_CACHE_KEY: &str = "ruzit_asset_cache";
+
+fn ensure_asset_cache(lua: &Lua) -> mlua::Result<Table> {
+    if let Ok(t) = lua.named_registry_value::<Table>(ASSET_CACHE_KEY) {
+        return Ok(t);
+    }
+    let t = lua.create_table()?;
+    let meta = lua.create_table()?;
+    meta.set("__mode", "v")?;
+    t.set_metatable(Some(meta));
+    lua.set_named_registry_value(ASSET_CACHE_KEY, t.clone())?;
+    Ok(t)
+}
+
+fn cache_get(lua: &Lua, key: &str) -> Option<Value> {
+    let cache = ensure_asset_cache(lua).ok()?;
+    match cache.get::<Value>(key).ok()? {
+        Value::Nil => None,
+        v => Some(v),
+    }
+}
+
+fn cache_set(lua: &Lua, key: &str, value: &Value) {
+    if let Ok(cache) = ensure_asset_cache(lua) {
+        let _ = cache.set(key, value.clone());
+    }
+}
+
 pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
     let t = lua.create_table()?;
     let fs_clone = fs.clone();
@@ -24,7 +52,13 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
         "GetAsset",
         lua.create_function(
             move |lua, (kind, path): (String, String)| -> mlua::Result<Value> {
-                get_asset(lua, &fs_clone, &owner_clone, &kind, &path)
+                let cache_key = format!("vfs:{owner_clone}:{kind}:{path}");
+                if let Some(hit) = cache_get(lua, &cache_key) {
+                    return Ok(hit);
+                }
+                let value = get_asset(lua, &fs_clone, &owner_clone, &kind, &path)?;
+                cache_set(lua, &cache_key, &value);
+                Ok(value)
             },
         )?,
     )?;
@@ -43,6 +77,15 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
         lua.create_function(
             |lua, (kind, path): (String, String)| -> mlua::Result<Value> {
                 let p = std::path::Path::new(&path);
+                let resolved_kind_for_key = if kind.is_empty() || kind == "Auto" {
+                    detect_kind_from_extension(p).unwrap_or_else(|| kind.clone())
+                } else {
+                    kind.clone()
+                };
+                let cache_key = format!("import:{resolved_kind_for_key}:{path}");
+                if let Some(hit) = cache_get(lua, &cache_key) {
+                    return Ok(hit);
+                }
                 let bytes = std::fs::read(p).map_err(|e| {
                     mlua::Error::RuntimeError(format!("ImportAsset: read '{path}': {e}"))
                 })?;
@@ -55,7 +98,9 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
                 } else {
                     kind
                 };
-                from_bytes(lua, &resolved_kind, bytes, path)
+                let value = from_bytes(lua, &resolved_kind, bytes, path)?;
+                cache_set(lua, &cache_key, &value);
+                Ok(value)
             },
         )?,
     )?;
