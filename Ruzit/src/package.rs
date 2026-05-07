@@ -385,10 +385,6 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
                 if let Some(obj) = parsed.get("assets").and_then(|v| v.as_object()) {
                     for (k, v) in obj {
                         if let Some(b64) = v.as_str() {
-                            // Older builds stored asset keys with the
-                            // "assets/" prefix; strip it on load so a single
-                            // canonical form lives in pkg.assets and the
-                            // resolver can find it.
                             let normalized = k
                                 .strip_prefix("assets/")
                                 .unwrap_or(k.as_str())

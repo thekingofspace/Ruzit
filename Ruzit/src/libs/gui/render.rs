@@ -31,6 +31,9 @@ pub struct GpuMeta {
 
 pub static GPU_META: OnceLock<GpuMeta> = OnceLock::new();
 
+pub static GPU_DEVICE: OnceLock<Arc<wgpu::Device>> = OnceLock::new();
+pub static GPU_QUEUE: OnceLock<Arc<wgpu::Queue>> = OnceLock::new();
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
 pub struct UniData {
@@ -198,8 +201,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 "#;
 
 pub struct GpuState {
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
+    pub device: Arc<wgpu::Device>,
+    pub queue: Arc<wgpu::Queue>,
     pub surface: wgpu::Surface<'static>,
     pub config: wgpu::SurfaceConfiguration,
     pub size: (u32, u32),
@@ -256,7 +259,9 @@ pub struct GpuState {
     instance_stride: u64,
 
     bind_group_3d_cache: HashMap<u64, wgpu::BindGroup>,
-    
+    seen_storage_version: u64,
+    default_storage_buffer: wgpu::Buffer,
+
     cube_vertex: wgpu::Buffer,
     cube_index: wgpu::Buffer,
     cube_index_count: u32,
@@ -319,6 +324,12 @@ impl GpuState {
         };
         let instance_initial_capacity = instance_stride * 64;
 
+        let device_arc = Arc::new(device);
+        let queue_arc = Arc::new(queue);
+        let _ = GPU_DEVICE.set(device_arc.clone());
+        let _ = GPU_QUEUE.set(queue_arc.clone());
+        let device = device_arc;
+        let queue = queue_arc;
         let max_dim = device.limits().max_texture_dimension_2d;
         let limits = device.limits();
         let info = adapter.get_info();
@@ -490,8 +501,6 @@ impl GpuState {
                         visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
-                            // One big shared buffer; the per-instance offset
-                            // is supplied at set_bind_group time.
                             has_dynamic_offset: true,
                             min_binding_size: NonZeroU64::new(
                                 std::mem::size_of::<r3d::InstanceUniform3D>() as u64,
@@ -513,6 +522,16 @@ impl GpuState {
                         binding: 3,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: NonZeroU64::new(4),
+                        },
                         count: None,
                     },
                 ],
@@ -582,6 +601,13 @@ impl GpuState {
         });
         let sphere_index_count = sphere_mesh.indices.len() as u32;
 
+        let default_storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Ruzit 3D storage default"),
+            size: 4,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         Ok(Self {
             device,
             queue,
@@ -619,6 +645,8 @@ impl GpuState {
             instance_capacity_bytes: instance_initial_capacity,
             instance_stride,
             bind_group_3d_cache: HashMap::new(),
+            seen_storage_version: 0,
+            default_storage_buffer,
             cube_vertex,
             cube_index,
             cube_index_count,
@@ -1114,13 +1142,23 @@ impl GpuState {
         );
         let proj = r3d::perspective_matrix(cam.fov_deg, aspect, cam.near, cam.far);
         let view_proj = r3d::mat4_mul(proj, view);
+        let lighting = renderable::lighting_snapshot();
         let frame = r3d::FrameUniform3D {
-            
             view_proj: r3d::transpose4(view_proj),
-            light_dir: normalize3([-0.4, -1.0, -0.3]),
+            light_dir: normalize3([
+                lighting.sun_direction.x,
+                lighting.sun_direction.y,
+                lighting.sun_direction.z,
+            ]),
             time,
             camera_pos: [cam.cframe.position.x, cam.cframe.position.y, cam.cframe.position.z],
-            _pad: 0.0,
+            frame_index: lighting.frame_index,
+            sun_color: [lighting.sun_color.r, lighting.sun_color.g, lighting.sun_color.b],
+            _pad0: 0.0,
+            ambient: [lighting.ambient.r, lighting.ambient.g, lighting.ambient.b],
+            _pad1: 0.0,
+            viewport: [self.size.0 as f32, self.size.1 as f32],
+            _pad2: [0.0, 0.0],
         };
         self.queue.write_buffer(&self.frame_uniform, 0, bytemuck::bytes_of(&frame));
 
@@ -1147,6 +1185,12 @@ impl GpuState {
                     model: r3d::transpose4(model_mat),
                     color,
                     params,
+                    flags: [
+                        if part.cast_shadow { 1 } else { 0 },
+                        if part.receive_shadow { 1 } else { 0 },
+                        0,
+                        0,
+                    ],
                 };
                 let offset = i * stride;
                 staging[offset..offset + inst_size]
@@ -1187,6 +1231,13 @@ impl GpuState {
             })
             .collect();
 
+        let storage_version = crate::libs::gpu::current_storage_version();
+        if storage_version != self.seen_storage_version {
+            self.seen_storage_version = storage_version;
+            self.bind_group_3d_cache.clear();
+        }
+        let active_storage = crate::libs::gpu::current_storage();
+
         let inst_bind_size =
             NonZeroU64::new(std::mem::size_of::<r3d::InstanceUniform3D>() as u64);
         for part in &parts {
@@ -1201,6 +1252,9 @@ impl GpuState {
                     .unwrap_or(&self.white_view),
                 None => &self.white_view,
             };
+            let storage_buffer: &wgpu::Buffer = active_storage
+                .as_deref()
+                .unwrap_or(&self.default_storage_buffer);
             let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Ruzit 3D bind"),
                 layout: &self.bind_group_layout_3d,
@@ -1224,6 +1278,10 @@ impl GpuState {
                     wgpu::BindGroupEntry {
                         binding: 3,
                         resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: storage_buffer.as_entire_binding(),
                     },
                 ],
             });

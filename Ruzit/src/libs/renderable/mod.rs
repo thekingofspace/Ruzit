@@ -57,15 +57,50 @@ pub struct PartState {
     pub alive: bool,
     pub attached: Vec<AttachedShader3D>,
     pub changed_signal: Table,
-    
+
     pub model: Option<ModelRef>,
-    
+
     pub texture: Option<PartTextureRef>,
+
+    pub cast_shadow: bool,
+    pub receive_shadow: bool,
+    pub ignore_raycast: bool,
 }
 
 thread_local! {
     static PARTS: RefCell<Vec<Arc<Mutex<PartState>>>> = const { RefCell::new(Vec::new()) };
     static CAMERA: RefCell<CameraState> = RefCell::new(CameraState::default());
+    static LIGHTING: RefCell<LightingState> = RefCell::new(LightingState::default());
+    static FRAME_INDEX: RefCell<u32> = const { RefCell::new(0) };
+}
+
+#[derive(Clone, Copy)]
+pub struct LightingState {
+    pub sun_direction: Vector,
+    pub sun_color: Color3,
+    pub ambient: Color3,
+    pub frame_index: u32,
+}
+
+impl Default for LightingState {
+    fn default() -> Self {
+        Self {
+            sun_direction: Vector::new(-0.4, -1.0, -0.3),
+            sun_color: Color3::new(1.0, 1.0, 1.0),
+            ambient: Color3::new(0.25, 0.25, 0.25),
+            frame_index: 0,
+        }
+    }
+}
+
+pub fn lighting_snapshot() -> LightingState {
+    let mut snap = LIGHTING.with(|c| *c.borrow());
+    snap.frame_index = FRAME_INDEX.with(|f| {
+        let mut v = f.borrow_mut();
+        *v = v.wrapping_add(1);
+        *v
+    });
+    snap
 }
 
 pub struct CameraState {
@@ -118,6 +153,8 @@ pub struct PartRender {
     pub active_shader: Option<AttachedShader3D>,
     pub model: Option<ModelRef>,
     pub texture: Option<PartTextureRef>,
+    pub cast_shadow: bool,
+    pub receive_shadow: bool,
 }
 
 pub fn snapshot() -> Vec<PartRender> {
@@ -138,6 +175,8 @@ pub fn snapshot() -> Vec<PartRender> {
                     active_shader: s.attached.last().cloned(),
                     model: s.model.clone(),
                     texture: s.texture.clone(),
+                    cast_shadow: s.cast_shadow,
+                    receive_shadow: s.receive_shadow,
                 })
             })
             .collect()
@@ -168,6 +207,9 @@ impl PartHandle {
             changed_signal,
             model,
             texture: None,
+            cast_shadow: true,
+            receive_shadow: true,
+            ignore_raycast: false,
         }));
         PARTS.with(|cell| cell.borrow_mut().push(state.clone()));
         Ok(Self { state })
@@ -331,6 +373,45 @@ impl UserData for PartHandle {
                 s.changed_signal.clone()
             };
             fire_changed(lua, sig, "Render")
+        });
+
+        f.add_field_method_get("CastShadow", |_, this| {
+            Ok(this.state.lock().unwrap().cast_shadow)
+        });
+        f.add_field_method_set("CastShadow", |lua, this, value: bool| {
+            this.ensure_alive("set CastShadow")?;
+            let sig = {
+                let mut s = this.state.lock().unwrap();
+                s.cast_shadow = value;
+                s.changed_signal.clone()
+            };
+            fire_changed(lua, sig, "CastShadow")
+        });
+
+        f.add_field_method_get("ReceiveShadow", |_, this| {
+            Ok(this.state.lock().unwrap().receive_shadow)
+        });
+        f.add_field_method_set("ReceiveShadow", |lua, this, value: bool| {
+            this.ensure_alive("set ReceiveShadow")?;
+            let sig = {
+                let mut s = this.state.lock().unwrap();
+                s.receive_shadow = value;
+                s.changed_signal.clone()
+            };
+            fire_changed(lua, sig, "ReceiveShadow")
+        });
+
+        f.add_field_method_get("IgnoreInRaycast", |_, this| {
+            Ok(this.state.lock().unwrap().ignore_raycast)
+        });
+        f.add_field_method_set("IgnoreInRaycast", |lua, this, value: bool| {
+            this.ensure_alive("set IgnoreInRaycast")?;
+            let sig = {
+                let mut s = this.state.lock().unwrap();
+                s.ignore_raycast = value;
+                s.changed_signal.clone()
+            };
+            fire_changed(lua, sig, "IgnoreInRaycast")
         });
 
         f.add_field_method_get("Texture", |lua, this| -> mlua::Result<Value> {
@@ -532,6 +613,54 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     )?;
 
     t.set("Camera", lua.create_userdata(CameraHandle)?)?;
+
+    t.set(
+        "SetSun",
+        lua.create_function(
+            |_, (dir, color): (AnyUserData, Option<AnyUserData>)| -> mlua::Result<()> {
+                let d = *dir.borrow::<Vector>()?;
+                let c = match color {
+                    Some(ud) => Some(*ud.borrow::<Color3>()?),
+                    None => None,
+                };
+                LIGHTING.with(|cell| {
+                    let mut s = cell.borrow_mut();
+                    s.sun_direction = d;
+                    if let Some(c) = c {
+                        s.sun_color = c;
+                    }
+                });
+                Ok(())
+            },
+        )?,
+    )?;
+    t.set(
+        "SetSunColor",
+        lua.create_function(|_, color: AnyUserData| -> mlua::Result<()> {
+            let c = *color.borrow::<Color3>()?;
+            LIGHTING.with(|cell| cell.borrow_mut().sun_color = c);
+            Ok(())
+        })?,
+    )?;
+    t.set(
+        "SetAmbient",
+        lua.create_function(|_, color: AnyUserData| -> mlua::Result<()> {
+            let c = *color.borrow::<Color3>()?;
+            LIGHTING.with(|cell| cell.borrow_mut().ambient = c);
+            Ok(())
+        })?,
+    )?;
+    t.set(
+        "GetLighting",
+        lua.create_function(|lua, _: ()| -> mlua::Result<Table> {
+            let snap = LIGHTING.with(|c| *c.borrow());
+            let out = lua.create_table()?;
+            out.set("SunDirection", snap.sun_direction)?;
+            out.set("SunColor", snap.sun_color)?;
+            out.set("Ambient", snap.ambient)?;
+            Ok(out)
+        })?,
+    )?;
 
     Ok(t)
 }

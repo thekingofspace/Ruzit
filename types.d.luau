@@ -352,7 +352,8 @@ end
 -- 3D part fragment contract
 --   (FragmentAsset attached to BasePart)
 --
--- Same idea but with view/world data instead of window/screen data:
+-- Vertex inputs (already populated by the engine's vertex stage — read in
+-- the fragment as in.world_pos / in.world_normal / in.uv):
 --
 --   struct VsOut {
 --       @builtin(position) clip: vec4<f32>,
@@ -360,37 +361,149 @@ end
 --       @location(1) world_normal: vec3<f32>,    // already normalized
 --       @location(2) uv: vec2<f32>,
 --   };
+--
+-- Per-frame uniform — same value for every part this frame:
+--
 --   struct Frame {
 --       view_proj: mat4x4<f32>,
---       light_dir: vec3<f32>,                    // engine sun direction
---       time: f32,
+--       light_dir: vec3<f32>,        // sun direction (engine or
+--                                    // Renderable.SetSun)
+--       time: f32,                   // seconds since window opened
 --       camera_pos: vec3<f32>,
---       _pad: f32,
+--       frame_index: u32,            // increments every drawn frame —
+--                                    // useful for hash seeds, TAA jitter,
+--                                    // ping-pong patterns
+--       sun_color: vec3<f32>,        // engine or Renderable.SetSunColor
+--       ambient: vec3<f32>,          // engine or Renderable.SetAmbient
+--       viewport: vec2<f32>,         // window inner pixel size
 --   };
+--
+-- Per-part uniform — different for every BasePart drawn:
+--
 --   struct Instance {
---       model: mat4x4<f32>,
---       color: vec4<f32>,                        // BasePart.Color
---       params: array<vec4<f32>, 4>,
+--       model: mat4x4<f32>,                     // CFrame * Size
+--       color: vec4<f32>,                       // BasePart.Color
+--       params: array<vec4<f32>, 4>,            // your @ruzit param floats
+--       // Render hints — 0 or 1 each, set per-part from Lua:
+--       cast_shadow: u32,                       // BasePart.CastShadow
+--       receive_shadow: u32,                    // BasePart.ReceiveShadow
+--       _flag2: u32,                            // reserved
+--       _flag3: u32,                            // reserved
 --   };
+--
+-- Branching on flags inside a shader (manual shadows / stylized lighting):
+--   if (I.receive_shadow == 0u) {
+--       // emissive / sky / debug — skip darkening, return albedo as-is
+--       return vec4<f32>(I.color.rgb, I.color.a);
+--   }
+--   if (I.cast_shadow == 0u) {
+--       // hint that this part shouldn't darken its neighbors. Useful if
+--       // you implement contact-shadow-style AO that samples nearby parts
+--       // — bail early so this one contributes nothing.
+--   }
+--
+-- Available bindings:
 --   @group(0) @binding(0) var<uniform> F: Frame;
 --   @group(0) @binding(1) var<uniform> I: Instance;
---   @group(0) @binding(2) var IMG: texture_2d<f32>;     // BasePart.Texture
+--   @group(0) @binding(2) var IMG: texture_2d<f32>;     // BasePart.Texture,
+--                                                       // or 1×1 white
+--                                                       // when Texture=nil
 --   @group(0) @binding(3) var IMG_SAMP: sampler;
---   fn p(idx: u32) -> f32
+--   @group(0) @binding(4) var<storage, read> SDATA: array<f32>;
+--                            -- Optional read-only storage buffer.
+--                            -- Default is a 1-float stub. Populate from
+--                            -- Lua via GPU.NewBuffer + GPU.SetBuffer to
+--                            -- pass arbitrary float data — LUTs, particle
+--                            -- positions, animation curves, custom mesh
+--                            -- attributes. Up to your GPU's
+--                            -- max_storage_buffer_binding_size (typically
+--                            -- ≥ 128 MB on desktop). Indexed as
+--                            -- `SDATA[idx]`.
+--
+-- Engine-provided WGSL helpers (declared in the prelude — call directly):
+--   p(idx: u32) -> f32
+--     Read a `// @ruzit param` float by declaration index.
+--
+--   view_dir(world_pos) -> vec3<f32>
+--     Normalized vector from a pixel toward the camera. Use for fresnel +
+--     specular: `let v = view_dir(in.world_pos);`.
+--
+--   tangent_basis(n: vec3<f32>) -> mat3x3<f32>
+--     Cheap orthonormal frame (T, B, N) from a world-space normal. Stable
+--     across the surface; suitable for simple tangent-space tricks. Not
+--     UV-derivative based, so it won't perfectly match a baked normal map.
+--
+--   fresnel_schlick(cos_theta, F0: vec3<f32>) -> vec3<f32>
+--     Schlick Fresnel reflectance approximation. cos_theta = max(dot(N,V),0).
+--     F0 ≈ vec3(0.04) for dielectrics, metal albedo for metals.
+--
+--   to_screen_uv(world_pos) -> vec3<f32>
+--     Project a world point to (uv.xy, ndc.z). Top-left-origin uv. Returns
+--     vec3(-1,-1,-1) for points behind the camera.
+--
+--   linearize_depth(d, near, far) -> f32
+--     Convert a depth-buffer value (0..1) to linear view-space distance.
+--
+--   srgb_to_linear(c) -> vec3<f32>
+--   linear_to_srgb(c) -> vec3<f32>
+--     Standard gamma curves. The swap-chain is sRGB so you usually don't
+--     need these — included for shaders that want to do their own grading
+--     in linear space.
+--
+--   hash3(p: vec3<f32>) -> vec3<f32>
+--     Cheap deterministic [0,1] hash, three components. Seed it from
+--     in.world_pos * scale for stylized noise. Not cryptographic.
 --
 -- Required entry point:
 --   @fragment
 --   fn fs_main(in: VsOut) -> @location(0) vec4<f32> { ... }
 --
--- Minimum useful shader (replicates the default half-Lambert lighting):
+-- Minimum useful shader (replicates the engine default — sun + ambient
+-- half-Lambert lighting, sun color tint):
 --   @fragment
 --   fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 --       let n = normalize(in.world_normal);
 --       let nl = dot(n, -F.light_dir);
---       let lit = 0.25 + 0.75 * (nl * 0.5 + 0.5);   // half-Lambert + ambient
+--       let half_lambert = nl * 0.5 + 0.5;
+--       let lit = F.ambient + F.sun_color * half_lambert;
 --       let tex = textureSample(IMG, IMG_SAMP, in.uv);
 --       return vec4<f32>(I.color.rgb * tex.rgb * lit, I.color.a);
 --   }
+--
+-- Storage-buffer example — color-grading LUT keyed by pixel luma:
+--   // @ruzit param size              // number of LUT entries
+--   @fragment
+--   fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+--       let base = textureSample(IMG, IMG_SAMP, in.uv).rgb * I.color.rgb;
+--       let lum = dot(base, vec3<f32>(0.299, 0.587, 0.114));
+--       let n = u32(p(0u));
+--       let i = u32(clamp(lum * f32(n - 1u), 0.0, f32(n - 1u)));
+--       let r = SDATA[i * 3u + 0u];
+--       let g = SDATA[i * 3u + 1u];
+--       let b = SDATA[i * 3u + 2u];
+--       return vec4<f32>(r, g, b, I.color.a);
+--   }
+--
+--   -- Lua side:
+--   local lut = GPU.NewBuffer(256 * 3)
+--   for i = 0, 255 do
+--       local t = i / 255
+--       lut:Write(i * 3, { t, t * 0.5 + 0.25, 1.0 - t })
+--   end
+--   GPU.SetBuffer(lut)
+--   part:SetData(myShader, "size", 256)
+--
+-- ──────────────────────────────────────────────────────────────────────────
+-- Coming later (NOT yet implemented):
+--   * Render-to-texture: render the 3D scene from any camera into a
+--     reusable Texture you can sample from another shader (mirrors,
+--     security cams, planar reflections, refraction). Needs a ping-pong
+--     scene-target system in the renderer.
+--   * Real shadow maps: an automatic light-POV depth pass + shadow
+--     comparison sampler binding. The Frame uniform will gain a
+--     `shadow_view_proj`, and a new `texture_depth_2d` + `sampler_comparison`
+--     binding will appear. Existing shaders won't break — those bindings
+--     just won't exist until the feature lands.
 --
 -- =============================================================================
 
@@ -887,8 +1000,26 @@ declare class BasePart
 	Render: boolean
 	-- Optional surface texture. Uses the part's Color as a tint.
 	Texture: ImageAsset?
-	-- Property-change signal. Fires with one of: "CFrame", "Size", "Color",
-	-- "Render", "Texture", "Destroyed".
+	-- Render-hint flags. None of these change the engine's default
+	-- lighting yet — they're plumbed straight through to every 3D
+	-- fragment shader as `I.cast_shadow` / `I.receive_shadow` (u32 0/1)
+	-- so user shaders (and eventually the engine's automatic shadow
+	-- pass) can branch on them. Defaults: both true.
+	-- Turn ReceiveShadow off on skies, emissive geometry, and pure
+	-- debug overlays so they don't pick up your manual shadow term;
+	-- turn CastShadow off on selection outlines / fx-only meshes that
+	-- shouldn't darken anything else.
+	CastShadow: boolean
+	ReceiveShadow: boolean
+	-- When true, GPU.Raycast skips this part entirely. Default false.
+	-- Use it for "ghost" parts (debug overlays, UI anchors, fx-only
+	-- meshes) that shouldn't catch mouse picks. Unrelated to shadows
+	-- mechanically — grouped here because it's the third in the family
+	-- of render-hint toggles.
+	IgnoreInRaycast: boolean
+	-- Property-change signal. Fires with one of: "CFrame", "Size",
+	-- "Color", "Render", "Texture", "CastShadow", "ReceiveShadow",
+	-- "IgnoreInRaycast", "Destroyed".
 	Changed: Signal<string>
 	-- Remove the part from the scene. Connections to Changed still receive
 	-- one final "Destroyed" fire.
@@ -922,6 +1053,21 @@ export type Renderable_API = {
 	-- The active 3D camera. Same instance the window uses; mutate it to move
 	-- the view. Also exposed as WindowHandle:GetViewport().
 	Camera: Camera,
+	-- Set the directional sun. `direction` points FROM the sun toward the
+	-- scene (the engine's default is roughly Vector.new(-0.4, -1.0, -0.3),
+	-- a top-down-front angle). `color` is optional — if omitted the
+	-- existing sun color is preserved. Reflects in every 3D shader's
+	-- F.light_dir / F.sun_color.
+	SetSun: (direction: Vector, color: Color3?) -> (),
+	-- Tint the sun without changing direction.
+	SetSunColor: (color: Color3) -> (),
+	-- Set the ambient light term added to every lit pixel before the sun
+	-- contribution. Default is Color3.new(0.25, 0.25, 0.25). Reflects in
+	-- every 3D shader's F.ambient.
+	SetAmbient: (color: Color3) -> (),
+	-- Snapshot the current lighting state. Useful for debug overlays or
+	-- saving to a level file.
+	GetLighting: () -> { SunDirection: Vector, SunColor: Color3, Ambient: Color3 },
 }
 
 
@@ -1639,7 +1785,42 @@ export type GPU_API = {
 	--   (nil, true)  — point is at or behind the near plane; no projection.
 	-- Useful for billboards, world-anchored UI, off-screen indicators.
 	WorldToScreen: (world: Vector) -> (Dim?, boolean),
+	-- Allocate a GPU storage buffer of `size` floats. Memory lives on the
+	-- GPU and is read-only inside shaders, available as `SDATA: array<f32>`
+	-- at @group(0) @binding(4) in any 3D fragment shader once you call
+	-- GPU.SetBuffer. The buffer is freed when the GPUBuffer userdata is
+	-- garbage-collected.
+	--
+	-- Example:
+	--   local lut = GPU.NewBuffer(256 * 3)
+	--   for i = 0, 255 do
+	--       local t = i / 255
+	--       lut:Write(i * 3, { t, t * 0.5, 1.0 - t })
+	--   end
+	--   GPU.SetBuffer(lut)
+	NewBuffer: (size: number) -> GPUBuffer,
+	-- Bind a GPUBuffer as the active SDATA storage. Cheap to swap between
+	-- frames — bind groups are rebuilt only when the binding identity
+	-- changes. Until cleared, every 3D shader sees this buffer's data.
+	SetBuffer: (buffer: GPUBuffer) -> (),
+	-- Unbind the active storage buffer. SDATA reverts to a 1-float stub
+	-- so shaders that don't reference it keep working.
+	ClearBuffer: () -> (),
 }
+
+declare class GPUBuffer
+	-- Number of f32 slots. Same value as the `size` arg passed to
+	-- GPU.NewBuffer; doesn't change after construction.
+	function Size(self): number
+	-- Write a list of f32 values into the buffer at `offset` (in floats,
+	-- not bytes). Bounds-checked — writing past the end errors instead of
+	-- corrupting adjacent GPU memory. Cheap; just one queue.write_buffer
+	-- under the hood, no submit/wait.
+	function Write(self, offset: number, values: { number }): ()
+	-- Fill the entire buffer with one value. Convenience for clearing
+	-- (Fill(0)) or initializing to a sentinel.
+	function Fill(self, value: number): ()
+end
 
 
 -- =============================================================================

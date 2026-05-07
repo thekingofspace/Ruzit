@@ -66,11 +66,6 @@ fn actor_new(
     spawn_actor("Actor.new", source, threads)
 }
 
-// Actor.FromFile(path, threads?) — load `path` through the same resolver
-// `require` uses (relative to the calling script, package-relative @PkgId/...,
-// auto .luau / .lua / init.luau extension), grab its raw text, and ship that
-// to the worker pool as if it had been passed inline. Lets you keep worker
-// code in its own file instead of inside a `[[...]]` string literal.
 fn actor_from_file(
     _lua: &Lua,
     args: MultiValue,

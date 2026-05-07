@@ -1,9 +1,11 @@
 use std::cell::RefCell;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::Instant;
 
-use mlua::{AnyUserData, Lua, MultiValue, Table, Value};
+use mlua::{AnyUserData, Lua, MultiValue, Table, UserData, UserDataMethods, Value};
 
-use crate::libs::gui::render::{GPU_META, GpuMeta};
+use crate::libs::gui::render::{GPU_DEVICE, GPU_META, GPU_QUEUE, GpuMeta};
 use crate::libs::primitives::{CFrame, Vector};
 use crate::libs::renderable::{self, PartHandle, PartShape, PartState};
 
@@ -11,6 +13,16 @@ const DEFAULT_MAX_DISTANCE: f32 = 1.0e6;
 
 thread_local! {
     static FRAME_STATS: RefCell<FrameTracker> = RefCell::new(FrameTracker::new());
+}
+
+static ACTIVE_STORAGE: Mutex<Option<Arc<wgpu::Buffer>>> = Mutex::new(None);
+static STORAGE_VERSION: AtomicU64 = AtomicU64::new(0);
+
+pub fn current_storage() -> Option<Arc<wgpu::Buffer>> {
+    ACTIVE_STORAGE.lock().unwrap().clone()
+}
+pub fn current_storage_version() -> u64 {
+    STORAGE_VERSION.load(AtomicOrdering::SeqCst)
 }
 
 struct FrameTracker {
@@ -52,7 +64,95 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     t.set("Raycast", lua.create_function(raycast)?)?;
     t.set("ScreenToRay", lua.create_function(screen_to_ray)?)?;
     t.set("WorldToScreen", lua.create_function(world_to_screen)?)?;
+    t.set("NewBuffer", lua.create_function(new_buffer)?)?;
+    t.set("SetBuffer", lua.create_function(set_buffer)?)?;
+    t.set("ClearBuffer", lua.create_function(clear_buffer)?)?;
     Ok(t)
+}
+
+pub struct GPUBuffer {
+    buffer: Arc<wgpu::Buffer>,
+    floats: usize,
+}
+
+impl UserData for GPUBuffer {
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method("Size", |_, this, _: ()| Ok(this.floats as i64));
+        m.add_method(
+            "Write",
+            |_, this, (offset, values): (i64, Vec<f32>)| -> mlua::Result<()> {
+                if offset < 0 {
+                    return Err(mlua::Error::RuntimeError(
+                        "GPUBuffer:Write: offset must be >= 0".into(),
+                    ));
+                }
+                let off = offset as usize;
+                if off + values.len() > this.floats {
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "GPUBuffer:Write: writing {} floats at offset {} exceeds buffer size {}",
+                        values.len(),
+                        off,
+                        this.floats
+                    )));
+                }
+                let queue = GPU_QUEUE.get().ok_or_else(|| {
+                    mlua::Error::RuntimeError(
+                        "GPUBuffer:Write: GPU not initialized (open a window first)".into(),
+                    )
+                })?;
+                let bytes: &[u8] = bytemuck::cast_slice(&values);
+                queue.write_buffer(&this.buffer, (off as u64) * 4, bytes);
+                Ok(())
+            },
+        );
+        m.add_method("Fill", |_, this, value: f32| -> mlua::Result<()> {
+            let queue = GPU_QUEUE.get().ok_or_else(|| {
+                mlua::Error::RuntimeError(
+                    "GPUBuffer:Fill: GPU not initialized (open a window first)".into(),
+                )
+            })?;
+            let v = vec![value; this.floats];
+            queue.write_buffer(&this.buffer, 0, bytemuck::cast_slice(&v));
+            Ok(())
+        });
+    }
+}
+
+fn new_buffer(_lua: &Lua, size: i64) -> mlua::Result<GPUBuffer> {
+    if size <= 0 {
+        return Err(mlua::Error::RuntimeError(
+            "GPU.NewBuffer: size must be > 0".into(),
+        ));
+    }
+    let device = GPU_DEVICE.get().ok_or_else(|| {
+        mlua::Error::RuntimeError(
+            "GPU.NewBuffer: GPU not initialized (open a window first)".into(),
+        )
+    })?;
+    let bytes = (size as u64) * 4;
+    let buffer = Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Ruzit user storage buffer"),
+        size: bytes,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    }));
+    Ok(GPUBuffer {
+        buffer,
+        floats: size as usize,
+    })
+}
+
+fn set_buffer(_lua: &Lua, buf: AnyUserData) -> mlua::Result<()> {
+    let b = buf.borrow::<GPUBuffer>()?;
+    *ACTIVE_STORAGE.lock().unwrap() = Some(Arc::clone(&b.buffer));
+    STORAGE_VERSION.fetch_add(1, AtomicOrdering::SeqCst);
+    Ok(())
+}
+
+fn clear_buffer(_lua: &Lua, _: ()) -> mlua::Result<()> {
+    *ACTIVE_STORAGE.lock().unwrap() = None;
+    STORAGE_VERSION.fetch_add(1, AtomicOrdering::SeqCst);
+    Ok(())
 }
 
 fn meta_or_default() -> GpuMeta {
@@ -194,7 +294,7 @@ fn raycast(
     for state_arc in renderable::list_part_states() {
         let snap = {
             let s = state_arc.lock().unwrap();
-            if !s.alive || !s.render {
+            if !s.alive || !s.render || s.ignore_raycast {
                 continue;
             }
             (s.shape, s.cframe, s.size)

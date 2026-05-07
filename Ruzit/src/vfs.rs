@@ -246,10 +246,6 @@ fn bundle_resolve(
 
     let (caller_pkg_id, caller_inner) = split_owner(caller, default_id);
     let pkg = packages.get(caller_pkg_id)?;
-    // Use the caller's package's own file_type so a DLC declared as
-    // Relative resolves require/Actor.FromFile relative to the caller even
-    // when the host project is set to Global — and vice versa. This was
-    // previously hard-coded to the default (host) package's setting.
     let base = match pkg.file_type {
         FileType::Relative => {
             let dir = Path::new(caller_inner).parent().unwrap_or(Path::new(""));
