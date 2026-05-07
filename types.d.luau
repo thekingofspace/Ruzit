@@ -122,6 +122,33 @@ declare class FontAsset
 end
 
 export type Asset_API = {
+	-- Load a typed asset from your project's assets/ folder (when running
+	-- `Ruzit Test`) or from a bundled .managed package (in a built game).
+	--
+	-- kind picks both the loader and the return type. Each kind accepts a
+	-- fixed set of file extensions, so you usually pass the path WITHOUT one:
+	--   Image    .png .jpg .jpeg .bmp .gif .webp
+	--   Sound    .ogg .mp3 .wav .flac
+	--   Shader   .shader .glsl .wgsl .hlsl .vert .metal
+	--   Fragment .frag .fragment .fs .glslf
+	--   Model    .obj .fbx
+	--   Font     .ttf .otf
+	--   File     any file — returned as its raw UTF-8 string contents
+	--
+	-- path forms:
+	--   "foo.bar.baz"     — same package as the caller. Dots are folder
+	--                       separators, so this maps to foo/bar/baz under the
+	--                       package's assets/ root.
+	--   "@PkgId/foo/bar"  — explicit cross-package lookup. Use this to read an
+	--                       asset out of another loaded .managed package by id.
+	--   "foo/bar.png"     — a literal extension also works; the loader uses it
+	--                       directly instead of probing the kind's ext list.
+	--
+	-- examples:
+	--   Asset.GetAsset("Image", "ui.logo")              -- assets/ui/logo.png
+	--   Asset.GetAsset("Model", "props.crate")          -- assets/props/crate.fbx (or .obj)
+	--   Asset.GetAsset("Sound", "@SfxPack/explode")     -- from a sibling package
+	--   Asset.GetAsset("File",  "data/levels.json")     -- raw text contents
 	GetAsset: ((kind: "Image", path: string) -> ImageAsset)
 		& ((kind: "Sound", path: string) -> SoundData)
 		& ((kind: "Shader", path: string) -> ShaderAsset)
@@ -471,6 +498,10 @@ export type Mouse_API = {
 	Moved: Signal<Dim, Dim>,
 	-- Fires with (button: MouseButton, pressed: boolean).
 	InputReceived: Signal<MouseButton, boolean>,
+	-- Fires with (deltaX: number, deltaY: number) in lines (one notch of a
+	-- standard mouse wheel = ±1). +deltaY is scroll up / away from the user;
+	-- +deltaX is scroll right. Precise touchpads emit fractional values.
+	Scrolled: Signal<number, number>,
 	SetCursor: (self: Mouse_API, name: CursorName) -> (),
 	Lock: (self: Mouse_API) -> (),
 	Unlock: (self: Mouse_API) -> (),
@@ -760,7 +791,68 @@ export type Steam_API = {
 }
 
 
+declare class Actor
+	-- Hand args off to a worker thread. The args are deep-copied across the
+	-- thread boundary, so mutating them after Push has no effect on the worker.
+	-- Allowed types: nil, boolean, number, string, table (recursively, with
+	-- only those types as keys/values). Functions, userdata, threads, etc.
+	-- are rejected — workers can't share Luau state with the main thread.
+	function Push(self, ...: any): ()
+	-- Non-blocking. Returns the next ready result's values if a worker has
+	-- finished, or no values if nothing is ready yet. Order is "first to
+	-- finish, first out" (NOT Push order — work runs in parallel).
+	-- Re-raises any error a worker hit while running its function.
+	function Pop(self): ...any
+	-- Number of jobs currently in flight + ready results not yet popped.
+	-- Drain pattern:
+	--   while actor:Pending() > 0 do
+	--       local r = actor:Pop()
+	--       if r ~= nil then ... end
+	--   end
+	function Pending(self): number
+	-- How many worker threads back this actor.
+	function Threads(self): number
+	-- Stop accepting new jobs and let workers exit once they finish their
+	-- current call. Already-completed results stay drainable via Pop after
+	-- Close. Idempotent.
+	function Close(self): ()
+end
+
+export type Actor_API = {
+	-- Spawn a worker pool that runs the given Luau chunk in parallel on
+	-- other CPU cores. The chunk is plain Luau source (compiled once on the
+	-- main thread, bytecode shipped to every worker) and MUST evaluate to
+	-- a function — that function is what each Push invokes.
+	--
+	-- Workers run in completely isolated Luau states: they get math, table,
+	-- string, bit32, buffer, utf8, coroutine, and the basic library — but
+	-- NO `import`, `require`, `print`, `loadstring`, `dofile`, or
+	-- `__dirname`. Workers cannot touch the main thread's globals, GUI,
+	-- assets, sockets, or anything else import-shaped. Pass everything they
+	-- need as arguments to Push.
+	--
+	-- threads defaults to the number of CPU cores. Pass an explicit count
+	-- for fine control (e.g. 1 for serial, 2 for I/O-bound work, etc.).
+	--
+	-- Example:
+	--   local fib = Actor.new([[
+	--       return function(n)
+	--           if n < 2 then return n end
+	--           local a, b = 0, 1
+	--           for _ = 2, n do a, b = b, a + b end
+	--           return b
+	--       end
+	--   ]])
+	--   for i = 1, 32 do fib:Push(i) end
+	--   while fib:Pending() > 0 do
+	--       local v = fib:Pop()
+	--       if v ~= nil then print(v) end
+	--   end
+	new: (source: string, threads: number?) -> Actor,
+}
+
 export type Imports = {
+	Actor: Actor_API,
 	Asset: Asset_API,
 	GUI: GUI_API,
 	IO: IO_API,

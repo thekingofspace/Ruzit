@@ -1,3 +1,4 @@
+pub mod actor;
 pub mod asset;
 pub mod gui;
 pub mod input;

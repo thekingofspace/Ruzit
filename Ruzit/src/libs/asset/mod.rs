@@ -230,7 +230,7 @@ fn read_file_bytes(fs: &Fs, owner: &str, path: &str) -> mlua::Result<Vec<u8>> {
                 .map_err(|e| {
                     mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' base64 decode: {e}"))
                 })?;
-            if pkg.compressed {
+            if pkg.assets_compressed {
                 zstd::stream::decode_all(raw.as_slice()).map_err(|e| {
                     mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' zstd: {e}"))
                 })
@@ -392,7 +392,7 @@ fn read_bytes(
                 .map_err(|e| {
                     mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' base64 decode: {e}"))
                 })?;
-            let bytes = if pkg.compressed {
+            let bytes = if pkg.assets_compressed {
                 zstd::stream::decode_all(raw.as_slice()).map_err(|e| {
                     mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' zstd: {e}"))
                 })?

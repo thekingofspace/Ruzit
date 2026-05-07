@@ -21,9 +21,14 @@ pub struct Package {
 
 
     pub assets: HashMap<String, String>,
-    /// When true, every value in `files` and `assets` is base64(zstd(raw)).
-    /// Decompressed lazily on access.
-    pub compressed: bool,
+    /// Compression of each side is tracked independently because a third-party
+    /// `.managed` package dropped into `Packages/` can have its scripts and
+    /// assets bundles built with different `compress_scripts` / `compress_assets`
+    /// settings than the host project. Each is the value of the per-file
+    /// `"compressed"` header in the source `.managed` JSON; decompression is
+    /// lazy on access (vfs::read_module / Asset.GetAsset).
+    pub scripts_compressed: bool,
+    pub assets_compressed: bool,
 }
 
 #[derive(Clone)]
@@ -125,7 +130,7 @@ pub fn read_module(fs: &Fs, key: &str) -> Option<String> {
             let (pkg_id, inner) = split_owner(key, default_id);
             let pkg = packages.get(pkg_id)?;
             let stored = pkg.files.get(inner)?;
-            if pkg.compressed {
+            if pkg.scripts_compressed {
                 use base64::Engine;
                 let compressed = base64::engine::general_purpose::STANDARD
                     .decode(stored.as_bytes())

@@ -305,14 +305,17 @@ impl ApplicationHandler for WindowApp {
             }
         };
 
-        // Now that the surface is configured, apply fullscreen / always-on-top
-        // / maximized — same flags as create-time but applied after init so
-        // no mode-switch happens during surface bring-up.
+        // Now that the surface is configured, apply fullscreen — applied after
+        // init so no mode-switch happens during surface bring-up. Borderless
+        // intentionally stays at the normal window level: it covers the
+        // taskbar + other apps via Fullscreen::Borderless, but does NOT pin
+        // itself above unfocused windows. That way Alt+Tab brings Discord /
+        // browser tabs cleanly to the front, and Steam / Discord overlays
+        // (which inject into the game's swapchain) keep rendering on top
+        // automatically. Pass `always_on_top = true` only for windowed cases.
         if want_fullscreen {
             window.set_fullscreen(Some(Fullscreen::Borderless(None)));
-            if self.opts.always_on_top {
-                window.set_window_level(WindowLevel::AlwaysOnTop);
-            }
+            window.set_window_level(WindowLevel::Normal);
         }
 
         self.window = Some(window);
@@ -365,6 +368,9 @@ impl ApplicationHandler for WindowApp {
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 input::on_mouse_input(button, state);
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                input::on_mouse_wheel(delta);
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 input::on_keyboard_input(
@@ -428,6 +434,8 @@ impl UserData for WindowHandle {
         // Same semantics as the Open-time `borderless` flag: enters
         // Fullscreen::Borderless (covers the OS taskbar) on `true`, exits
         // back to a normal window on `false`. Strips decorations either way.
+        // Also forces window-level back to Normal so the window doesn't pin
+        // above other apps when the user Alt+Tabs away.
         m.add_method("SetBorderless", |_, _, b: bool| {
             with_window(|win| {
                 win.set_decorations(!b);
@@ -436,6 +444,9 @@ impl UserData for WindowHandle {
                 } else {
                     None
                 });
+                if b {
+                    win.set_window_level(WindowLevel::Normal);
+                }
             });
             Ok(())
         });
@@ -453,6 +464,9 @@ impl UserData for WindowHandle {
                 } else {
                     None
                 });
+                if b {
+                    win.set_window_level(WindowLevel::Normal);
+                }
             });
             Ok(())
         });

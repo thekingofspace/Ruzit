@@ -13,6 +13,14 @@ use crate::config::FileType;
 
 pub const MAGIC: &[u8; 8] = b"RUZITPKG";
 
+/// Drop pre-built `.managed` files (your own or someone else's) into a
+/// `Packages/` folder at the project root. `Ruzit Test` loads them alongside
+/// the project's own bundle, and `Ruzit Build` copies them straight into
+/// `Generated/Managed/` so the shipped game can `import("@PkgId/...")` them
+/// at runtime. Subfolders are ignored — only loose `.managed` files at the
+/// top level of `Packages/` are picked up.
+pub const PACKAGES_DIR_NAME: &str = "Packages";
+
 
 pub struct LauncherInfo {
     pub default_id: String,
@@ -33,10 +41,12 @@ pub struct LoadedPackage {
     pub physical_root: Option<std::path::PathBuf>,
     pub files: HashMap<String, String>,
     pub assets: HashMap<String, String>,
-    /// When true, every value in `files` and `assets` is base64(zstd(raw)).
-    /// Decompressed lazily on access — vfs::read_module for scripts,
-    /// Asset.GetAsset for assets.
-    pub compressed: bool,
+    /// Tracked independently per side because a `.managed` package authored
+    /// elsewhere (dropped into `Packages/`) may have used different
+    /// compression settings than the project consuming it. Each value is the
+    /// `"compressed"` header from the source `.managed` JSON for that side.
+    pub scripts_compressed: bool,
+    pub assets_compressed: bool,
 }
 
 
@@ -125,6 +135,8 @@ fn walk_for_dlcs(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), 
             || rel.starts_with(".git/")
             || rel.starts_with("Generated/")
             || rel.starts_with("target/")
+            || rel == PACKAGES_DIR_NAME
+            || rel.starts_with(&format!("{PACKAGES_DIR_NAME}/"))
         {
             continue;
         }
@@ -368,11 +380,19 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
             physical_root: None,
             files: HashMap::new(),
             assets: HashMap::new(),
-            compressed: false,
+            scripts_compressed: false,
+            assets_compressed: false,
         });
-        if parsed.get("compressed").and_then(|v| v.as_bool()).unwrap_or(false) {
-            pkg.compressed = true;
-        }
+        // Each `.managed` file carries its own `"compressed"` flag in the
+        // header. We assign it to the matching side (scripts vs assets) so an
+        // imported third-party package whose scripts were built with
+        // `compress_scripts = true` but assets with `compress_assets = false`
+        // (or vice versa) decodes correctly. The shard manifest carries the
+        // same flag on behalf of every shard it indexes.
+        let header_compressed = parsed
+            .get("compressed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         if let Some(s) = parsed.get("name").and_then(|v| v.as_str()) {
             pkg.name = s.to_string();
@@ -386,6 +406,7 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
 
         match kind {
             "scripts" => {
+                pkg.scripts_compressed = header_compressed;
                 if let Some(s) = parsed.get("entry").and_then(|v| v.as_str()) {
                     pkg.entry = s.to_string();
                 }
@@ -400,18 +421,17 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
                             // Preserve the encoded form when compressed —
                             // decompression + BOM stripping happens in
                             // vfs::read_module on access.
-                            let stored = if pkg.compressed { s.to_string() } else { strip_bom(s.to_string()) };
+                            let stored = if header_compressed { s.to_string() } else { strip_bom(s.to_string()) };
                             pkg.files.insert(k.clone(), stored);
                         }
                     }
                 }
             }
-            "assets" => {
+            "assets" | "assets_manifest" => {
+                pkg.assets_compressed = header_compressed;
                 if let Some(obj) = parsed.get("assets").and_then(|v| v.as_object()) {
                     for (k, v) in obj {
                         if let Some(b64) = v.as_str() {
-                            
-                            
                             pkg.assets.insert(k.clone(), b64.to_string());
                         }
                     }

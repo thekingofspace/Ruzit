@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use mlua::{Lua, MultiValue, Table, Value};
-use winit::event::{ElementState, MouseButton};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 use winit::keyboard::{Key, NamedKey, PhysicalKey};
 use winit::window::{CursorIcon, Window as WinitWindow};
 
@@ -14,6 +14,7 @@ use crate::libs::signal;
 
 const MOUSE_MOVED_KEY: &str = "ruzit_mouse_moved";
 const MOUSE_INPUT_KEY: &str = "ruzit_mouse_input";
+const MOUSE_SCROLL_KEY: &str = "ruzit_mouse_scroll";
 const KEYBOARD_INPUT_KEY: &str = "ruzit_keyboard_input";
 
 thread_local! {
@@ -42,6 +43,7 @@ struct InputState {
     
     pending_moves: Vec<MoveEvent>,
     pending_mouse_input: Vec<MouseInputEvent>,
+    pending_scroll: Vec<MouseScrollEvent>,
     pending_key_input: Vec<KeyInputEvent>,
 }
 
@@ -57,6 +59,12 @@ struct MoveEvent {
 struct MouseInputEvent {
     button: String,
     pressed: bool,
+}
+
+#[derive(Clone, Copy)]
+struct MouseScrollEvent {
+    dx: f32,
+    dy: f32,
 }
 
 #[derive(Clone)]
@@ -148,9 +156,11 @@ pub fn install(lua: &Lua) -> mlua::Result<()> {
     });
     let mouse_moved = signal::new_instance(lua)?;
     let mouse_input = signal::new_instance(lua)?;
+    let mouse_scroll = signal::new_instance(lua)?;
     let keyboard_input = signal::new_instance(lua)?;
     lua.set_named_registry_value(MOUSE_MOVED_KEY, mouse_moved)?;
     lua.set_named_registry_value(MOUSE_INPUT_KEY, mouse_input)?;
+    lua.set_named_registry_value(MOUSE_SCROLL_KEY, mouse_scroll)?;
     lua.set_named_registry_value(KEYBOARD_INPUT_KEY, keyboard_input)?;
     Ok(())
 }
@@ -161,6 +171,10 @@ pub fn moved_signal(lua: &Lua) -> mlua::Result<Table> {
 
 pub fn mouse_input_signal(lua: &Lua) -> mlua::Result<Table> {
     lua.named_registry_value(MOUSE_INPUT_KEY)
+}
+
+pub fn mouse_scroll_signal(lua: &Lua) -> mlua::Result<Table> {
+    lua.named_registry_value(MOUSE_SCROLL_KEY)
 }
 
 pub fn keyboard_input_signal(lua: &Lua) -> mlua::Result<Table> {
@@ -322,6 +336,27 @@ pub fn on_mouse_input(button: MouseButton, state: ElementState) {
     });
 }
 
+pub fn on_mouse_wheel(delta: MouseScrollDelta) {
+    // Normalize both winit delta variants to "lines" so Lua sees one
+    // consistent unit regardless of platform/device. PixelDelta usually
+    // comes from precise touchpads — divide by ~20 px/line which is the
+    // CSS / GTK convention. LineDelta comes from mouse wheels and reports
+    // notches directly. Sign convention: +y = scroll up (away from user),
+    // +x = scroll right.
+    let (dx, dy) = match delta {
+        MouseScrollDelta::LineDelta(x, y) => (x, y),
+        MouseScrollDelta::PixelDelta(p) => ((p.x / 20.0) as f32, (p.y / 20.0) as f32),
+    };
+    if dx == 0.0 && dy == 0.0 {
+        return;
+    }
+    STATE.with(|s| {
+        s.borrow_mut()
+            .pending_scroll
+            .push(MouseScrollEvent { dx, dy });
+    });
+}
+
 pub fn on_keyboard_input(physical: PhysicalKey, logical: &Key, state: ElementState, repeat: bool) {
     if repeat {
         
@@ -370,11 +405,12 @@ pub fn on_focus(window: &WinitWindow, focused: bool) {
 
 
 pub fn pump(lua: &Lua) {
-    let (moves, m_inputs, k_inputs) = STATE.with(|s| {
+    let (moves, m_inputs, scrolls, k_inputs) = STATE.with(|s| {
         let mut st = s.borrow_mut();
         (
             std::mem::take(&mut st.pending_moves),
             std::mem::take(&mut st.pending_mouse_input),
+            std::mem::take(&mut st.pending_scroll),
             std::mem::take(&mut st.pending_key_input),
         )
     });
@@ -420,6 +456,19 @@ pub fn pump(lua: &Lua) {
                 args.push_back(Value::Boolean(ev.pressed));
                 if let Err(e) = signal::fire(lua, &sig, args) {
                     eprintln!("[Mouse] InputReceived fire: {e}");
+                }
+            }
+        }
+    }
+
+    if !scrolls.is_empty() {
+        if let Ok(sig) = lua.named_registry_value::<Table>(MOUSE_SCROLL_KEY) {
+            for ev in scrolls {
+                let mut args = MultiValue::new();
+                args.push_back(Value::Number(ev.dx as f64));
+                args.push_back(Value::Number(ev.dy as f64));
+                if let Err(e) = signal::fire(lua, &sig, args) {
+                    eprintln!("[Mouse] Scrolled fire: {e}");
                 }
             }
         }

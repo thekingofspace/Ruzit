@@ -18,6 +18,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 "Cursor" => Ok(Value::String(lua.create_string(input::cursor_kind_name())?)),
                 "Moved" => Ok(Value::Table(input::moved_signal(lua)?)),
                 "InputReceived" => Ok(Value::Table(input::mouse_input_signal(lua)?)),
+                "Scrolled" => Ok(Value::Table(input::mouse_scroll_signal(lua)?)),
                 "SetCursor" => Ok(Value::Function(lua.create_function(
                     |_, (_self, name): (Value, String)| -> mlua::Result<()> {
                         let kind = CursorKind::from_name(&name)?;
@@ -79,9 +80,9 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                             "Mouse.Cursor expects a string".into(),
                         )),
                     },
-                    "Position" | "Moved" | "InputReceived" => Err(mlua::Error::RuntimeError(
-                        format!("Mouse.{key} is read-only"),
-                    )),
+                    "Position" | "Moved" | "InputReceived" | "Scrolled" => Err(
+                        mlua::Error::RuntimeError(format!("Mouse.{key} is read-only")),
+                    ),
                     other => Err(mlua::Error::RuntimeError(format!(
                         "Mouse: unknown property '{other}'"
                     ))),

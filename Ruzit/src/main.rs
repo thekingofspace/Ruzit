@@ -143,7 +143,8 @@ fn run_launcher(info: package::LauncherInfo) -> Result<(), String> {
                 physical_root: pkg.physical_root,
                 files: pkg.files,
                 assets: pkg.assets,
-                compressed: pkg.compressed,
+                scripts_compressed: pkg.scripts_compressed,
+                assets_compressed: pkg.assets_compressed,
             }),
         );
     }

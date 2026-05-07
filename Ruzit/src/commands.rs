@@ -65,11 +65,12 @@ pub fn cmd_test(arg: Option<&String>) -> Result<(), String> {
             physical_root: Some(root.clone()),
             files: def_files,
             assets: encode_assets_b64(def_assets),
-            compressed: false,
+            scripts_compressed: false,
+            assets_compressed: false,
         }),
     );
 
-    
+
     for dlc in &dlc_folders {
         let info = ManagedInfo::load(dlc)?;
         let (dlc_files, dlc_assets) = package::collect_project(dlc)?;
@@ -91,9 +92,51 @@ pub fn cmd_test(arg: Option<&String>) -> Result<(), String> {
                 physical_root: Some(dlc.clone()),
                 files: dlc_files,
                 assets: encode_assets_b64(dlc_assets),
-                compressed: false,
+                scripts_compressed: false,
+                assets_compressed: false,
             }),
         );
+    }
+
+    // Pull in pre-built .managed files from Packages/ (third-party packages,
+    // mods, etc.) and merge them into the runtime alongside the project's
+    // own bundle. Each becomes reachable via @PkgId/... from Lua. Same loader
+    // as the launcher uses at ship time, so behavior matches `Ruzit Build`.
+    let packages_dir = root.join(package::PACKAGES_DIR_NAME);
+    if packages_dir.is_dir() {
+        let external = package::load_managed_dir(&packages_dir)?;
+        if !external.is_empty() {
+            println!(
+                "[Ruzit] imported {} external package(s) from {}/: {}",
+                external.len(),
+                package::PACKAGES_DIR_NAME,
+                external.keys().cloned().collect::<Vec<_>>().join(", ")
+            );
+        }
+        for (id, lp) in external {
+            if packages.contains_key(&id) {
+                eprintln!(
+                    "[Ruzit] warn: external package id '{id}' clashes with the project or a DLC — skipping"
+                );
+                continue;
+            }
+            packages.insert(
+                id,
+                Arc::new(Package {
+                    id: lp.id,
+                    name: lp.name,
+                    version: lp.version,
+                    creator: lp.creator,
+                    entry: lp.entry,
+                    file_type: lp.file_type,
+                    physical_root: lp.physical_root,
+                    files: lp.files,
+                    assets: lp.assets,
+                    scripts_compressed: lp.scripts_compressed,
+                    assets_compressed: lp.assets_compressed,
+                }),
+            );
+        }
     }
 
     let fs_layer = Fs::Bundle {
@@ -273,7 +316,7 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         );
     }
 
-    
+
     let dlc_folders = package::find_dlc_folders(root)?;
     for dlc in &dlc_folders {
         match build_dlc(
@@ -302,6 +345,52 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         }
     }
 
+    // Copy any pre-built .managed files from Packages/ straight into
+    // Generated/Managed/. They're already encrypted in the on-disk format the
+    // launcher expects, so nothing to repack — bytes go through verbatim.
+    // Skips files whose target name is already present (so a third-party
+    // package can't clobber the project's own scripts/assets bundle).
+    copy_external_packages(root, &managed_dir)?;
+
+    Ok(())
+}
+
+fn copy_external_packages(root: &Path, managed_dir: &Path) -> Result<(), String> {
+    let src_dir = root.join(package::PACKAGES_DIR_NAME);
+    if !src_dir.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(&src_dir)
+        .map_err(|e| format!("read_dir {}: {e}", src_dir.display()))?
+    {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let src = entry.path();
+        if !src.is_file() {
+            continue;
+        }
+        if src.extension().and_then(|e| e.to_str()) != Some("managed") {
+            continue;
+        }
+        let Some(name) = src.file_name() else {
+            continue;
+        };
+        let dst = managed_dir.join(name);
+        if dst.exists() {
+            eprintln!(
+                "[Ruzit] warn: '{}' from {}/ overlaps a project Managed file — skipping",
+                name.to_string_lossy(),
+                package::PACKAGES_DIR_NAME
+            );
+            continue;
+        }
+        let bytes = fs::copy(&src, &dst)
+            .map_err(|e| format!("copy {}: {e}", src.display()))?;
+        println!(
+            "        Managed/{}  (imported, {} KB)",
+            name.to_string_lossy(),
+            bytes / 1024
+        );
+    }
     Ok(())
 }
 
@@ -543,18 +632,25 @@ pub fn cmd_init(arg: Option<&String>) -> Result<(), String> {
     // so the project's organization is up to you — group by feature
     // (`SoundsGuns/`, `ItemsTier1/`) or by type, whichever fits.
     let assets_dir = target.join("assets");
+    // `Packages/` is for dropping in pre-built .managed files (third-party
+    // packages, mods you've published, etc.). `Ruzit Test` loads them
+    // alongside the project, and `Ruzit Build` copies them into the final
+    // Generated/Managed/ output.
+    let packages_dir = target.join(package::PACKAGES_DIR_NAME);
 
     println!("[Ruzit] init → {} (name: {})", target.display(), project_name);
 
     let mut created = 0;
     let mut skipped = 0;
-    if assets_dir.exists() {
-        skipped += 1;
-    } else {
-        fs::create_dir_all(&assets_dir)
-            .map_err(|e| format!("mkdir {}: {e}", assets_dir.display()))?;
-        println!("  create {}/", display_rel(&target, &assets_dir));
-        created += 1;
+    for dir in [&assets_dir, &packages_dir] {
+        if dir.exists() {
+            skipped += 1;
+        } else {
+            fs::create_dir_all(dir)
+                .map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
+            println!("  create {}/", display_rel(&target, dir));
+            created += 1;
+        }
     }
     for (rel, template) in entries {
         let path = target.join(rel);
