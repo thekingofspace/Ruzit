@@ -640,11 +640,15 @@ declare class Dim
 end
 
 declare class Color3
-	-- 0..1 RGB channels (NOT 0..255). Use Color3_API.fromHex for hex strings.
+	-- Linear 0..1 RGB channels. The constructors clamp out-of-range inputs.
+	-- For 8-bit (0..255) channels use Color3.FromRGB; for hex strings use
+	-- Color3.FromHex.
 	R: number
 	G: number
 	B: number
+	-- Component-wise interpolation. t=0 returns self, t=1 returns other.
 	function Lerp(self, other: Color3, t: number): Color3
+	-- Channel-wise add / subtract. Result is clamped to 0..1.
 	function __add(self, other: Color3): Color3
 	function __sub(self, other: Color3): Color3
 end
@@ -693,9 +697,21 @@ export type Dim_API = {
 	new: (x: number, y: number) -> Dim,
 }
 export type Color3_API = {
-	-- Color3.new(r, g, b) — channels in 0..1.
+	-- Linear 0..1 channels. Out-of-range values are clamped.
+	-- Example: Color3.new(0.18, 0.55, 0.28) = a forest green.
 	new: (r: number, g: number, b: number) -> Color3,
-	-- Parse a CSS-style hex literal: "#RRGGBB", "#RGB", or just "RRGGBB".
+	-- 8-bit (0..255) channels — convenient for colors copied from a paint
+	-- program or design tool. Internally divided by 255 to the 0..1 range.
+	-- Example: Color3.FromRGB(46, 140, 71).
+	FromRGB: (r: number, g: number, b: number) -> Color3,
+	-- camelCase alias for FromRGB.
+	fromRGB: (r: number, g: number, b: number) -> Color3,
+	-- Parse a CSS-style hex literal. Accepts "#RRGGBB", "RRGGBB",
+	-- "#RGB" (each digit doubled), or "RGB". Throws on bad lengths /
+	-- non-hex chars.
+	-- Examples: Color3.FromHex("#2e8c47"), Color3.FromHex("ff0").
+	FromHex: (hex: string) -> Color3,
+	-- camelCase alias for FromHex.
 	fromHex: (hex: string) -> Color3,
 }
 export type Vector_API = {

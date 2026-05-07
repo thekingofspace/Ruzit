@@ -5,20 +5,6 @@ fn lerp_f(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
 
-fn clamp_u8_f(v: f32) -> u8 {
-    if v < 0.0 {
-        0
-    } else if v > 255.0 {
-        255
-    } else {
-        v as u8
-    }
-}
-
-fn clamp_u8_i(v: i64) -> u8 {
-    v.clamp(0, 255) as u8
-}
-
 fn as_scalar(v: &Value) -> Option<f32> {
     match v {
         Value::Number(n) => Some(*n as f32),
@@ -123,22 +109,26 @@ impl UserData for Dim {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Color3 {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
 }
 
 impl Color3 {
-    pub fn new(r: u8, g: u8, b: u8) -> Self {
-        Self { r, g, b }
+    pub fn new(r: f32, g: f32, b: f32) -> Self {
+        Self {
+            r: r.clamp(0.0, 1.0),
+            g: g.clamp(0.0, 1.0),
+            b: b.clamp(0.0, 1.0),
+        }
     }
 }
 
 impl UserData for Color3 {
     fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
-        f.add_field_method_get("R", |_, this| Ok(this.r as i64));
-        f.add_field_method_get("G", |_, this| Ok(this.g as i64));
-        f.add_field_method_get("B", |_, this| Ok(this.b as i64));
+        f.add_field_method_get("R", |_, this| Ok(this.r as f64));
+        f.add_field_method_get("G", |_, this| Ok(this.g as f64));
+        f.add_field_method_get("B", |_, this| Ok(this.b as f64));
     }
 
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
@@ -147,9 +137,9 @@ impl UserData for Color3 {
             |_, this, (other, t): (AnyUserData, f32)| -> mlua::Result<Color3> {
                 let o = *other.borrow::<Color3>()?;
                 Ok(Color3::new(
-                    clamp_u8_f(lerp_f(this.r as f32, o.r as f32, t)),
-                    clamp_u8_f(lerp_f(this.g as f32, o.g as f32, t)),
-                    clamp_u8_f(lerp_f(this.b as f32, o.b as f32, t)),
+                    lerp_f(this.r, o.r, t),
+                    lerp_f(this.g, o.g, t),
+                    lerp_f(this.b, o.b, t),
                 ))
             },
         );
@@ -163,11 +153,7 @@ impl UserData for Color3 {
             |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<Color3> {
                 let a = *a.borrow::<Color3>()?;
                 let b = *b.borrow::<Color3>()?;
-                Ok(Color3::new(
-                    clamp_u8_f(a.r as f32 + b.r as f32),
-                    clamp_u8_f(a.g as f32 + b.g as f32),
-                    clamp_u8_f(a.b as f32 + b.b as f32),
-                ))
+                Ok(Color3::new(a.r + b.r, a.g + b.g, a.b + b.b))
             },
         );
         m.add_meta_function(
@@ -175,11 +161,7 @@ impl UserData for Color3 {
             |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<Color3> {
                 let a = *a.borrow::<Color3>()?;
                 let b = *b.borrow::<Color3>()?;
-                Ok(Color3::new(
-                    clamp_u8_f(a.r as f32 - b.r as f32),
-                    clamp_u8_f(a.g as f32 - b.g as f32),
-                    clamp_u8_f(a.b as f32 - b.b as f32),
-                ))
+                Ok(Color3::new(a.r - b.r, a.g - b.g, a.b - b.b))
             },
         );
         m.add_meta_function(
@@ -553,28 +535,52 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     let color_class = lua.create_table()?;
     color_class.set(
         "new",
-        lua.create_function(|_, (r, g, b): (i64, i64, i64)| {
-            Ok(Color3::new(clamp_u8_i(r), clamp_u8_i(g), clamp_u8_i(b)))
-        })?,
+        lua.create_function(|_, (r, g, b): (f32, f32, f32)| Ok(Color3::new(r, g, b)))?,
     )?;
-    color_class.set(
-        "fromHex",
-        lua.create_function(|_, hex: String| -> mlua::Result<Color3> {
-            let s = hex.trim_start_matches('#');
-            if s.len() != 6 {
+    let from_rgb = lua.create_function(|_, (r, g, b): (i64, i64, i64)| {
+        Ok(Color3::new(
+            r.clamp(0, 255) as f32 / 255.0,
+            g.clamp(0, 255) as f32 / 255.0,
+            b.clamp(0, 255) as f32 / 255.0,
+        ))
+    })?;
+    color_class.set("FromRGB", from_rgb.clone())?;
+    color_class.set("fromRGB", from_rgb)?;
+    let from_hex = lua.create_function(|_, hex: String| -> mlua::Result<Color3> {
+        let s = hex.trim_start_matches('#');
+        let bytes = match s.len() {
+            6 => {
+                let r = u8::from_str_radix(&s[0..2], 16)
+                    .map_err(|e| mlua::Error::RuntimeError(format!("Color3.FromHex: {e}")))?;
+                let g = u8::from_str_radix(&s[2..4], 16)
+                    .map_err(|e| mlua::Error::RuntimeError(format!("Color3.FromHex: {e}")))?;
+                let b = u8::from_str_radix(&s[4..6], 16)
+                    .map_err(|e| mlua::Error::RuntimeError(format!("Color3.FromHex: {e}")))?;
+                (r, g, b)
+            }
+            3 => {
+                let r = u8::from_str_radix(&s[0..1], 16)
+                    .map_err(|e| mlua::Error::RuntimeError(format!("Color3.FromHex: {e}")))?;
+                let g = u8::from_str_radix(&s[1..2], 16)
+                    .map_err(|e| mlua::Error::RuntimeError(format!("Color3.FromHex: {e}")))?;
+                let b = u8::from_str_radix(&s[2..3], 16)
+                    .map_err(|e| mlua::Error::RuntimeError(format!("Color3.FromHex: {e}")))?;
+                (r * 17, g * 17, b * 17)
+            }
+            _ => {
                 return Err(mlua::Error::RuntimeError(format!(
-                    "Color3.fromHex: expected 6 hex chars, got '{hex}'"
+                    "Color3.FromHex: expected 3 or 6 hex chars, got '{hex}'"
                 )));
             }
-            let r = u8::from_str_radix(&s[0..2], 16)
-                .map_err(|e| mlua::Error::RuntimeError(format!("fromHex: {e}")))?;
-            let g = u8::from_str_radix(&s[2..4], 16)
-                .map_err(|e| mlua::Error::RuntimeError(format!("fromHex: {e}")))?;
-            let b = u8::from_str_radix(&s[4..6], 16)
-                .map_err(|e| mlua::Error::RuntimeError(format!("fromHex: {e}")))?;
-            Ok(Color3::new(r, g, b))
-        })?,
-    )?;
+        };
+        Ok(Color3::new(
+            bytes.0 as f32 / 255.0,
+            bytes.1 as f32 / 255.0,
+            bytes.2 as f32 / 255.0,
+        ))
+    })?;
+    color_class.set("FromHex", from_hex.clone())?;
+    color_class.set("fromHex", from_hex)?;
     t.set("Color3", color_class)?;
 
     let vec_class = lua.create_table()?;

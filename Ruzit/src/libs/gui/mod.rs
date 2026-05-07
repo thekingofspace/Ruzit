@@ -196,9 +196,9 @@ fn bake_text(font: &fontdue::Font, content: &str, size_px: f32, color: Color3) -
     let width = max_x.max(1) as u32;
     let height = max_y.max(1) as u32;
     let mut buf = vec![0u8; (width * height * 4) as usize];
-    let cr = color.r;
-    let cg = color.g;
-    let cb = color.b;
+    let cr = (color.r * 255.0).round().clamp(0.0, 255.0) as u8;
+    let cg = (color.g * 255.0).round().clamp(0.0, 255.0) as u8;
+    let cb = (color.b * 255.0).round().clamp(0.0, 255.0) as u8;
     for g in glyphs {
         let (_metrics, bitmap) = font.rasterize_config(g.key);
         let gw = g.width as i32;
@@ -259,7 +259,7 @@ impl GuiPrimitive {
             font: asset.font.clone(),
             content: String::new(),
             size_px: 24.0,
-            color: Color3::new(255, 255, 255),
+            color: Color3::new(1.0, 1.0, 1.0),
             baked: None,
         };
         
@@ -280,7 +280,7 @@ impl GuiPrimitive {
             shape,
             size,
             position: Dim::new(0.0, 0.0),
-            color: Color3::new(255, 255, 255),
+            color: Color3::new(1.0, 1.0, 1.0),
             transparency: 0.0,
             z_index: 0,
             visible: true,
@@ -507,7 +507,7 @@ impl UserData for GuiPrimitive {
             Ok(s.text
                 .as_ref()
                 .map(|t| t.color)
-                .unwrap_or(Color3::new(255, 255, 255)))
+                .unwrap_or(Color3::new(1.0, 1.0, 1.0)))
         });
         f.add_field_method_set("TextColor", |lua, this, value: AnyUserData| {
             this.ensure_alive("set TextColor")?;

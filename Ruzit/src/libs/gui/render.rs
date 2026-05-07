@@ -1013,12 +1013,7 @@ impl GpuState {
         let res = [self.size.0 as f32, self.size.1 as f32];
         for (i, item) in items.iter().enumerate() {
             let alpha = (1.0 - item.transparency).clamp(0.0, 1.0);
-            let color = [
-                (item.color.r as f32) / 255.0,
-                (item.color.g as f32) / 255.0,
-                (item.color.b as f32) / 255.0,
-                alpha,
-            ];
+            let color = [item.color.r, item.color.g, item.color.b, alpha];
             let mut params = [[0.0_f32; 4]; 4];
             if let Some(sh) = &item.active_shader {
                 let p = sh.params.lock().unwrap();
@@ -1074,12 +1069,7 @@ impl GpuState {
                 [part.cframe.rotation.x, part.cframe.rotation.y, part.cframe.rotation.z],
                 [part.size.x, part.size.y, part.size.z],
             );
-            let color = [
-                (part.color.r as f32) / 255.0,
-                (part.color.g as f32) / 255.0,
-                (part.color.b as f32) / 255.0,
-                1.0,
-            ];
+            let color = [part.color.r, part.color.g, part.color.b, 1.0];
             let mut params = [[0.0_f32; 4]; 4];
             if let Some(sh) = &part.active_shader {
                 let p = sh.params.lock().unwrap();

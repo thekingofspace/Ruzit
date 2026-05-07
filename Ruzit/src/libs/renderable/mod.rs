@@ -161,7 +161,7 @@ impl PartHandle {
             shape,
             cframe: CFrame::new(Vector::new(0.0, 0.0, 0.0), Vector::new(0.0, 0.0, 0.0)),
             size: Vector::new(1.0, 1.0, 1.0),
-            color: Color3::new(255, 255, 255),
+            color: Color3::new(1.0, 1.0, 1.0),
             render: true,
             alive: true,
             attached: Vec::new(),
