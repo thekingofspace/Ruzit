@@ -1,6 +1,4 @@
-//! Familiar Roblox-style heartbeat / render-step facade. Both signals fire
-//! once per heart tick with the elapsed `dt` (seconds). RenderStepped fires
-//! before user-bound heart handlers; Heartbeat fires after.
+
 
 use std::cell::RefCell;
 
@@ -32,9 +30,7 @@ pub fn is_installed() -> bool {
     INSTALLED.with(|c| *c.borrow())
 }
 
-/// Fired by the heart loop once per tick. RenderStepped goes first so movement
-/// + render-driven code that wants to read input and write GUI state can do
-/// so before any user-bound `Process.BindToHeart` handlers run.
+
 pub fn fire_render_stepped(lua: &Lua, dt: f64) {
     if !is_installed() {
         return;

@@ -67,9 +67,7 @@ pub fn create(lua: &Lua, fs: Fs) -> mlua::Result<Table> {
     Ok(t)
 }
 
-/// Lua-facing handle to a Package. Holds `Arc<Package>` so cloning is O(1).
-///
-/// Read-only properties + an `Origin` field suitable for `require(pkg.Origin)`.
+
 pub struct PackageRef(pub Arc<Package>);
 
 impl UserData for PackageRef {
@@ -80,7 +78,7 @@ impl UserData for PackageRef {
         f.add_field_method_get("Creator", |_, this| Ok(this.0.creator.clone()));
         f.add_field_method_get("Entry", |_, this| Ok(this.0.entry.clone()));
         f.add_field_method_get("Origin", |_, this| -> mlua::Result<String> {
-            // Entry "init.luau" → "@<id>/init" (suitable for `require()`)
+            
             let stem = this
                 .0
                 .entry

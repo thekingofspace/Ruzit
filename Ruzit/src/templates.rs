@@ -188,12 +188,18 @@ end
 declare class ShaderAsset end
 declare class FragmentAsset end
 
+declare class FontAsset
+	function Source(self): string
+end
+
 type Asset_API = {
 	GetAsset: ((kind: "Image", path: string) -> ImageAsset)
 		& ((kind: "Sound", path: string) -> SoundData)
 		& ((kind: "Shader", path: string) -> ShaderAsset)
 		& ((kind: "Fragment", path: string) -> FragmentAsset)
-		& ((kind: "Model", path: string) -> ModelAsset),
+		& ((kind: "Model", path: string) -> ModelAsset)
+		& ((kind: "Font", path: string) -> FontAsset)
+		& ((kind: "File", path: string) -> string),
 }
 
 type WindowOptions = {
@@ -302,6 +308,11 @@ declare class Dim
 	X: number
 	Y: number
 	function Lerp(self, other: Dim, t: number): Dim
+	function __add(self, other: Dim): Dim
+	function __sub(self, other: Dim): Dim
+	function __mul(self, other: number): Dim
+	function __div(self, other: number): Dim
+	function __unm(self): Dim
 end
 
 declare class Color3
@@ -309,6 +320,8 @@ declare class Color3
 	G: number
 	B: number
 	function Lerp(self, other: Color3, t: number): Color3
+	function __add(self, other: Color3): Color3
+	function __sub(self, other: Color3): Color3
 end
 
 declare class Vector
@@ -317,6 +330,11 @@ declare class Vector
 	Z: number
 	Magnitude: number
 	function Lerp(self, other: Vector, t: number): Vector
+	function __add(self, other: Vector): Vector
+	function __sub(self, other: Vector): Vector
+	function __mul(self, other: number): Vector
+	function __div(self, other: number): Vector
+	function __unm(self): Vector
 end
 
 declare class ModelAsset
@@ -358,7 +376,7 @@ declare class CFrame
 	Position: Vector
 	Rotation: Vector
 	function Lerp(self, other: CFrame, t: number): CFrame
-	function __mul(self, other: CFrame): CFrame
+	function __mul(self, other: CFrame | Vector): CFrame
 	function __add(self, other: CFrame): CFrame
 	function __sub(self, other: CFrame): CFrame
 end
@@ -394,6 +412,9 @@ declare class Primitive
 	ZIndex: number
 	Visible: boolean
 	Changed: Signal
+	Text: string
+	TextSize: number
+	TextColor: Color3
 	function Destroy(self): ()
 	function AttachShader(self, asset: ShaderAsset | FragmentAsset): ()
 	function DetachShader(self, asset: ShaderAsset | FragmentAsset): ()
@@ -414,6 +435,7 @@ type GUI_API = {
 		Square: () -> Primitive,
 		Triangle: () -> Primitive,
 		Image: (asset: ImageAsset) -> Primitive,
+		Font: (asset: FontAsset) -> Primitive,
 	},
 	SetSkybox: (asset: ShaderAsset | FragmentAsset) -> SceneShader,
 	ClearSkybox: () -> (),

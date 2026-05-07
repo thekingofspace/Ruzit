@@ -1,6 +1,4 @@
-//! 3D scene library. `Renderable.BasePart(...)` and `Renderable.BaseModel(...)`
-//! create entries in a thread_local registry that the GPU pipeline draws each
-//! frame. A single `Renderable.Camera` controls the view + projection.
+
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -26,8 +24,7 @@ pub enum PartShape {
     Model,
 }
 
-/// Optional WGSL fragment shader attached to a part. Same data layout as the
-/// 2D AttachedShader but compiled against the 3D vertex shader.
+
 #[derive(Clone)]
 pub struct AttachedShader3D {
     pub id: u64,
@@ -36,8 +33,7 @@ pub struct AttachedShader3D {
     pub params: Arc<Mutex<[f32; 16]>>,
 }
 
-/// Reference to a model asset's GPU mesh — keyed by id so two BaseModels
-/// sharing the same asset upload it once.
+
 #[derive(Clone)]
 pub struct ModelRef {
     pub id: u64,
@@ -45,8 +41,7 @@ pub struct ModelRef {
     pub indices: Arc<Vec<u32>>,
 }
 
-/// Texture reference for BaseModel.Texture — same shape as gui::ImageRef so
-/// the existing texture cache in GpuState can be reused.
+
 #[derive(Clone)]
 pub struct PartTextureRef {
     pub id: u64,
@@ -66,11 +61,10 @@ pub struct PartState {
     pub alive: bool,
     pub attached: Vec<AttachedShader3D>,
     pub changed_signal: Table,
-    /// Set when shape == Model — the mesh to draw instead of cube/sphere.
+    
     pub model: Option<ModelRef>,
-    /// Set on BaseModel via `.Texture = imageAsset`. Bound as IMG; nil falls
-    /// back to a 1×1 white texture so the default fragment shader becomes a
-    /// pure color * lighting expression.
+    
+    
     pub texture: Option<PartTextureRef>,
 }
 
@@ -88,9 +82,8 @@ pub struct CameraState {
 
 impl Default for CameraState {
     fn default() -> Self {
-        // Tilted-down third-person-ish view: stand at (4, 3, 5) looking at origin.
-        // Rotation needs to match the look — easiest to compute from euler:
-        // pitch ~ -25°, yaw ~ 38°. Approximate values; users will set their own.
+        
+        
         Self {
             cframe: CFrame::new(
                 Vector::new(4.0, 3.0, 5.0),
@@ -149,10 +142,6 @@ pub fn snapshot() -> Vec<PartRender> {
     })
 }
 
-// ---------------------------------------------------------------------------
-// Lua handle: BasePart / BaseModel share the same userdata type. The shape
-// field plus `model` / `texture` distinguish them at render time.
-// ---------------------------------------------------------------------------
 
 pub struct PartHandle {
     state: Arc<Mutex<PartState>>,
@@ -240,10 +229,7 @@ fn build_attached_3d(asset: &AnyUserData) -> mlua::Result<AttachedShader3D> {
     };
     let slot_of_name = parse_param_decls(&code);
 
-    // The user can override either stage. We always emit a single shader
-    // module containing both `vs_main` and `fs_main` and let the pipeline
-    // pick entry points. Whichever stage the user didn't define gets the
-    // engine default appended.
+    
     let prelude = crate::libs::renderable::render::FRAGMENT_PRELUDE_3D;
     let has_user_vs = code.contains("@vertex");
     let has_user_fs = code.contains("@fragment");
@@ -343,12 +329,10 @@ impl UserData for PartHandle {
             fire_changed(lua, sig, "Render")
         });
 
-        // Texture is BaseModel-only by convention but works on any part —
-        // setting it on a Cube / Sphere just changes the surface texture.
+        
         f.add_field_method_get("Texture", |lua, this| -> mlua::Result<Value> {
-            // Returning the original ImageAsset would require holding a
-            // strong reference; expose the source string instead so users
-            // can tell what's bound.
+            
+            
             let s = this.state.lock().unwrap();
             match &s.texture {
                 Some(_) => Ok(Value::Boolean(true)),
@@ -477,9 +461,6 @@ impl UserData for PartHandle {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Camera handle (singleton)
-// ---------------------------------------------------------------------------
 
 pub struct CameraHandle;
 
@@ -513,14 +494,11 @@ impl UserData for CameraHandle {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Lua API
-// ---------------------------------------------------------------------------
 
 pub fn create(lua: &Lua) -> mlua::Result<Table> {
     let t = lua.create_table()?;
 
-    // BasePart(shape) — accepts "Cube" or "Sphere".
+    
     t.set(
         "BasePart",
         lua.create_function(|lua, shape_name: Option<String>| -> mlua::Result<PartHandle> {
@@ -537,7 +515,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // BaseModel(asset) — takes a ModelAsset from Asset.GetAsset("Model", ...).
+    
     t.set(
         "BaseModel",
         lua.create_function(|lua, asset: AnyUserData| -> mlua::Result<PartHandle> {

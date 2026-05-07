@@ -1,8 +1,5 @@
-// Windowed subsystem on Windows. Without this, every dev-tool invocation
-// (Ruzit Test/Build/...) opens a fresh console window even when the user
-// just wanted to launch silently. console::setup still attaches to the
-// parent terminal when one exists, so `cmd> Ruzit Test` still prints.
-// Pass `--console` to force AllocConsole when there's no parent console.
+
+
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod commands;
@@ -158,9 +155,8 @@ fn main() -> ExitCode {
     let args: Vec<String> = raw_args.into_iter().filter(|a| a != "--console").collect();
 
     let launcher = package::try_self_launcher();
-    // `--console` is the single switch in both dev tool + launcher modes.
-    // Without it: silent unless we have a parent terminal to attach to.
-    // With it: force-allocate a console window if we don't already have one.
+    
+    
     console::setup(console_flag);
 
     if let Some(info) = launcher {

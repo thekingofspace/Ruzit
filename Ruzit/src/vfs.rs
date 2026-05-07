@@ -14,22 +14,20 @@ pub struct Package {
     pub entry: String,
     #[allow(dead_code)]
     pub file_type: FileType,
-    /// On-disk location backing this package, when one exists (Test mode + DLCs
-    /// that live as folders alongside Main.luau). `None` means the package is
-    /// only present in memory (launcher mode), and IO operations from inside
-    /// it fall back to the bundle's `physical_root`.
+    
+    
     pub physical_root: Option<PathBuf>,
     pub files: HashMap<String, String>,
-    /// Base64-encoded raw bytes. Decoded lazily by `Asset.GetAsset` so startup
-    /// stays cheap with large asset sets.
+    
+    
     pub assets: HashMap<String, String>,
 }
 
 #[derive(Clone)]
 #[allow(dead_code)]
 pub enum Fs {
-    /// Reserved variant for future plain-disk runs without a bundle layer.
-    /// Currently unused because `Ruzit Test` snapshots into a `Bundle`.
+    
+    
     Disk {
         root: PathBuf,
         file_type: FileType,
@@ -38,9 +36,8 @@ pub enum Fs {
         packages: Arc<HashMap<String, Arc<Package>>>,
         default_id: String,
         file_type: FileType,
-        /// Default IO root for packages that don't carry a `physical_root` of
-        /// their own. In a launcher this is the directory next to the exe;
-        /// in `Ruzit Test` it's the project folder.
+        
+        
         physical_root: PathBuf,
     },
 }
@@ -53,11 +50,7 @@ impl Fs {
     }
 }
 
-/// Owners (chunk names) inside a bundle look like:
-///   - "Main.luau"            (default package)
-///   - "@dlc1/lib/foo.luau"   (DLC package "dlc1")
-///
-/// This splits an owner into (package_id, inner_path).
+
 pub fn split_owner<'a>(owner: &'a str, default_id: &'a str) -> (&'a str, &'a str) {
     if let Some(rest) = owner.strip_prefix('@') {
         if let Some((id, inner)) = rest.split_once('/') {
@@ -224,8 +217,8 @@ fn bundle_resolve(
     caller: &str,
     name: &str,
 ) -> Option<String> {
-    // 1. Aliased absolute paths: "@<alias>/some/path".
-    //    "@self" is the calling file's own package; "@<id>" is any package by id.
+    
+    
     if let Some(rest) = name.strip_prefix('@') {
         let (alias, inner) = rest.split_once('/')?;
         let (caller_pkg_id, _) = split_owner(caller, default_id);
@@ -243,7 +236,7 @@ fn bundle_resolve(
         });
     }
 
-    // 2. Plain path: resolve in the caller's package.
+    
     let (caller_pkg_id, caller_inner) = split_owner(caller, default_id);
     let pkg = packages.get(caller_pkg_id)?;
     let base = match file_type {

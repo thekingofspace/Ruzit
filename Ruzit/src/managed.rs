@@ -1,14 +1,4 @@
-//! Encrypts/decrypts `.managed` payload bytes.
-//!
-//! Goal: stop casual rippers from `unzip`-ing your shipped game and reading
-//! Lua source out of the JSON. AES-256-GCM gives us authenticated encryption
-//! (any tamper invalidates the GCM tag and decrypt fails).
-//!
-//! The key is hardcoded into the binary, split across two `[u8; 32]` constants
-//! that are XORed at runtime. That makes a quick `strings`/hexdump useless;
-//! anyone determined enough can still pull it out of the disassembly. That's
-//! the inherent ceiling of any client-side encryption — stop drive-by, not
-//! stop reverse engineers.
+
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
@@ -41,9 +31,7 @@ fn cipher() -> Aes256Gcm {
     Aes256Gcm::new(key)
 }
 
-/// Encrypt `plaintext` and produce a complete `.managed` payload:
-///
-///   `[4 bytes "RZMG"][1 byte version][12 bytes nonce][ciphertext+16-byte GCM tag]`
+
 pub fn encrypt_payload(plaintext: &[u8]) -> Result<Vec<u8>, String> {
     let mut nonce_bytes = [0u8; NONCE_LEN];
     rand::thread_rng().fill_bytes(&mut nonce_bytes);
@@ -61,7 +49,7 @@ pub fn encrypt_payload(plaintext: &[u8]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// Inverse of `encrypt_payload`.
+
 pub fn decrypt_payload(blob: &[u8]) -> Result<Vec<u8>, String> {
     if blob.len() < 4 + 1 + NONCE_LEN + 16 {
         return Err("managed payload too small".into());

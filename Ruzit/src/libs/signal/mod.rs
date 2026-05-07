@@ -101,27 +101,26 @@ end
 return Signal
 "#;
 
-/// Load the Signal class once and stash it in the named registry so anyone
-/// (importers, the engine itself) can grab it cheaply.
+
 pub fn install(lua: &Lua) -> mlua::Result<()> {
     let class: Table = lua.load(SIGNAL_LUA).set_name("@signal").eval()?;
     lua.set_named_registry_value(SIGNAL_KEY, class)?;
     Ok(())
 }
 
-/// Returned by `import("Signal")` — the class table itself, with `new()`.
+
 pub fn class(lua: &Lua) -> mlua::Result<Table> {
     lua.named_registry_value(SIGNAL_KEY)
 }
 
-/// Construct a fresh Signal instance from Rust.
+
 pub fn new_instance(lua: &Lua) -> mlua::Result<Table> {
     let class: Table = lua.named_registry_value(SIGNAL_KEY)?;
     let new_fn: Function = class.get("new")?;
     new_fn.call::<Table>(())
 }
 
-/// Fire `signal:Fire(args...)` from Rust.
+
 pub fn fire(lua: &Lua, signal: &Table, args: MultiValue) -> mlua::Result<()> {
     let fire_fn: Function = signal.get("Fire")?;
     let mut full = MultiValue::new();
@@ -129,7 +128,7 @@ pub fn fire(lua: &Lua, signal: &Table, args: MultiValue) -> mlua::Result<()> {
     for v in args {
         full.push_back(v);
     }
-    let _ = lua; // unused in this branch but kept for API symmetry
+    let _ = lua; 
     fire_fn.call::<()>(full)?;
     Ok(())
 }

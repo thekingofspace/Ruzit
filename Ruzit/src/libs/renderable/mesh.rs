@@ -1,7 +1,4 @@
-//! Built-in geometry (unit cube + UV sphere) and a minimal OBJ loader.
-//! Vertices are positioned around the origin in a [-0.5, 0.5] box so that
-//! `Size = Vector(1, 1, 1)` reads as a 1-unit object after the model matrix
-//! scales by Size.
+
 
 use std::collections::HashMap;
 
@@ -23,32 +20,32 @@ pub struct Mesh {
 pub fn cube() -> Mesh {
     let s = 0.5_f32;
     let v = vec![
-        // +X face
+        
         Vertex3D { position: [s, -s, -s], normal: [1.0, 0.0, 0.0], uv: [0.0, 1.0] },
         Vertex3D { position: [s,  s, -s], normal: [1.0, 0.0, 0.0], uv: [0.0, 0.0] },
         Vertex3D { position: [s,  s,  s], normal: [1.0, 0.0, 0.0], uv: [1.0, 0.0] },
         Vertex3D { position: [s, -s,  s], normal: [1.0, 0.0, 0.0], uv: [1.0, 1.0] },
-        // -X face
+        
         Vertex3D { position: [-s, -s,  s], normal: [-1.0, 0.0, 0.0], uv: [0.0, 1.0] },
         Vertex3D { position: [-s,  s,  s], normal: [-1.0, 0.0, 0.0], uv: [0.0, 0.0] },
         Vertex3D { position: [-s,  s, -s], normal: [-1.0, 0.0, 0.0], uv: [1.0, 0.0] },
         Vertex3D { position: [-s, -s, -s], normal: [-1.0, 0.0, 0.0], uv: [1.0, 1.0] },
-        // +Y face
+        
         Vertex3D { position: [-s, s, -s], normal: [0.0, 1.0, 0.0], uv: [0.0, 1.0] },
         Vertex3D { position: [-s, s,  s], normal: [0.0, 1.0, 0.0], uv: [0.0, 0.0] },
         Vertex3D { position: [ s, s,  s], normal: [0.0, 1.0, 0.0], uv: [1.0, 0.0] },
         Vertex3D { position: [ s, s, -s], normal: [0.0, 1.0, 0.0], uv: [1.0, 1.0] },
-        // -Y face
+        
         Vertex3D { position: [-s, -s,  s], normal: [0.0, -1.0, 0.0], uv: [0.0, 1.0] },
         Vertex3D { position: [-s, -s, -s], normal: [0.0, -1.0, 0.0], uv: [0.0, 0.0] },
         Vertex3D { position: [ s, -s, -s], normal: [0.0, -1.0, 0.0], uv: [1.0, 0.0] },
         Vertex3D { position: [ s, -s,  s], normal: [0.0, -1.0, 0.0], uv: [1.0, 1.0] },
-        // +Z face
+        
         Vertex3D { position: [ s, -s, s], normal: [0.0, 0.0, 1.0], uv: [0.0, 1.0] },
         Vertex3D { position: [ s,  s, s], normal: [0.0, 0.0, 1.0], uv: [0.0, 0.0] },
         Vertex3D { position: [-s,  s, s], normal: [0.0, 0.0, 1.0], uv: [1.0, 0.0] },
         Vertex3D { position: [-s, -s, s], normal: [0.0, 0.0, 1.0], uv: [1.0, 1.0] },
-        // -Z face
+        
         Vertex3D { position: [-s, -s, -s], normal: [0.0, 0.0, -1.0], uv: [0.0, 1.0] },
         Vertex3D { position: [-s,  s, -s], normal: [0.0, 0.0, -1.0], uv: [0.0, 0.0] },
         Vertex3D { position: [ s,  s, -s], normal: [0.0, 0.0, -1.0], uv: [1.0, 0.0] },
@@ -62,8 +59,7 @@ pub fn cube() -> Mesh {
     Mesh { vertices: v, indices: i }
 }
 
-/// UV sphere with `lat` rings and `long` segments. Radius = 0.5 so the
-/// default unit-Size sphere fits in the same [-0.5, 0.5] box as the cube.
+
 pub fn sphere(lat: u32, long: u32) -> Mesh {
     let lat = lat.max(2);
     let long = long.max(3);
@@ -97,8 +93,7 @@ pub fn sphere(lat: u32, long: u32) -> Mesh {
     Mesh { vertices, indices }
 }
 
-/// Minimal OBJ loader. Supports v / vn / vt / f. Triangulates polygons via
-/// a simple fan. Computes per-vertex normals if the file doesn't supply any.
+
 pub fn load_obj(text: &str) -> Result<Mesh, String> {
     let mut positions: Vec<[f32; 3]> = Vec::new();
     let mut normals: Vec<[f32; 3]> = Vec::new();
@@ -150,7 +145,7 @@ pub fn load_obj(text: &str) -> Result<Mesh, String> {
                     .filter_map(|s| s.parse().ok())
                     .collect();
                 if xy.len() >= 2 {
-                    // Flip V — OBJ convention is bottom-up, our engine top-down.
+                    
                     uvs.push([xy[0], 1.0 - xy[1]]);
                 }
             }
@@ -215,7 +210,7 @@ pub fn load_obj(text: &str) -> Result<Mesh, String> {
         return Err("OBJ has no vertices".into());
     }
 
-    // No normals supplied? Compute per-vertex via face accumulation.
+    
     if !had_normals {
         let mut accum = vec![[0.0_f32; 3]; vertices.len()];
         for tri in indices.chunks(3) {

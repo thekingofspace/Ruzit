@@ -1,23 +1,7 @@
-//! Value-type primitives shared across the engine: 2D Dim, RGB Color3, 3D
-//! Vector, and CFrame (position + euler rotation pair).
-//!
-//! Every type supports the operators a user would expect from Roblox-style
-//! math values:
-//!   * `+` / `-`           same-type elementwise; Color3 clamps to [0, 255]
-//!   * `*` / `/`           Dim and Vector scale by a scalar (either side)
-//!   * unary `-`           negates Dim and Vector
-//!   * `==`                componentwise equality
-//!   * `<` / `<=`          componentwise — true iff *every* component holds
-//!   * `:Lerp(other, t)`   linear interpolation
-//!
-//! Vector additionally exposes `.Magnitude`. CFrame holds `Position` and
-//! `Rotation` as Vectors.
+
 
 use mlua::{AnyUserData, Lua, Table, UserData, UserDataFields, UserDataMethods, Value};
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 fn lerp_f(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
@@ -52,9 +36,6 @@ fn as_userdata<T: 'static + Copy + Clone>(v: &Value) -> Option<T> {
     None
 }
 
-// ---------------------------------------------------------------------------
-// Dim — 2D vector / pixel size
-// ---------------------------------------------------------------------------
 
 #[derive(Clone, Copy, Debug)]
 pub struct Dim {
@@ -103,7 +84,7 @@ impl UserData for Dim {
                 Ok(Dim::new(a.x - b.x, a.y - b.y))
             },
         );
-        // Either side may be the scalar so `2 * dim` and `dim * 2` both work.
+        
         m.add_meta_function("__mul", |_, (a, b): (Value, Value)| -> mlua::Result<Dim> {
             let (d, s) = pair_with_scalar::<Dim>(&a, &b, "Dim * expects (Dim, number)")?;
             Ok(Dim::new(d.x * s, d.y * s))
@@ -143,9 +124,6 @@ impl UserData for Dim {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Color3 — 8-bit-per-channel RGB
-// ---------------------------------------------------------------------------
 
 #[derive(Clone, Copy, Debug)]
 pub struct Color3 {
@@ -184,8 +162,7 @@ impl UserData for Color3 {
             Ok(format!("Color3({}, {}, {})", this.r, this.g, this.b))
         });
 
-        // + / - clamp into [0, 255]; without clamping, channel saturation
-        // would silently wrap into garbage values.
+        
         m.add_meta_function(
             "__add",
             |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<Color3> {
@@ -237,9 +214,6 @@ impl UserData for Color3 {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Vector — 3D vector
-// ---------------------------------------------------------------------------
 
 #[derive(Clone, Copy, Debug)]
 pub struct Vector {
@@ -346,9 +320,6 @@ impl UserData for Vector {
     }
 }
 
-// ---------------------------------------------------------------------------
-// CFrame — Position + Rotation pair (rotation as euler radians)
-// ---------------------------------------------------------------------------
 
 #[derive(Clone, Copy, Debug)]
 pub struct CFrame {
@@ -362,11 +333,10 @@ impl CFrame {
     }
 }
 
-// ---- Rotation math (Euler XYZ → 3x3 matrix → back) -----------------------
 
 type Mat3 = [[f32; 3]; 3];
 
-/// Build a rotation matrix R = Rx · Ry · Rz from Euler XYZ angles (radians).
+
 fn euler_to_matrix(rot: Vector) -> Mat3 {
     let (sx, cx) = rot.x.sin_cos();
     let (sy, cy) = rot.y.sin_cos();
@@ -378,10 +348,7 @@ fn euler_to_matrix(rot: Vector) -> Mat3 {
     ]
 }
 
-/// Inverse of `euler_to_matrix` for the same XYZ ordering. The cy ≈ 0
-/// branch handles gimbal lock cleanly; we lose the z-component there but
-/// the resulting CFrame is still valid (just with a different decomposition
-/// than the input had — perfectly fine for game-style use).
+
 fn matrix_to_euler(m: Mat3) -> Vector {
     let sy = m[0][2].clamp(-1.0, 1.0);
     let cy_sq = 1.0 - sy * sy;
@@ -465,10 +432,8 @@ impl UserData for CFrame {
                     && a.rotation.z == b.rotation.z)
             },
         );
-        // Componentwise comparison — same shape as Vector's: every component
-        // of both Position and Rotation has to satisfy the relation. Lua
-        // routes `a > b` through __lt(b, a) and `a >= b` through __le(b, a)
-        // automatically, so declaring `<` and `<=` covers all four operators.
+        
+        
         m.add_meta_function(
             "__lt",
             |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<bool> {
@@ -495,8 +460,8 @@ impl UserData for CFrame {
                     && a.rotation.z <= b.rotation.z)
             },
         );
-        // Componentwise add/sub — positions add, rotations add. Mirrors how
-        // Vector + Vector behaves.
+        
+        
         m.add_meta_function(
             "__add",
             |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<CFrame> {
@@ -536,10 +501,7 @@ impl UserData for CFrame {
             },
         );
 
-        // CFrame * CFrame  → composed CFrame (rotation matrices multiplied,
-        //                    rhs position is rotated by lhs then offset).
-        // CFrame * Vector  → world-space Vector (rotate point by lhs, add lhs.position).
-        // Returns Value because the return type depends on the right operand.
+        
         m.add_meta_function(
             "__mul",
             |lua, (a, b): (Value, Value)| -> mlua::Result<Value> {
@@ -581,9 +543,6 @@ impl UserData for CFrame {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers — accept (T, scalar) or (scalar, T) so commutative ops work both ways
-// ---------------------------------------------------------------------------
 
 fn pair_with_scalar<T: 'static + Copy>(a: &Value, b: &Value, err: &str) -> mlua::Result<(T, f32)> {
     if let (Some(t), Some(s)) = (as_userdata::<T>(a), as_scalar(b)) {
@@ -595,9 +554,6 @@ fn pair_with_scalar<T: 'static + Copy>(a: &Value, b: &Value, err: &str) -> mlua:
     Err(mlua::Error::RuntimeError(err.to_string()))
 }
 
-// ---------------------------------------------------------------------------
-// Lua API surface — Primitives.{Dim, Color3, Vector, CFrame}
-// ---------------------------------------------------------------------------
 
 pub fn create(lua: &Lua) -> mlua::Result<Table> {
     let t = lua.create_table()?;
@@ -640,7 +596,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     vec_class.set(
         "new",
         lua.create_function(|_, args: mlua::MultiValue| -> mlua::Result<Vector> {
-            // Allow Vector.new() / Vector.new(x) / Vector.new(x, y) / Vector.new(x, y, z).
+            
             let mut iter = args.into_iter();
             let x = iter
                 .next()
@@ -692,8 +648,8 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
             },
         )?,
     )?;
-    // Roblox-style shortcut: CFrame.Angles(rx, ry, rz) is a CFrame at the
-    // origin with the given Euler XYZ rotation in radians.
+    
+    
     cframe_class.set(
         "Angles",
         lua.create_function(|_, (rx, ry, rz): (f32, f32, f32)| {

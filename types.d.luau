@@ -1,5 +1,4 @@
--- Ruzit type declarations
--- The Luau LSP picks this file up via .vscode/settings.json.
+
 
 declare class IOHandle
 	function read(self, format: string?): string
@@ -113,17 +112,25 @@ declare class SoundData
 	function ByteCount(self): number
 end
 
--- Opaque shader handles. Loaded from disk/bundle and attached to host objects
--- (sounds, meshes, UI). Their data is exchanged through the host's :SetData.
+
 declare class ShaderAsset end
 declare class FragmentAsset end
+
+
+declare class FontAsset
+	function Source(self): string
+end
 
 type Asset_API = {
 	GetAsset: ((kind: "Image", path: string) -> ImageAsset)
 		& ((kind: "Sound", path: string) -> SoundData)
 		& ((kind: "Shader", path: string) -> ShaderAsset)
 		& ((kind: "Fragment", path: string) -> FragmentAsset)
-		& ((kind: "Model", path: string) -> ModelAsset),
+		& ((kind: "Model", path: string) -> ModelAsset)
+		& ((kind: "Font", path: string) -> FontAsset)
+		
+		
+		& ((kind: "File", path: string) -> string),
 }
 
 type WindowOptions = {
@@ -172,15 +179,14 @@ declare class WindowHandle
 	function Title(self): string
 	function IsFullscreen(self): boolean
 	function IsOpen(self): boolean
-	-- Returns the singleton viewport (= Renderable.Camera). Set its CFrame
-	-- and FOV to drive what 3D parts the window renders.
+	
+	
 	function GetViewport(self): Camera
 end
 
 type Window_API = { Open: (opts: WindowOptions?) -> WindowHandle }
 
--- Built-in transformations applied via :ApplyShader. Distinct from ShaderAsset,
--- which is loaded from disk and uses :AttachShader / :SetData.
+
 declare class SoundShader end
 
 declare class Sound
@@ -201,7 +207,7 @@ end
 
 type SFX_API = {
 	LoadSound: (data: SoundData) -> Sound,
-	-- Built-in transformations (applied via :ApplyShader, snapshot at Play).
+	
 	Volume: (factor: number) -> SoundShader,
 	Speed: (factor: number) -> SoundShader,
 	FadeIn: (seconds: number) -> SoundShader,
@@ -234,6 +240,13 @@ declare class Dim
 	X: number
 	Y: number
 	function Lerp(self, other: Dim, t: number): Dim
+	function __add(self, other: Dim): Dim
+	function __sub(self, other: Dim): Dim
+	
+	
+	function __mul(self, other: number): Dim
+	function __div(self, other: number): Dim
+	function __unm(self): Dim
 end
 
 declare class Color3
@@ -241,6 +254,9 @@ declare class Color3
 	G: number
 	B: number
 	function Lerp(self, other: Color3, t: number): Color3
+	
+	function __add(self, other: Color3): Color3
+	function __sub(self, other: Color3): Color3
 end
 
 declare class Vector
@@ -249,6 +265,11 @@ declare class Vector
 	Z: number
 	Magnitude: number
 	function Lerp(self, other: Vector, t: number): Vector
+	function __add(self, other: Vector): Vector
+	function __sub(self, other: Vector): Vector
+	function __mul(self, other: number): Vector
+	function __div(self, other: number): Vector
+	function __unm(self): Vector
 end
 
 declare class ModelAsset
@@ -281,10 +302,10 @@ declare class Camera
 end
 
 type Renderable_API = {
-	-- Pass "Cube" or "Sphere".
+	
 	BasePart: (shape: string?) -> BasePart,
-	-- Loads an OBJ asset (Asset.GetAsset("Model", path)) into a part you
-	-- can pose like any other. Set .Texture to give it a surface image.
+	
+	
 	BaseModel: (asset: ModelAsset) -> BasePart,
 	Camera: Camera,
 }
@@ -293,7 +314,9 @@ declare class CFrame
 	Position: Vector
 	Rotation: Vector
 	function Lerp(self, other: CFrame, t: number): CFrame
-	function __mul(self, other: CFrame): CFrame
+	
+	
+	function __mul(self, other: CFrame | Vector): CFrame
 	function __add(self, other: CFrame): CFrame
 	function __sub(self, other: CFrame): CFrame
 end
@@ -329,6 +352,10 @@ declare class Primitive
 	ZIndex: number
 	Visible: boolean
 	Changed: Signal
+	
+	Text: string
+	TextSize: number
+	TextColor: Color3
 	function Destroy(self): ()
 	function AttachShader(self, asset: ShaderAsset | FragmentAsset): ()
 	function DetachShader(self, asset: ShaderAsset | FragmentAsset): ()
@@ -348,16 +375,15 @@ type GUI_API = {
 		Circle: () -> Primitive,
 		Square: () -> Primitive,
 		Triangle: () -> Primitive,
-		-- Renders an image asset as a textured quad. Color tint, transparency,
-		-- and attached shaders all still apply (the default pipeline does
-		-- `texture * U.color`).
+		
+		
 		Image: (asset: ImageAsset) -> Primitive,
+		
+		
+		Font: (asset: FontAsset) -> Primitive,
 	},
-	-- Scene-wide WGSL. Skybox draws fullscreen before primitives (uv ∈ [0,1]
-	-- across the window, IMG = 1×1 white). PostEffect draws after primitives,
-	-- with the rendered scene bound as IMG so the shader can sample + transform
-	-- it (color grading, vignettes, blur, etc.). Both return a SceneShader
-	-- handle whose :SetData drives the live params.
+	
+	
 	SetSkybox: (asset: ShaderAsset | FragmentAsset) -> SceneShader,
 	ClearSkybox: () -> (),
 	SetPostEffect: (asset: ShaderAsset | FragmentAsset) -> SceneShader,
@@ -384,15 +410,13 @@ type Keyboard_API = {
 }
 
 type RunService_API = {
-	-- Both fire once per heart tick with the elapsed dt (seconds).
-	-- RenderStepped fires before user heart handlers; Heartbeat fires after.
+	
+	
 	Heartbeat: Signal,
 	RenderStepped: Signal,
 }
 
--- One row per importable lib; the solver indexes into this rather than
--- trying to pick a winner from a 13-way function intersection (which blew
--- the type-complexity limit and made `import(...)` unresolvable).
+
 type Imports = {
 	Asset: Asset_API,
 	GUI: GUI_API,
@@ -411,9 +435,7 @@ type Imports = {
 	Window: Window_API,
 }
 
--- `keyof<Imports> & K` constrains the literal arg to a key, `index<Imports, K>`
--- looks up the matching row's type. Requires the new Luau type solver
--- (luau-lsp ≥ 1.50). If your LSP is older, see the fallback note below.
+
 declare import: <K>(name: keyof<Imports> & K) -> index<Imports, K>
 
 declare __dirname: string

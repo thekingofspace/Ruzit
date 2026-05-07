@@ -10,9 +10,7 @@ use mlua::{Lua, Table, UserData, UserDataMethods, Value};
 use crate::libs::sfx::{self, SoundData};
 use crate::vfs::{self, Fs, split_owner};
 
-/// Monotonic id used by shader-style assets so attached effects can be
-/// identified across `:SetData`/`:DetachShader` calls without relying on
-/// userdata pointer equality.
+
 static SHADER_ID: AtomicU64 = AtomicU64::new(1);
 
 pub(crate) fn next_shader_id() -> u64 {
@@ -38,6 +36,7 @@ const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "bmp", "gif", "webp"];
 const SHADER_EXTS: &[&str] = &["shader", "glsl", "wgsl", "hlsl", "vert", "metal"];
 const FRAGMENT_EXTS: &[&str] = &["frag", "fragment", "fs", "glslf"];
 const MODEL_EXTS: &[&str] = &["obj"];
+const FONT_EXTS: &[&str] = &["ttf", "otf"];
 
 fn get_asset(
     lua: &Lua,
@@ -52,9 +51,83 @@ fn get_asset(
         "Shader" => load_text::<ShaderAsset>(lua, fs, owner, path, SHADER_EXTS, "Shader"),
         "Fragment" => load_text::<FragmentAsset>(lua, fs, owner, path, FRAGMENT_EXTS, "Fragment"),
         "Model" => load_model(lua, fs, owner, path),
+        "Font" => load_font(lua, fs, owner, path),
+        "File" => load_file(lua, fs, owner, path),
         other => Err(mlua::Error::RuntimeError(format!(
-            "Asset.GetAsset: unknown kind '{other}' (try 'Image', 'Sound', 'Shader', 'Fragment', 'Model')"
+            "Asset.GetAsset: unknown kind '{other}' (try 'Image', 'Sound', 'Shader', 'Fragment', 'Model', 'Font', 'File')"
         ))),
+    }
+}
+
+fn load_font(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value> {
+    let (bytes, source) = read_bytes(fs, owner, path, FONT_EXTS, "Font")?;
+    let font = fontdue::Font::from_bytes(bytes.as_slice(), fontdue::FontSettings::default())
+        .map_err(|e| mlua::Error::RuntimeError(format!("Asset.GetAsset: parse '{source}': {e}")))?;
+    let asset = FontAsset {
+        id: next_shader_id(),
+        font: Arc::new(font),
+        source,
+    };
+    Ok(Value::UserData(lua.create_userdata(asset)?))
+}
+
+fn load_file(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value> {
+    let bytes = read_file_bytes(fs, owner, path)?;
+    let s = String::from_utf8(bytes).map_err(|e| {
+        mlua::Error::RuntimeError(format!("Asset.GetAsset: File '{path}' not valid UTF-8: {e}"))
+    })?;
+    Ok(Value::String(lua.create_string(&s)?))
+}
+
+
+fn read_file_bytes(fs: &Fs, owner: &str, path: &str) -> mlua::Result<Vec<u8>> {
+    match fs {
+        Fs::Disk { .. } => {
+            let root = vfs::fs_root(fs);
+            let full = root.join(path.replace('\\', "/"));
+            if !full.is_file() {
+                return Err(mlua::Error::RuntimeError(format!(
+                    "Asset.GetAsset: File '{path}' not found under {}",
+                    root.display()
+                )));
+            }
+            std::fs::read(&full)
+                .map_err(|e| mlua::Error::RuntimeError(format!("read {}: {e}", full.display())))
+        }
+        Fs::Bundle {
+            packages,
+            default_id,
+            ..
+        } => {
+            let (target_id, rest_path) = if let Some(rest) = path.strip_prefix('@') {
+                if let Some((id, inner)) = rest.split_once('/') {
+                    (id.to_string(), inner.to_string())
+                } else {
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "Asset.GetAsset: bad package path '{path}'"
+                    )));
+                }
+            } else {
+                let (caller_pkg, _) = split_owner(owner, default_id);
+                (caller_pkg.to_string(), path.to_string())
+            };
+            let pkg = packages.get(&target_id).ok_or_else(|| {
+                mlua::Error::RuntimeError(format!(
+                    "Asset.GetAsset: package '{target_id}' is not loaded"
+                ))
+            })?;
+            let key = rest_path.replace('\\', "/");
+            let b64 = pkg.assets.get(&key).ok_or_else(|| {
+                mlua::Error::RuntimeError(format!(
+                    "Asset.GetAsset: File '{key}' not found in package '{target_id}'"
+                ))
+            })?;
+            base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .map_err(|e| {
+                    mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' base64 decode: {e}"))
+                })
+        }
     }
 }
 
@@ -152,8 +225,8 @@ fn read_bytes(
             default_id,
             ..
         } => {
-            // Either an explicit "@<id>/..." prefix overrides, or we use the calling
-            // file's package as context.
+            
+            
             let (target_id, rest_path) = if let Some(rest) = path.strip_prefix('@') {
                 if let Some((id, inner)) = rest.split_once('/') {
                     (id.to_string(), inner.to_string())
@@ -177,7 +250,7 @@ fn read_bytes(
                     "Asset.GetAsset: {kind} '{rest_path}' not found in package '{target_id}'"
                 ))
             })?;
-            // Lazy decode: assets are kept as base64 strings until access.
+            
             let b64 = pkg.assets.get(&key).ok_or_else(|| {
                 mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' missing"))
             })?;
@@ -242,12 +315,12 @@ fn dotted_to_path(dotted: &str) -> PathBuf {
 }
 
 pub struct ImageAsset {
-    /// Stable id used by the GUI texture cache to dedupe uploads.
+    
     pub id: u64,
     pub width: u32,
     pub height: u32,
-    /// RGBA8 bytes (length = width * height * 4). Wrapped in `Arc` so primitives
-    /// can hold a reference without cloning megabytes of pixels.
+    
+    
     pub data: Arc<Vec<u8>>,
     pub source: String,
 }
@@ -261,9 +334,7 @@ impl UserData for ImageAsset {
     }
 }
 
-/// Opaque shader handle. The source text is intentionally not exposed to Lua —
-/// these are meant to be attached to host objects (sounds, meshes, UI) and
-/// parameterized via `:SetData(shader, name, value)`.
+
 pub struct ShaderAsset {
     pub id: u64,
     pub code: String,
@@ -292,9 +363,7 @@ impl TextAsset for FragmentAsset {
 
 impl UserData for FragmentAsset {}
 
-/// Mesh data loaded from an OBJ. The renderable subsystem caches the actual
-/// GPU vertex/index buffers by `id` so multiple BaseModels sharing the same
-/// asset upload only once.
+
 pub struct ModelAsset {
     pub id: u64,
     pub vertices: Arc<Vec<crate::libs::renderable::mesh::Vertex3D>>,
@@ -306,6 +375,19 @@ impl UserData for ModelAsset {
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
         m.add_method("VertexCount", |_, this, _: ()| Ok(this.vertices.len() as i64));
         m.add_method("TriangleCount", |_, this, _: ()| Ok((this.indices.len() / 3) as i64));
+        m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
+    }
+}
+
+
+pub struct FontAsset {
+    pub id: u64,
+    pub font: Arc<fontdue::Font>,
+    pub source: String,
+}
+
+impl UserData for FontAsset {
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
         m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
     }
 }

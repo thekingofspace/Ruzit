@@ -1,6 +1,4 @@
-//! Shared input state. Winit events on the window thread feed this module via
-//! `on_*` hooks; the Mouse and Keyboard library facades read the state and
-//! the heart loop drives `pump()` to fire queued signals on the Lua side.
+
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -13,8 +11,7 @@ use winit::window::{CursorIcon, Window as WinitWindow};
 use crate::libs::primitives::Dim;
 use crate::libs::signal;
 
-// Signals stashed in the named registry so both the Mouse/Keyboard facades
-// and `pump` can find them without threading state through every call.
+
 const MOUSE_MOVED_KEY: &str = "ruzit_mouse_moved";
 const MOUSE_INPUT_KEY: &str = "ruzit_mouse_input";
 const KEYBOARD_INPUT_KEY: &str = "ruzit_keyboard_input";
@@ -25,25 +22,24 @@ thread_local! {
 
 #[derive(Default)]
 struct InputState {
-    // Mouse — last cursor position in window-local pixels (top-left origin).
+    
     cursor_x: f32,
     cursor_y: f32,
-    // Buttons currently held. Stored as canonical names.
+    
     mouse_down: HashSet<String>,
-    // Keys currently held; both name and id are tracked so IsKeyDown can
-    // accept either form without re-resolving on every check.
+    
+    
     keys_down: HashMap<String, u32>,
-    // What the user asked for via Mouse:SetCursor / .Visible / .Locked.
+    
     desired_cursor: CursorKind,
     desired_visible: bool,
     desired_locked: bool,
     focused: bool,
-    // Center-lock baseline. While locked we re-center after each Moved and
-    // report deltas relative to this; otherwise it tracks the actual cursor
-    // and reported deltas come from the previous position.
+    
+    
     last_x: f32,
     last_y: f32,
-    // Queued events drained by `pump` and fired on the Lua thread.
+    
     pending_moves: Vec<MoveEvent>,
     pending_mouse_input: Vec<MouseInputEvent>,
     pending_key_input: Vec<KeyInputEvent>,
@@ -171,9 +167,6 @@ pub fn keyboard_input_signal(lua: &Lua) -> mlua::Result<Table> {
     lua.named_registry_value(KEYBOARD_INPUT_KEY)
 }
 
-// ---------------------------------------------------------------------------
-// Reads — Mouse / Keyboard facades use these
-// ---------------------------------------------------------------------------
 
 pub fn cursor_position() -> Dim {
     STATE.with(|s| {
@@ -206,15 +199,12 @@ pub fn is_key_down_by_id(id: u32) -> bool {
     STATE.with(|s| s.borrow().keys_down.values().any(|v| *v == id))
 }
 
-// ---------------------------------------------------------------------------
-// Writes — Mouse facade applies these and hands the cursor to the window
-// ---------------------------------------------------------------------------
 
 pub fn set_cursor(window: Option<&WinitWindow>, kind: CursorKind) {
     STATE.with(|s| s.borrow_mut().desired_cursor = kind);
     if let Some(w) = window {
-        // While unfocused we keep the OS cursor at default so the system arrow
-        // shows over the title bar / outside the window — refocus reapplies it.
+        
+        
         let focused = STATE.with(|s| s.borrow().focused);
         if focused {
             w.set_cursor(kind.to_winit());
@@ -234,8 +224,8 @@ pub fn set_visible(window: Option<&WinitWindow>, visible: bool) {
 
 pub fn set_locked(window: Option<&WinitWindow>, locked: bool) {
     STATE.with(|s| s.borrow_mut().desired_locked = locked);
-    // Snap the cursor to the center on lock so the first reported delta is 0
-    // instead of jumping by however far it was from the center.
+    
+    
     if let Some(w) = window {
         if locked {
             recenter_cursor(w);
@@ -257,9 +247,6 @@ fn recenter_cursor(window: &WinitWindow) {
     });
 }
 
-// ---------------------------------------------------------------------------
-// Winit hooks — called from window/mod.rs's WindowEvent handler
-// ---------------------------------------------------------------------------
 
 pub fn on_cursor_moved(window: &WinitWindow, x: f32, y: f32) {
     let (dx, dy, locked) = STATE.with(|s| {
@@ -287,9 +274,8 @@ pub fn on_cursor_moved(window: &WinitWindow, x: f32, y: f32) {
     });
 
     if locked {
-        // Re-center after we've recorded the delta so the next move event's
-        // dx/dy is measured from the center, not from wherever the cursor
-        // landed after we moved it.
+        
+        
         recenter_cursor(window);
     }
 }
@@ -301,8 +287,8 @@ pub fn on_mouse_input(button: MouseButton, state: ElementState) {
         MouseButton::Middle => "MouseButton3",
         MouseButton::Back => "MouseButton4",
         MouseButton::Forward => "MouseButton5",
-        // Other(u16) keeps all the unusual buttons (gaming mice, etc.). We map
-        // them to MouseButton<N+5> so callers can still match by name.
+        
+        
         MouseButton::Other(n) => {
             let owned = format!("MouseButton{}", (n as u32) + 5);
             STATE.with(|s| {
@@ -338,7 +324,7 @@ pub fn on_mouse_input(button: MouseButton, state: ElementState) {
 
 pub fn on_keyboard_input(physical: PhysicalKey, logical: &Key, state: ElementState, repeat: bool) {
     if repeat {
-        // Suppress key-repeats so InputChanged fires once per physical press.
+        
         return;
     }
     let name = key_name(logical, physical);
@@ -358,7 +344,7 @@ pub fn on_keyboard_input(physical: PhysicalKey, logical: &Key, state: ElementSta
 pub fn on_focus(window: &WinitWindow, focused: bool) {
     STATE.with(|s| s.borrow_mut().focused = focused);
     if focused {
-        // Re-apply user prefs that the OS may have reset while we were away.
+        
         let (cursor, visible, locked) = STATE.with(|s| {
             let st = s.borrow();
             (st.desired_cursor, st.desired_visible, st.desired_locked)
@@ -369,21 +355,20 @@ pub fn on_focus(window: &WinitWindow, focused: bool) {
             recenter_cursor(window);
         }
     } else {
-        // Drop currently-held inputs so a focus-loss stuck key doesn't linger.
+        
         STATE.with(|s| {
             let mut st = s.borrow_mut();
             st.mouse_down.clear();
             st.keys_down.clear();
         });
-        // Restore the system default cursor while unfocused. set_cursor_visible
-        // matters because some OSs keep the hidden state across focus changes.
+        
+        
         window.set_cursor(CursorIcon::Default);
         window.set_cursor_visible(true);
     }
 }
 
-// Called every tick by the heart loop. Drains the queued events and fires
-// the corresponding signals on the Lua thread.
+
 pub fn pump(lua: &Lua) {
     let (moves, m_inputs, k_inputs) = STATE.with(|s| {
         let mut st = s.borrow_mut();
@@ -461,9 +446,6 @@ pub fn pump(lua: &Lua) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 fn key_name(logical: &Key, physical: PhysicalKey) -> String {
     match logical {
@@ -477,9 +459,8 @@ fn key_name(logical: &Key, physical: PhysicalKey) -> String {
 }
 
 fn named_key_name(named: NamedKey) -> &'static str {
-    // Cover the keys most game code cares about; everything else falls
-    // through to Debug below. Keep the names PascalCase for predictable
-    // matching from Lua.
+    
+    
     match named {
         NamedKey::Enter => "Enter",
         NamedKey::Tab => "Tab",
@@ -517,8 +498,7 @@ fn named_key_name(named: NamedKey) -> &'static str {
     }
 }
 
-/// FNV-1a 32-bit. Stable across runs and platforms — exposed to Lua as the
-/// "key id" so script code can match by either id or name interchangeably.
+
 fn fnv1a_32(s: &str) -> u32 {
     const FNV_OFFSET: u32 = 0x811C9DC5;
     const FNV_PRIME: u32 = 16777619;

@@ -1,9 +1,4 @@
-//! Build / Package output: launcher exe + `.scripts.managed` + `.assets.managed`.
-//!
-//! See [`write_launcher_exe`], [`write_scripts_managed`], [`write_assets_managed`],
-//! and [`load_managed_dir`] for the file-format details. Walks via [`collect_project`]
-//! skip subfolders that contain their own `ManagedInfo.toml` so DLC sources don't
-//! accidentally land in the standard build.
+
 
 use std::collections::HashMap;
 use std::env;
@@ -18,9 +13,7 @@ use crate::config::FileType;
 
 pub const MAGIC: &[u8; 8] = b"RUZITPKG";
 
-/// Slim metadata embedded in a launcher exe trailer.
-///
-/// Tells the launcher which package id under `./Managed/` is the entry point.
+
 pub struct LauncherInfo {
     pub default_id: String,
     pub name: String,
@@ -28,10 +21,7 @@ pub struct LauncherInfo {
     pub creator: String,
 }
 
-/// Loaded `.scripts.managed` / `.assets.managed` pair on disk, after envelope
-/// decrypt. Asset values are kept as base64 strings so they're decoded **lazily**
-/// when something actually asks for them via `Asset.GetAsset` — startup stays cheap
-/// even with thousands of assets.
+
 pub struct LoadedPackage {
     pub id: String,
     pub name: String,
@@ -41,11 +31,10 @@ pub struct LoadedPackage {
     pub file_type: FileType,
     pub physical_root: Option<std::path::PathBuf>,
     pub files: HashMap<String, String>,
-    pub assets: HashMap<String, String>, // base64 of raw bytes (lazy)
+    pub assets: HashMap<String, String>, 
 }
 
-/// Walk a project root, separating Luau sources from assets.
-/// Tooling files (build.toml, types.d.luau, .vscode, .git, target, *.exe) are skipped.
+
 pub fn collect_project(
     root: &Path,
 ) -> Result<(HashMap<String, String>, HashMap<String, Vec<u8>>), String> {
@@ -73,8 +62,8 @@ fn walk(
             continue;
         }
         if path.is_dir() {
-            // Skip subfolders that are themselves packages (have their own
-            // ManagedInfo.toml) — those are built separately via `Ruzit Package`.
+            
+            
             if path.join("ManagedInfo.toml").is_file() {
                 continue;
             }
@@ -97,12 +86,7 @@ fn walk(
     Ok(())
 }
 
-/// Remove a leading UTF-8 BOM (\u{FEFF}) if present.
-///
-/// Editors that save .luau as "UTF-8 with BOM" produce files Luau's parser
-/// rejects with `Expected identifier when parsing expression, got Unicode
-/// character U+feff`. We sanitize at packaging time so .managed files are
-/// always BOM-free.
+
 pub fn strip_bom(s: String) -> String {
     const BOM: &str = "\u{feff}";
     if s.starts_with(BOM) {
@@ -112,11 +96,7 @@ pub fn strip_bom(s: String) -> String {
     }
 }
 
-/// Find every immediate-or-nested subfolder of `root` that looks like a DLC:
-/// it has a `ManagedInfo.toml` and an `init.luau` (or whatever its
-/// ManagedInfo declares as Entry).
-///
-/// Recursion stops once a DLC is found — we don't allow nested DLCs.
+
 pub fn find_dlc_folders(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut out = Vec::new();
     walk_for_dlcs(root, root, &mut out)?;
@@ -145,7 +125,7 @@ fn walk_for_dlcs(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), 
         }
         if path.join("ManagedInfo.toml").is_file() {
             out.push(path);
-            continue; // don't recurse into a DLC
+            continue; 
         }
         walk_for_dlcs(root, &path, out)?;
     }
@@ -173,9 +153,6 @@ fn should_skip(rel: &str) -> bool {
     false
 }
 
-// ============================================================================
-// .managed file IO  (one file per kind: scripts or assets, paired by id)
-// ============================================================================
 
 pub fn write_scripts_managed(
     path: &Path,
@@ -227,7 +204,7 @@ pub fn write_assets_managed(
     fs::write(path, encrypted).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
-/// Load every `.managed` file under `dir`, pairing scripts+assets by id.
+
 pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, String> {
     let mut packages: HashMap<String, LoadedPackage> = HashMap::new();
     if !dir.is_dir() {
@@ -295,8 +272,8 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
                 if let Some(obj) = parsed.get("assets").and_then(|v| v.as_object()) {
                     for (k, v) in obj {
                         if let Some(b64) = v.as_str() {
-                            // Lazy: keep the base64 string; Asset.GetAsset
-                            // will decode it on demand.
+                            
+                            
                             pkg.assets.insert(k.clone(), b64.to_string());
                         }
                     }
@@ -308,9 +285,6 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
     Ok(packages)
 }
 
-// ============================================================================
-// Launcher exe (Ruzit runtime + tiny trailer pointing at the default package)
-// ============================================================================
 
 pub fn write_launcher_exe(
     out_path: &Path,
@@ -330,10 +304,8 @@ pub fn write_launcher_exe(
     let self_exe = env::current_exe().map_err(|e| e.to_string())?;
     let mut exe_bytes = fs::read(&self_exe)
         .map_err(|e| format!("read {}: {e}", self_exe.display()))?;
-    // Always rewrite the subsystem byte explicitly. Ruzit.exe ships as
-    // windowed-subsystem so it doesn't pop a console on Explorer launches —
-    // `windowed = false` opts back into a console-subsystem launcher whose
-    // stdout is permanently wired to a console window.
+    
+    
     if windowed {
         patch_subsystem_to_gui(&mut exe_bytes)?;
     } else {
@@ -430,9 +402,6 @@ pub fn default_generated_dir() -> Result<PathBuf, String> {
     Ok(cwd.join("Generated"))
 }
 
-// ============================================================================
-// PE patching
-// ============================================================================
 
 fn pe_offset(bytes: &[u8]) -> Result<usize, String> {
     if bytes.len() < 0x40 {

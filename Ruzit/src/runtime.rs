@@ -67,12 +67,7 @@ fn build_env(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
     Ok(env)
 }
 
-/// Override Luau's built-in `print` so output goes through Rust's stdout
-/// instead of the C-runtime FILE*. We're a windows-subsystem process, so
-/// the C runtime cached a null `stdout` at load time and our own
-/// `SetStdHandle` calls in console::setup don't reach it. Rust's
-/// `io::stdout()` reads `GetStdHandle` lazily on first use, so it picks up
-/// the redirected handle correctly.
+
 fn install_print(lua: &Lua, env: &Table) -> mlua::Result<()> {
     let print = lua.create_function(|lua, args: MultiValue| -> mlua::Result<()> {
         let mut buf = String::new();
@@ -80,8 +75,8 @@ fn install_print(lua: &Lua, env: &Table) -> mlua::Result<()> {
             if i > 0 {
                 buf.push('\t');
             }
-            // Mirror Luau's print: tostring everything, even userdata that
-            // implements __tostring.
+            
+            
             let s = lua.coerce_string(v.clone())?;
             match s {
                 Some(s) => buf.push_str(&s.to_str()?),

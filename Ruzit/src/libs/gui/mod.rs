@@ -7,7 +7,7 @@ use mlua::{
     AnyUserData, Lua, MultiValue, Table, UserData, UserDataFields, UserDataMethods, Value,
 };
 
-use crate::libs::asset::{FragmentAsset, ImageAsset, ShaderAsset};
+use crate::libs::asset::{self, FontAsset, FragmentAsset, ImageAsset, ShaderAsset};
 use crate::libs::primitives::{Color3, Dim};
 use crate::libs::signal;
 
@@ -16,13 +16,11 @@ pub mod render;
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
 thread_local! {
-    /// Live primitives, in insertion order. Render order is determined by
-    /// `z_index`, computed at draw time.
+    
+    
     static REGISTRY: RefCell<Vec<Arc<Mutex<PrimitiveState>>>> = const { RefCell::new(Vec::new()) };
 
-    /// Optional scene-wide shaders. Skybox draws before primitives, post-effect
-    /// after (sampling the rendered scene as a texture). Each slot holds at
-    /// most one active shader.
+    
     static SKYBOX: RefCell<Option<Arc<SceneShaderState>>> = const { RefCell::new(None) };
     static POST_EFFECT: RefCell<Option<Arc<SceneShaderState>>> = const { RefCell::new(None) };
 }
@@ -32,11 +30,12 @@ pub enum Shape {
     Square,
     Circle,
     Triangle,
-    /// Full-quad rectangle that samples a texture in the fragment shader.
-    /// `ruzit_inside_shape(uv, shape=3)` always returns true so there's no
-    /// geometric mask — clipping is the texture's job (alpha = 0 anywhere
-    /// you don't want a pixel).
+    
+    
     Image,
+    
+    
+    Text,
 }
 
 impl Shape {
@@ -46,14 +45,12 @@ impl Shape {
             Self::Circle => 1,
             Self::Triangle => 2,
             Self::Image => 3,
+            Self::Text => 4,
         }
     }
 }
 
-/// Reference to a texture-bound image. The GPU caches by `id`, so multiple
-/// primitives sharing the same `ImageAsset` upload only once. `data` is held
-/// even after the upload so a future GpuState can re-upload (the primitive
-/// outlives the GPU surface across resizes etc.).
+
 pub struct ImageRef {
     pub id: u64,
     pub width: u32,
@@ -61,20 +58,19 @@ pub struct ImageRef {
     pub data: Arc<Vec<u8>>,
 }
 
-/// One WGSL fragment shader the user attached. Holds the parsed param-name →
-/// slot map and the live values (16 floats packed into 4 vec4s on the GPU).
+
 #[derive(Clone)]
 pub struct AttachedShader {
     pub id: u64,
     #[allow(dead_code)]
     pub source: String,
-    /// Full WGSL fragment-stage source the engine should compile (prelude +
-    /// user code).
+    
+    
     pub wgsl: Arc<String>,
-    /// Lookup: param name → linear slot in [0, 16).
+    
     pub slot_of_name: Arc<std::collections::HashMap<String, u8>>,
-    /// 16 floats packed into 4 vec4s. Mutated by `:SetData` from the Lua
-    /// thread; read by the renderer on each draw.
+    
+    
     pub params: Arc<Mutex<[f32; 16]>>,
 }
 
@@ -89,18 +85,36 @@ pub struct PrimitiveState {
     pub z_index: i32,
     pub visible: bool,
     pub alive: bool,
-    /// All currently-attached shaders, in the order :AttachShader was called.
-    /// Only the last one is active at render time — composing multiple
-    /// fragment shaders into a single pipeline is out of scope for now.
+    
+    
     pub attached: Vec<AttachedShader>,
     pub changed_signal: Table,
-    /// Set for `Shape::Image` primitives only; renderer uploads + binds it.
+    
     pub image: Option<Arc<ImageRef>>,
+    
+    
+    pub text: Option<TextState>,
 }
 
-/// Render snapshot of one primitive. Cloned on the Lua thread, consumed on
-/// the same thread by the renderer so Lua handlers can't mutate state
-/// mid-render.
+
+pub struct TextState {
+    #[allow(dead_code)]
+    pub font_id: u64,
+    pub font: Arc<fontdue::Font>,
+    pub content: String,
+    pub size_px: f32,
+    pub color: Color3,
+    
+    pub baked: Option<Arc<ImageRef>>,
+}
+
+impl TextState {
+    fn invalidate(&mut self) {
+        self.baked = None;
+    }
+}
+
+
 pub struct RenderItem {
     pub shape: Shape,
     pub size: Dim,
@@ -108,7 +122,7 @@ pub struct RenderItem {
     pub color: Color3,
     pub transparency: f32,
     pub z_index: i32,
-    /// The active shader (last attached), if any.
+    
     pub active_shader: Option<AttachedShader>,
     pub image: Option<Arc<ImageRef>>,
 }
@@ -120,24 +134,115 @@ pub fn snapshot() -> Vec<RenderItem> {
         let mut out: Vec<RenderItem> = reg
             .iter()
             .filter_map(|p| {
-                let s = p.lock().unwrap();
+                let mut s = p.lock().unwrap();
                 if !s.visible {
                     return None;
                 }
+                
+                
+                let (image, size) = if matches!(s.shape, Shape::Text) {
+                    let baked = bake_text_if_dirty(&mut s);
+                    let size = match &baked {
+                        Some(img) => Dim::new(img.width as f32, img.height as f32),
+                        None => Dim::new(0.0, 0.0),
+                    };
+                    (baked, size)
+                } else {
+                    (s.image.clone(), s.size)
+                };
                 Some(RenderItem {
                     shape: s.shape,
-                    size: s.size,
+                    size,
                     position: s.position,
                     color: s.color,
                     transparency: s.transparency,
                     z_index: s.z_index,
                     active_shader: s.attached.last().cloned(),
-                    image: s.image.clone(),
+                    image,
                 })
             })
             .collect();
         out.sort_by_key(|r| r.z_index);
         out
+    })
+}
+
+fn bake_text_if_dirty(s: &mut PrimitiveState) -> Option<Arc<ImageRef>> {
+    let ts = s.text.as_mut()?;
+    if let Some(img) = &ts.baked {
+        return Some(img.clone());
+    }
+    let baked = bake_text(&ts.font, &ts.content, ts.size_px, ts.color);
+    ts.baked = Some(baked.clone());
+    Some(baked)
+}
+
+
+fn bake_text(font: &fontdue::Font, content: &str, size_px: f32, color: Color3) -> Arc<ImageRef> {
+    use fontdue::layout::{CoordinateSystem, Layout, TextStyle};
+    let id = asset::next_shader_id();
+    if content.is_empty() || size_px < 1.0 {
+        return Arc::new(ImageRef {
+            id,
+            width: 1,
+            height: 1,
+            data: Arc::new(vec![0, 0, 0, 0]),
+        });
+    }
+    let mut layout: Layout<()> = Layout::new(CoordinateSystem::PositiveYDown);
+    layout.append(&[font], &TextStyle::new(content, size_px, 0));
+    let glyphs = layout.glyphs();
+    if glyphs.is_empty() {
+        return Arc::new(ImageRef {
+            id,
+            width: 1,
+            height: 1,
+            data: Arc::new(vec![0, 0, 0, 0]),
+        });
+    }
+    
+    let mut max_x: i32 = 0;
+    let mut max_y: i32 = 0;
+    for g in glyphs {
+        max_x = max_x.max(g.x as i32 + g.width as i32);
+        max_y = max_y.max(g.y as i32 + g.height as i32);
+    }
+    let width = max_x.max(1) as u32;
+    let height = max_y.max(1) as u32;
+    let mut buf = vec![0u8; (width * height * 4) as usize];
+    let cr = color.r;
+    let cg = color.g;
+    let cb = color.b;
+    for g in glyphs {
+        let (_metrics, bitmap) = font.rasterize_config(g.key);
+        let gw = g.width as i32;
+        let gh = g.height as i32;
+        let gx = g.x as i32;
+        let gy = g.y as i32;
+        for j in 0..gh {
+            for i in 0..gw {
+                let alpha = bitmap[(j * gw + i) as usize];
+                if alpha == 0 {
+                    continue;
+                }
+                let px = gx + i;
+                let py = gy + j;
+                if px < 0 || py < 0 || px as u32 >= width || py as u32 >= height {
+                    continue;
+                }
+                let off = ((py as u32 * width + px as u32) * 4) as usize;
+                buf[off] = cr;
+                buf[off + 1] = cg;
+                buf[off + 2] = cb;
+                buf[off + 3] = alpha;
+            }
+        }
+    }
+    Arc::new(ImageRef {
+        id,
+        width,
+        height,
+        data: Arc::new(buf),
     })
 }
 
@@ -147,7 +252,7 @@ pub struct GuiPrimitive {
 
 impl GuiPrimitive {
     fn new(lua: &Lua, shape: Shape) -> mlua::Result<Self> {
-        Self::with_state(lua, shape, None, Dim::new(100.0, 100.0))
+        Self::with_state(lua, shape, None, None, Dim::new(100.0, 100.0))
     }
 
     fn new_image(lua: &Lua, asset: &ImageAsset) -> mlua::Result<Self> {
@@ -157,17 +262,31 @@ impl GuiPrimitive {
             height: asset.height,
             data: asset.data.clone(),
         };
-        // Default the size to the image's pixel dimensions — feels natural
-        // for `Asset.GetAsset("Image", ...) → GUI.Basic.Image(asset)` to come
-        // up at the asset's native size; user can resize via .Size.
+        
+        
         let size = Dim::new(asset.width as f32, asset.height as f32);
-        Self::with_state(lua, Shape::Image, Some(Arc::new(image)), size)
+        Self::with_state(lua, Shape::Image, Some(Arc::new(image)), None, size)
+    }
+
+    fn new_text(lua: &Lua, asset: &FontAsset) -> mlua::Result<Self> {
+        let text_state = TextState {
+            font_id: asset.id,
+            font: asset.font.clone(),
+            content: String::new(),
+            size_px: 24.0,
+            color: Color3::new(255, 255, 255),
+            baked: None,
+        };
+        
+        
+        Self::with_state(lua, Shape::Text, None, Some(text_state), Dim::new(0.0, 0.0))
     }
 
     fn with_state(
         lua: &Lua,
         shape: Shape,
         image: Option<Arc<ImageRef>>,
+        text: Option<TextState>,
         size: Dim,
     ) -> mlua::Result<Self> {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
@@ -185,6 +304,7 @@ impl GuiPrimitive {
             attached: Vec::new(),
             changed_signal,
             image,
+            text,
         }));
         REGISTRY.with(|cell| cell.borrow_mut().push(state.clone()));
         Ok(Self { state })
@@ -207,9 +327,7 @@ fn fire_changed(lua: &Lua, signal_table: Table, prop: &str) -> mlua::Result<()> 
     signal::fire(lua, &signal_table, args)
 }
 
-/// Compile a `Shader` or `Fragment` asset into an `AttachedShader`. The asset's
-/// text is prefixed with the engine prelude (uniforms, varyings, helpers) so
-/// user code can refer to `U`, `VsOut`, `p(...)`, and `ruzit_inside_shape`.
+
 fn build_attached(asset: &AnyUserData) -> mlua::Result<AttachedShader> {
     let (id, source, code) = if let Ok(s) = asset.borrow::<ShaderAsset>() {
         (s.id, s.source.clone(), s.code.clone())
@@ -234,8 +352,7 @@ fn build_attached(asset: &AnyUserData) -> mlua::Result<AttachedShader> {
     })
 }
 
-/// Parse `// @ruzit param NAME` lines (in declaration order) and assign each
-/// a linear slot in [0, 16). Slots beyond 15 are silently dropped.
+
 fn parse_param_decls(src: &str) -> std::collections::HashMap<String, u8> {
     let mut map = std::collections::HashMap::new();
     let mut next_slot: u8 = 0;
@@ -255,9 +372,8 @@ fn parse_param_decls(src: &str) -> std::collections::HashMap<String, u8> {
         let Some(rest) = rest.strip_prefix("param") else {
             continue;
         };
-        // Take the first whitespace-delimited token after `param`. Anything
-        // after that (including a stray `*/` from a block comment) is fine to
-        // ignore.
+        
+        
         let name = rest.split_whitespace().next().unwrap_or("").to_string();
         if name.is_empty() {
             continue;
@@ -358,7 +474,80 @@ impl UserData for GuiPrimitive {
                 Shape::Square => "Square",
                 Shape::Triangle => "Triangle",
                 Shape::Image => "Image",
+                Shape::Text => "Text",
             })
+        });
+
+        
+        f.add_field_method_get("Text", |_, this| -> mlua::Result<String> {
+            let s = this.state.lock().unwrap();
+            Ok(s.text.as_ref().map(|t| t.content.clone()).unwrap_or_default())
+        });
+        f.add_field_method_set("Text", |lua, this, value: String| {
+            this.ensure_alive("set Text")?;
+            let signal_table = {
+                let mut s = this.state.lock().unwrap();
+                let ts = s.text.as_mut().ok_or_else(|| {
+                    mlua::Error::RuntimeError(
+                        "Text is only valid on Font primitives".into(),
+                    )
+                })?;
+                if ts.content != value {
+                    ts.content = value;
+                    ts.invalidate();
+                }
+                s.changed_signal.clone()
+            };
+            fire_changed(lua, signal_table, "Text")
+        });
+        f.add_field_method_get("TextSize", |_, this| -> mlua::Result<f32> {
+            let s = this.state.lock().unwrap();
+            Ok(s.text.as_ref().map(|t| t.size_px).unwrap_or(0.0))
+        });
+        f.add_field_method_set("TextSize", |lua, this, value: f32| {
+            this.ensure_alive("set TextSize")?;
+            let signal_table = {
+                let mut s = this.state.lock().unwrap();
+                let ts = s.text.as_mut().ok_or_else(|| {
+                    mlua::Error::RuntimeError(
+                        "TextSize is only valid on Font primitives".into(),
+                    )
+                })?;
+                let new_size = value.clamp(1.0, 1024.0);
+                if ts.size_px != new_size {
+                    ts.size_px = new_size;
+                    ts.invalidate();
+                }
+                s.changed_signal.clone()
+            };
+            fire_changed(lua, signal_table, "TextSize")
+        });
+        f.add_field_method_get("TextColor", |_, this| -> mlua::Result<Color3> {
+            let s = this.state.lock().unwrap();
+            Ok(s.text
+                .as_ref()
+                .map(|t| t.color)
+                .unwrap_or(Color3::new(255, 255, 255)))
+        });
+        f.add_field_method_set("TextColor", |lua, this, value: AnyUserData| {
+            this.ensure_alive("set TextColor")?;
+            let color = *value.borrow::<Color3>().map_err(|_| {
+                mlua::Error::RuntimeError("TextColor expects a Primitives.Color3".into())
+            })?;
+            let signal_table = {
+                let mut s = this.state.lock().unwrap();
+                let ts = s.text.as_mut().ok_or_else(|| {
+                    mlua::Error::RuntimeError(
+                        "TextColor is only valid on Font primitives".into(),
+                    )
+                })?;
+                if ts.color.r != color.r || ts.color.g != color.g || ts.color.b != color.b {
+                    ts.color = color;
+                    ts.invalidate();
+                }
+                s.changed_signal.clone()
+            };
+            fire_changed(lua, signal_table, "TextColor")
         });
     }
 
@@ -458,9 +647,6 @@ fn shader_asset_id(asset: &AnyUserData) -> mlua::Result<u64> {
     ))
 }
 
-// ---------------------------------------------------------------------------
-// Scene-wide shaders: Skybox + PostEffect
-// ---------------------------------------------------------------------------
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SceneSlot {
@@ -468,9 +654,7 @@ pub enum SceneSlot {
     PostEffect,
 }
 
-/// Scene-level WGSL shader. Skybox runs before primitives at fullscreen
-/// (uv ∈ [0,1] across the window, IMG bound to a 1×1 white texture).
-/// PostEffect runs after primitives and samples the rendered scene as IMG.
+
 pub struct SceneShaderState {
     pub id: u64,
     pub wgsl: Arc<String>,
@@ -497,9 +681,8 @@ fn build_scene_shader(asset: &AnyUserData) -> mlua::Result<Arc<SceneShaderState>
         ));
     };
     let slot_of_name = parse_param_decls(&code);
-    // Same prelude as primitives — IMG/IMG_SAMP and the params helper carry
-    // the same meaning. Skybox just gets a white IMG and a fullscreen quad
-    // vertex; PostEffect gets the scene render as IMG.
+    
+    
     let prelude = render::FRAGMENT_PRELUDE;
     let wgsl = format!("{prelude}\n{code}");
     Ok(Arc::new(SceneShaderState {
@@ -510,8 +693,7 @@ fn build_scene_shader(asset: &AnyUserData) -> mlua::Result<Arc<SceneShaderState>
     }))
 }
 
-/// Lua-facing handle. Holds an Arc so :SetData mutations on the userdata
-/// reach the renderer through the shared params Mutex.
+
 pub struct SceneShader {
     slot: SceneSlot,
     state: Arc<SceneShaderState>,
@@ -550,8 +732,8 @@ impl UserData for SceneShader {
                 Ok(Some(this.state.params.lock().unwrap()[*slot as usize]))
             },
         );
-        // Destroy clears whichever scene slot we own — no-op if a different
-        // shader has been assigned in the meantime.
+        
+        
         m.add_method("Destroy", |_, this, _: ()| -> mlua::Result<()> {
             if this.current_in_slot() {
                 match this.slot {
@@ -596,6 +778,17 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 )
             })?;
             GuiPrimitive::new_image(lua, &img)
+        })?,
+    )?;
+    basic.set(
+        "Font",
+        lua.create_function(|lua, asset: AnyUserData| -> mlua::Result<GuiPrimitive> {
+            let font = asset.borrow::<FontAsset>().map_err(|_| {
+                mlua::Error::RuntimeError(
+                    "GUI.Basic.Font expects a FontAsset (Asset.GetAsset(\"Font\", ...))".into(),
+                )
+            })?;
+            GuiPrimitive::new_text(lua, &font)
         })?,
     )?;
     t.set("Basic", basic)?;

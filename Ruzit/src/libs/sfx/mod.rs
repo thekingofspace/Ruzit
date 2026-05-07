@@ -18,9 +18,8 @@ use crate::libs::signal;
 pub const SOUND_EXTS: &[&str] = &["wav", "mp3", "ogg", "flac"];
 
 thread_local! {
-    // We hold only the handle here. The `OutputStream` is intentionally leaked
-    // (see `output_handle`) because dropping it during process teardown can
-    // panic from inside cpal's audio thread on Windows.
+    
+    
     static OUTPUT: RefCell<Option<OutputStreamHandle>> = const { RefCell::new(None) };
     static ACTIVE: RefCell<Vec<ActivePlayback>> = const { RefCell::new(Vec::new()) };
 }
@@ -66,9 +65,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     Ok(t)
 }
 
-/// Raw sound bytes returned by `Asset.GetAsset("Sound", ...)`. Decoding and
-/// playback live in SFX; this struct just owns the source bytes so the same
-/// asset can be handed to multiple `SFX.LoadSound` calls.
+
 pub struct SoundData {
     pub bytes: Arc<Vec<u8>>,
     pub source: String,
@@ -133,9 +130,8 @@ fn output_handle() -> mlua::Result<OutputStreamHandle> {
         if borrow.is_none() {
             let (stream, handle) = OutputStream::try_default()
                 .map_err(|e| mlua::Error::RuntimeError(format!("SFX audio init: {e}")))?;
-            // Leak the stream: it must outlive any sink that references it, and
-            // dropping it during process teardown panics from inside cpal's
-            // audio thread on Windows ("threads should not terminate unexpectedly").
+            
+            
             std::mem::forget(stream);
             *borrow = Some(handle);
         }
@@ -144,7 +140,7 @@ fn output_handle() -> mlua::Result<OutputStreamHandle> {
 }
 
 fn load_from_data(lua: &Lua, data: &SoundData) -> mlua::Result<AnyUserData> {
-    // Validate up-front so a bad file errors at LoadSound, not at Play.
+    
     Decoder::new(Cursor::new((*data.bytes).clone())).map_err(|e| {
         mlua::Error::RuntimeError(format!("SFX.LoadSound: decode '{}': {e}", data.source))
     })?;
@@ -228,8 +224,8 @@ impl UserData for Sound {
                         "SetData: shader is not attached to this sound".into(),
                     )
                 })?;
-                // Writing through the Arc means any currently-playing source
-                // sees the change on its next sample read.
+                
+                
                 entry.params.lock().unwrap().insert(name, value);
                 Ok(())
             },
@@ -292,34 +288,29 @@ fn build_source(
     Ok(source)
 }
 
-/// Build a source wrapper for one attached shader. The wrapper owns a clone of
-/// `attached.params` (an `Arc<Mutex<...>>`), so anything the wrapper reads
-/// per-sample will reflect the latest value Lua wrote via `:SetData`.
+
 fn apply_attached(
     source: Box<dyn Source<Item = f32> + Send>,
     attached: &AttachedShader,
 ) -> mlua::Result<Box<dyn Source<Item = f32> + Send>> {
     let params = attached.params.clone();
     match attached.kind.as_str() {
-        // ---- amplitude / time effects ---------------------------------------
+        
         "wobble" | "tremolo" => Ok(Box::new(Tremolo::new(source, params))),
         "volume" | "gain" => Ok(Box::new(LiveGain::new(source, params))),
-        // Rodio's combinators snapshot their config; live SetData on these only
-        // takes effect after the next Play().
+        
+        
         "speed" => Ok(Box::new(source.speed(read_param(&params, "factor", 1.0)))),
         "lowpass" => Ok(Box::new(
             source.low_pass(read_param(&params, "freq", 1000.0) as u32),
         )),
 
-        // ---- placement / spatial --------------------------------------------
-        // Stereo pan. amount=-1 is full left, 0 is center, +1 is full right.
-        // Equal-power law so total energy stays roughly constant across the pan.
+        
         "pan" => Ok(Box::new(Pan::new(source, params))),
-        // Distance attenuation only, no pan. gain = 1 / (1 + falloff * distance).
+        
         "distance" | "falloff" => Ok(Box::new(Distance::new(source, params))),
-        // 3D placement: emitter at (x, y, z), listener at origin facing -z. Mixes
-        // the input down to mono and emits stereo with equal-power pan derived
-        // from x and inverse-square-ish attenuation from total distance.
+        
+        
         "spatial" | "position" | "3d" => Ok(Box::new(Spatial::new(source, params))),
 
         other => Err(mlua::Error::RuntimeError(format!(
@@ -328,9 +319,7 @@ fn apply_attached(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Effect: Tremolo (amplitude LFO)
-// ---------------------------------------------------------------------------
+
 struct Tremolo<I> {
     inner: I,
     params: Params,
@@ -389,9 +378,7 @@ where
     }
 }
 
-// ---------------------------------------------------------------------------
-// Effect: LiveGain (live-tunable scalar volume)
-// ---------------------------------------------------------------------------
+
 struct LiveGain<I> {
     inner: I,
     params: Params,
@@ -426,13 +413,7 @@ impl<I: Source<Item = f32>> Source for LiveGain<I> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Effect: Pan (stereo pan, equal-power)
-// ---------------------------------------------------------------------------
-/// Operates on whatever channel layout the source already has. For mono it
-/// passes through unchanged (you can't pan a mono signal without producing
-/// stereo — use `spatial` for that). For stereo it scales L and R; for surround
-/// layouts the extra channels pass through unchanged.
+
 struct Pan<I> {
     inner: I,
     params: Params,
@@ -455,7 +436,7 @@ impl<I: Source<Item = f32>> Iterator for Pan<I> {
         let s = self.inner.next()?;
         let channels = self.inner.channels().max(1);
         let amount = read_param(&self.params, "amount", 0.0).clamp(-1.0, 1.0);
-        // Equal-power: gain_l = cos(θ), gain_r = sin(θ), θ = (amount + 1) * π/4
+        
         let theta = (amount + 1.0) * std::f32::consts::FRAC_PI_4;
         let gain = match (channels, self.channel_idx) {
             (1, _) => 1.0,
@@ -483,9 +464,7 @@ impl<I: Source<Item = f32>> Source for Pan<I> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Effect: Distance (attenuation by distance, no pan)
-// ---------------------------------------------------------------------------
+
 struct Distance<I> {
     inner: I,
     params: Params,
@@ -523,21 +502,14 @@ impl<I: Source<Item = f32>> Source for Distance<I> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Effect: Spatial (3D position → stereo)
-// ---------------------------------------------------------------------------
-/// Listener sits at the origin facing -z (right-handed: +x = right, +y = up,
-/// +z = behind). Mixes the input to mono and emits stereo. Pan comes from x
-/// vs. distance; level comes from `1 / (1 + falloff * distance)`.
-///
-/// Always outputs 2 channels regardless of input channel count.
+
 struct Spatial<I> {
     inner: I,
     params: Params,
-    /// Mono sample held between L (output_channel=0) and R (output_channel=1)
-    /// emissions, computed once per *output* frame.
+    
+    
     held: f32,
-    /// Stereo gains computed at the same time as `held`, reused for the R sample.
+    
     held_left: f32,
     held_right: f32,
     output_channel: u8,
@@ -555,7 +527,7 @@ impl<I: Source<Item = f32>> Spatial<I> {
         }
     }
 
-    /// Pull one input frame and collapse it to mono.
+    
     fn next_mono_frame(&mut self) -> Option<f32> {
         let channels = self.inner.channels().max(1);
         let mut sum = 0.0;
@@ -570,8 +542,8 @@ impl<I: Source<Item = f32>> Iterator for Spatial<I> {
     type Item = f32;
     fn next(&mut self) -> Option<f32> {
         if self.output_channel == 0 {
-            // Start of a new stereo output frame: pull a mono input frame and
-            // recompute spatial gains based on the current parameter snapshot.
+            
+            
             self.held = self.next_mono_frame()?;
 
             let p = self.params.lock().unwrap();
@@ -584,8 +556,7 @@ impl<I: Source<Item = f32>> Iterator for Spatial<I> {
             let dist = (x * x + y * y + z * z).sqrt();
             let attenuation = 1.0 / (1.0 + falloff * dist);
 
-            // Pan from the x component, normalized by the radial distance so
-            // sources in front (z<0) and behind sit correctly between the ears.
+            
             let pan = if dist > 1e-4 {
                 (x / dist).clamp(-1.0, 1.0)
             } else {
@@ -607,8 +578,8 @@ impl<I: Source<Item = f32>> Iterator for Spatial<I> {
 
 impl<I: Source<Item = f32>> Source for Spatial<I> {
     fn current_frame_len(&self) -> Option<usize> {
-        // Don't let cpal cache frame boundaries we can't honor — stereo output
-        // doesn't line up with the inner source's frame layout.
+        
+        
         None
     }
     fn channels(&self) -> u16 {
@@ -623,8 +594,8 @@ impl<I: Source<Item = f32>> Source for Spatial<I> {
 }
 
 fn play_sound(this: &Sound) -> mlua::Result<()> {
-    // Replace any prior playback for this Sound. We drop the previous active
-    // entry directly so its Stopped event won't fire twice.
+    
+    
     let prev_id = this.current_id.lock().unwrap().take();
     if let Some(id) = prev_id {
         ACTIVE.with(|c| {
@@ -676,7 +647,7 @@ fn stop_sound(this: &Sound) {
     let id = this.current_id.lock().unwrap().take();
     if let Some(id) = id {
         ACTIVE.with(|c| {
-            // Don't remove yet — let pump notice the empty sink and fire Stopped.
+            
             if let Some(p) = c.borrow().iter().find(|p| p.id == id) {
                 p.sink.stop();
             }
@@ -721,8 +692,8 @@ pub fn pump(lua: &Lua) {
 
     ACTIVE.with(|c| {
         let mut active = c.borrow_mut();
-        // Anything pushed during firing (e.g. Stopped handler called Play) goes
-        // after the survivors so newly-started playbacks aren't reaped this tick.
+        
+        
         let added = std::mem::take(&mut *active);
         keep.extend(added);
         *active = keep;

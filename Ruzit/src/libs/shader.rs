@@ -5,15 +5,10 @@ use mlua::AnyUserData;
 
 use crate::libs::asset::{FragmentAsset, ShaderAsset};
 
-/// Live, per-sample / per-pixel parameters shared between the Lua thread
-/// (writer via `:SetData`) and the renderer / audio source (reader). Wrapping
-/// the map in `Arc<Mutex<>>` lets effects pick up changes mid-playback / mid-
-/// frame without rebuilding the source.
+
 pub type Params = Arc<Mutex<HashMap<String, f32>>>;
 
-/// One shader attached to a host object (Sound, GUI primitive, …). The `kind`
-/// is parsed once from the asset's text and routed to a domain-specific
-/// handler by the host.
+
 #[derive(Clone)]
 pub struct AttachedShader {
     pub id: u64,

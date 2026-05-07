@@ -27,8 +27,8 @@ fn install_constants(t: &Table) -> mlua::Result<()> {
         .map(|n| n.get())
         .unwrap_or(1);
     t.set("CpuCount", cpu_count as i64)?;
-    // True when this exe was produced by `Ruzit Build` (carries a launcher
-    // trailer); false under `Ruzit Test` / dev-tool runs.
+    
+    
     t.set("IsBuilt", is_built())?;
     Ok(())
 }
@@ -62,7 +62,7 @@ fn install_env(lua: &Lua, t: &Table) -> mlua::Result<()> {
     t.set(
         "SetEnv",
         lua.create_function(|_, (name, value): (String, String)| -> mlua::Result<()> {
-            // SAFETY: Process is single-threaded for env mutation; mlua state is non-Send.
+            
             unsafe { env::set_var(&name, &value) };
             Ok(())
         })?,

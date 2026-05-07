@@ -6,8 +6,7 @@ use crate::libs::window;
 pub fn create(lua: &Lua) -> mlua::Result<Table> {
     let t = lua.create_table()?;
 
-    // Mouse is a table-with-metatable so getter/setter logic can run on
-    // property reads and writes. The underlying state lives in libs::input.
+    
     let meta = lua.create_table()?;
     meta.set(
         "__index",

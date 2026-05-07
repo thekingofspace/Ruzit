@@ -47,7 +47,7 @@ pub fn is_open() -> bool {
 }
 
 pub fn pump(lua: &Lua) {
-    // Pump winit events into our app, then snapshot what happened.
+    
     let (close_now, pending) = EVENT_LOOP.with(|el_cell| {
         APP.with(|app_cell| {
             let mut el_ref = el_cell.borrow_mut();
@@ -63,8 +63,7 @@ pub fn pump(lua: &Lua) {
         })
     });
 
-    // Repaint every tick — fragment shaders may use `U.time` and we want
-    // smooth animation without a dirty-flag bookkeeping layer.
+    
     if !close_now {
         APP.with(|a| {
             if let Some(app) = a.borrow_mut().as_mut() {
@@ -73,7 +72,7 @@ pub fn pump(lua: &Lua) {
         });
     }
 
-    // Fire Changed events first (skip if we're already closing — handlers shouldn't run mid-shutdown).
+    
     if !close_now && !pending.is_empty() {
         if let Ok(signal) = lua.named_registry_value::<Table>(CHANGED_KEY) {
             for change in pending {
@@ -199,13 +198,13 @@ fn open(lua: &Lua, opts_arg: Option<Table>) -> mlua::Result<WindowHandle> {
     let mut event_loop = EventLoop::new()
         .map_err(|e| mlua::Error::RuntimeError(format!("EventLoop::new: {e}")))?;
     let mut app = WindowApp::new(opts);
-    // Drive once so resumed() runs and the window/surface come up before Open returns.
+    
     let _ = event_loop.pump_app_events(Some(Duration::ZERO), &mut app);
 
     EVENT_LOOP.with(|c| *c.borrow_mut() = Some(event_loop));
     APP.with(|c| *c.borrow_mut() = Some(app));
 
-    // Spin up a fresh Changed signal for this window and stash it where pump() can find it.
+    
     let changed = signal::new_instance(lua)?;
     lua.set_named_registry_value(CHANGED_KEY, changed)?;
     let on_focus = signal::new_instance(lua)?;
@@ -222,8 +221,8 @@ struct WindowApp {
     gpu: Option<GpuState>,
     close_requested: bool,
     pending: Vec<WindowChange>,
-    /// Wall-clock anchor for time-based GUI shaders. Exposed to fragment
-    /// shaders as `U.time` (seconds since the window opened).
+    
+    
     start: Instant,
 }
 
@@ -245,7 +244,7 @@ impl WindowApp {
         };
         let items = gui::snapshot();
         let t = self.start.elapsed().as_secs_f32();
-        // Black background — engine doesn't currently expose a clear color.
+        
         gpu.render(&items, t, [0.0, 0.0, 0.0]);
     }
 }
@@ -395,10 +394,7 @@ impl UserData for WindowHandle {
             Ok(())
         });
 
-        // Singleton viewport handle: same underlying camera state as
-        // Renderable.Camera. Lets 3D games drive the camera through the
-        // window object — `win:GetViewport().CFrame = ...` shifts what's
-        // shown without touching every part.
+        
         m.add_method("GetViewport", |lua, _, _: ()| -> mlua::Result<AnyUserData> {
             lua.create_userdata(crate::libs::renderable::CameraHandle)
         });
@@ -492,9 +488,7 @@ fn with_window<F: FnOnce(&Arc<WinitWindow>)>(f: F) {
     });
 }
 
-/// Public sibling for other libs (Mouse, Keyboard) that need to call into
-/// winit. Hands a `&WinitWindow` rather than the `Arc` so the closure can't
-/// extend its lifetime past the borrow.
+
 pub fn with_window_static<F: FnOnce(&WinitWindow)>(f: F) {
     APP.with(|a| {
         if let Some(app) = a.borrow().as_ref() {

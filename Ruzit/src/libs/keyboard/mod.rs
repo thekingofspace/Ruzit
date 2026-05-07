@@ -11,9 +11,8 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         lua.create_function(|lua, (_t, key): (Table, String)| -> mlua::Result<Value> {
             match key.as_str() {
                 "InputChanged" => Ok(Value::Table(input::keyboard_input_signal(lua)?)),
-                // IsKeyDown accepts either the canonical name (e.g. "W", "Space")
-                // or the FNV-1a id we hand back via InputChanged. Strings hit
-                // the name table; numbers walk the id values.
+                
+                
                 "IsKeyDown" => Ok(Value::Function(lua.create_function(
                     |_, (_self, key): (Value, Value)| -> mlua::Result<bool> {
                         match key {

@@ -1,8 +1,4 @@
-//! GPU renderer for GUI primitives. Each primitive draws as a unit quad with
-//! a per-draw uniform buffer. The default fragment shader colors the quad and
-//! discards pixels outside the shape mask. User shaders attached via
-//! `:AttachShader` get compiled into their own render pipeline (cached by
-//! shader id) and used in place of the default for that primitive.
+
 
 use std::collections::HashMap;
 use std::num::NonZeroU64;
@@ -15,12 +11,10 @@ use super::{ImageRef, RenderItem, SceneShaderState};
 
 use crate::libs::renderable::{
     self,
-    render as r3d, // 3D pipeline / matrix helpers live in libs/renderable/render.rs
+    render as r3d, 
 };
 
-/// Shared by every fragment shader (built-in and user-supplied). Keep this in
-/// sync with `RuzitUni` in WGSL — bytemuck on the Rust side, `@group(0)
-/// @binding(0)` on the WGSL side.
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
 pub struct UniData {
@@ -136,9 +130,7 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
 }
 "#;
 
-/// Fullscreen quad vertex shader. Used by skybox + post-effect passes. uv
-/// runs (0,0) at top-left to (1,1) at bottom-right so user fragment shaders
-/// can compose the same way as for primitives.
+
 const FULLSCREEN_VERTEX_WGSL: &str = r#"
 struct VsOut {
     @builtin(position) clip: vec4<f32>,
@@ -190,8 +182,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 }
 "#;
 
-/// All wgpu state lives here. Owned by the window module; recreated when the
-/// window opens / resizes.
+
 pub struct GpuState {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -201,78 +192,72 @@ pub struct GpuState {
 
     bind_group_layout: wgpu::BindGroupLayout,
     pipeline_layout: wgpu::PipelineLayout,
-    /// Static vertex shader module — every pipeline shares this.
+    
     vs_module: wgpu::ShaderModule,
-    /// Default solid-color pipeline used when no shader is attached.
+    
     default_pipeline: wgpu::RenderPipeline,
 
-    /// Shader-id → compiled fragment pipeline. Built lazily the first time a
-    /// given shader is rendered, kept across frames.
+    
     pipelines: HashMap<u64, wgpu::RenderPipeline>,
-    /// Per-primitive uniform buffers, grown on demand. Bind groups are built
-    /// per-frame because the texture binding varies per primitive.
+    
+    
     uniform_buffers: Vec<wgpu::Buffer>,
 
-    /// Sampler shared by all primitives. Linear filter both ways — image
-    /// scaling stays smooth.
+    
     sampler: wgpu::Sampler,
-    /// 1×1 white texture used by every shape primitive so the fragment
-    /// shader's `textureSample` returns (1,1,1,1) — a no-op multiplier.
+    
+    
     white_view: wgpu::TextureView,
-    /// image-asset id → uploaded texture view. Built lazily on first use.
+    
     image_textures: HashMap<u64, wgpu::TextureView>,
 
-    // -------- Scene-wide shaders (skybox + post-effect) --------
-    /// Vertex shader for fullscreen quads — separate from `vs_module` because
-    /// the math differs (clip-space corners, full-screen uv).
+    
     fullscreen_vs: wgpu::ShaderModule,
-    /// Cached skybox pipelines (drawn in the main pass — built with the
-    /// no-op depth state so they're attachment-compatible).
+    
+    
     skybox_pipelines: HashMap<u64, wgpu::RenderPipeline>,
-    /// Cached post-effect pipelines. Drawn in a separate pass against the
-    /// surface with no depth attachment — built without depth_stencil.
+    
+    
     post_pipelines: HashMap<u64, wgpu::RenderPipeline>,
-    /// Separate uniform buffer + per-pass bind groups for skybox vs post.
+    
     skybox_uniform: wgpu::Buffer,
     post_uniform: wgpu::Buffer,
-    /// Bind group with `IMG = white_view`, used by the skybox pass.
+    
     skybox_bind_group: wgpu::BindGroup,
-    /// Lazily-rebuilt bind group with `IMG = scene_view`. Rebuild whenever
-    /// the scene texture is recreated (resize / first use).
+    
+    
     post_bind_group: Option<wgpu::BindGroup>,
-    /// Offscreen render target used when a post-effect is active. The
-    /// primitive pass writes here instead of straight to the surface; the
-    /// post-effect pass then samples this and writes to the surface.
+    
+    
     scene_texture: Option<wgpu::Texture>,
     scene_view: Option<wgpu::TextureView>,
     scene_size: (u32, u32),
 
-    // -------- 3D rendering --------
+    
     depth_texture: Option<wgpu::Texture>,
     depth_view: Option<wgpu::TextureView>,
     depth_size: (u32, u32),
-    /// Bind group layout for 3D draws: per-frame uniform + per-instance
-    /// uniform + texture + sampler. Different from the 2D layout so we
-    /// keep them as separate pipelines.
+    
+    
     bind_group_layout_3d: wgpu::BindGroupLayout,
     pipeline_layout_3d: wgpu::PipelineLayout,
-    /// Default 3D pipeline (Lambert + texture * color). The vertex module is
-    /// only needed at construction — user pipelines compile their own.
+    
+    
     default_pipeline_3d: wgpu::RenderPipeline,
-    /// User-shader 3D pipelines, keyed by shader id.
+    
     pipelines_3d: HashMap<u64, wgpu::RenderPipeline>,
-    /// Per-frame uniform buffer (view+proj+light+time).
+    
     frame_uniform: wgpu::Buffer,
-    /// Per-instance uniform buffers (model+color+params), grown on demand.
+    
     instance_uniforms: Vec<wgpu::Buffer>,
-    /// Built-in cube + sphere vertex/index buffers.
+    
     cube_vertex: wgpu::Buffer,
     cube_index: wgpu::Buffer,
     cube_index_count: u32,
     sphere_vertex: wgpu::Buffer,
     sphere_index: wgpu::Buffer,
     sphere_index_count: u32,
-    /// Per-model GPU mesh cache, keyed by ModelAsset id.
+    
     model_buffers: HashMap<u64, ModelBuffers>,
 }
 
@@ -285,12 +270,8 @@ struct ModelBuffers {
 impl GpuState {
     pub fn new(window: Arc<winit::window::Window>) -> Result<Self, String> {
         let size = window.inner_size();
-        // On Windows, prefer DX12. The Vulkan path on this platform routes
-        // through every third-party overlay's capture layer (Twitch Studio,
-        // OBS, Overwolf, TikTok Live, etc.), which both spams the log on
-        // every resize and adds an extra source of instability when the
-        // swapchain is recreated. DX12 is the native path here and skips
-        // those hooks. On non-Windows we let wgpu pick.
+        
+        
         let backends = if cfg!(windows) {
             wgpu::Backends::DX12
         } else {
@@ -301,9 +282,7 @@ impl GpuState {
             ..Default::default()
         });
 
-        // Surface borrows the window via raw-window-handle. We turn it into
-        // 'static by stashing the Arc inside (the surface owns its own
-        // reference to the handles via the Arc clone).
+        
         let surface = instance
             .create_surface(window.clone())
             .map_err(|e| format!("create_surface: {e}"))?;
@@ -315,9 +294,7 @@ impl GpuState {
         }))
         .ok_or("no compatible GPU adapter found")?;
 
-        // `default()` allows 8192px textures and works on virtually any
-        // current desktop GPU. Downlevel's 2048 cap was being hit on
-        // hi-DPI / wide monitors after winit scaled the surface up.
+        
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
                 label: Some("Ruzit Device"),
@@ -410,9 +387,8 @@ impl GpuState {
             &vs_module,
             &default_fs,
             config.format,
-            // Drawn in the main pass which has a depth attachment so 3D can
-            // depth-test. 2D pipelines stay attachment-compatible by
-            // declaring a no-op depth state (compare = Always, write = off).
+            
+            
             Some(wgpu::TextureFormat::Depth32Float),
         );
 
@@ -428,10 +404,7 @@ impl GpuState {
         });
         let white_view = create_white_texture(&device, &queue);
 
-        // Scene-shader plumbing: fullscreen vertex module + uniform buffers
-        // for the two scene passes (skybox / post-effect). Skybox bind group
-        // can be built up-front since IMG = white view; post-effect bind
-        // group depends on the scene texture and is built later.
+        
         let fullscreen_vs = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Ruzit GUI fullscreen vertex"),
             source: wgpu::ShaderSource::Wgsl(FULLSCREEN_VERTEX_WGSL.into()),
@@ -465,7 +438,7 @@ impl GpuState {
             ],
         });
 
-        // -------- 3D bind group layout, pipeline, default shader --------
+        
         let bind_group_layout_3d =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Ruzit 3D bind group layout"),
@@ -541,7 +514,7 @@ impl GpuState {
             wgpu::TextureFormat::Depth32Float,
         );
 
-        // Frame + cube + sphere mesh buffers up front. Models upload lazily.
+        
         let frame_uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Ruzit 3D frame uni"),
             contents: bytemuck::bytes_of(&r3d::FrameUniform3D::zeroed()),
@@ -627,8 +600,8 @@ impl GpuState {
         self.config.height = ch;
         self.size = (cw, ch);
         self.surface.configure(&self.device, &self.config);
-        // Drop the scene + depth render targets — they'll be recreated at
-        // the new size on the next frame that needs them.
+        
+        
         self.scene_texture = None;
         self.scene_view = None;
         self.post_bind_group = None;
@@ -643,9 +616,8 @@ impl GpuState {
             return true;
         }
         let label = format!("Ruzit GUI user shader #{shader_id}");
-        // Capture compile errors here so a broken shader fails the attach
-        // visibly (printed once) and falls back to the default pipeline for
-        // subsequent frames.
+        
+        
         self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some(&label),
@@ -692,8 +664,8 @@ impl GpuState {
             eprintln!("[GUI] skybox shader #{shader_id} compile failed: {err}");
             return false;
         }
-        // Same pass as 3D / 2D primitives, so the pipeline must declare a
-        // (no-op) depth state to stay attachment-compatible.
+        
+        
         let pipeline = build_pipeline(
             &self.device,
             &self.pipeline_layout,
@@ -720,7 +692,7 @@ impl GpuState {
             eprintln!("[GUI] post shader #{shader_id} compile failed: {err}");
             return false;
         }
-        // Drawn in a depth-less pass against the surface.
+        
         let pipeline = build_pipeline(
             &self.device,
             &self.pipeline_layout,
@@ -733,9 +705,7 @@ impl GpuState {
         true
     }
 
-    /// Lazily create / re-create the offscreen scene render target so the
-    /// post-effect pass has something to sample. Format matches the swap
-    /// chain so the blit is identity in linear space.
+    
     fn ensure_scene_target(&mut self, w: u32, h: u32) {
         let want = (w.max(1), h.max(1));
         if self.scene_size == want && self.scene_texture.is_some() {
@@ -756,8 +726,8 @@ impl GpuState {
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        // Rebuild the post-effect bind group whenever the scene texture is
-        // recreated — it references the view by GPU handle.
+        
+        
         let post_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Ruzit GUI post bind"),
             layout: &self.bind_group_layout,
@@ -792,9 +762,8 @@ impl GpuState {
             }
         }
         let data = UniData {
-            // Scene shaders ignore pos/size (uv is screen-space) but we set
-            // them to a sensible fullscreen value so user shaders that touch
-            // them still get something coherent.
+            
+            
             pos: [0.0, 0.0],
             size: res,
             color: [1.0, 1.0, 1.0, 1.0],
@@ -806,8 +775,7 @@ impl GpuState {
         self.queue.write_buffer(buffer, 0, bytemuck::bytes_of(&data));
     }
 
-    /// Lazily allocate / re-allocate the depth target. Format = Depth32Float
-    /// for predictable precision across drivers.
+    
     fn ensure_depth_target(&mut self, w: u32, h: u32) {
         let want = (w.max(1), h.max(1));
         if self.depth_size == want && self.depth_texture.is_some() {
@@ -847,10 +815,8 @@ impl GpuState {
             eprintln!("[Renderable] 3D shader #{shader_id} compile failed: {err}");
             return false;
         }
-        // User shaders compile to a single module containing both stages
-        // (engine defaults filled in for whichever stage the user didn't
-        // override). Pass the same module for vs and fs — wgpu picks the
-        // entry points by name (`vs_main` / `fs_main`).
+        
+        
         let pipeline = r3d::build_pipeline_3d(
             &self.device,
             &self.pipeline_layout_3d,
@@ -898,9 +864,7 @@ impl GpuState {
         }
     }
 
-    /// Upload a part-texture (BaseModel.Texture) into the shared image cache
-    /// so the texture binding is reused across frames + parts. Returns the
-    /// view to bind.
+    
     fn ensure_part_texture(&mut self, tex: &renderable::PartTextureRef) -> &wgpu::TextureView {
         if !self.image_textures.contains_key(&tex.id) {
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
@@ -956,9 +920,8 @@ impl GpuState {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            // Rgba8UnormSrgb so the asset's sRGB pixels are linearized for
-            // shading and re-encoded to match the swap chain's sRGB format.
-            // Otherwise images look washed out.
+            
+            
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
@@ -986,9 +949,7 @@ impl GpuState {
         self.image_textures.insert(image.id, view);
     }
 
-    /// Render a frame.
-    /// Resolution comes from the surface config so the user shader's clip-space
-    /// math always matches the actual swap chain.
+    
     pub fn render(&mut self, items: &[RenderItem], time: f32, clear: [f32; 3]) {
         let surface_texture = match self.surface.get_current_texture() {
             Ok(t) => t,
@@ -1011,12 +972,12 @@ impl GpuState {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        // Snapshot 3D parts + scene shaders for this frame.
+        
         let parts = renderable::snapshot();
         let skybox = super::skybox_snapshot();
         let post_effect = super::post_effect_snapshot();
 
-        // ---- ensure compiled pipelines + GPU resources before the pass ----
+        
         if let Some(sb) = &skybox {
             self.ensure_skybox_pipeline(sb.id, &sb.wgsl);
         }
@@ -1047,7 +1008,7 @@ impl GpuState {
             }
         }
 
-        // ---- 2D primitive uniforms ---------------------------------------
+        
         let res = [self.size.0 as f32, self.size.1 as f32];
         for (i, item) in items.iter().enumerate() {
             let alpha = (1.0 - item.transparency).clamp(0.0, 1.0);
@@ -1077,9 +1038,7 @@ impl GpuState {
                 .write_buffer(&self.uniform_buffers[i], 0, bytemuck::bytes_of(&data));
         }
 
-        // ---- skybox / post-effect uniforms (separate buffers — the GPU
-        // sees the buffer state at submit time, not encode time, so sharing
-        // a single buffer across passes would clobber the first) ----------
+        
         if let Some(sb) = &skybox {
             self.write_scene_uniform(&self.skybox_uniform, sb, time);
         }
@@ -1087,7 +1046,7 @@ impl GpuState {
             self.write_scene_uniform(&self.post_uniform, pe, time);
         }
 
-        // ---- 3D frame + per-instance uniforms ----------------------------
+        
         let cam = renderable::camera_snapshot();
         let aspect = if self.size.1 > 0 {
             self.size.0 as f32 / self.size.1 as f32
@@ -1101,8 +1060,8 @@ impl GpuState {
         let proj = r3d::perspective_matrix(cam.fov_deg, aspect, cam.near, cam.far);
         let view_proj = r3d::mat4_mul(proj, view);
         let frame = r3d::FrameUniform3D {
-            // wgpu reads uniform mat4 as column-major; our math is row-major
-            // — transpose at upload so the GPU sees the matrix as intended.
+            
+            
             view_proj: r3d::transpose4(view_proj),
             light_dir: normalize3([-0.4, -1.0, -0.3]),
             time,
@@ -1139,7 +1098,7 @@ impl GpuState {
                 .write_buffer(&self.instance_uniforms[i], 0, bytemuck::bytes_of(&inst));
         }
 
-        // ---- 2D bind groups (one per primitive) --------------------------
+        
         let bind_groups_2d: Vec<wgpu::BindGroup> = items
             .iter()
             .enumerate()
@@ -1172,8 +1131,7 @@ impl GpuState {
             })
             .collect();
 
-        // ---- 3D bind groups (one per part). Texture is part.texture or
-        // the shared white view for color-only parts. -----------------------
+        
         let bind_groups_3d: Vec<wgpu::BindGroup> = parts
             .iter()
             .enumerate()
@@ -1210,8 +1168,7 @@ impl GpuState {
             })
             .collect();
 
-        // Color target for the main pass — scene texture if a post-effect
-        // is active, otherwise the swap chain directly.
+        
         let main_target: &wgpu::TextureView = if post_effect.is_some() {
             self.scene_view
                 .as_ref()
@@ -1230,7 +1187,7 @@ impl GpuState {
                 label: Some("Ruzit unified encoder"),
             });
 
-        // ===== pass 1: skybox → 3D parts → 2D primitives =====
+        
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Ruzit main pass"),
@@ -1259,7 +1216,7 @@ impl GpuState {
                 occlusion_query_set: None,
             });
 
-            // Skybox draws first so 3D + 2D land on top.
+            
             if let Some(sb) = &skybox {
                 if let Some(pipeline) = self.skybox_pipelines.get(&sb.id) {
                     rpass.set_pipeline(pipeline);
@@ -1268,7 +1225,7 @@ impl GpuState {
                 }
             }
 
-            // 3D parts — depth-tested. Pick mesh + pipeline per part.
+            
             for (i, part) in parts.iter().enumerate() {
                 let pipeline = match &part.active_shader {
                     Some(sh) => self
@@ -1292,7 +1249,7 @@ impl GpuState {
                     renderable::PartShape::Model => match &part.model {
                         Some(m) => match self.model_buffers.get(&m.id) {
                             Some(mb) => (&mb.vertex, &mb.index, mb.index_count),
-                            None => continue, // upload failed; skip
+                            None => continue, 
                         },
                         None => continue,
                     },
@@ -1302,7 +1259,7 @@ impl GpuState {
                 rpass.draw_indexed(0..idx_count, 0, 0..1);
             }
 
-            // 2D primitives last — drawn on top of the 3D scene.
+            
             for (i, item) in items.iter().enumerate() {
                 let pipeline = match &item.active_shader {
                     Some(sh) => self
@@ -1317,7 +1274,7 @@ impl GpuState {
             }
         }
 
-        // ===== pass 2: post-effect → surface (if active) =====
+        
         if let Some(pe) = &post_effect {
             if let (Some(pipeline), Some(post_bind)) = (
                 self.post_pipelines.get(&pe.id),
@@ -1399,12 +1356,7 @@ fn create_white_texture(device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::Tex
     texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
-/// Build a 2D-style pipeline. `depth_format` controls whether the pipeline is
-/// compatible with a depth attachment — pass `Some` for pipelines used in
-/// the main pass (which has a depth target so 3D can write to it), and
-/// `None` for pipelines used in a depth-less pass (post-effect → surface).
-/// 2D pipelines never actually depth-test; they just declare a no-op state
-/// (compare = Always, write = false) so they're attachment-compatible.
+
 fn build_pipeline(
     device: &wgpu::Device,
     layout: &wgpu::PipelineLayout,

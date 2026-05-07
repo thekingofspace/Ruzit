@@ -1,15 +1,8 @@
-//! 3D rendering: vertex / fragment shaders, pipeline, mesh upload helpers.
-//! Resources are owned by `gui::render::GpuState` (it's the unified GPU
-//! container) — this file just provides the shader source, vertex layout,
-//! and pipeline-build helper. The actual draw lives inline in GpuState's
-//! render() so it can share the encoder + render pass with skybox / 2D /
-//! post-effect.
+
 
 use bytemuck::{Pod, Zeroable};
 
-/// Per-frame uniform — view+projection matrix + a shared light direction
-/// and the wall-clock time. WGSL `mat4x4` is 16-aligned 64 bytes; vec3 is
-/// padded to 16 bytes.
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
 pub struct FrameUniform3D {
@@ -20,8 +13,7 @@ pub struct FrameUniform3D {
     pub _pad: f32,
 }
 
-/// Per-instance uniform — the model matrix, base color (with transparency
-/// in the alpha channel), and the same 16-float param block we use for 2D.
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
 pub struct InstanceUniform3D {
@@ -31,19 +23,19 @@ pub struct InstanceUniform3D {
 }
 
 pub const VERTEX_ATTRS: &[wgpu::VertexAttribute] = &[
-    // position
+    
     wgpu::VertexAttribute {
         offset: 0,
         shader_location: 0,
         format: wgpu::VertexFormat::Float32x3,
     },
-    // normal
+    
     wgpu::VertexAttribute {
         offset: 12,
         shader_location: 1,
         format: wgpu::VertexFormat::Float32x3,
     },
-    // uv
+    
     wgpu::VertexAttribute {
         offset: 24,
         shader_location: 2,
@@ -59,18 +51,7 @@ pub fn vertex_buffer_layout() -> wgpu::VertexBufferLayout<'static> {
     }
 }
 
-/// Prelude for user 3D shaders (both vertex + fragment). Provides:
-///   * `VsIn`                — vertex inputs (position, normal, uv)
-///   * `VsOut`               — varyings (clip pos, world pos, world normal, uv)
-///   * `Frame` (`F`)         — view_proj, light_dir, time, camera_pos
-///   * `Instance` (`I`)      — model matrix, color, params block
-///   * `IMG` / `IMG_SAMP`    — bound to the part's texture (white if none)
-///   * `p(idx)`              — convenience param accessor
-///
-/// User shaders may define their own `@vertex fn vs_main(in: VsIn) -> VsOut`
-/// (e.g. for vertex displacement) and/or `@fragment fn fs_main(in: VsOut) ->
-/// @location(0) vec4<f32>`. Whichever entry point they don't define falls
-/// back to the engine default.
+
 pub const FRAGMENT_PRELUDE_3D: &str = r#"
 struct VsIn {
     @location(0) position: vec3<f32>,
@@ -114,8 +95,7 @@ fn p(idx: u32) -> f32 {
 }
 "#;
 
-/// Built-in vertex shader. Always used; user shaders only override the
-/// fragment stage (they prepend the prelude above and provide `fs_main`).
+
 pub const VERTEX_WGSL_3D: &str = r#"
 struct VsIn {
     @location(0) position: vec3<f32>,
@@ -160,9 +140,7 @@ fn vs_main(in: VsIn) -> VsOut {
 }
 "#;
 
-/// Default vertex shader body. Appended to user shaders that don't define
-/// their own `@vertex fn vs_main`. The bind-group resources and `VsIn` /
-/// `VsOut` come from the prelude.
+
 pub const DEFAULT_VS_3D: &str = r#"
 @vertex
 fn vs_main(in: VsIn) -> VsOut {
@@ -177,7 +155,7 @@ fn vs_main(in: VsIn) -> VsOut {
 }
 "#;
 
-/// Default fragment shader: half-Lambert lighting + texture * color.
+
 pub const DEFAULT_FRAGMENT_WGSL_3D: &str = r#"
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
@@ -192,9 +170,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 }
 "#;
 
-/// Build a 3D render pipeline from a vertex + fragment shader module.
-/// Depth test = Less, depth write = true. Cull = back-face. Standard alpha
-/// blending so transparent parts behave correctly.
+
 pub fn build_pipeline_3d(
     device: &wgpu::Device,
     layout: &wgpu::PipelineLayout,
@@ -226,8 +202,8 @@ pub fn build_pipeline_3d(
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
             front_face: wgpu::FrontFace::Ccw,
-            // Cull disabled while we settle the matrix conventions — re-enable
-            // once the smoke test is visibly correct.
+            
+            
             cull_mode: None,
             polygon_mode: wgpu::PolygonMode::Fill,
             unclipped_depth: false,
@@ -246,17 +222,7 @@ pub fn build_pipeline_3d(
     })
 }
 
-// ---------------------------------------------------------------------------
-// Math helpers — perspective / view matrix builders for the camera.
-// ---------------------------------------------------------------------------
 
-// All matrices in this module are stored ROW-MAJOR (`m[row][col]`). Standard
-// math convention: `M * v` is `out[i] = sum_k m[i][k] * v[k]`. Just before
-// upload we run `transpose()` so wgpu (which reads uniforms as column-major)
-// sees the values in the layout it expects.
-
-/// Right-handed perspective matrix matching wgpu's NDC: x ∈ [-1,1],
-/// y ∈ [-1,1], z ∈ [0,1] (D3D-style depth). Camera looks down -Z.
 pub fn perspective_matrix(fov_deg: f32, aspect: f32, near: f32, far: f32) -> [[f32; 4]; 4] {
     let f = 1.0 / (fov_deg.to_radians() * 0.5).tan();
     let nf = 1.0 / (near - far);
@@ -270,7 +236,7 @@ pub fn perspective_matrix(fov_deg: f32, aspect: f32, near: f32, far: f32) -> [[f
     ]
 }
 
-/// R = Rx · Ry · Rz (XYZ Euler order, radians). Row-major.
+
 pub fn euler_rotation_matrix(rot: [f32; 3]) -> [[f32; 4]; 4] {
     let (sx, cx) = rot[0].sin_cos();
     let (sy, cy) = rot[1].sin_cos();
@@ -293,8 +259,7 @@ pub fn euler_rotation_matrix(rot: [f32; 3]) -> [[f32; 4]; 4] {
     ]
 }
 
-/// World matrix for a part: M = T(pos) · R(rot) · S(size). Row-major. The
-/// scale fits into the rotation columns (column-of-R times scalar size[j]).
+
 pub fn part_model_matrix(pos: [f32; 3], rot: [f32; 3], size: [f32; 3]) -> [[f32; 4]; 4] {
     let r = euler_rotation_matrix(rot);
     [
@@ -320,11 +285,10 @@ pub fn part_model_matrix(pos: [f32; 3], rot: [f32; 3], size: [f32; 3]) -> [[f32;
     ]
 }
 
-/// View matrix: V = R^T · T(-pos). The 3×3 part is the transpose of the
-/// rotation; the 4th column is the rotated negative position.
+
 pub fn view_matrix(pos: [f32; 3], rot: [f32; 3]) -> [[f32; 4]; 4] {
     let r = euler_rotation_matrix(rot);
-    // (R^T · -pos)[i] = -sum_k r[k][i] * pos[k]
+    
     let tx = -(r[0][0] * pos[0] + r[1][0] * pos[1] + r[2][0] * pos[2]);
     let ty = -(r[0][1] * pos[0] + r[1][1] * pos[1] + r[2][1] * pos[2]);
     let tz = -(r[0][2] * pos[0] + r[1][2] * pos[1] + r[2][2] * pos[2]);
@@ -336,7 +300,7 @@ pub fn view_matrix(pos: [f32; 3], rot: [f32; 3]) -> [[f32; 4]; 4] {
     ]
 }
 
-/// Standard row-major 4×4 multiplication: `r = a · b`.
+
 pub fn mat4_mul(a: [[f32; 4]; 4], b: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
     let mut r = [[0.0_f32; 4]; 4];
     for i in 0..4 {
@@ -350,8 +314,7 @@ pub fn mat4_mul(a: [[f32; 4]; 4], b: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
     r
 }
 
-/// Transpose a 4×4 matrix. Used at upload time to convert our row-major
-/// representation to wgpu's column-major uniform layout.
+
 pub fn transpose4(m: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
     [
         [m[0][0], m[1][0], m[2][0], m[3][0]],

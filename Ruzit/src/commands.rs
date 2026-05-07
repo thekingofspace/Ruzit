@@ -23,8 +23,7 @@ pub fn cmd_test(arg: Option<&String>) -> Result<(), String> {
     println!("[Ruzit] Test → {}", entry.display());
     config.print_banner();
 
-    // Snapshot the project + every DLC subfolder into in-memory packages so
-    // dev-time `Managed.GetPackage(id)` works just like the launcher does.
+    
     let dlc_folders = package::find_dlc_folders(&root)?;
     if !dlc_folders.is_empty() {
         println!(
@@ -44,7 +43,7 @@ pub fn cmd_test(arg: Option<&String>) -> Result<(), String> {
         .to_string_lossy()
         .replace('\\', "/");
 
-    // Default package: the project itself.
+    
     let exe_stem = config
         .exe_name
         .clone()
@@ -68,8 +67,7 @@ pub fn cmd_test(arg: Option<&String>) -> Result<(), String> {
         }),
     );
 
-    // Each DLC: load ManagedInfo.toml, snapshot files/assets, attach physical_root
-    // so __dirname/IO inside the DLC point at its real disk folder.
+    
     for dlc in &dlc_folders {
         let info = ManagedInfo::load(dlc)?;
         let (dlc_files, dlc_assets) = package::collect_project(dlc)?;
@@ -126,17 +124,17 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         ));
     }
 
-    // Pick names: launcher exe stem and the default package id.
+    
     let default_stem = entry
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "Main".to_string());
-    // The package id mirrors the launcher's exe name so the .managed files line up
-    // visually with the exe (e.g. MyGame.exe + Managed/MyGame.scripts.managed).
+    
+    
     let exe_stem = config.exe_name.clone().unwrap_or_else(|| default_stem.clone());
     let pkg_id = exe_stem.clone();
 
-    // Resolve where Generated/ goes.
+    
     let generated_dir = match output {
         Some(o) => PathBuf::from(o),
         None => package::default_generated_dir()?,
@@ -145,13 +143,13 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
     fs::create_dir_all(&managed_dir)
         .map_err(|e| format!("mkdir {}: {e}", managed_dir.display()))?;
 
-    // Find icon bytes if [exe].icon is set.
+    
     let icon_bytes = match &config.exe_icon {
         Some(name) => Some(load_icon(root, name)?),
         None => None,
     };
 
-    // 1. Launcher exe — only carries a tiny trailer pointing at default package id.
+    
     let exe_path = generated_dir.join(format!("{exe_stem}.exe"));
     package::write_launcher_exe(
         &exe_path,
@@ -165,7 +163,7 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         config.exe_windowed,
     )?;
 
-    // 2. Scripts managed file.
+    
     let scripts_path = managed_dir.join(format!("{pkg_id}.scripts.managed"));
     package::write_scripts_managed(
         &scripts_path,
@@ -178,7 +176,7 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         &files,
     )?;
 
-    // 3. Assets managed file (skip writing if there are no assets).
+    
     let assets_path = managed_dir.join(format!("{pkg_id}.assets.managed"));
     if !assets.is_empty() {
         package::write_assets_managed(&assets_path, &pkg_id, &config.name, &assets)?;
@@ -209,9 +207,7 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         );
     }
 
-    // 4. Auto-package every DLC subfolder we can find (any folder containing a
-    //    ManagedInfo.toml). Stays out of the main bundle (collect_project skips
-    //    them) and emits its own .scripts/.assets.managed pair.
+    
     let dlc_folders = package::find_dlc_folders(root)?;
     for dlc in &dlc_folders {
         match build_dlc(&managed_dir, dlc) {
@@ -267,7 +263,7 @@ fn build_dlc(managed_dir: &Path, folder: &Path) -> Result<(String, usize, usize)
 }
 
 pub fn cmd_package(arg: Option<&String>, output: Option<&String>) -> Result<(), String> {
-    // Default to CWD if no path is given.
+    
     let folder = match arg {
         Some(s) => PathBuf::from(s)
             .canonicalize()
@@ -381,7 +377,7 @@ fn resolve_entry_arg(arg: Option<&String>) -> Result<PathBuf, String> {
 }
 
 fn find_default_main() -> Option<PathBuf> {
-    // 1. Next to the exe (drop Ruzit.exe into a project folder)
+    
     if let Ok(exe) = env::current_exe() {
         if let Some(dir) = exe.parent() {
             let here = dir.join("Main.luau");
@@ -391,7 +387,7 @@ fn find_default_main() -> Option<PathBuf> {
         }
     }
 
-    // 2. Current working directory
+    
     if let Ok(cwd) = env::current_dir() {
         let here = cwd.join("Main.luau");
         if here.is_file() {
@@ -399,7 +395,7 @@ fn find_default_main() -> Option<PathBuf> {
         }
     }
 
-    // 3. Walk up from CWD and exe_dir, accepting either ./Main.luau or ./test/Main.luau
+    
     let mut starts: Vec<PathBuf> = Vec::new();
     if let Ok(cwd) = env::current_dir() {
         starts.push(cwd);
@@ -482,8 +478,7 @@ fn display_rel(base: &Path, p: &Path) -> String {
         .replace('\\', "/")
 }
 
-/// Scaffold a Managed package folder. Drop this next to a project's build.toml
-/// and Build will auto-package it; the host game can then `Managed.GetPackage("<id>")`.
+
 pub fn cmd_init_package(arg: Option<&String>) -> Result<(), String> {
     let target = match arg {
         Some(s) => PathBuf::from(s),
@@ -492,13 +487,13 @@ pub fn cmd_init_package(arg: Option<&String>) -> Result<(), String> {
     fs::create_dir_all(&target)
         .map_err(|e| format!("create {}: {e}", target.display()))?;
 
-    // Folder name → id verbatim (matches how DLCs are looked up at runtime).
+    
     let id = target
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("my-package")
         .to_string();
-    // Display name: title-case the id with spaces in place of `-` / `_`.
+    
     let display_name = humanize(&id);
 
     let entries: &[(&str, &str)] = &[
