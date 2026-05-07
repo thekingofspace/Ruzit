@@ -19,6 +19,7 @@ pub fn cmd_test(arg: Option<&String>) -> Result<(), String> {
         .ok_or("entry has no parent directory")?
         .to_path_buf();
     let config = BuildConfig::load(&root)?;
+    apply_steam_app_id(&config);
 
     println!("[Ruzit] Test → {}", entry.display());
     config.print_banner();
@@ -106,6 +107,37 @@ fn encode_assets_b64(raw: HashMap<String, Vec<u8>>) -> HashMap<String, String> {
     raw.into_iter().map(|(k, v)| (k, B64.encode(v))).collect()
 }
 
+fn apply_steam_app_id(config: &BuildConfig) {
+    if env::var_os("RUZIT_STEAM_APPID").is_some() {
+        return;
+    }
+    if let Some(id) = config.steam_app_id {
+        unsafe {
+            env::set_var("RUZIT_STEAM_APPID", id.to_string());
+        }
+    }
+}
+
+/// Copy the Steamworks redistributable DLL into the build's Generated/ folder
+/// so the launcher exe can load it at runtime. The DLL itself is dropped next
+/// to the current Ruzit.exe by build.rs (it's pulled out of the
+/// steamworks-sys cargo build cache). Silent best-effort — if it isn't there
+/// we don't fail the build, since the user may not need Steam at runtime.
+fn copy_steam_redist(generated_dir: &Path) {
+    let Ok(self_exe) = env::current_exe() else { return };
+    let Some(self_dir) = self_exe.parent() else { return };
+    for name in ["steam_api64.dll", "steam_api.dll"] {
+        let src = self_dir.join(name);
+        if src.is_file() {
+            let dst = generated_dir.join(name);
+            match fs::copy(&src, &dst) {
+                Ok(_) => println!("        {}  (Steam redist)", name),
+                Err(e) => eprintln!("[Ruzit] warn: copy {}: {e}", src.display()),
+            }
+        }
+    }
+}
+
 pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), String> {
     let entry = resolve_entry_arg(arg)?;
     let root = entry.parent().ok_or("entry has no parent directory")?;
@@ -158,10 +190,13 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
             name: config.name.clone(),
             version: config.version.clone(),
             creator: config.creator.clone(),
+            steam_app_id: config.steam_app_id,
         },
         icon_bytes.as_deref(),
         config.exe_windowed,
     )?;
+
+    copy_steam_redist(&generated_dir);
 
     
     let scripts_path = managed_dir.join(format!("{pkg_id}.scripts.managed"));

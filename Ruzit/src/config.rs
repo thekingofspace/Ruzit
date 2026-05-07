@@ -41,6 +41,7 @@ pub struct BuildConfig {
     
     
     pub exe_windowed: bool,
+    pub steam_app_id: Option<u32>,
 }
 
 impl Default for BuildConfig {
@@ -52,9 +53,8 @@ impl Default for BuildConfig {
             file_type: FileType::default(),
             exe_name: None,
             exe_icon: None,
-            
-            
             exe_windowed: true,
+            steam_app_id: None,
         }
     }
 }
@@ -91,6 +91,13 @@ impl BuildConfig {
             }
             if let Some(b) = exe.get("windowed").and_then(|x| x.as_bool()) {
                 cfg.exe_windowed = b;
+            }
+        }
+        if let Some(steam) = v.get("steam") {
+            if let Some(id) = steam.get("app_id").and_then(|x| x.as_integer()) {
+                if id > 0 && id <= u32::MAX as i64 {
+                    cfg.steam_app_id = Some(id as u32);
+                }
             }
         }
         Ok(cfg)

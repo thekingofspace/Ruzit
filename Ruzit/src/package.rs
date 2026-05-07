@@ -19,6 +19,7 @@ pub struct LauncherInfo {
     pub name: String,
     pub version: String,
     pub creator: String,
+    pub steam_app_id: Option<u32>,
 }
 
 
@@ -298,6 +299,7 @@ pub fn write_launcher_exe(
         "name": info.name,
         "version": info.version,
         "creator": info.creator,
+        "steam_app_id": info.steam_app_id,
     });
     let trailer_bytes = serde_json::to_vec(&trailer).map_err(|e| e.to_string())?;
 
@@ -394,6 +396,10 @@ pub fn try_self_launcher() -> Option<LauncherInfo> {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_string(),
+        steam_app_id: parsed
+            .get("steam_app_id")
+            .and_then(|v| v.as_u64())
+            .and_then(|v| if v <= u32::MAX as u64 { Some(v as u32) } else { None }),
     })
 }
 

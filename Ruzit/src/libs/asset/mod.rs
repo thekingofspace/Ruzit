@@ -29,7 +29,106 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
             },
         )?,
     )?;
+    t.set(
+        "FromString",
+        lua.create_function(
+            |lua, (kind, data, label): (String, mlua::String, Option<String>)| -> mlua::Result<Value> {
+                let bytes = data.as_bytes().to_vec();
+                let source = label.unwrap_or_else(|| format!("<string:{}>", kind));
+                from_bytes(lua, &kind, bytes, source)
+            },
+        )?,
+    )?;
+    t.set(
+        "ImportAsset",
+        lua.create_function(
+            |lua, (kind, path): (String, String)| -> mlua::Result<Value> {
+                let p = std::path::Path::new(&path);
+                let bytes = std::fs::read(p).map_err(|e| {
+                    mlua::Error::RuntimeError(format!("ImportAsset: read '{path}': {e}"))
+                })?;
+                let resolved_kind = if kind.is_empty() || kind == "Auto" {
+                    detect_kind_from_extension(p).ok_or_else(|| {
+                        mlua::Error::RuntimeError(format!(
+                            "ImportAsset: cannot guess kind from '{path}'; pass an explicit kind"
+                        ))
+                    })?
+                } else {
+                    kind
+                };
+                from_bytes(lua, &resolved_kind, bytes, path)
+            },
+        )?,
+    )?;
+    t.set(
+        "FromPixels",
+        lua.create_function(
+            |lua, (width, height, data): (u32, u32, mlua::String)| -> mlua::Result<Value> {
+                let bytes = data.as_bytes();
+                let expected = (width as usize) * (height as usize) * 4;
+                if bytes.len() != expected {
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "Asset.FromPixels: expected {expected} bytes ({width}x{height} RGBA), got {}",
+                        bytes.len()
+                    )));
+                }
+                let asset = ImageAsset {
+                    id: next_shader_id(),
+                    width,
+                    height,
+                    data: Arc::new(bytes.to_vec()),
+                    source: format!("<pixels:{width}x{height}>"),
+                };
+                Ok(Value::UserData(lua.create_userdata(asset)?))
+            },
+        )?,
+    )?;
     Ok(t)
+}
+
+pub fn from_bytes(lua: &Lua, kind: &str, bytes: Vec<u8>, source: String) -> mlua::Result<Value> {
+    match kind {
+        "Image" => parse_image(lua, bytes, source),
+        "Sound" => Ok(Value::UserData(lua.create_userdata(SoundData {
+            bytes: Arc::new(bytes),
+            source,
+        })?)),
+        "Shader" => parse_text::<ShaderAsset>(lua, bytes, source),
+        "Fragment" => parse_text::<FragmentAsset>(lua, bytes, source),
+        "Model" => parse_model(lua, bytes, source),
+        "Font" => parse_font(lua, bytes, source),
+        "File" => {
+            let s = String::from_utf8(bytes).map_err(|e| {
+                mlua::Error::RuntimeError(format!("Asset.FromString: '{source}' not UTF-8: {e}"))
+            })?;
+            Ok(Value::String(lua.create_string(&s)?))
+        }
+        other => Err(mlua::Error::RuntimeError(format!(
+            "Asset.FromString: unknown kind '{other}'"
+        ))),
+    }
+}
+
+fn detect_kind_from_extension(path: &Path) -> Option<String> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    if IMAGE_EXTS.iter().any(|e| *e == ext) { return Some("Image".into()); }
+    if SHADER_EXTS.iter().any(|e| *e == ext) { return Some("Shader".into()); }
+    if FRAGMENT_EXTS.iter().any(|e| *e == ext) { return Some("Fragment".into()); }
+    if MODEL_EXTS.iter().any(|e| *e == ext) { return Some("Model".into()); }
+    if FONT_EXTS.iter().any(|e| *e == ext) { return Some("Font".into()); }
+    if sfx::SOUND_EXTS.iter().any(|e| *e == ext) { return Some("Sound".into()); }
+    None
+}
+
+pub fn make_image_from_rgba(lua: &Lua, width: u32, height: u32, rgba: Vec<u8>, source: String) -> mlua::Result<Value> {
+    let asset = ImageAsset {
+        id: next_shader_id(),
+        width,
+        height,
+        data: Arc::new(rgba),
+        source,
+    };
+    Ok(Value::UserData(lua.create_userdata(asset)?))
 }
 
 const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "bmp", "gif", "webp"];
@@ -61,8 +160,12 @@ fn get_asset(
 
 fn load_font(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value> {
     let (bytes, source) = read_bytes(fs, owner, path, FONT_EXTS, "Font")?;
+    parse_font(lua, bytes, source)
+}
+
+fn parse_font(lua: &Lua, bytes: Vec<u8>, source: String) -> mlua::Result<Value> {
     let font = fontdue::Font::from_bytes(bytes.as_slice(), fontdue::FontSettings::default())
-        .map_err(|e| mlua::Error::RuntimeError(format!("Asset.GetAsset: parse '{source}': {e}")))?;
+        .map_err(|e| mlua::Error::RuntimeError(format!("Font parse '{source}': {e}")))?;
     let asset = FontAsset {
         id: next_shader_id(),
         font: Arc::new(font),
@@ -133,11 +236,15 @@ fn read_file_bytes(fs: &Fs, owner: &str, path: &str) -> mlua::Result<Vec<u8>> {
 
 fn load_model(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value> {
     let (bytes, source) = read_bytes(fs, owner, path, MODEL_EXTS, "Model")?;
+    parse_model(lua, bytes, source)
+}
+
+fn parse_model(lua: &Lua, bytes: Vec<u8>, source: String) -> mlua::Result<Value> {
     let text = String::from_utf8(bytes).map_err(|e| {
-        mlua::Error::RuntimeError(format!("Asset.GetAsset: '{source}' not valid UTF-8: {e}"))
+        mlua::Error::RuntimeError(format!("Model '{source}' not UTF-8: {e}"))
     })?;
     let mesh = crate::libs::renderable::mesh::load_obj(&text).map_err(|e| {
-        mlua::Error::RuntimeError(format!("Asset.GetAsset: parse '{source}': {e}"))
+        mlua::Error::RuntimeError(format!("Model parse '{source}': {e}"))
     })?;
     let asset = ModelAsset {
         id: next_shader_id(),
@@ -166,8 +273,16 @@ fn load_text<T: TextAsset + UserData + 'static>(
     kind: &str,
 ) -> mlua::Result<Value> {
     let (bytes, source) = read_bytes(fs, owner, path, exts, kind)?;
+    parse_text::<T>(lua, bytes, source)
+}
+
+fn parse_text<T: TextAsset + UserData + 'static>(
+    lua: &Lua,
+    bytes: Vec<u8>,
+    source: String,
+) -> mlua::Result<Value> {
     let code = String::from_utf8(bytes).map_err(|e| {
-        mlua::Error::RuntimeError(format!("Asset.GetAsset: '{source}' not valid UTF-8: {e}"))
+        mlua::Error::RuntimeError(format!("'{source}' not UTF-8: {e}"))
     })?;
     Ok(Value::UserData(lua.create_userdata(T::make(code, source))?))
 }
@@ -178,7 +293,10 @@ trait TextAsset {
 
 fn load_image(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value> {
     let (bytes, source) = read_bytes(fs, owner, path, IMAGE_EXTS, "Image")?;
+    parse_image(lua, bytes, source)
+}
 
+fn parse_image(lua: &Lua, bytes: Vec<u8>, source: String) -> mlua::Result<Value> {
     let img = ImageReader::new(std::io::Cursor::new(&bytes))
         .with_guessed_format()
         .map_err(|e| mlua::Error::RuntimeError(format!("guess {source}: {e}")))?

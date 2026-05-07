@@ -23,6 +23,7 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         crate::libs::window::pump(lua);
         crate::libs::input::pump(lua);
         crate::libs::sfx::pump(lua);
+        crate::libs::steam::pump(lua);
 
         let snapshot = snapshot_handlers(lua)?;
         let window_open = crate::libs::window::is_open();

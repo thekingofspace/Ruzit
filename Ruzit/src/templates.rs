@@ -12,6 +12,12 @@ Creator = ""
                       # window unless --console is passed. Set to false to
                       # ship a console-subsystem launcher whose stdout is
                       # always visible.
+
+[steam]
+# app_id = 480        # Steam app id used by `import("Steam")`. 480 is Spacewar
+                      # (Valve's free dev test app). Replace with your own
+                      # registered app id at ship time. Falls back to 480 if
+                      # unset; the RUZIT_STEAM_APPID env var overrides this.
 "#;
 
 pub const MAIN_LUAU: &str = r#"--!strict
@@ -200,6 +206,22 @@ type Asset_API = {
 		& ((kind: "Model", path: string) -> ModelAsset)
 		& ((kind: "Font", path: string) -> FontAsset)
 		& ((kind: "File", path: string) -> string),
+	FromString: ((kind: "Image", data: string, label: string?) -> ImageAsset)
+		& ((kind: "Sound", data: string, label: string?) -> SoundData)
+		& ((kind: "Shader", data: string, label: string?) -> ShaderAsset)
+		& ((kind: "Fragment", data: string, label: string?) -> FragmentAsset)
+		& ((kind: "Model", data: string, label: string?) -> ModelAsset)
+		& ((kind: "Font", data: string, label: string?) -> FontAsset)
+		& ((kind: "File", data: string, label: string?) -> string),
+	ImportAsset: ((kind: "Image", path: string) -> ImageAsset)
+		& ((kind: "Sound", path: string) -> SoundData)
+		& ((kind: "Shader", path: string) -> ShaderAsset)
+		& ((kind: "Fragment", path: string) -> FragmentAsset)
+		& ((kind: "Model", path: string) -> ModelAsset)
+		& ((kind: "Font", path: string) -> FontAsset)
+		& ((kind: "File", path: string) -> string)
+		& ((kind: "Auto", path: string) -> any),
+	FromPixels: (width: number, height: number, rgba: string) -> ImageAsset,
 }
 
 type WindowOptions = {
@@ -467,9 +489,137 @@ type RunService_API = {
 	RenderStepped: Signal,
 }
 
--- One row per importable lib; the solver indexes into this rather than
--- trying to pick a winner from a 13-way function intersection (which blew
--- the type-complexity limit and made `import(...)` unresolvable).
+declare class SteamLobby
+	ID: string
+	Owner: string
+	OnMemberJoined: Signal
+	OnMemberLeft: Signal
+	OnDataUpdate: Signal
+	function Members(self): { string }
+	function SetData(self, key: string, value: string): ()
+	function GetData(self, key: string): string?
+	function SendChat(self, message: string): ()
+	function Leave(self): ()
+end
+
+declare class SteamServer
+	ID: string
+	OnClientAuthed: Signal
+	function SetServerName(self, name: string): ()
+	function SetMapName(self, map: string): ()
+	function SetMaxPlayers(self, max: number): ()
+	function LogOnAnonymous(self): ()
+	function Stop(self): ()
+end
+
+type SteamFriend = { ID: string, Name: string, State: string }
+type SteamLobbyInfo = { ID: string, MemberCount: number?, Name: string? }
+
+type SteamServerOptions = {
+	port: number?, queryPort: number?, mode: string?, version: string?,
+	name: string?, map: string?, max: number?,
+}
+
+type Steam_API = {
+	User: {
+		ID: string,
+		Name: string,
+		Level: number,
+		AccountID: () -> number,
+		LoggedOn: () -> boolean,
+		GetFriends: () -> { SteamFriend },
+		GetAvatar: (size: string?) -> ImageAsset?,
+		GetFriendAvatar: (id: string, size: string?) -> ImageAsset?,
+		GetAvatarAsync: (id: string, size: string?) -> Signal,
+		GetFriendInfo: (id: string) -> { ID: string, Name: string, Nickname: string?, State: string, Game: { AppID: number }? },
+		RequestInfo: (id: string, nameOnly: boolean?) -> boolean,
+		InviteToGame: (id: string, connectString: string) -> (),
+	},
+	Achievements: {
+		Unlock: (name: string) -> (),
+		Clear: (name: string) -> (),
+		IsUnlocked: (name: string) -> boolean,
+		Store: () -> (),
+	},
+	Stats: {
+		SetInt: (name: string, value: number) -> (),
+		SetFloat: (name: string, value: number) -> (),
+		GetInt: (name: string) -> number,
+		GetFloat: (name: string) -> number,
+		Store: () -> (),
+	},
+	Lobby: {
+		Create: (maxMembers: number?, kind: string?) -> Signal,
+		Join: (id: string) -> Signal,
+		List: () -> Signal,
+	},
+	Server: {
+		Start: (opts: SteamServerOptions) -> SteamServer,
+	},
+	Overlay: {
+		Show: (dialog: string) -> (),
+		ShowFriends: () -> (),
+		ShowAchievements: () -> (),
+		ShowSettings: () -> (),
+		ShowURL: (url: string) -> (),
+		ShowStore: (appId: number?, mode: string?) -> (),
+		ShowUser: (id: string, dialog: string?) -> (),
+		ShowInvite: (lobbyId: string) -> (),
+	},
+	App: {
+		IsAppInstalled: (appId: number) -> boolean,
+		IsDlcInstalled: (appId: number) -> boolean,
+		IsSubscribed: () -> boolean,
+		IsVacBanned: () -> boolean,
+		BuildId: () -> number,
+		InstallDir: (appId: number) -> string,
+		OwnerID: () -> string,
+		CurrentLanguage: () -> string,
+		AvailableLanguages: () -> { string },
+		BetaName: () -> string?,
+		LaunchCommandLine: () -> string,
+	},
+	Utils: {
+		UILanguage: () -> string,
+		IpCountry: () -> string,
+		ServerTime: () -> number,
+		IsSteamDeck: () -> boolean,
+		AppID: () -> number,
+		SetOverlayPosition: (position: string) -> (),
+	},
+	RichPresence: {
+		Set: (key: string, value: string?) -> boolean,
+		Clear: () -> (),
+	},
+	Cloud: {
+		IsEnabledForAccount: () -> boolean,
+		IsEnabledForApp: () -> boolean,
+		SetEnabledForApp: (enabled: boolean) -> (),
+		Files: () -> { { Name: string, Size: number } },
+		Exists: (name: string) -> boolean,
+		Read: (name: string) -> string?,
+		Write: (name: string, data: string) -> (),
+		Delete: (name: string) -> boolean,
+	},
+	Workshop: {
+		SubscribedItems: () -> { string },
+		ItemState: (id: string) -> { Subscribed: boolean, Installed: boolean, NeedsUpdate: boolean, Downloading: boolean, DownloadPending: boolean },
+		InstallInfo: (id: string) -> { Folder: string, SizeOnDisk: number, Timestamp: number }?,
+		DownloadProgress: (id: string) -> { Downloaded: number, Total: number }?,
+		DownloadItem: (id: string, highPriority: boolean?) -> boolean,
+		GetItem: (id: string) -> {
+			ID: string, Subscribed: boolean, Installed: boolean, NeedsUpdate: boolean,
+			Downloading: boolean, DownloadPending: boolean,
+			Folder: string?, SizeOnDisk: number?, Timestamp: number?,
+			DownloadProgress: { Downloaded: number, Total: number }?,
+			Files: (() -> { string })?,
+		},
+	},
+	RemotePlay: {
+		Sessions: () -> { { UserID: string, ClientName: string?, Width: number?, Height: number? } },
+	},
+}
+
 type Imports = {
 	Asset: Asset_API,
 	GUI: GUI_API,
@@ -485,6 +635,7 @@ type Imports = {
 	Serde: Serde_API,
 	SFX: SFX_API,
 	Signal: Signal_API,
+	Steam: Steam_API,
 	Window: Window_API,
 }
 

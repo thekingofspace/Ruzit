@@ -14,4 +14,5 @@ pub mod serde;
 pub mod sfx;
 pub mod shader;
 pub mod signal;
+pub mod steam;
 pub mod window;

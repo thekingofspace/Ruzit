@@ -81,6 +81,13 @@ fn parse_path_and_output(args: &[String]) -> (Option<String>, Option<String>) {
 }
 
 fn run_launcher(info: package::LauncherInfo) -> Result<(), String> {
+    if env::var_os("RUZIT_STEAM_APPID").is_none() {
+        if let Some(id) = info.steam_app_id {
+            unsafe {
+                env::set_var("RUZIT_STEAM_APPID", id.to_string());
+            }
+        }
+    }
     let exe_dir = env::current_exe()
         .ok()
         .and_then(|e| e.parent().map(PathBuf::from))
@@ -149,14 +156,36 @@ fn run_launcher(info: package::LauncherInfo) -> Result<(), String> {
     runtime::run_entry(fs_layer, &default_entry)
 }
 
+const EMBEDDED_STEAM_DLL: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/steam_api64.dll"));
+
+fn ensure_steam_dll_alongside_exe() {
+    if EMBEDDED_STEAM_DLL.is_empty() {
+        return;
+    }
+    let Ok(self_exe) = env::current_exe() else { return };
+    let Some(self_dir) = self_exe.parent() else { return };
+    let dll_path = self_dir.join("steam_api64.dll");
+    if dll_path.is_file() {
+        return;
+    }
+    if let Err(e) = std::fs::write(&dll_path, EMBEDDED_STEAM_DLL) {
+        eprintln!(
+            "[Ruzit] could not write {} ({e}); Steam features may be unavailable",
+            dll_path.display()
+        );
+    }
+}
+
 fn main() -> ExitCode {
+    ensure_steam_dll_alongside_exe();
+
     let raw_args: Vec<String> = env::args().collect();
     let console_flag = raw_args.iter().any(|a| a == "--console");
     let args: Vec<String> = raw_args.into_iter().filter(|a| a != "--console").collect();
 
     let launcher = package::try_self_launcher();
-    
-    
+
+
     console::setup(console_flag);
 
     if let Some(info) = launcher {
