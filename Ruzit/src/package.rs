@@ -419,11 +419,23 @@ pub fn write_launcher_exe(
     let self_exe = env::current_exe().map_err(|e| e.to_string())?;
     let mut exe_bytes = fs::read(&self_exe)
         .map_err(|e| format!("read {}: {e}", self_exe.display()))?;
-    
-    if windowed {
-        patch_subsystem_to_gui(&mut exe_bytes)?;
-    } else {
-        patch_subsystem_to_console(&mut exe_bytes)?;
+
+    // PE subsystem patching (windowed vs console) is Windows-only — the bytes
+    // we just read are an ELF or Mach-O on Linux/macOS and have no PE header
+    // to patch. winit/wgpu still spawn a graphical window on those platforms
+    // regardless of `windowed`, since there's no equivalent of "console
+    // subsystem" outside Windows.
+    #[cfg(windows)]
+    {
+        if windowed {
+            patch_subsystem_to_gui(&mut exe_bytes)?;
+        } else {
+            patch_subsystem_to_console(&mut exe_bytes)?;
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = windowed;
     }
     {
         let mut f = fs::File::create(out_path)
@@ -435,6 +447,10 @@ pub fn write_launcher_exe(
     }
     drop(exe_bytes);
 
+    // Icon embedding rewrites the PE resource directory; it's Windows-only.
+    // Linux/macOS desktop icons are set by .desktop files / .app bundles, not
+    // by editing the binary, so we silently skip the icon there.
+    #[cfg(windows)]
     if let Some(ico) = icon_bytes {
         let mut last_err = String::new();
         let mut ok = false;
@@ -453,6 +469,10 @@ pub fn write_launcher_exe(
         if !ok {
             return Err(format!("icon embed (after retries): {last_err}"));
         }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = icon_bytes;
     }
 
     let mut f = fs::OpenOptions::new()

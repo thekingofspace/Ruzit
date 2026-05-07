@@ -168,7 +168,20 @@ fn apply_steam_app_id(config: &BuildConfig) {
 fn copy_steam_redist(generated_dir: &Path) {
     let Ok(self_exe) = env::current_exe() else { return };
     let Some(self_dir) = self_exe.parent() else { return };
-    for name in ["steam_api64.dll", "steam_api.dll"] {
+    // Per-OS Steamworks redistributable filenames. The dynamic loader picks
+    // these up at runtime via DELAYLOAD on Windows or rpath ($ORIGIN /
+    // @executable_path) on Linux/macOS, so the file just has to land next to
+    // the launcher.
+    let names: &[&str] = if cfg!(target_os = "windows") {
+        &["steam_api64.dll", "steam_api.dll"]
+    } else if cfg!(target_os = "linux") {
+        &["libsteam_api.so"]
+    } else if cfg!(target_os = "macos") {
+        &["libsteam_api.dylib"]
+    } else {
+        &[]
+    };
+    for name in names {
         let src = self_dir.join(name);
         if src.is_file() {
             let dst = generated_dir.join(name);
@@ -224,7 +237,16 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         None => None,
     };
 
-    let exe_path = generated_dir.join(format!("{exe_stem}.exe"));
+    // Launcher filename matches host OS conventions: Windows ships `.exe`,
+    // Linux ships a bare ELF, macOS ships a bare Mach-O. Cross-OS launcher
+    // builds aren't supported — `Ruzit Build` always copies *this* Ruzit
+    // binary, so the launcher inherits whatever platform Ruzit was built for.
+    let exe_filename = if cfg!(target_os = "windows") {
+        format!("{exe_stem}.exe")
+    } else {
+        exe_stem.clone()
+    };
+    let exe_path = generated_dir.join(&exe_filename);
     package::write_launcher_exe(
         &exe_path,
         &package::LauncherInfo {
@@ -237,6 +259,18 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         icon_bytes.as_deref(),
         config.exe_windowed,
     )?;
+
+    // ELF/Mach-O launchers need the +x bit before they can be executed.
+    // Windows uses file extensions instead, so the chmod is unix-only.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = fs::metadata(&exe_path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            let _ = fs::set_permissions(&exe_path, perms);
+        }
+    }
 
     copy_steam_redist(&generated_dir);
 
@@ -289,7 +323,7 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         "[Ruzit] Build → {}",
         generated_dir.display()
     );
-    println!("        {}.exe  (launcher)", exe_stem);
+    println!("        {}  (launcher)", exe_filename);
     println!(
         "        Managed/{}.scripts.managed  ({} files, {} KB)",
         pkg_id,

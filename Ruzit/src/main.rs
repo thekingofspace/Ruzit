@@ -157,28 +157,50 @@ fn run_launcher(info: package::LauncherInfo) -> Result<(), String> {
     runtime::run_entry(fs_layer, &default_entry)
 }
 
-const EMBEDDED_STEAM_DLL: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/steam_api64.dll"));
+// The Steamworks redistributable ships under different file names on each OS,
+// so we embed whichever one matches the host target at build time. build.rs
+// copies the right file into OUT_DIR (or writes an empty stub if Steamworks
+// isn't being linked, which we treat as "skip").
+#[cfg(target_os = "windows")]
+const EMBEDDED_STEAM_LIB: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/steam_api64.dll"));
+#[cfg(target_os = "windows")]
+const STEAM_LIB_NAME: &str = "steam_api64.dll";
 
-fn ensure_steam_dll_alongside_exe() {
-    if EMBEDDED_STEAM_DLL.is_empty() {
+#[cfg(target_os = "linux")]
+const EMBEDDED_STEAM_LIB: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/libsteam_api.so"));
+#[cfg(target_os = "linux")]
+const STEAM_LIB_NAME: &str = "libsteam_api.so";
+
+#[cfg(target_os = "macos")]
+const EMBEDDED_STEAM_LIB: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/libsteam_api.dylib"));
+#[cfg(target_os = "macos")]
+const STEAM_LIB_NAME: &str = "libsteam_api.dylib";
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+const EMBEDDED_STEAM_LIB: &[u8] = &[];
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+const STEAM_LIB_NAME: &str = "";
+
+fn ensure_steam_redist_alongside_exe() {
+    if EMBEDDED_STEAM_LIB.is_empty() || STEAM_LIB_NAME.is_empty() {
         return;
     }
     let Ok(self_exe) = env::current_exe() else { return };
     let Some(self_dir) = self_exe.parent() else { return };
-    let dll_path = self_dir.join("steam_api64.dll");
-    if dll_path.is_file() {
+    let lib_path = self_dir.join(STEAM_LIB_NAME);
+    if lib_path.is_file() {
         return;
     }
-    if let Err(e) = std::fs::write(&dll_path, EMBEDDED_STEAM_DLL) {
+    if let Err(e) = std::fs::write(&lib_path, EMBEDDED_STEAM_LIB) {
         eprintln!(
             "[Ruzit] could not write {} ({e}); Steam features may be unavailable",
-            dll_path.display()
+            lib_path.display()
         );
     }
 }
 
 fn main() -> ExitCode {
-    ensure_steam_dll_alongside_exe();
+    ensure_steam_redist_alongside_exe();
 
     let raw_args: Vec<String> = env::args().collect();
     let console_flag = raw_args.iter().any(|a| a == "--console");

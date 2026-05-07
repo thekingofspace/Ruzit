@@ -1,0 +1,74 @@
+name: Build Ruzit
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: Ruzit.exe
+            asset_name: ruzit-windows
+            steam_lib: steam_api64.dll
+          - os: ubuntu-latest
+            artifact_name: Ruzit
+            asset_name: ruzit-linux
+            steam_lib: libsteam_api.so
+          - os: macos-latest
+            artifact_name: Ruzit
+            asset_name: ruzit-macos
+            steam_lib: libsteam_api.dylib
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config cmake \
+            libasound2-dev libudev-dev \
+            libfontconfig1-dev \
+            libx11-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev \
+            libxcursor-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libssl-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: Ruzit
+
+      - name: Build (release)
+        working-directory: Ruzit
+        run: cargo build --release
+
+      - name: Set executable bit (unix)
+        if: matrix.os != 'windows-latest'
+        working-directory: Ruzit
+        run: chmod +x target/release/${{ matrix.artifact_name }}
+
+      - name: Stage artifact
+        shell: bash
+        working-directory: Ruzit
+        run: |
+          mkdir -p staging
+          cp target/release/${{ matrix.artifact_name }} staging/
+          if [ -f target/release/${{ matrix.steam_lib }} ]; then
+            cp target/release/${{ matrix.steam_lib }} staging/
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: Ruzit/staging/*
+          if-no-files-found: error
