@@ -1,5 +1,4 @@
 
-
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -24,7 +23,6 @@ pub enum PartShape {
     Model,
 }
 
-
 #[derive(Clone)]
 pub struct AttachedShader3D {
     pub id: u64,
@@ -33,14 +31,12 @@ pub struct AttachedShader3D {
     pub params: Arc<Mutex<[f32; 16]>>,
 }
 
-
 #[derive(Clone)]
 pub struct ModelRef {
     pub id: u64,
     pub vertices: Arc<Vec<mesh::Vertex3D>>,
     pub indices: Arc<Vec<u32>>,
 }
-
 
 #[derive(Clone)]
 pub struct PartTextureRef {
@@ -64,7 +60,6 @@ pub struct PartState {
     
     pub model: Option<ModelRef>,
     
-    
     pub texture: Option<PartTextureRef>,
 }
 
@@ -82,7 +77,6 @@ pub struct CameraState {
 
 impl Default for CameraState {
     fn default() -> Self {
-        
         
         Self {
             cframe: CFrame::new(
@@ -141,7 +135,6 @@ pub fn snapshot() -> Vec<PartRender> {
             .collect()
     })
 }
-
 
 pub struct PartHandle {
     state: Arc<Mutex<PartState>>,
@@ -229,7 +222,6 @@ fn build_attached_3d(asset: &AnyUserData) -> mlua::Result<AttachedShader3D> {
     };
     let slot_of_name = parse_param_decls(&code);
 
-    
     let prelude = crate::libs::renderable::render::FRAGMENT_PRELUDE_3D;
     let has_user_vs = code.contains("@vertex");
     let has_user_fs = code.contains("@fragment");
@@ -329,9 +321,7 @@ impl UserData for PartHandle {
             fire_changed(lua, sig, "Render")
         });
 
-        
         f.add_field_method_get("Texture", |lua, this| -> mlua::Result<Value> {
-            
             
             let s = this.state.lock().unwrap();
             match &s.texture {
@@ -461,7 +451,6 @@ impl UserData for PartHandle {
     }
 }
 
-
 pub struct CameraHandle;
 
 impl UserData for CameraHandle {
@@ -494,11 +483,9 @@ impl UserData for CameraHandle {
     }
 }
 
-
 pub fn create(lua: &Lua) -> mlua::Result<Table> {
     let t = lua.create_table()?;
 
-    
     t.set(
         "BasePart",
         lua.create_function(|lua, shape_name: Option<String>| -> mlua::Result<PartHandle> {
@@ -515,7 +502,6 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         })?,
     )?;
 
-    
     t.set(
         "BaseModel",
         lua.create_function(|lua, asset: AnyUserData| -> mlua::Result<PartHandle> {

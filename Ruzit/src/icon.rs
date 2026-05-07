@@ -33,7 +33,6 @@ mod win {
 
         let path_w: Vec<u16> = OsStr::new(exe_path).encode_wide().chain(once(0)).collect();
 
-        
         unsafe {
             
             let handle = BeginUpdateResourceW(path_w.as_ptr(), 0);
@@ -41,7 +40,6 @@ mod win {
                 return Err("BeginUpdateResource failed".into());
             }
 
-            
             let mut grp = Vec::with_capacity(6 + entries.len() * 14);
             grp.extend_from_slice(&[0u8, 0]); 
             grp.extend_from_slice(&[1u8, 0]); 

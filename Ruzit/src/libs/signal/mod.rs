@@ -101,25 +101,21 @@ end
 return Signal
 "#;
 
-
 pub fn install(lua: &Lua) -> mlua::Result<()> {
     let class: Table = lua.load(SIGNAL_LUA).set_name("@signal").eval()?;
     lua.set_named_registry_value(SIGNAL_KEY, class)?;
     Ok(())
 }
 
-
 pub fn class(lua: &Lua) -> mlua::Result<Table> {
     lua.named_registry_value(SIGNAL_KEY)
 }
-
 
 pub fn new_instance(lua: &Lua) -> mlua::Result<Table> {
     let class: Table = lua.named_registry_value(SIGNAL_KEY)?;
     let new_fn: Function = class.get("new")?;
     new_fn.call::<Table>(())
 }
-
 
 pub fn fire(lua: &Lua, signal: &Table, args: MultiValue) -> mlua::Result<()> {
     let fire_fn: Function = signal.get("Fire")?;

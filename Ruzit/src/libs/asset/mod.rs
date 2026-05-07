@@ -10,7 +10,6 @@ use mlua::{Lua, Table, UserData, UserDataMethods, Value};
 use crate::libs::sfx::{self, SoundData};
 use crate::vfs::{self, Fs, split_owner};
 
-
 static SHADER_ID: AtomicU64 = AtomicU64::new(1);
 
 pub(crate) fn next_shader_id() -> u64 {
@@ -181,7 +180,6 @@ fn load_file(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value>
     })?;
     Ok(Value::String(lua.create_string(&s)?))
 }
-
 
 fn read_file_bytes(fs: &Fs, owner: &str, path: &str) -> mlua::Result<Vec<u8>> {
     match fs {
@@ -359,7 +357,6 @@ fn read_bytes(
             ..
         } => {
             
-            
             let (target_id, rest_path) = if let Some(rest) = path.strip_prefix('@') {
                 if let Some((id, inner)) = rest.split_once('/') {
                     (id.to_string(), inner.to_string())
@@ -460,7 +457,6 @@ pub struct ImageAsset {
     pub width: u32,
     pub height: u32,
     
-    
     pub data: Arc<Vec<u8>>,
     pub source: String,
 }
@@ -473,7 +469,6 @@ impl UserData for ImageAsset {
         m.add_method("Pixels", |lua, this, _: ()| lua.create_string(this.data.as_slice()));
     }
 }
-
 
 pub struct ShaderAsset {
     pub id: u64,
@@ -503,7 +498,6 @@ impl TextAsset for FragmentAsset {
 
 impl UserData for FragmentAsset {}
 
-
 pub struct ModelAsset {
     pub id: u64,
     pub vertices: Arc<Vec<crate::libs::renderable::mesh::Vertex3D>>,
@@ -518,7 +512,6 @@ impl UserData for ModelAsset {
         m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
     }
 }
-
 
 pub struct FontAsset {
     pub id: u64,

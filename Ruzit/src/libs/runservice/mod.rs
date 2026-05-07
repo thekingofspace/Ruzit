@@ -1,5 +1,4 @@
 
-
 use std::cell::RefCell;
 
 use mlua::{Lua, MultiValue, Table, Value};
@@ -29,7 +28,6 @@ pub fn install(lua: &Lua) -> mlua::Result<()> {
 pub fn is_installed() -> bool {
     INSTALLED.with(|c| *c.borrow())
 }
-
 
 pub fn fire_render_stepped(lua: &Lua, dt: f64) {
     if !is_installed() {

@@ -12,7 +12,6 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
             match key.as_str() {
                 "InputChanged" => Ok(Value::Table(input::keyboard_input_signal(lua)?)),
                 
-                
                 "IsKeyDown" => Ok(Value::Function(lua.create_function(
                     |_, (_self, key): (Value, Value)| -> mlua::Result<bool> {
                         match key {

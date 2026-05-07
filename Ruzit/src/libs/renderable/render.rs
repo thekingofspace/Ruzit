@@ -1,7 +1,5 @@
 
-
 use bytemuck::{Pod, Zeroable};
-
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
@@ -12,7 +10,6 @@ pub struct FrameUniform3D {
     pub camera_pos: [f32; 3],
     pub _pad: f32,
 }
-
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
@@ -50,7 +47,6 @@ pub fn vertex_buffer_layout() -> wgpu::VertexBufferLayout<'static> {
         attributes: VERTEX_ATTRS,
     }
 }
-
 
 pub const FRAGMENT_PRELUDE_3D: &str = r#"
 struct VsIn {
@@ -94,7 +90,6 @@ fn p(idx: u32) -> f32 {
     return v.w;
 }
 "#;
-
 
 pub const VERTEX_WGSL_3D: &str = r#"
 struct VsIn {
@@ -140,7 +135,6 @@ fn vs_main(in: VsIn) -> VsOut {
 }
 "#;
 
-
 pub const DEFAULT_VS_3D: &str = r#"
 @vertex
 fn vs_main(in: VsIn) -> VsOut {
@@ -155,7 +149,6 @@ fn vs_main(in: VsIn) -> VsOut {
 }
 "#;
 
-
 pub const DEFAULT_FRAGMENT_WGSL_3D: &str = r#"
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
@@ -169,7 +162,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     return vec4<f32>(I.color.rgb * tex.rgb * lit, I.color.a);
 }
 "#;
-
 
 pub fn build_pipeline_3d(
     device: &wgpu::Device,
@@ -203,7 +195,6 @@ pub fn build_pipeline_3d(
             strip_index_format: None,
             front_face: wgpu::FrontFace::Ccw,
             
-            
             cull_mode: None,
             polygon_mode: wgpu::PolygonMode::Fill,
             unclipped_depth: false,
@@ -222,7 +213,6 @@ pub fn build_pipeline_3d(
     })
 }
 
-
 pub fn perspective_matrix(fov_deg: f32, aspect: f32, near: f32, far: f32) -> [[f32; 4]; 4] {
     let f = 1.0 / (fov_deg.to_radians() * 0.5).tan();
     let nf = 1.0 / (near - far);
@@ -235,7 +225,6 @@ pub fn perspective_matrix(fov_deg: f32, aspect: f32, near: f32, far: f32) -> [[f
         [0.0, 0.0, -1.0, 0.0],
     ]
 }
-
 
 pub fn euler_rotation_matrix(rot: [f32; 3]) -> [[f32; 4]; 4] {
     let (sx, cx) = rot[0].sin_cos();
@@ -258,7 +247,6 @@ pub fn euler_rotation_matrix(rot: [f32; 3]) -> [[f32; 4]; 4] {
         [0.0, 0.0, 0.0, 1.0],
     ]
 }
-
 
 pub fn part_model_matrix(pos: [f32; 3], rot: [f32; 3], size: [f32; 3]) -> [[f32; 4]; 4] {
     let r = euler_rotation_matrix(rot);
@@ -285,7 +273,6 @@ pub fn part_model_matrix(pos: [f32; 3], rot: [f32; 3], size: [f32; 3]) -> [[f32;
     ]
 }
 
-
 pub fn view_matrix(pos: [f32; 3], rot: [f32; 3]) -> [[f32; 4]; 4] {
     let r = euler_rotation_matrix(rot);
     
@@ -300,7 +287,6 @@ pub fn view_matrix(pos: [f32; 3], rot: [f32; 3]) -> [[f32; 4]; 4] {
     ]
 }
 
-
 pub fn mat4_mul(a: [[f32; 4]; 4], b: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
     let mut r = [[0.0_f32; 4]; 4];
     for i in 0..4 {
@@ -313,7 +299,6 @@ pub fn mat4_mul(a: [[f32; 4]; 4], b: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
     }
     r
 }
-
 
 pub fn transpose4(m: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
     [

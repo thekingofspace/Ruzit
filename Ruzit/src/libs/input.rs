@@ -1,5 +1,4 @@
 
-
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -10,7 +9,6 @@ use winit::window::{CursorIcon, Window as WinitWindow};
 
 use crate::libs::primitives::Dim;
 use crate::libs::signal;
-
 
 const MOUSE_MOVED_KEY: &str = "ruzit_mouse_moved";
 const MOUSE_INPUT_KEY: &str = "ruzit_mouse_input";
@@ -29,14 +27,12 @@ struct InputState {
     
     mouse_down: HashSet<String>,
     
-    
     keys_down: HashMap<String, u32>,
     
     desired_cursor: CursorKind,
     desired_visible: bool,
     desired_locked: bool,
     focused: bool,
-    
     
     last_x: f32,
     last_y: f32,
@@ -181,7 +177,6 @@ pub fn keyboard_input_signal(lua: &Lua) -> mlua::Result<Table> {
     lua.named_registry_value(KEYBOARD_INPUT_KEY)
 }
 
-
 pub fn cursor_position() -> Dim {
     STATE.with(|s| {
         let st = s.borrow();
@@ -213,11 +208,9 @@ pub fn is_key_down_by_id(id: u32) -> bool {
     STATE.with(|s| s.borrow().keys_down.values().any(|v| *v == id))
 }
 
-
 pub fn set_cursor(window: Option<&WinitWindow>, kind: CursorKind) {
     STATE.with(|s| s.borrow_mut().desired_cursor = kind);
     if let Some(w) = window {
-        
         
         let focused = STATE.with(|s| s.borrow().focused);
         if focused {
@@ -239,7 +232,6 @@ pub fn set_visible(window: Option<&WinitWindow>, visible: bool) {
 pub fn set_locked(window: Option<&WinitWindow>, locked: bool) {
     STATE.with(|s| s.borrow_mut().desired_locked = locked);
     
-    
     if let Some(w) = window {
         if locked {
             recenter_cursor(w);
@@ -260,7 +252,6 @@ fn recenter_cursor(window: &WinitWindow) {
         st.last_y = cy as f32;
     });
 }
-
 
 pub fn on_cursor_moved(window: &WinitWindow, x: f32, y: f32) {
     let (dx, dy, locked) = STATE.with(|s| {
@@ -289,7 +280,6 @@ pub fn on_cursor_moved(window: &WinitWindow, x: f32, y: f32) {
 
     if locked {
         
-        
         recenter_cursor(window);
     }
 }
@@ -301,7 +291,6 @@ pub fn on_mouse_input(button: MouseButton, state: ElementState) {
         MouseButton::Middle => "MouseButton3",
         MouseButton::Back => "MouseButton4",
         MouseButton::Forward => "MouseButton5",
-        
         
         MouseButton::Other(n) => {
             let owned = format!("MouseButton{}", (n as u32) + 5);
@@ -337,12 +326,6 @@ pub fn on_mouse_input(button: MouseButton, state: ElementState) {
 }
 
 pub fn on_mouse_wheel(delta: MouseScrollDelta) {
-    // Normalize both winit delta variants to "lines" so Lua sees one
-    // consistent unit regardless of platform/device. PixelDelta usually
-    // comes from precise touchpads — divide by ~20 px/line which is the
-    // CSS / GTK convention. LineDelta comes from mouse wheels and reports
-    // notches directly. Sign convention: +y = scroll up (away from user),
-    // +x = scroll right.
     let (dx, dy) = match delta {
         MouseScrollDelta::LineDelta(x, y) => (x, y),
         MouseScrollDelta::PixelDelta(p) => ((p.x / 20.0) as f32, (p.y / 20.0) as f32),
@@ -397,12 +380,10 @@ pub fn on_focus(window: &WinitWindow, focused: bool) {
             st.keys_down.clear();
         });
         
-        
         window.set_cursor(CursorIcon::Default);
         window.set_cursor_visible(true);
     }
 }
-
 
 pub fn pump(lua: &Lua) {
     let (moves, m_inputs, scrolls, k_inputs) = STATE.with(|s| {
@@ -495,7 +476,6 @@ pub fn pump(lua: &Lua) {
     }
 }
 
-
 fn key_name(logical: &Key, physical: PhysicalKey) -> String {
     match logical {
         Key::Named(named) => named_key_name(*named).to_string(),
@@ -508,7 +488,6 @@ fn key_name(logical: &Key, physical: PhysicalKey) -> String {
 }
 
 fn named_key_name(named: NamedKey) -> &'static str {
-    
     
     match named {
         NamedKey::Enter => "Enter",
@@ -546,7 +525,6 @@ fn named_key_name(named: NamedKey) -> &'static str {
         _ => "Other",
     }
 }
-
 
 fn fnv1a_32(s: &str) -> u32 {
     const FNV_OFFSET: u32 = 0x811C9DC5;

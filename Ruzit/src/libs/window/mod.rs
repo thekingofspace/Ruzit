@@ -63,7 +63,6 @@ pub fn pump(lua: &Lua) {
         })
     });
 
-    
     if !close_now {
         APP.with(|a| {
             if let Some(app) = a.borrow_mut().as_mut() {
@@ -72,7 +71,6 @@ pub fn pump(lua: &Lua) {
         });
     }
 
-    
     if !close_now && !pending.is_empty() {
         if let Ok(signal) = lua.named_registry_value::<Table>(CHANGED_KEY) {
             for change in pending {
@@ -204,7 +202,6 @@ fn open(lua: &Lua, opts_arg: Option<Table>) -> mlua::Result<WindowHandle> {
     EVENT_LOOP.with(|c| *c.borrow_mut() = Some(event_loop));
     APP.with(|c| *c.borrow_mut() = Some(app));
 
-    
     let changed = signal::new_instance(lua)?;
     lua.set_named_registry_value(CHANGED_KEY, changed)?;
     let on_focus = signal::new_instance(lua)?;
@@ -221,7 +218,6 @@ struct WindowApp {
     gpu: Option<GpuState>,
     close_requested: bool,
     pending: Vec<WindowChange>,
-    
     
     start: Instant,
 }
@@ -255,11 +251,6 @@ impl ApplicationHandler for WindowApp {
             return;
         }
 
-        // Create the window in plain windowed mode first — combining
-        // `with_fullscreen` + `with_maximized` + `with_always_on_top` at
-        // creation time on Windows/DX12 races the surface init and crashes
-        // wgpu with "Invalid surface". We apply those modes AFTER the surface
-        // is fully configured.
         let want_fullscreen = self.opts.fullscreen || self.opts.borderless;
         let want_maximized = self.opts.maximized && !want_fullscreen;
         let want_always_on_top = self.opts.always_on_top && !want_fullscreen;
@@ -305,14 +296,6 @@ impl ApplicationHandler for WindowApp {
             }
         };
 
-        // Now that the surface is configured, apply fullscreen — applied after
-        // init so no mode-switch happens during surface bring-up. Borderless
-        // intentionally stays at the normal window level: it covers the
-        // taskbar + other apps via Fullscreen::Borderless, but does NOT pin
-        // itself above unfocused windows. That way Alt+Tab brings Discord /
-        // browser tabs cleanly to the front, and Steam / Discord overlays
-        // (which inject into the game's swapchain) keep rendering on top
-        // automatically. Pass `always_on_top = true` only for windowed cases.
         if want_fullscreen {
             window.set_fullscreen(Some(Fullscreen::Borderless(None)));
             window.set_window_level(WindowLevel::Normal);
@@ -416,7 +399,6 @@ impl UserData for WindowHandle {
             Ok(())
         });
 
-        
         m.add_method("GetViewport", |lua, _, _: ()| -> mlua::Result<AnyUserData> {
             lua.create_userdata(crate::libs::renderable::CameraHandle)
         });
@@ -431,11 +413,6 @@ impl UserData for WindowHandle {
             with_window(|win| win.set_title(&title));
             Ok(())
         });
-        // Same semantics as the Open-time `borderless` flag: enters
-        // Fullscreen::Borderless (covers the OS taskbar) on `true`, exits
-        // back to a normal window on `false`. Strips decorations either way.
-        // Also forces window-level back to Normal so the window doesn't pin
-        // above other apps when the user Alt+Tabs away.
         m.add_method("SetBorderless", |_, _, b: bool| {
             with_window(|win| {
                 win.set_decorations(!b);
@@ -450,9 +427,6 @@ impl UserData for WindowHandle {
             });
             Ok(())
         });
-        // For the rare case of "decorationless but still windowed" (e.g. a
-        // floating tool overlay), this lets you strip the title bar without
-        // going fullscreen.
         m.add_method("SetDecorations", |_, _, decorated: bool| {
             with_window(|win| win.set_decorations(decorated));
             Ok(())
@@ -534,7 +508,6 @@ fn with_window<F: FnOnce(&Arc<WinitWindow>)>(f: F) {
         }
     });
 }
-
 
 pub fn with_window_static<F: FnOnce(&WinitWindow)>(f: F) {
     APP.with(|a| {

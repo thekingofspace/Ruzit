@@ -28,7 +28,6 @@ fn install_constants(t: &Table) -> mlua::Result<()> {
         .unwrap_or(1);
     t.set("CpuCount", cpu_count as i64)?;
     
-    
     t.set("IsBuilt", is_built())?;
     Ok(())
 }

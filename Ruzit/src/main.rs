@@ -1,5 +1,4 @@
 
-
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod commands;
@@ -187,7 +186,6 @@ fn main() -> ExitCode {
 
     let launcher = package::try_self_launcher();
 
-
     console::setup(console_flag);
 
     if let Some(info) = launcher {
@@ -208,4 +206,3 @@ fn main() -> ExitCode {
         }
     }
 }
-

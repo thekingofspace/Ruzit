@@ -1,5 +1,4 @@
 
-
 use std::collections::HashMap;
 
 use bytemuck::{Pod, Zeroable};
@@ -59,7 +58,6 @@ pub fn cube() -> Mesh {
     Mesh { vertices: v, indices: i }
 }
 
-
 pub fn sphere(lat: u32, long: u32) -> Mesh {
     let lat = lat.max(2);
     let long = long.max(3);
@@ -92,7 +90,6 @@ pub fn sphere(lat: u32, long: u32) -> Mesh {
     }
     Mesh { vertices, indices }
 }
-
 
 pub fn load_obj(text: &str) -> Result<Mesh, String> {
     let mut positions: Vec<[f32; 3]> = Vec::new();
@@ -210,7 +207,6 @@ pub fn load_obj(text: &str) -> Result<Mesh, String> {
         return Err("OBJ has no vertices".into());
     }
 
-    
     if !had_normals {
         let mut accum = vec![[0.0_f32; 3]; vertices.len()];
         for tri in indices.chunks(3) {
@@ -364,11 +360,6 @@ fn triangulator(
     Ok(())
 }
 
-/// Minimal ASCII FBX 7.x reader. Extracts every `Geometry: ... "Mesh"` block's
-/// `Vertices` array (xyz triplets) and `PolygonVertexIndex` array (Maya-style
-/// negative-encoded polygon terminators), fan-triangulates, and merges all
-/// meshes into one buffer. Normals are computed from the geometry afterward —
-/// LayerElementNormal parsing is intentionally skipped to keep this small.
 fn load_fbx_ascii(bytes: &[u8]) -> Result<Mesh, String> {
     let text = std::str::from_utf8(bytes)
         .map_err(|e| format!("ASCII FBX: not UTF-8: {e}"))?;

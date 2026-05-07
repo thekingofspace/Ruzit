@@ -1,5 +1,4 @@
 
-
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -13,14 +12,7 @@ use crate::config::FileType;
 
 pub const MAGIC: &[u8; 8] = b"RUZITPKG";
 
-/// Drop pre-built `.managed` files (your own or someone else's) into a
-/// `Packages/` folder at the project root. `Ruzit Test` loads them alongside
-/// the project's own bundle, and `Ruzit Build` copies them straight into
-/// `Generated/Managed/` so the shipped game can `import("@PkgId/...")` them
-/// at runtime. Subfolders are ignored — only loose `.managed` files at the
-/// top level of `Packages/` are picked up.
 pub const PACKAGES_DIR_NAME: &str = "Packages";
-
 
 pub struct LauncherInfo {
     pub default_id: String,
@@ -29,7 +21,6 @@ pub struct LauncherInfo {
     pub creator: String,
     pub steam_app_id: Option<u32>,
 }
-
 
 pub struct LoadedPackage {
     pub id: String,
@@ -41,14 +32,9 @@ pub struct LoadedPackage {
     pub physical_root: Option<std::path::PathBuf>,
     pub files: HashMap<String, String>,
     pub assets: HashMap<String, String>,
-    /// Tracked independently per side because a `.managed` package authored
-    /// elsewhere (dropped into `Packages/`) may have used different
-    /// compression settings than the project consuming it. Each value is the
-    /// `"compressed"` header from the source `.managed` JSON for that side.
     pub scripts_compressed: bool,
     pub assets_compressed: bool,
 }
-
 
 pub fn collect_project(
     root: &Path,
@@ -78,7 +64,6 @@ fn walk(
         }
         if path.is_dir() {
             
-            
             if path.join("ManagedInfo.toml").is_file() {
                 continue;
             }
@@ -101,7 +86,6 @@ fn walk(
     Ok(())
 }
 
-
 pub fn strip_bom(s: String) -> String {
     const BOM: &str = "\u{feff}";
     if s.starts_with(BOM) {
@@ -110,7 +94,6 @@ pub fn strip_bom(s: String) -> String {
         s
     }
 }
-
 
 pub fn find_dlc_folders(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut out = Vec::new();
@@ -161,9 +144,6 @@ fn should_skip(rel: &str) -> bool {
         return true;
     }
     let lower = rel.to_lowercase();
-    // Declaration files exist purely for the LSP — they aren't real modules
-    // and shouldn't be packed into scripts.managed. Catches `types.d.luau`
-    // at any depth plus any other `*.d.luau` / `*.d.lua` the user adds.
     if lower.ends_with(".d.luau") || lower.ends_with(".d.lua") {
         return true;
     }
@@ -172,7 +152,6 @@ fn should_skip(rel: &str) -> bool {
     }
     false
 }
-
 
 pub fn write_scripts_managed(
     path: &Path,
@@ -212,8 +191,6 @@ pub fn write_scripts_managed(
     fs::write(path, encrypted).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
-/// Single-file write of every asset. Use `write_assets_sharded` to split
-/// across multiple files for diff-friendly updates.
 pub fn write_assets_managed(
     path: &Path,
     id: &str,
@@ -243,39 +220,17 @@ pub fn write_assets_managed(
     fs::write(path, encrypted).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
-/// Auto-tune shard size so updates over Steam Pipe / a CDN don't have to
-/// rewrite one giant file. Aims for `~ceil(sqrt(asset_count))` shards
-/// (so a typical patch touches ~1/sqrt(N) of the bundle on average), with
-/// per-shard size clamped to [4 MB, 256 MB]. The wide ceiling means
-/// AAA-scale projects (~6 GB) settle around 24-32 shards of ~200 MB each
-/// instead of 200+ tiny shards — fewer files for Steam Pipe / OS to track,
-/// while still small enough that a single touched shard's re-download
-/// finishes in seconds on a normal connection.
 fn dynamic_shard_target(asset_count: usize, total_bytes: u64) -> u64 {
     const MIN_SHARD: u64 = 4 * 1024 * 1024;
     const MAX_SHARD: u64 = 256 * 1024 * 1024;
     if asset_count == 0 || total_bytes <= MIN_SHARD {
         return MIN_SHARD;
     }
-    // Cap shard count at 256 so absurdly fragmented projects don't drown
-    // the OS in tiny files; floor at 2 so we always at least try to split.
     let target_shards = ((asset_count as f64).sqrt().ceil() as u64).clamp(2, 256);
     let per_shard = total_bytes / target_shards;
     per_shard.clamp(MIN_SHARD, MAX_SHARD)
 }
 
-/// Sharded asset write: partitions assets into N `<id>.assets.shardNNNN.managed`
-/// files (each one is a normal assets.managed) plus a small manifest at
-/// `<id>.assets.manifest.managed` that lists which assets live in which shard.
-/// Walks assets in alphabetical order so a given asset always lands in the
-/// same shard run-to-run — keeps shard hashes stable across builds so a
-/// CDN / Steam Pipe only re-downloads touched shards on patch.
-///
-/// Shard size is computed automatically based on total payload size + asset
-/// count, optimizing for "many smallish files that update fast" rather than
-/// "one huge file Steam has to fully rewrite". Targets ~ceil(sqrt(N)) shards
-/// (so 100 assets → 10 shards, 400 → 20, 1000 → 32) clamped to a 2 MB floor
-/// and a 32 MB ceiling per shard.
 pub fn write_assets_sharded(
     managed_dir: &Path,
     id: &str,
@@ -346,7 +301,6 @@ pub fn write_assets_sharded(
     Ok(shards.len())
 }
 
-
 pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, String> {
     let mut packages: HashMap<String, LoadedPackage> = HashMap::new();
     if !dir.is_dir() {
@@ -383,12 +337,6 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
             scripts_compressed: false,
             assets_compressed: false,
         });
-        // Each `.managed` file carries its own `"compressed"` flag in the
-        // header. We assign it to the matching side (scripts vs assets) so an
-        // imported third-party package whose scripts were built with
-        // `compress_scripts = true` but assets with `compress_assets = false`
-        // (or vice versa) decodes correctly. The shard manifest carries the
-        // same flag on behalf of every shard it indexes.
         let header_compressed = parsed
             .get("compressed")
             .and_then(|v| v.as_bool())
@@ -418,9 +366,6 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
                 if let Some(obj) = parsed.get("files").and_then(|v| v.as_object()) {
                     for (k, v) in obj {
                         if let Some(s) = v.as_str() {
-                            // Preserve the encoded form when compressed —
-                            // decompression + BOM stripping happens in
-                            // vfs::read_module on access.
                             let stored = if header_compressed { s.to_string() } else { strip_bom(s.to_string()) };
                             pkg.files.insert(k.clone(), stored);
                         }
@@ -443,7 +388,6 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
     Ok(packages)
 }
 
-
 pub fn write_launcher_exe(
     out_path: &Path,
     info: &LauncherInfo,
@@ -463,7 +407,6 @@ pub fn write_launcher_exe(
     let self_exe = env::current_exe().map_err(|e| e.to_string())?;
     let mut exe_bytes = fs::read(&self_exe)
         .map_err(|e| format!("read {}: {e}", self_exe.display()))?;
-    
     
     if windowed {
         patch_subsystem_to_gui(&mut exe_bytes)?;
@@ -564,7 +507,6 @@ pub fn default_generated_dir() -> Result<PathBuf, String> {
     let cwd = env::current_dir().map_err(|e| e.to_string())?;
     Ok(cwd.join("Generated"))
 }
-
 
 fn pe_offset(bytes: &[u8]) -> Result<usize, String> {
     if bytes.len() < 0x40 {

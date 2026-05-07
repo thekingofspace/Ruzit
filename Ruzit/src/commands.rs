@@ -24,7 +24,6 @@ pub fn cmd_test(arg: Option<&String>) -> Result<(), String> {
     println!("[Ruzit] Test → {}", entry.display());
     config.print_banner();
 
-    
     let dlc_folders = package::find_dlc_folders(&root)?;
     if !dlc_folders.is_empty() {
         println!(
@@ -44,7 +43,6 @@ pub fn cmd_test(arg: Option<&String>) -> Result<(), String> {
         .to_string_lossy()
         .replace('\\', "/");
 
-    
     let exe_stem = config
         .exe_name
         .clone()
@@ -69,7 +67,6 @@ pub fn cmd_test(arg: Option<&String>) -> Result<(), String> {
             assets_compressed: false,
         }),
     );
-
 
     for dlc in &dlc_folders {
         let info = ManagedInfo::load(dlc)?;
@@ -201,17 +198,14 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         ));
     }
 
-    
     let default_stem = entry
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "Main".to_string());
     
-    
     let exe_stem = config.exe_name.clone().unwrap_or_else(|| default_stem.clone());
     let pkg_id = exe_stem.clone();
 
-    
     let generated_dir = match output {
         Some(o) => PathBuf::from(o),
         None => package::default_generated_dir()?,
@@ -225,13 +219,11 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
     fs::create_dir_all(&managed_dir)
         .map_err(|e| format!("mkdir {}: {e}", managed_dir.display()))?;
 
-    
     let icon_bytes = match &config.exe_icon {
         Some(name) => Some(load_icon(root, name)?),
         None => None,
     };
 
-    
     let exe_path = generated_dir.join(format!("{exe_stem}.exe"));
     package::write_launcher_exe(
         &exe_path,
@@ -248,7 +240,6 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
 
     copy_steam_redist(&generated_dir);
 
-    
     let scripts_path = managed_dir.join(format!("{pkg_id}.scripts.managed"));
     package::write_scripts_managed(
         &scripts_path,
@@ -262,7 +253,6 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         config.compress_scripts,
     )?;
 
-    
     let assets_path = managed_dir.join(format!("{pkg_id}.assets.managed"));
     if !assets.is_empty() {
         if config.shard_assets {
@@ -315,7 +305,6 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
             assets_size / 1024
         );
     }
-
 
     let dlc_folders = package::find_dlc_folders(root)?;
     for dlc in &dlc_folders {
@@ -571,7 +560,6 @@ fn find_default_main() -> Option<PathBuf> {
         }
     }
 
-    
     if let Ok(cwd) = env::current_dir() {
         let here = cwd.join("Main.luau");
         if here.is_file() {
@@ -579,7 +567,6 @@ fn find_default_main() -> Option<PathBuf> {
         }
     }
 
-    
     let mut starts: Vec<PathBuf> = Vec::new();
     if let Ok(cwd) = env::current_dir() {
         starts.push(cwd);
@@ -684,7 +671,6 @@ fn display_rel(base: &Path, p: &Path) -> String {
         .replace('\\', "/")
 }
 
-
 pub fn cmd_init_package(arg: Option<&String>) -> Result<(), String> {
     let target = match arg {
         Some(s) => PathBuf::from(s),
@@ -693,7 +679,6 @@ pub fn cmd_init_package(arg: Option<&String>) -> Result<(), String> {
     fs::create_dir_all(&target)
         .map_err(|e| format!("create {}: {e}", target.display()))?;
 
-    
     let id = target
         .file_name()
         .and_then(|n| n.to_str())

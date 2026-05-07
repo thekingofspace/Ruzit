@@ -113,10 +113,6 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
             lua.create_userdata(Recording { packets: Arc::new(packets) })
         })?,
     )?;
-    // Fire-and-forget single-packet playback. Creates a transient channel,
-    // pushes the packet, plays. Best for "play this one received voice
-    // message" use cases. For ongoing voice from a peer, prefer
-    // CreateChannel() so the Opus decoder state stays continuous.
     t.set(
         "PlayPacket",
         lua.create_function(
@@ -238,8 +234,6 @@ fn start_capture(lua: &Lua) -> mlua::Result<AnyUserData> {
                 frame_buf.extend(resampled);
                 while frame_buf.len() >= FRAME_SAMPLES {
                     let frame: Vec<f32> = frame_buf.drain(..FRAME_SAMPLES).collect();
-                    // Voice activation: skip the frame entirely if its peak
-                    // amplitude is below the configured threshold.
                     let thresh = *threshold_cb.lock().unwrap();
                     if thresh > 0.0 {
                         let peak = frame
@@ -310,8 +304,6 @@ impl UserData for CaptureHandle {
             Ok(())
         });
         m.add_method("IsActive", |_, this, _: ()| Ok(this.alive.load(Ordering::Relaxed)));
-        // Pause: mic stream keeps running but no packets fire. Use this for
-        // push-to-talk: hook the key down → Resume(), key up → Pause().
         m.add_method("Pause", |_, this, _: ()| -> mlua::Result<()> {
             this.paused.store(true, Ordering::Relaxed);
             Ok(())
@@ -321,14 +313,10 @@ impl UserData for CaptureHandle {
             Ok(())
         });
         m.add_method("IsPaused", |_, this, _: ()| Ok(this.paused.load(Ordering::Relaxed)));
-        // SetActive(false) is an alias for Pause(); SetActive(true) for Resume().
         m.add_method("SetActive", |_, this, on: bool| -> mlua::Result<()> {
             this.paused.store(!on, Ordering::Relaxed);
             Ok(())
         });
-        // Voice activation threshold (peak amplitude, 0..1). 0 = always send.
-        // A typical conversational threshold is 0.02..0.05 — set it just above
-        // your room's noise floor. 0.1 = pretty hot mic, 0.005 = whisper.
         m.add_method("SetThreshold", |_, this, amp: f32| -> mlua::Result<()> {
             *this.threshold.lock().unwrap() = amp.max(0.0);
             Ok(())
@@ -436,10 +424,6 @@ impl UserData for ChannelHandle {
             this.shaders.lock().unwrap().clear();
             Ok(())
         });
-        // SetPosition / SetSpatial: pass nil (or no args) to clear the
-        // spatial shader and play centered (no 3D positioning). Otherwise
-        // (x, y, z) is a static world coordinate — the camera moves around
-        // the speaker, just like a Renderable.BasePart's CFrame.
         m.add_method(
             "SetPosition",
             |_, this, args: mlua::MultiValue| -> mlua::Result<()> {
@@ -544,10 +528,6 @@ impl Iterator for VoiceSource {
         let mut speed = 1.0_f32;
         let mut pan = 0.0_f32;
         let mut atten = 1.0_f32;
-        // Listener defaults to the active viewport (Renderable.Camera).
-        // Voice.ListenerPosition() acts as an override only when the user
-        // has explicitly set it (the override is reset to None each time
-        // they call ListenerPosition with NaNs — by default we read camera).
         let listener_override = LISTENER_POS.with(|c| *c.borrow());
         let listener = if listener_override.0.is_finite() && listener_override.1.is_finite() && listener_override.2.is_finite() && (listener_override.0 != 0.0 || listener_override.1 != 0.0 || listener_override.2 != 0.0) {
             listener_override
@@ -567,8 +547,6 @@ impl Iterator for VoiceSource {
                     let dist = (dx * dx + dy * dy + dz * dz).sqrt();
                     atten *= (1.0 - (dist / falloff)).clamp(0.0, 1.0).powf(1.6);
                     let _ = pos;
-                    // Rotate into camera-local space using the viewport yaw so
-                    // turning the camera turns where the voice comes from.
                     let cam = crate::libs::renderable::camera_snapshot();
                     let yaw = cam.cframe.rotation.y;
                     let local_x = yaw.cos() * dx + yaw.sin() * dz;
@@ -663,14 +641,6 @@ fn pump_inner(lua: &Lua) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Recorder / Recording — capture incoming voice packets (yours or a peer's)
-// to memory, serialize, replay later. Built for the "horror game copies your
-// friend" use case: feed received-packet bytes into the recorder, save the
-// serialized blob to disk or cloud, then load + play it back through any
-// VoiceChannel positioned anywhere in the world.
-// ---------------------------------------------------------------------------
-
 pub struct Recorder {
     packets: Arc<Mutex<Vec<Vec<u8>>>>,
 }
@@ -691,9 +661,6 @@ impl UserData for Recorder {
         m.add_method("Duration", |_, this, _: ()| -> mlua::Result<f64> {
             Ok(this.packets.lock().unwrap().len() as f64 * (FRAME_MS as f64 / 1000.0))
         });
-        // Length-prefixed binary: u32 LE packet count, then for each packet:
-        // u16 LE length, then bytes. Easy to load on any side, fits in a Lua
-        // string, base64-able for cloud / Steam Cloud / IO.write.
         m.add_method("Serialize", |lua, this, _: ()| -> mlua::Result<mlua::String> {
             let packets = this.packets.lock().unwrap();
             let mut buf = Vec::with_capacity(4 + packets.len() * 64);
@@ -705,7 +672,6 @@ impl UserData for Recorder {
             }
             lua.create_string(&buf)
         });
-        // Convenience: turn the recorder into a Recording without serialization.
         m.add_method(
             "ToRecording",
             |lua, this, _: ()| -> mlua::Result<AnyUserData> {
@@ -726,10 +692,6 @@ impl UserData for Recording {
         m.add_method("Duration", |_, this, _: ()| {
             Ok(this.packets.len() as f64 * (FRAME_MS as f64 / 1000.0))
         });
-        // Stream the recording's packets into `channel` at the original
-        // 50 packets/sec pacing. Returns immediately — playback is dripped
-        // by the heart pump. Pass `loop = true` to re-trigger from the start
-        // when the last packet is delivered.
         m.add_method(
             "PlayInto",
             |_, this, (channel_ud, opts): (AnyUserData, Option<Table>)| -> mlua::Result<()> {

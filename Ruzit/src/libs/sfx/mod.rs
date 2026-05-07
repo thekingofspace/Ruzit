@@ -19,7 +19,6 @@ pub const SOUND_EXTS: &[&str] = &["wav", "mp3", "ogg", "flac"];
 
 thread_local! {
     
-    
     static OUTPUT: RefCell<Option<OutputStreamHandle>> = const { RefCell::new(None) };
     static ACTIVE: RefCell<Vec<ActivePlayback>> = const { RefCell::new(Vec::new()) };
 }
@@ -110,7 +109,6 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
 
     Ok(t)
 }
-
 
 pub struct SoundData {
     pub bytes: Arc<Vec<u8>>,
@@ -226,7 +224,6 @@ fn output_handle() -> mlua::Result<OutputStreamHandle> {
             let (stream, handle) = OutputStream::try_default()
                 .map_err(|e| mlua::Error::RuntimeError(format!("SFX audio init: {e}")))?;
             
-            
             std::mem::forget(stream);
             *borrow = Some(handle);
         }
@@ -289,8 +286,6 @@ impl UserData for Sound {
             Ok(())
         });
 
-        // -------- fluent built-in setters: replace any prior shader of the
-        //          same kind, return self for chaining (sound:Echo(...):Volume(0.8):Play()) --------
         fn set_kind(this: &Sound, new_shader: Shader) {
             let mut list = this.shaders.lock().unwrap();
             let kind = new_shader.kind_id();
@@ -366,12 +361,6 @@ impl UserData for Sound {
             Ok(())
         });
 
-        // -------- 3D positional audio: world coords, listener = the active
-        //          Renderable.Camera. The position is STATIC — set it once
-        //          and the sound stays anchored to that world point as the
-        //          camera moves around (just like a 3D Renderable.BasePart).
-        //          Pass nil for the first arg (or call ClearPosition) to
-        //          revert to non-positional, centered playback. --------
         m.add_method(
             "SetPosition",
             |_, this, args: mlua::MultiValue| -> mlua::Result<()> {
@@ -436,7 +425,6 @@ impl UserData for Sound {
                         "SetData: shader is not attached to this sound".into(),
                     )
                 })?;
-                
                 
                 entry.params.lock().unwrap().insert(name, value);
                 Ok(())
@@ -509,7 +497,6 @@ fn build_source(
     Ok(source)
 }
 
-
 fn apply_attached(
     source: Box<dyn Source<Item = f32> + Send>,
     attached: &AttachedShader,
@@ -520,17 +507,14 @@ fn apply_attached(
         "wobble" | "tremolo" => Ok(Box::new(Tremolo::new(source, params))),
         "volume" | "gain" => Ok(Box::new(LiveGain::new(source, params))),
         
-        
         "speed" => Ok(Box::new(source.speed(read_param(&params, "factor", 1.0)))),
         "lowpass" => Ok(Box::new(
             source.low_pass(read_param(&params, "freq", 1000.0) as u32),
         )),
 
-        
         "pan" => Ok(Box::new(Pan::new(source, params))),
         
         "distance" | "falloff" => Ok(Box::new(Distance::new(source, params))),
-        
         
         "spatial" | "position" | "3d" => Ok(Box::new(Spatial::new(source, params))),
 
@@ -539,7 +523,6 @@ fn apply_attached(
         ))),
     }
 }
-
 
 struct Tremolo<I> {
     inner: I,
@@ -599,7 +582,6 @@ where
     }
 }
 
-
 struct LiveGain<I> {
     inner: I,
     params: Params,
@@ -633,7 +615,6 @@ impl<I: Source<Item = f32>> Source for LiveGain<I> {
         self.inner.total_duration()
     }
 }
-
 
 struct Pan<I> {
     inner: I,
@@ -685,7 +666,6 @@ impl<I: Source<Item = f32>> Source for Pan<I> {
     }
 }
 
-
 struct Distance<I> {
     inner: I,
     params: Params,
@@ -723,11 +703,9 @@ impl<I: Source<Item = f32>> Source for Distance<I> {
     }
 }
 
-
 struct Spatial<I> {
     inner: I,
     params: Params,
-    
     
     held: f32,
     
@@ -748,7 +726,6 @@ impl<I: Source<Item = f32>> Spatial<I> {
         }
     }
 
-    
     fn next_mono_frame(&mut self) -> Option<f32> {
         let channels = self.inner.channels().max(1);
         let mut sum = 0.0;
@@ -764,7 +741,6 @@ impl<I: Source<Item = f32>> Iterator for Spatial<I> {
     fn next(&mut self) -> Option<f32> {
         if self.output_channel == 0 {
             
-            
             self.held = self.next_mono_frame()?;
 
             let p = self.params.lock().unwrap();
@@ -777,7 +753,6 @@ impl<I: Source<Item = f32>> Iterator for Spatial<I> {
             let dist = (x * x + y * y + z * z).sqrt();
             let attenuation = 1.0 / (1.0 + falloff * dist);
 
-            
             let pan = if dist > 1e-4 {
                 (x / dist).clamp(-1.0, 1.0)
             } else {
@@ -800,7 +775,6 @@ impl<I: Source<Item = f32>> Iterator for Spatial<I> {
 impl<I: Source<Item = f32>> Source for Spatial<I> {
     fn current_frame_len(&self) -> Option<usize> {
         
-        
         None
     }
     fn channels(&self) -> u16 {
@@ -815,7 +789,6 @@ impl<I: Source<Item = f32>> Source for Spatial<I> {
 }
 
 fn play_sound(this: &Sound) -> mlua::Result<()> {
-    
     
     let prev_id = this.current_id.lock().unwrap().take();
     if let Some(id) = prev_id {
@@ -916,7 +889,6 @@ pub fn pump(lua: &Lua) {
 
     ACTIVE.with(|c| {
         let mut active = c.borrow_mut();
-        
         
         let added = std::mem::take(&mut *active);
         keep.extend(added);

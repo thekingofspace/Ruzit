@@ -6,7 +6,6 @@ use crate::libs::window;
 pub fn create(lua: &Lua) -> mlua::Result<Table> {
     let t = lua.create_table()?;
 
-    
     let meta = lua.create_table()?;
     meta.set(
         "__index",

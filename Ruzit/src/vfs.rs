@@ -15,18 +15,10 @@ pub struct Package {
     #[allow(dead_code)]
     pub file_type: FileType,
 
-
     pub physical_root: Option<PathBuf>,
     pub files: HashMap<String, String>,
 
-
     pub assets: HashMap<String, String>,
-    /// Compression of each side is tracked independently because a third-party
-    /// `.managed` package dropped into `Packages/` can have its scripts and
-    /// assets bundles built with different `compress_scripts` / `compress_assets`
-    /// settings than the host project. Each is the value of the per-file
-    /// `"compressed"` header in the source `.managed` JSON; decompression is
-    /// lazy on access (vfs::read_module / Asset.GetAsset).
     pub scripts_compressed: bool,
     pub assets_compressed: bool,
 }
@@ -34,7 +26,6 @@ pub struct Package {
 #[derive(Clone)]
 #[allow(dead_code)]
 pub enum Fs {
-    
     
     Disk {
         root: PathBuf,
@@ -44,7 +35,6 @@ pub enum Fs {
         packages: Arc<HashMap<String, Arc<Package>>>,
         default_id: String,
         file_type: FileType,
-        
         
         physical_root: PathBuf,
     },
@@ -57,7 +47,6 @@ impl Fs {
         }
     }
 }
-
 
 pub fn split_owner<'a>(owner: &'a str, default_id: &'a str) -> (&'a str, &'a str) {
     if let Some(rest) = owner.strip_prefix('@') {
@@ -238,7 +227,6 @@ fn bundle_resolve(
     name: &str,
 ) -> Option<String> {
     
-    
     if let Some(rest) = name.strip_prefix('@') {
         let (alias, inner) = rest.split_once('/')?;
         let (caller_pkg_id, _) = split_owner(caller, default_id);
@@ -256,7 +244,6 @@ fn bundle_resolve(
         });
     }
 
-    
     let (caller_pkg_id, caller_inner) = split_owner(caller, default_id);
     let pkg = packages.get(caller_pkg_id)?;
     let base = match file_type {

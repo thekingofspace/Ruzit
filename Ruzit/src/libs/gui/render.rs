@@ -1,5 +1,4 @@
 
-
 use std::collections::HashMap;
 use std::num::NonZeroU64;
 use std::sync::Arc;
@@ -13,7 +12,6 @@ use crate::libs::renderable::{
     self,
     render as r3d, 
 };
-
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
@@ -130,7 +128,6 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
 }
 "#;
 
-
 const FULLSCREEN_VERTEX_WGSL: &str = r#"
 struct VsOut {
     @builtin(position) clip: vec4<f32>,
@@ -182,7 +179,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 }
 "#;
 
-
 pub struct GpuState {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -197,26 +193,19 @@ pub struct GpuState {
     
     default_pipeline: wgpu::RenderPipeline,
 
-    
     pipelines: HashMap<u64, wgpu::RenderPipeline>,
-    
     
     uniform_buffers: Vec<wgpu::Buffer>,
 
-    
     sampler: wgpu::Sampler,
-    
     
     white_view: wgpu::TextureView,
     
     image_textures: HashMap<u64, wgpu::TextureView>,
 
-    
     fullscreen_vs: wgpu::ShaderModule,
     
-    
     skybox_pipelines: HashMap<u64, wgpu::RenderPipeline>,
-    
     
     post_pipelines: HashMap<u64, wgpu::RenderPipeline>,
     
@@ -225,23 +214,18 @@ pub struct GpuState {
     
     skybox_bind_group: wgpu::BindGroup,
     
-    
     post_bind_group: Option<wgpu::BindGroup>,
-    
     
     scene_texture: Option<wgpu::Texture>,
     scene_view: Option<wgpu::TextureView>,
     scene_size: (u32, u32),
 
-    
     depth_texture: Option<wgpu::Texture>,
     depth_view: Option<wgpu::TextureView>,
     depth_size: (u32, u32),
     
-    
     bind_group_layout_3d: wgpu::BindGroupLayout,
     pipeline_layout_3d: wgpu::PipelineLayout,
-    
     
     default_pipeline_3d: wgpu::RenderPipeline,
     
@@ -271,7 +255,6 @@ impl GpuState {
     pub fn new(window: Arc<winit::window::Window>) -> Result<Self, String> {
         let size = window.inner_size();
         
-        
         let backends = if cfg!(windows) {
             wgpu::Backends::DX12
         } else {
@@ -282,7 +265,6 @@ impl GpuState {
             ..Default::default()
         });
 
-        
         let surface = instance
             .create_surface(window.clone())
             .map_err(|e| format!("create_surface: {e}"))?;
@@ -294,7 +276,6 @@ impl GpuState {
         }))
         .ok_or("no compatible GPU adapter found")?;
 
-        
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
                 label: Some("Ruzit Device"),
@@ -388,7 +369,6 @@ impl GpuState {
             &default_fs,
             config.format,
             
-            
             Some(wgpu::TextureFormat::Depth32Float),
         );
 
@@ -404,7 +384,6 @@ impl GpuState {
         });
         let white_view = create_white_texture(&device, &queue);
 
-        
         let fullscreen_vs = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Ruzit GUI fullscreen vertex"),
             source: wgpu::ShaderSource::Wgsl(FULLSCREEN_VERTEX_WGSL.into()),
@@ -438,7 +417,6 @@ impl GpuState {
             ],
         });
 
-        
         let bind_group_layout_3d =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Ruzit 3D bind group layout"),
@@ -514,7 +492,6 @@ impl GpuState {
             wgpu::TextureFormat::Depth32Float,
         );
 
-        
         let frame_uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Ruzit 3D frame uni"),
             contents: bytemuck::bytes_of(&r3d::FrameUniform3D::zeroed()),
@@ -601,7 +578,6 @@ impl GpuState {
         self.size = (cw, ch);
         self.surface.configure(&self.device, &self.config);
         
-        
         self.scene_texture = None;
         self.scene_view = None;
         self.post_bind_group = None;
@@ -616,7 +592,6 @@ impl GpuState {
             return true;
         }
         let label = format!("Ruzit GUI user shader #{shader_id}");
-        
         
         self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -665,7 +640,6 @@ impl GpuState {
             return false;
         }
         
-        
         let pipeline = build_pipeline(
             &self.device,
             &self.pipeline_layout,
@@ -705,7 +679,6 @@ impl GpuState {
         true
     }
 
-    
     fn ensure_scene_target(&mut self, w: u32, h: u32) {
         let want = (w.max(1), h.max(1));
         if self.scene_size == want && self.scene_texture.is_some() {
@@ -726,7 +699,6 @@ impl GpuState {
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        
         
         let post_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Ruzit GUI post bind"),
@@ -763,7 +735,6 @@ impl GpuState {
         }
         let data = UniData {
             
-            
             pos: [0.0, 0.0],
             size: res,
             color: [1.0, 1.0, 1.0, 1.0],
@@ -775,7 +746,6 @@ impl GpuState {
         self.queue.write_buffer(buffer, 0, bytemuck::bytes_of(&data));
     }
 
-    
     fn ensure_depth_target(&mut self, w: u32, h: u32) {
         let want = (w.max(1), h.max(1));
         if self.depth_size == want && self.depth_texture.is_some() {
@@ -815,7 +785,6 @@ impl GpuState {
             eprintln!("[Renderable] 3D shader #{shader_id} compile failed: {err}");
             return false;
         }
-        
         
         let pipeline = r3d::build_pipeline_3d(
             &self.device,
@@ -864,7 +833,6 @@ impl GpuState {
         }
     }
 
-    
     fn ensure_part_texture(&mut self, tex: &renderable::PartTextureRef) -> &wgpu::TextureView {
         if !self.image_textures.contains_key(&tex.id) {
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
@@ -921,7 +889,6 @@ impl GpuState {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             
-            
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
@@ -949,7 +916,6 @@ impl GpuState {
         self.image_textures.insert(image.id, view);
     }
 
-    
     pub fn render(&mut self, items: &[RenderItem], time: f32, clear: [f32; 3]) {
         let surface_texture = match self.surface.get_current_texture() {
             Ok(t) => t,
@@ -972,12 +938,10 @@ impl GpuState {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        
         let parts = renderable::snapshot();
         let skybox = super::skybox_snapshot();
         let post_effect = super::post_effect_snapshot();
 
-        
         if let Some(sb) = &skybox {
             self.ensure_skybox_pipeline(sb.id, &sb.wgsl);
         }
@@ -1008,7 +972,6 @@ impl GpuState {
             }
         }
 
-        
         let res = [self.size.0 as f32, self.size.1 as f32];
         for (i, item) in items.iter().enumerate() {
             let alpha = (1.0 - item.transparency).clamp(0.0, 1.0);
@@ -1038,7 +1001,6 @@ impl GpuState {
                 .write_buffer(&self.uniform_buffers[i], 0, bytemuck::bytes_of(&data));
         }
 
-        
         if let Some(sb) = &skybox {
             self.write_scene_uniform(&self.skybox_uniform, sb, time);
         }
@@ -1046,7 +1008,6 @@ impl GpuState {
             self.write_scene_uniform(&self.post_uniform, pe, time);
         }
 
-        
         let cam = renderable::camera_snapshot();
         let aspect = if self.size.1 > 0 {
             self.size.0 as f32 / self.size.1 as f32
@@ -1060,7 +1021,6 @@ impl GpuState {
         let proj = r3d::perspective_matrix(cam.fov_deg, aspect, cam.near, cam.far);
         let view_proj = r3d::mat4_mul(proj, view);
         let frame = r3d::FrameUniform3D {
-            
             
             view_proj: r3d::transpose4(view_proj),
             light_dir: normalize3([-0.4, -1.0, -0.3]),
@@ -1098,7 +1058,6 @@ impl GpuState {
                 .write_buffer(&self.instance_uniforms[i], 0, bytemuck::bytes_of(&inst));
         }
 
-        
         let bind_groups_2d: Vec<wgpu::BindGroup> = items
             .iter()
             .enumerate()
@@ -1131,7 +1090,6 @@ impl GpuState {
             })
             .collect();
 
-        
         let bind_groups_3d: Vec<wgpu::BindGroup> = parts
             .iter()
             .enumerate()
@@ -1168,7 +1126,6 @@ impl GpuState {
             })
             .collect();
 
-        
         let main_target: &wgpu::TextureView = if post_effect.is_some() {
             self.scene_view
                 .as_ref()
@@ -1187,7 +1144,6 @@ impl GpuState {
                 label: Some("Ruzit unified encoder"),
             });
 
-        
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Ruzit main pass"),
@@ -1216,7 +1172,6 @@ impl GpuState {
                 occlusion_query_set: None,
             });
 
-            
             if let Some(sb) = &skybox {
                 if let Some(pipeline) = self.skybox_pipelines.get(&sb.id) {
                     rpass.set_pipeline(pipeline);
@@ -1225,7 +1180,6 @@ impl GpuState {
                 }
             }
 
-            
             for (i, part) in parts.iter().enumerate() {
                 let pipeline = match &part.active_shader {
                     Some(sh) => self
@@ -1259,7 +1213,6 @@ impl GpuState {
                 rpass.draw_indexed(0..idx_count, 0, 0..1);
             }
 
-            
             for (i, item) in items.iter().enumerate() {
                 let pipeline = match &item.active_shader {
                     Some(sh) => self
@@ -1274,7 +1227,6 @@ impl GpuState {
             }
         }
 
-        
         if let Some(pe) = &post_effect {
             if let (Some(pipeline), Some(post_bind)) = (
                 self.post_pipelines.get(&pe.id),
@@ -1355,7 +1307,6 @@ fn create_white_texture(device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::Tex
     );
     texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
-
 
 fn build_pipeline(
     device: &wgpu::Device,

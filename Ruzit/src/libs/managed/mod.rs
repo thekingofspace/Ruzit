@@ -67,7 +67,6 @@ pub fn create(lua: &Lua, fs: Fs) -> mlua::Result<Table> {
     Ok(t)
 }
 
-
 pub struct PackageRef(pub Arc<Package>);
 
 impl UserData for PackageRef {

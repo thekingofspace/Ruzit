@@ -1,7 +1,5 @@
 
-
 use mlua::{AnyUserData, Lua, Table, UserData, UserDataFields, UserDataMethods, Value};
-
 
 fn lerp_f(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
@@ -35,7 +33,6 @@ fn as_userdata<T: 'static + Copy + Clone>(v: &Value) -> Option<T> {
     }
     None
 }
-
 
 #[derive(Clone, Copy, Debug)]
 pub struct Dim {
@@ -124,7 +121,6 @@ impl UserData for Dim {
     }
 }
 
-
 #[derive(Clone, Copy, Debug)]
 pub struct Color3 {
     pub r: u8,
@@ -162,7 +158,6 @@ impl UserData for Color3 {
             Ok(format!("Color3({}, {}, {})", this.r, this.g, this.b))
         });
 
-        
         m.add_meta_function(
             "__add",
             |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<Color3> {
@@ -213,7 +208,6 @@ impl UserData for Color3 {
         );
     }
 }
-
 
 #[derive(Clone, Copy, Debug)]
 pub struct Vector {
@@ -320,7 +314,6 @@ impl UserData for Vector {
     }
 }
 
-
 #[derive(Clone, Copy, Debug)]
 pub struct CFrame {
     pub position: Vector,
@@ -333,9 +326,7 @@ impl CFrame {
     }
 }
 
-
 type Mat3 = [[f32; 3]; 3];
-
 
 fn euler_to_matrix(rot: Vector) -> Mat3 {
     let (sx, cx) = rot.x.sin_cos();
@@ -347,7 +338,6 @@ fn euler_to_matrix(rot: Vector) -> Mat3 {
         [-cx * sy * cz + sx * sz, cx * sy * sz + sx * cz, cx * cy],
     ]
 }
-
 
 fn matrix_to_euler(m: Mat3) -> Vector {
     let sy = m[0][2].clamp(-1.0, 1.0);
@@ -433,7 +423,6 @@ impl UserData for CFrame {
             },
         );
         
-        
         m.add_meta_function(
             "__lt",
             |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<bool> {
@@ -460,7 +449,6 @@ impl UserData for CFrame {
                     && a.rotation.z <= b.rotation.z)
             },
         );
-        
         
         m.add_meta_function(
             "__add",
@@ -501,7 +489,6 @@ impl UserData for CFrame {
             },
         );
 
-        
         m.add_meta_function(
             "__mul",
             |lua, (a, b): (Value, Value)| -> mlua::Result<Value> {
@@ -543,7 +530,6 @@ impl UserData for CFrame {
     }
 }
 
-
 fn pair_with_scalar<T: 'static + Copy>(a: &Value, b: &Value, err: &str) -> mlua::Result<(T, f32)> {
     if let (Some(t), Some(s)) = (as_userdata::<T>(a), as_scalar(b)) {
         return Ok((t, s));
@@ -553,7 +539,6 @@ fn pair_with_scalar<T: 'static + Copy>(a: &Value, b: &Value, err: &str) -> mlua:
     }
     Err(mlua::Error::RuntimeError(err.to_string()))
 }
-
 
 pub fn create(lua: &Lua) -> mlua::Result<Table> {
     let t = lua.create_table()?;
@@ -648,7 +633,6 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
             },
         )?,
     )?;
-    
     
     cframe_class.set(
         "Angles",

@@ -1,5 +1,4 @@
 
-
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use rand::RngCore;
@@ -31,7 +30,6 @@ fn cipher() -> Aes256Gcm {
     Aes256Gcm::new(key)
 }
 
-
 pub fn encrypt_payload(plaintext: &[u8]) -> Result<Vec<u8>, String> {
     let mut nonce_bytes = [0u8; NONCE_LEN];
     rand::thread_rng().fill_bytes(&mut nonce_bytes);
@@ -48,7 +46,6 @@ pub fn encrypt_payload(plaintext: &[u8]) -> Result<Vec<u8>, String> {
     out.extend_from_slice(&ciphertext);
     Ok(out)
 }
-
 
 pub fn decrypt_payload(blob: &[u8]) -> Result<Vec<u8>, String> {
     if blob.len() < 4 + 1 + NONCE_LEN + 16 {

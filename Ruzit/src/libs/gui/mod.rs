@@ -17,10 +17,8 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
 thread_local! {
     
-    
     static REGISTRY: RefCell<Vec<Arc<Mutex<PrimitiveState>>>> = const { RefCell::new(Vec::new()) };
 
-    
     static SKYBOX: RefCell<Option<Arc<SceneShaderState>>> = const { RefCell::new(None) };
     static POST_EFFECT: RefCell<Option<Arc<SceneShaderState>>> = const { RefCell::new(None) };
 }
@@ -31,9 +29,7 @@ pub enum Shape {
     Circle,
     Triangle,
     
-    
     Image,
-    
     
     Text,
 }
@@ -50,7 +46,6 @@ impl Shape {
     }
 }
 
-
 pub struct ImageRef {
     pub id: u64,
     pub width: u32,
@@ -58,18 +53,15 @@ pub struct ImageRef {
     pub data: Arc<Vec<u8>>,
 }
 
-
 #[derive(Clone)]
 pub struct AttachedShader {
     pub id: u64,
     #[allow(dead_code)]
     pub source: String,
     
-    
     pub wgsl: Arc<String>,
     
     pub slot_of_name: Arc<std::collections::HashMap<String, u8>>,
-    
     
     pub params: Arc<Mutex<[f32; 16]>>,
 }
@@ -86,16 +78,13 @@ pub struct PrimitiveState {
     pub visible: bool,
     pub alive: bool,
     
-    
     pub attached: Vec<AttachedShader>,
     pub changed_signal: Table,
     
     pub image: Option<Arc<ImageRef>>,
     
-    
     pub text: Option<TextState>,
 }
-
 
 pub struct TextState {
     #[allow(dead_code)]
@@ -113,7 +102,6 @@ impl TextState {
         self.baked = None;
     }
 }
-
 
 pub struct RenderItem {
     pub shape: Shape,
@@ -138,7 +126,6 @@ pub fn snapshot() -> Vec<RenderItem> {
                 if !s.visible {
                     return None;
                 }
-                
                 
                 let (image, size) = if matches!(s.shape, Shape::Text) {
                     let baked = bake_text_if_dirty(&mut s);
@@ -176,7 +163,6 @@ fn bake_text_if_dirty(s: &mut PrimitiveState) -> Option<Arc<ImageRef>> {
     ts.baked = Some(baked.clone());
     Some(baked)
 }
-
 
 fn bake_text(font: &fontdue::Font, content: &str, size_px: f32, color: Color3) -> Arc<ImageRef> {
     use fontdue::layout::{CoordinateSystem, Layout, TextStyle};
@@ -263,7 +249,6 @@ impl GuiPrimitive {
             data: asset.data.clone(),
         };
         
-        
         let size = Dim::new(asset.width as f32, asset.height as f32);
         Self::with_state(lua, Shape::Image, Some(Arc::new(image)), None, size)
     }
@@ -277,7 +262,6 @@ impl GuiPrimitive {
             color: Color3::new(255, 255, 255),
             baked: None,
         };
-        
         
         Self::with_state(lua, Shape::Text, None, Some(text_state), Dim::new(0.0, 0.0))
     }
@@ -327,7 +311,6 @@ fn fire_changed(lua: &Lua, signal_table: Table, prop: &str) -> mlua::Result<()> 
     signal::fire(lua, &signal_table, args)
 }
 
-
 fn build_attached(asset: &AnyUserData) -> mlua::Result<AttachedShader> {
     let (id, source, code) = if let Ok(s) = asset.borrow::<ShaderAsset>() {
         (s.id, s.source.clone(), s.code.clone())
@@ -352,7 +335,6 @@ fn build_attached(asset: &AnyUserData) -> mlua::Result<AttachedShader> {
     })
 }
 
-
 fn parse_param_decls(src: &str) -> std::collections::HashMap<String, u8> {
     let mut map = std::collections::HashMap::new();
     let mut next_slot: u8 = 0;
@@ -372,7 +354,6 @@ fn parse_param_decls(src: &str) -> std::collections::HashMap<String, u8> {
         let Some(rest) = rest.strip_prefix("param") else {
             continue;
         };
-        
         
         let name = rest.split_whitespace().next().unwrap_or("").to_string();
         if name.is_empty() {
@@ -478,7 +459,6 @@ impl UserData for GuiPrimitive {
             })
         });
 
-        
         f.add_field_method_get("Text", |_, this| -> mlua::Result<String> {
             let s = this.state.lock().unwrap();
             Ok(s.text.as_ref().map(|t| t.content.clone()).unwrap_or_default())
@@ -647,13 +627,11 @@ fn shader_asset_id(asset: &AnyUserData) -> mlua::Result<u64> {
     ))
 }
 
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SceneSlot {
     Skybox,
     PostEffect,
 }
-
 
 pub struct SceneShaderState {
     pub id: u64,
@@ -682,7 +660,6 @@ fn build_scene_shader(asset: &AnyUserData) -> mlua::Result<Arc<SceneShaderState>
     };
     let slot_of_name = parse_param_decls(&code);
     
-    
     let prelude = render::FRAGMENT_PRELUDE;
     let wgsl = format!("{prelude}\n{code}");
     Ok(Arc::new(SceneShaderState {
@@ -692,7 +669,6 @@ fn build_scene_shader(asset: &AnyUserData) -> mlua::Result<Arc<SceneShaderState>
         params: Arc::new(Mutex::new([0.0_f32; 16])),
     }))
 }
-
 
 pub struct SceneShader {
     slot: SceneSlot,
@@ -732,7 +708,6 @@ impl UserData for SceneShader {
                 Ok(Some(this.state.params.lock().unwrap()[*slot as usize]))
             },
         );
-        
         
         m.add_method("Destroy", |_, this, _: ()| -> mlua::Result<()> {
             if this.current_in_slot() {

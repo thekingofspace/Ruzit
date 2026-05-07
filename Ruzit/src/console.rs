@@ -1,5 +1,4 @@
 
-
 pub fn setup(want_console: bool) {
     #[cfg(windows)]
     win::setup(want_console);
@@ -23,19 +22,16 @@ mod win {
     pub fn setup(want_console: bool) {
         unsafe {
             
-            
             let stdout = GetStdHandle(STD_OUTPUT_HANDLE);
             if !stdout.is_null() && stdout != INVALID_HANDLE_VALUE {
                 return;
             }
 
-            
             let attached = AttachConsole(ATTACH_PARENT_PROCESS) != 0;
             if !attached && want_console {
                 let _ = AllocConsole();
             }
             if attached || want_console {
-                
                 
                 redirect_stdio_to_console();
             }

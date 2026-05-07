@@ -5,9 +5,7 @@ use mlua::AnyUserData;
 
 use crate::libs::asset::{FragmentAsset, ShaderAsset};
 
-
 pub type Params = Arc<Mutex<HashMap<String, f32>>>;
-
 
 #[derive(Clone)]
 pub struct AttachedShader {

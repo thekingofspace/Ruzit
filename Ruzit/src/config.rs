@@ -39,7 +39,6 @@ pub struct BuildConfig {
     pub exe_name: Option<String>,
     pub exe_icon: Option<String>,
     
-    
     pub exe_windowed: bool,
     pub steam_app_id: Option<u32>,
     pub compress_scripts: bool,
@@ -98,8 +97,6 @@ impl BuildConfig {
             if let Some(b) = exe.get("windowed").and_then(|x| x.as_bool()) {
                 cfg.exe_windowed = b;
             }
-            // `compress = true|false` is shorthand for setting both
-            // compress_scripts and compress_assets at once.
             if let Some(b) = exe.get("compress").and_then(|x| x.as_bool()) {
                 cfg.compress_scripts = b;
                 cfg.compress_assets = b;
@@ -217,4 +214,3 @@ impl ManagedInfo {
         Self::from_toml_str(&text)
     }
 }
-

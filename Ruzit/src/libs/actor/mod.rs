@@ -57,9 +57,6 @@ fn actor_new(lua: &Lua, args: MultiValue, fs: &Fs) -> mlua::Result<ActorHandle> 
         }
     };
 
-    // Compile once on the main thread and ship bytecode to every worker —
-    // cheaper than recompiling per worker, and we surface syntax errors here
-    // instead of inside an opaque worker thread.
     let bytecode = Compiler::new().compile(&source).map_err(|e| {
         mlua::Error::RuntimeError(format!("Actor.new: compile failed: {e}"))
     })?;
@@ -110,8 +107,6 @@ enum WorkerResult {
 }
 
 struct ActorInner {
-    // Wrapped in Option so Close() can drop the sender, signaling EOF to
-    // every worker via the shared receiver.
     inbox: Mutex<Option<Sender<Vec<u8>>>>,
     outbox: Mutex<Receiver<WorkerResult>>,
     pending: Arc<AtomicUsize>,
@@ -121,9 +116,6 @@ struct ActorInner {
 
 impl Drop for ActorInner {
     fn drop(&mut self) {
-        // Drop the sender → workers' recv() returns Err → they exit. We don't
-        // join here; if a worker is mid-Lua-call we'd block the runtime, and
-        // the OS reaps the threads on process exit anyway.
         self.shutdown.store(true, Ordering::SeqCst);
         if let Ok(mut g) = self.inbox.lock() {
             *g = None;
@@ -138,9 +130,6 @@ pub struct ActorHandle {
 
 impl UserData for ActorHandle {
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
-        // Push(args...) — encode the args, hand them to the worker pool.
-        // Returns nothing. Errors only on a closed actor or if you try to
-        // pass an unsupported value (function, userdata, thread, etc.).
         m.add_method("Push", |_, this, args: MultiValue| -> mlua::Result<()> {
             let bytes = serialize_multi(&args)?;
             let guard = this.inner.inbox.lock().unwrap();
@@ -157,22 +146,6 @@ impl UserData for ActorHandle {
             Ok(())
         });
 
-        // Pop(yield_for_result) — retrieve the next ready result.
-        //   Pop(false) (default): non-blocking. Returns no values if nothing
-        //                          is ready. Use this from heart ticks /
-        //                          render loops where you can't afford to
-        //                          stall.
-        //   Pop(true):  blocking. Sleeps the calling thread until a worker
-        //                          finishes a job or every worker has
-        //                          exited (returns no values in that case).
-        //                          Workers keep running on other OS threads,
-        //                          but Window/RunService/etc. on the main
-        //                          thread stop pumping until Pop returns —
-        //                          only use it from a script that's already
-        //                          intentionally waiting (e.g. a startup
-        //                          loader gathering parallel work).
-        // Order is "first to finish, first out", not Push order, since work
-        // runs in parallel. If a worker raised an error, it propagates here.
         m.add_method(
             "Pop",
             |lua, this, yield_wait: Option<bool>| -> mlua::Result<MultiValue> {
@@ -204,17 +177,10 @@ impl UserData for ActorHandle {
             },
         );
 
-        // Pending() — count of jobs in flight + queued results not yet
-        // popped. Useful for "drain everything" loops:
-        //   while actor:Pending() > 0 do
-        //       local r = actor:Pop()
-        //       if r ~= nil then ... end
-        //   end
         m.add_method("Pending", |_, this, _: ()| -> mlua::Result<i64> {
             Ok(this.inner.pending.load(Ordering::SeqCst) as i64)
         });
 
-        // Threads() — how many worker threads back this actor.
         m.add_method("Threads", |_, this, _: ()| -> mlua::Result<i64> {
             Ok(this
                 .inner
@@ -226,9 +192,6 @@ impl UserData for ActorHandle {
                 .unwrap_or(0) as i64)
         });
 
-        // Close() — shut the actor down. Workers stop accepting new jobs and
-        // exit once they finish whatever they're currently running. Already-
-        // queued results are still drainable via Pop after Close.
         m.add_method("Close", |_, this, _: ()| -> mlua::Result<()> {
             this.inner.shutdown.store(true, Ordering::SeqCst);
             *this.inner.inbox.lock().unwrap() = None;
@@ -244,13 +207,6 @@ fn worker_main(
     pending: Arc<AtomicUsize>,
     shutdown: Arc<AtomicBool>,
 ) {
-    // Each worker gets its own Lua state with a sandboxed stdlib — math,
-    // table, string, bit32, buffer, utf8, coroutine, base. NO `io`, `os`,
-    // `package`, `debug`, and (since these are Ruzit-specific globals
-    // installed by runtime.rs and never seeded into a fresh Lua) NO
-    // `import`, `require`, `__dirname`. We additionally nuke `print`,
-    // `loadstring`, `dofile`, `loadfile` from the base library so workers
-    // can't escape their sandbox or spam stdout from a hot loop.
     let lua = match Lua::new_with(StdLib::ALL_SAFE, LuaOptions::default()) {
         Ok(l) => l,
         Err(e) => {
@@ -351,9 +307,6 @@ fn serialize_value(buf: &mut Vec<u8>, value: &Value, depth: u32) -> mlua::Result
         Value::Boolean(true) => buf.push(2),
         Value::Integer(i) => {
             buf.push(3);
-            // mlua-luau's Integer is i32; widen to i64 in the wire format so
-            // the encoding survives a future widening of the Lua int width
-            // without breaking older actor payloads.
             buf.extend_from_slice(&(*i as i64).to_le_bytes());
         }
         Value::Number(n) => {
@@ -398,9 +351,6 @@ fn deserialize_value(lua: &Lua, buf: &[u8], pos: &mut usize) -> mlua::Result<Val
         2 => Ok(Value::Boolean(true)),
         3 => {
             let n = read_i64(buf, pos)?;
-            // Demote back to mlua-luau's i32 Integer; if the original value
-            // didn't fit (came from a hypothetical wider int), fall back to
-            // a Number so we don't silently truncate.
             if let Ok(small) = i32::try_from(n) {
                 Ok(Value::Integer(small))
             } else {
@@ -470,11 +420,6 @@ fn read_slice<'a>(buf: &'a [u8], pos: &mut usize, len: usize) -> mlua::Result<&'
     Ok(s)
 }
 
-// Luau forbids dumping bytecode out of a live closure (no `string.dump` /
-// `Function::dump`), so to support `Actor.new(function(...) ... end)` we go
-// the other way around: ask the VM where the function was defined, read the
-// caller's script back through the VFS, find the function literal in those
-// lines, and recompile it as a fresh chunk.
 fn function_to_source(lua: &Lua, f: &Function, fs: &Fs) -> mlua::Result<String> {
     if has_upvalues(lua, f)? {
         return Err(mlua::Error::RuntimeError(
@@ -493,10 +438,6 @@ fn function_to_source(lua: &Lua, f: &Function, fs: &Fs) -> mlua::Result<String> 
                 .into(),
         )
     })?;
-    // mlua-luau only fills line_defined; last_line_defined is always missing
-    // for the Luau backend, so we don't bound the scan window — the
-    // block-balancing scanner walks forward from `function` until it finds
-    // the matching `end`.
     let line_defined = info.line_defined.unwrap_or(0);
     if line_defined <= 0 {
         return Err(mlua::Error::RuntimeError(format!(
@@ -505,10 +446,6 @@ fn function_to_source(lua: &Lua, f: &Function, fs: &Fs) -> mlua::Result<String> 
         )));
     }
 
-    // runtime.rs sets chunk names as `@<vfs-key>`; strip the `@` to get a key
-    // we can re-read through the VFS. If it doesn't start with `@`, the
-    // function came from a non-script chunk (e.g. an internal eval) and we
-    // can't recover its body.
     let key = source_name.strip_prefix('@').ok_or_else(|| {
         mlua::Error::RuntimeError(format!(
             "Actor.new: function source '{source_name}' isn't a script — can't recover its \
@@ -534,9 +471,6 @@ fn function_to_source(lua: &Lua, f: &Function, fs: &Fs) -> mlua::Result<String> 
 }
 
 fn has_upvalues(lua: &Lua, f: &Function) -> mlua::Result<bool> {
-    // mlua doesn't expose `n_upvalues` for the Luau backend, so go through
-    // the debug library — `debug.getupvalue(f, 1)` returns nil for a function
-    // with no upvalues, otherwise (name, value).
     let debug: Table = match lua.globals().get("debug") {
         Ok(t) => t,
         Err(_) => return Ok(false),
@@ -549,13 +483,6 @@ fn has_upvalues(lua: &Lua, f: &Function) -> mlua::Result<bool> {
     Ok(!matches!(v, Value::Nil))
 }
 
-// Walks the caller's source between line_defined and last_line_defined,
-// skipping strings and comments correctly, balancing block-openers
-// (`function`, `if`, `while`, `for`, `do`, `repeat`) against `end`/`until`
-// to find the function literal's matching `end`. If the function happened
-// to be declared with a name (`function compute(x) ... end`), the name is
-// stripped so the result is an anonymous expression suitable for
-// `return <text>`.
 fn extract_function_block(source: &str, line_defined: u32) -> Option<String> {
     let mut line_starts = vec![0usize];
     for (i, b) in source.bytes().enumerate() {
@@ -570,9 +497,6 @@ fn extract_function_block(source: &str, line_defined: u32) -> Option<String> {
         return None;
     }
 
-    // No upper bound — we walk forward from `function` and let the
-    // block-balancing scanner find the matching `end` regardless of how many
-    // lines the body spans.
     let scan_start = line_starts[start_line_idx];
     let segment = &source[scan_start..];
 
@@ -580,8 +504,6 @@ fn extract_function_block(source: &str, line_defined: u32) -> Option<String> {
     let mut start_off: Option<usize> = None;
     let mut end_off: Option<usize> = None;
     let mut depth: i32 = 0;
-    // Counter rather than bool so nested `while`/`for` chains correctly:
-    // each one queues exactly one `do` to be absorbed.
     let mut pending_do: i32 = 0;
 
     while let Some((kw, off, len)) = tok.next_keyword() {

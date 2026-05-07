@@ -67,7 +67,6 @@ fn build_env(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
     Ok(env)
 }
 
-
 fn install_print(lua: &Lua, env: &Table) -> mlua::Result<()> {
     let print = lua.create_function(|lua, args: MultiValue| -> mlua::Result<()> {
         let mut buf = String::new();
@@ -75,7 +74,6 @@ fn install_print(lua: &Lua, env: &Table) -> mlua::Result<()> {
             if i > 0 {
                 buf.push('\t');
             }
-            
             
             let s = lua.coerce_string(v.clone())?;
             match s {

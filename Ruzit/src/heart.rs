@@ -19,7 +19,6 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
     let mut last = Instant::now();
     loop {
         
-        
         crate::libs::window::pump(lua);
         crate::libs::input::pump(lua);
         crate::libs::sfx::pump(lua);
@@ -39,7 +38,6 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         let dt = (now - last).as_secs_f64();
         last = now;
 
-        
         crate::libs::runservice::fire_render_stepped(lua, dt);
 
         for (id, func) in snapshot {
@@ -50,7 +48,6 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
             }
         }
 
-        
         crate::libs::runservice::fire_heartbeat(lua, dt);
 
         let elapsed = last.elapsed();
