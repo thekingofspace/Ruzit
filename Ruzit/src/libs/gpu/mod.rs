@@ -1,6 +1,6 @@
 use std::cell::RefCell;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use mlua::{AnyUserData, Lua, MultiValue, Table, UserData, UserDataMethods, Value};
@@ -125,9 +125,7 @@ fn new_buffer(_lua: &Lua, size: i64) -> mlua::Result<GPUBuffer> {
         ));
     }
     let device = GPU_DEVICE.get().ok_or_else(|| {
-        mlua::Error::RuntimeError(
-            "GPU.NewBuffer: GPU not initialized (open a window first)".into(),
-        )
+        mlua::Error::RuntimeError("GPU.NewBuffer: GPU not initialized (open a window first)".into())
     })?;
     let bytes = (size as u64) * 4;
     let buffer = Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
@@ -156,23 +154,20 @@ fn clear_buffer(_lua: &Lua, _: ()) -> mlua::Result<()> {
 }
 
 fn meta_or_default() -> GpuMeta {
-    GPU_META
-        .get()
-        .cloned()
-        .unwrap_or_else(|| GpuMeta {
-            name: "(no GPU initialized)".into(),
-            vendor: 0,
-            device: 0,
-            backend: "Unknown".into(),
-            driver: String::new(),
-            driver_info: String::new(),
-            device_type: "Unknown".into(),
-            max_texture_size: 0,
-            max_buffer_size: 0,
-            max_bind_groups: 0,
-            max_vertex_buffers: 0,
-            max_compute_workgroup_size: [0, 0, 0],
-        })
+    GPU_META.get().cloned().unwrap_or_else(|| GpuMeta {
+        name: "(no GPU initialized)".into(),
+        vendor: 0,
+        device: 0,
+        backend: "Unknown".into(),
+        driver: String::new(),
+        driver_info: String::new(),
+        device_type: "Unknown".into(),
+        max_texture_size: 0,
+        max_buffer_size: 0,
+        max_bind_groups: 0,
+        max_vertex_buffers: 0,
+        max_compute_workgroup_size: [0, 0, 0],
+    })
 }
 
 fn info(lua: &Lua, _: ()) -> mlua::Result<Table> {
@@ -214,7 +209,11 @@ fn frame_stats(lua: &Lua, _: ()) -> mlua::Result<Table> {
         )
     });
     let part_count = renderable::list_part_states().len();
-    let fps = if smoothed_dt > 0.0 { 1.0 / smoothed_dt } else { 0.0 };
+    let fps = if smoothed_dt > 0.0 {
+        1.0 / smoothed_dt
+    } else {
+        0.0
+    };
     let t = lua.create_table()?;
     t.set("FPS", fps as f64)?;
     t.set("FrameTime", smoothed_dt as f64)?;
@@ -239,14 +238,11 @@ fn vendor_string(id: u32) -> &'static str {
     }
 }
 
-fn raycast(
-    lua: &Lua,
-    args: MultiValue,
-) -> mlua::Result<Value> {
+fn raycast(lua: &Lua, args: MultiValue) -> mlua::Result<Value> {
     let mut iter = args.into_iter();
-    let origin_v: Value = iter.next().ok_or_else(|| {
-        mlua::Error::RuntimeError("GPU.Raycast: missing origin (Vector)".into())
-    })?;
+    let origin_v: Value = iter
+        .next()
+        .ok_or_else(|| mlua::Error::RuntimeError("GPU.Raycast: missing origin (Vector)".into()))?;
     let dir_v: Value = iter.next().ok_or_else(|| {
         mlua::Error::RuntimeError("GPU.Raycast: missing direction (Vector)".into())
     })?;
@@ -467,16 +463,16 @@ fn intersect_part(
     );
     let world_normal = mat3_apply(rot, local_normal);
     let nl = world_normal.magnitude().max(1e-6);
-    let world_normal = Vector::new(world_normal.x / nl, world_normal.y / nl, world_normal.z / nl);
+    let world_normal = Vector::new(
+        world_normal.x / nl,
+        world_normal.y / nl,
+        world_normal.z / nl,
+    );
 
     Some((t, world_pos, world_normal))
 }
 
-fn ray_obb(
-    origin: Vector,
-    dir: Vector,
-    half: Vector,
-) -> Option<(f32, Vector, Vector)> {
+fn ray_obb(origin: Vector, dir: Vector, half: Vector) -> Option<(f32, Vector, Vector)> {
     let bounds_min = [-half.x, -half.y, -half.z];
     let bounds_max = [half.x, half.y, half.z];
     let o = [origin.x, origin.y, origin.z];
@@ -526,11 +522,7 @@ fn ray_obb(
     Some((t, pos, Vector::new(n[0], n[1], n[2])))
 }
 
-fn ray_ellipsoid(
-    origin: Vector,
-    dir: Vector,
-    half: Vector,
-) -> Option<(f32, Vector, Vector)> {
+fn ray_ellipsoid(origin: Vector, dir: Vector, half: Vector) -> Option<(f32, Vector, Vector)> {
     let rx = half.x.max(1e-6);
     let ry = half.y.max(1e-6);
     let rz = half.z.max(1e-6);
@@ -547,10 +539,24 @@ fn ray_ellipsoid(
     let sq = disc.sqrt();
     let t1 = (-b - sq) / (2.0 * a);
     let t2 = (-b + sq) / (2.0 * a);
-    let t = if t1 > 0.0 { t1 } else if t2 > 0.0 { t2 } else { return None };
+    let t = if t1 > 0.0 {
+        t1
+    } else if t2 > 0.0 {
+        t2
+    } else {
+        return None;
+    };
 
-    let local = Vector::new(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t);
-    let n = Vector::new(local.x / (rx * rx), local.y / (ry * ry), local.z / (rz * rz));
+    let local = Vector::new(
+        origin.x + dir.x * t,
+        origin.y + dir.y * t,
+        origin.z + dir.z * t,
+    );
+    let n = Vector::new(
+        local.x / (rx * rx),
+        local.y / (ry * ry),
+        local.z / (rz * rz),
+    );
     let nl = n.magnitude().max(1e-6);
     let normal = Vector::new(n.x / nl, n.y / nl, n.z / nl);
     Some((t, local, normal))

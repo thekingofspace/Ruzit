@@ -43,10 +43,13 @@ pub fn cmd_test(arg: Option<&String>) -> Result<(), String> {
         .to_string_lossy()
         .replace('\\', "/");
 
-    let exe_stem = config
-        .exe_name
-        .clone()
-        .unwrap_or_else(|| entry.file_stem().unwrap_or_default().to_string_lossy().into_owned());
+    let exe_stem = config.exe_name.clone().unwrap_or_else(|| {
+        entry
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned()
+    });
     let default_id = exe_stem.clone();
 
     let mut packages: HashMap<String, Arc<Package>> = HashMap::new();
@@ -55,7 +58,11 @@ pub fn cmd_test(arg: Option<&String>) -> Result<(), String> {
         default_id.clone(),
         Arc::new(Package {
             id: default_id.clone(),
-            name: if config.name.is_empty() { default_id.clone() } else { config.name.clone() },
+            name: if config.name.is_empty() {
+                default_id.clone()
+            } else {
+                config.name.clone()
+            },
             version: config.version.clone(),
             creator: config.creator.clone(),
             entry: entry_rel.clone(),
@@ -95,10 +102,6 @@ pub fn cmd_test(arg: Option<&String>) -> Result<(), String> {
         );
     }
 
-    // Pull in pre-built .managed files from Packages/ (third-party packages,
-    // mods, etc.) and merge them into the runtime alongside the project's
-    // own bundle. Each becomes reachable via @PkgId/... from Lua. Same loader
-    // as the launcher uses at ship time, so behavior matches `Ruzit Build`.
     let packages_dir = root.join(package::PACKAGES_DIR_NAME);
     if packages_dir.is_dir() {
         let external = package::load_managed_dir(&packages_dir)?;
@@ -166,12 +169,13 @@ fn apply_steam_app_id(config: &BuildConfig) {
 /// steamworks-sys cargo build cache). Silent best-effort — if it isn't there
 /// we don't fail the build, since the user may not need Steam at runtime.
 fn copy_steam_redist(generated_dir: &Path) {
-    let Ok(self_exe) = env::current_exe() else { return };
-    let Some(self_dir) = self_exe.parent() else { return };
-    // Per-OS Steamworks redistributable filenames. The dynamic loader picks
-    // these up at runtime via DELAYLOAD on Windows or rpath ($ORIGIN /
-    // @executable_path) on Linux/macOS, so the file just has to land next to
-    // the launcher.
+    let Ok(self_exe) = env::current_exe() else {
+        return;
+    };
+    let Some(self_dir) = self_exe.parent() else {
+        return;
+    };
+
     let names: &[&str] = if cfg!(target_os = "windows") {
         &["steam_api64.dll", "steam_api.dll"]
     } else if cfg!(target_os = "linux") {
@@ -215,8 +219,11 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "Main".to_string());
-    
-    let exe_stem = config.exe_name.clone().unwrap_or_else(|| default_stem.clone());
+
+    let exe_stem = config
+        .exe_name
+        .clone()
+        .unwrap_or_else(|| default_stem.clone());
     let pkg_id = exe_stem.clone();
 
     let generated_dir = match output {
@@ -224,9 +231,8 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         None => package::default_generated_dir()?,
     };
     if generated_dir.is_dir() {
-        fs::remove_dir_all(&generated_dir).map_err(|e| {
-            format!("clear {}: {e}", generated_dir.display())
-        })?;
+        fs::remove_dir_all(&generated_dir)
+            .map_err(|e| format!("clear {}: {e}", generated_dir.display()))?;
     }
     let managed_dir = generated_dir.join("Managed");
     fs::create_dir_all(&managed_dir)
@@ -237,10 +243,6 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         None => None,
     };
 
-    // Launcher filename matches host OS conventions: Windows ships `.exe`,
-    // Linux ships a bare ELF, macOS ships a bare Mach-O. Cross-OS launcher
-    // builds aren't supported — `Ruzit Build` always copies *this* Ruzit
-    // binary, so the launcher inherits whatever platform Ruzit was built for.
     let exe_filename = if cfg!(target_os = "windows") {
         format!("{exe_stem}.exe")
     } else {
@@ -260,8 +262,6 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         config.exe_windowed,
     )?;
 
-    // ELF/Mach-O launchers need the +x bit before they can be executed.
-    // Windows uses file extensions instead, so the chmod is unix-only.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -290,10 +290,6 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
     let assets_path = managed_dir.join(format!("{pkg_id}.assets.managed"));
     if !assets.is_empty() {
         if config.shard_assets {
-            // Sharded write — produces N shardNNNN.managed files plus a
-            // <id>.assets.manifest.managed listing them. Patch updates only
-            // re-download the touched shards instead of the whole archive.
-            // No monolithic <id>.assets.managed is emitted in this mode.
             let n = package::write_assets_sharded(
                 &managed_dir,
                 &pkg_id,
@@ -310,7 +306,11 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
             );
         } else {
             package::write_assets_managed(
-                &assets_path, &pkg_id, &config.name, &assets, config.compress_assets,
+                &assets_path,
+                &pkg_id,
+                &config.name,
+                &assets,
+                config.compress_assets,
             )?;
         }
     } else if assets_path.exists() {
@@ -319,10 +319,7 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
 
     config.print_banner();
     let scripts_size = fs::metadata(&scripts_path).map(|m| m.len()).unwrap_or(0);
-    println!(
-        "[Ruzit] Build → {}",
-        generated_dir.display()
-    );
+    println!("[Ruzit] Build → {}", generated_dir.display());
     println!("        {}  (launcher)", exe_filename);
     println!(
         "        Managed/{}.scripts.managed  ({} files, {} KB)",
@@ -361,18 +358,10 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
                     }
                 );
             }
-            Err(e) => eprintln!(
-                "[Ruzit] failed to package DLC at {}: {e}",
-                dlc.display()
-            ),
+            Err(e) => eprintln!("[Ruzit] failed to package DLC at {}: {e}", dlc.display()),
         }
     }
 
-    // Copy any pre-built .managed files from Packages/ straight into
-    // Generated/Managed/. They're already encrypted in the on-disk format the
-    // launcher expects, so nothing to repack — bytes go through verbatim.
-    // Skips files whose target name is already present (so a third-party
-    // package can't clobber the project's own scripts/assets bundle).
     copy_external_packages(root, &managed_dir)?;
 
     Ok(())
@@ -383,8 +372,8 @@ fn copy_external_packages(root: &Path, managed_dir: &Path) -> Result<(), String>
     if !src_dir.is_dir() {
         return Ok(());
     }
-    for entry in fs::read_dir(&src_dir)
-        .map_err(|e| format!("read_dir {}: {e}", src_dir.display()))?
+    for entry in
+        fs::read_dir(&src_dir).map_err(|e| format!("read_dir {}: {e}", src_dir.display()))?
     {
         let entry = entry.map_err(|e| e.to_string())?;
         let src = entry.path();
@@ -406,8 +395,7 @@ fn copy_external_packages(root: &Path, managed_dir: &Path) -> Result<(), String>
             );
             continue;
         }
-        let bytes = fs::copy(&src, &dst)
-            .map_err(|e| format!("copy {}: {e}", src.display()))?;
+        let bytes = fs::copy(&src, &dst).map_err(|e| format!("copy {}: {e}", src.display()))?;
         println!(
             "        Managed/{}  (imported, {} KB)",
             name.to_string_lossy(),
@@ -459,7 +447,11 @@ fn build_dlc(
             }
         } else {
             package::write_assets_managed(
-                &assets_path, &info.id, &info.name, &assets, compress_assets,
+                &assets_path,
+                &info.id,
+                &info.name,
+                &assets,
+                compress_assets,
             )?;
         }
     } else if assets_path.exists() {
@@ -469,7 +461,6 @@ fn build_dlc(
 }
 
 pub fn cmd_package(arg: Option<&String>, output: Option<&String>) -> Result<(), String> {
-    
     let folder = match arg {
         Some(s) => PathBuf::from(s)
             .canonicalize()
@@ -477,7 +468,10 @@ pub fn cmd_package(arg: Option<&String>, output: Option<&String>) -> Result<(), 
         None => env::current_dir().map_err(|e| format!("cwd: {e}"))?,
     };
     if !folder.is_dir() {
-        return Err(format!("Package: '{}' is not a directory", folder.display()));
+        return Err(format!(
+            "Package: '{}' is not a directory",
+            folder.display()
+        ));
     }
 
     let info = ManagedInfo::load(&folder)?;
@@ -497,8 +491,7 @@ pub fn cmd_package(arg: Option<&String>, output: Option<&String>) -> Result<(), 
         Some(o) => PathBuf::from(o),
         None => folder.join("Generated").join("Managed"),
     };
-    fs::create_dir_all(&out_dir)
-        .map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+    fs::create_dir_all(&out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
 
     let scripts_path = out_dir.join(format!("{}.scripts.managed", info.id));
     package::write_scripts_managed(
@@ -525,7 +518,11 @@ pub fn cmd_package(arg: Option<&String>, output: Option<&String>) -> Result<(), 
         "[Ruzit] Package '{}' v{} by {} → {}",
         info.name,
         info.version,
-        if info.creator.is_empty() { "(no creator)" } else { &info.creator },
+        if info.creator.is_empty() {
+            "(no creator)"
+        } else {
+            &info.creator
+        },
         out_dir.display()
     );
     println!(
@@ -554,8 +551,7 @@ fn load_icon(root: &Path, name: &str) -> Result<Vec<u8>, String> {
     };
     for path in &candidates {
         if path.is_file() {
-            return std::fs::read(path)
-                .map_err(|e| format!("read icon {}: {e}", path.display()));
+            return std::fs::read(path).map_err(|e| format!("read icon {}: {e}", path.display()));
         }
     }
     Err(format!(
@@ -563,7 +559,10 @@ fn load_icon(root: &Path, name: &str) -> Result<Vec<u8>, String> {
         root.display(),
         candidates
             .iter()
-            .map(|p| p.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default())
+            .map(|p| p
+                .file_name()
+                .map(|f| f.to_string_lossy().into_owned())
+                .unwrap_or_default())
             .collect::<Vec<_>>()
             .join(", ")
     ))
@@ -578,13 +577,13 @@ fn resolve_entry_arg(arg: Option<&String>) -> Result<PathBuf, String> {
                 .canonicalize()
                 .map_err(|e| format!("bad entry path '{}': {e}", target.display()))
         }
-        None => find_default_main()
-            .ok_or_else(|| "no entry given and no Main.luau found near the exe or in CWD".to_string()),
+        None => find_default_main().ok_or_else(|| {
+            "no entry given and no Main.luau found near the exe or in CWD".to_string()
+        }),
     }
 }
 
 fn find_default_main() -> Option<PathBuf> {
-    
     if let Ok(exe) = env::current_exe() {
         if let Some(dir) = exe.parent() {
             let here = dir.join("Main.luau");
@@ -631,8 +630,7 @@ pub fn cmd_init(arg: Option<&String>) -> Result<(), String> {
         Some(s) => PathBuf::from(s),
         None => env::current_dir().map_err(|e| format!("cwd: {e}"))?,
     };
-    fs::create_dir_all(&target)
-        .map_err(|e| format!("create {}: {e}", target.display()))?;
+    fs::create_dir_all(&target).map_err(|e| format!("create {}: {e}", target.display()))?;
 
     let project_name = target
         .file_name()
@@ -647,19 +645,15 @@ pub fn cmd_init(arg: Option<&String>) -> Result<(), String> {
         (".vscode/settings.json", templates::VSCODE_SETTINGS),
     ];
 
-    // Anything under `assets/` is auto-bundled by `Ruzit Build` and
-    // reachable via Asset.GetAsset, so we make sure the top-level folder
-    // exists. We deliberately don't pre-make subfolders (images/sounds/...)
-    // so the project's organization is up to you — group by feature
-    // (`SoundsGuns/`, `ItemsTier1/`) or by type, whichever fits.
     let assets_dir = target.join("assets");
-    // `Packages/` is for dropping in pre-built .managed files (third-party
-    // packages, mods you've published, etc.). `Ruzit Test` loads them
-    // alongside the project, and `Ruzit Build` copies them into the final
-    // Generated/Managed/ output.
+
     let packages_dir = target.join(package::PACKAGES_DIR_NAME);
 
-    println!("[Ruzit] init → {} (name: {})", target.display(), project_name);
+    println!(
+        "[Ruzit] init → {} (name: {})",
+        target.display(),
+        project_name
+    );
 
     let mut created = 0;
     let mut skipped = 0;
@@ -667,8 +661,7 @@ pub fn cmd_init(arg: Option<&String>) -> Result<(), String> {
         if dir.exists() {
             skipped += 1;
         } else {
-            fs::create_dir_all(dir)
-                .map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
+            fs::create_dir_all(dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
             println!("  create {}/", display_rel(&target, dir));
             created += 1;
         }
@@ -676,17 +669,23 @@ pub fn cmd_init(arg: Option<&String>) -> Result<(), String> {
     for (rel, template) in entries {
         let path = target.join(rel);
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
+            fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
         }
-        if path.exists() {
+
+        let force_overwrite = rel == &"types.d.luau";
+        let content = template.replace("{name}", &project_name);
+        let already_existed = path.exists();
+        if already_existed && !force_overwrite {
             println!("  skip   {}", display_rel(&target, &path));
             skipped += 1;
         } else {
-            let content = template.replace("{name}", &project_name);
-            fs::write(&path, content)
-                .map_err(|e| format!("write {}: {e}", path.display()))?;
-            println!("  create {}", display_rel(&target, &path));
+            fs::write(&path, content).map_err(|e| format!("write {}: {e}", path.display()))?;
+            let verb = if already_existed {
+                "rewrite"
+            } else {
+                "create "
+            };
+            println!("  {verb} {}", display_rel(&target, &path));
             created += 1;
         }
     }
@@ -710,15 +709,14 @@ pub fn cmd_init_package(arg: Option<&String>) -> Result<(), String> {
         Some(s) => PathBuf::from(s),
         None => env::current_dir().map_err(|e| format!("cwd: {e}"))?,
     };
-    fs::create_dir_all(&target)
-        .map_err(|e| format!("create {}: {e}", target.display()))?;
+    fs::create_dir_all(&target).map_err(|e| format!("create {}: {e}", target.display()))?;
 
     let id = target
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("my-package")
         .to_string();
-    
+
     let display_name = humanize(&id);
 
     let entries: &[(&str, &str)] = &[
@@ -741,17 +739,16 @@ pub fn cmd_init_package(arg: Option<&String>) -> Result<(), String> {
             println!("  skip   {}", display_rel(&target, &path));
             skipped += 1;
         } else {
-            let content = template.replace("{id}", &id).replace("{name}", &display_name);
-            fs::write(&path, content)
-                .map_err(|e| format!("write {}: {e}", path.display()))?;
+            let content = template
+                .replace("{id}", &id)
+                .replace("{name}", &display_name);
+            fs::write(&path, content).map_err(|e| format!("write {}: {e}", path.display()))?;
             println!("  create {}", display_rel(&target, &path));
             created += 1;
         }
     }
 
-    println!(
-        "[Ruzit] init package done: {created} created, {skipped} skipped."
-    );
+    println!("[Ruzit] init package done: {created} created, {skipped} skipped.");
     println!(
         "        Drop this folder next to your project's build.toml — Build will auto-package it."
     );

@@ -16,18 +16,19 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         lua.create_function(|_, name: String| -> mlua::Result<IpcConnection> {
             let ns = name.clone().to_ns_name::<GenericNamespaced>().map_err(rt)?;
             let stream = IpcStream::connect(ns).map_err(rt)?;
-            Ok(IpcConnection { stream: Some(stream) })
+            Ok(IpcConnection {
+                stream: Some(stream),
+            })
         })?,
     )?;
     t.set(
         "Host",
         lua.create_function(|_, name: String| -> mlua::Result<IpcListenerHandle> {
             let ns = name.clone().to_ns_name::<GenericNamespaced>().map_err(rt)?;
-            let listener = ListenerOptions::new()
-                .name(ns)
-                .create_sync()
-                .map_err(rt)?;
-            Ok(IpcListenerHandle { listener: Some(listener) })
+            let listener = ListenerOptions::new().name(ns).create_sync().map_err(rt)?;
+            Ok(IpcListenerHandle {
+                listener: Some(listener),
+            })
         })?,
     )?;
     Ok(t)
@@ -72,17 +73,16 @@ pub struct IpcListenerHandle {
 
 impl UserData for IpcListenerHandle {
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
-        m.add_method_mut(
-            "Accept",
-            |_, this, _: ()| -> mlua::Result<IpcConnection> {
-                let l = this
-                    .listener
-                    .as_mut()
-                    .ok_or_else(|| mlua::Error::RuntimeError("IPC listener closed".into()))?;
-                let stream = l.accept().map_err(rt)?;
-                Ok(IpcConnection { stream: Some(stream) })
-            },
-        );
+        m.add_method_mut("Accept", |_, this, _: ()| -> mlua::Result<IpcConnection> {
+            let l = this
+                .listener
+                .as_mut()
+                .ok_or_else(|| mlua::Error::RuntimeError("IPC listener closed".into()))?;
+            let stream = l.accept().map_err(rt)?;
+            Ok(IpcConnection {
+                stream: Some(stream),
+            })
+        });
         m.add_method_mut("Close", |_, this, _: ()| -> mlua::Result<()> {
             this.listener = None;
             Ok(())

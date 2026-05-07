@@ -1,4 +1,3 @@
-
 pub fn setup(want_console: bool) {
     #[cfg(windows)]
     win::setup(want_console);
@@ -21,7 +20,6 @@ mod win {
 
     pub fn setup(want_console: bool) {
         unsafe {
-            
             let stdout = GetStdHandle(STD_OUTPUT_HANDLE);
             if !stdout.is_null() && stdout != INVALID_HANDLE_VALUE {
                 return;
@@ -32,14 +30,12 @@ mod win {
                 let _ = AllocConsole();
             }
             if attached || want_console {
-                
                 redirect_stdio_to_console();
             }
         }
     }
 
     unsafe fn redirect_stdio_to_console() {
-        
         let conout = unsafe {
             CreateFileA(
                 b"CONOUT$\0".as_ptr(),
@@ -57,7 +53,7 @@ mod win {
                 let _ = SetStdHandle(STD_ERROR_HANDLE, conout);
             }
         }
-        
+
         let conin = unsafe {
             CreateFileA(
                 b"CONIN$\0".as_ptr(),

@@ -77,7 +77,6 @@ impl UserData for PackageRef {
         f.add_field_method_get("Creator", |_, this| Ok(this.0.creator.clone()));
         f.add_field_method_get("Entry", |_, this| Ok(this.0.entry.clone()));
         f.add_field_method_get("Origin", |_, this| -> mlua::Result<String> {
-            
             let stem = this
                 .0
                 .entry

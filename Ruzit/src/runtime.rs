@@ -2,9 +2,10 @@ use std::io::Write;
 
 use mlua::{Lua, MultiValue, Table, Value};
 
+use crate::errors;
 use crate::heart;
 use crate::libs;
-use crate::vfs::{self, Fs, read_module, resolve};
+use crate::vfs::{self, Fs, read_module, resolve, split_owner};
 
 const CACHE_KEY: &str = "ruzit_cache";
 
@@ -13,16 +14,19 @@ pub fn run_entry(fs: Fs, entry_key: &str) -> Result<(), String> {
     let cache = lua.create_table().map_err(|e| e.to_string())?;
     lua.set_named_registry_value(CACHE_KEY, cache)
         .map_err(|e| e.to_string())?;
+    errors::install_fs(&lua, &fs).map_err(|e| format!("fs registry: {e}"))?;
     heart::ensure_registry(&lua).map_err(|e| format!("heart registry: {e}"))?;
     libs::signal::install(&lua).map_err(|e| format!("signal install: {e}"))?;
     libs::input::install(&lua).map_err(|e| format!("input install: {e}"))?;
     libs::runservice::install(&lua).map_err(|e| format!("runservice install: {e}"))?;
 
+    let entry_owned = entry_key.to_string();
     load_module(&lua, &fs, entry_key)
         .map(|_| ())
-        .map_err(|e| format!("Luau error: {e}"))?;
+        .map_err(|e| errors::pretty_format(&lua, &fs, &entry_owned, &entry_owned, &e))?;
 
-    heart::run_loop(&lua).map_err(|e| format!("heart loop: {e}"))
+    heart::run_loop(&lua)
+        .map_err(|e| errors::pretty_format(&lua, &fs, &entry_owned, &entry_owned, &e))
 }
 
 fn load_module(lua: &Lua, fs: &Fs, key: &str) -> mlua::Result<Value> {
@@ -74,7 +78,7 @@ fn install_print(lua: &Lua, env: &Table) -> mlua::Result<()> {
             if i > 0 {
                 buf.push('\t');
             }
-            
+
             let s = lua.coerce_string(v.clone())?;
             match s {
                 Some(s) => buf.push_str(&s.to_str()?),
@@ -94,8 +98,9 @@ fn install_require(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result
     let owner = owner.to_string();
     let require = lua.create_function(move |lua, name: String| -> mlua::Result<Value> {
         let resolved = resolve(&fs, &owner, &name).ok_or_else(|| {
+            let where_label = describe_owner(&fs, &owner);
             mlua::Error::RuntimeError(format!(
-                "module '{name}' not found (required from {owner})"
+                "module '{name}' not found (required from {where_label})"
             ))
         })?;
         load_module(lua, &fs, &resolved)
@@ -104,9 +109,7 @@ fn install_require(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result
 }
 
 fn install_dirname(env: &Table, fs: &Fs, owner: &str) -> mlua::Result<()> {
-    let dirname = vfs::caller_dir(fs, owner)
-        .to_string_lossy()
-        .into_owned();
+    let dirname = vfs::caller_dir(fs, owner).to_string_lossy().into_owned();
     env.set("__dirname", dirname)
 }
 
@@ -115,12 +118,17 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
     let owner = owner.to_string();
     let import = lua.create_function(move |lua, name: String| -> mlua::Result<Value> {
         match name.as_str() {
-            "Actor" => Ok(Value::Table(libs::actor::create(lua, fs.clone(), owner.clone())?)),
+            "Actor" => Ok(Value::Table(libs::actor::create(
+                lua,
+                fs.clone(),
+                owner.clone(),
+            )?)),
             "Asset" => Ok(Value::Table(libs::asset::create(
                 lua,
                 fs.clone(),
                 owner.clone(),
             )?)),
+            "Gamepad" => Ok(Value::Table(libs::gamepad::create(lua)?)),
             "GPU" => Ok(Value::Table(libs::gpu::create(lua)?)),
             "GUI" => Ok(Value::Table(libs::gui::create(lua)?)),
             "IO" => Ok(Value::Table(libs::io::create(
@@ -143,9 +151,24 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             "Voice" => Ok(Value::Table(libs::voice::create(lua)?)),
             "Window" => Ok(Value::Table(libs::window::create(lua)?)),
             other => Err(mlua::Error::RuntimeError(format!(
-                "import: unknown library '{other}'"
+                "import: unknown library '{other}' (called from {})",
+                describe_owner(&fs, &owner)
             ))),
         }
     })?;
     env.set("import", import)
+}
+
+/// Compact "<script> in <package>" descriptor for error messages emitted from
+/// Rust callbacks (require / import) where we don't get a Luau line number.
+fn describe_owner(fs: &Fs, owner: &str) -> String {
+    let pkg = errors::package_label(fs, owner);
+    let inner = match fs {
+        Fs::Disk { .. } => owner.to_string(),
+        Fs::Bundle { default_id, .. } => {
+            let (_, inner) = split_owner(owner, default_id);
+            inner.to_string()
+        }
+    };
+    format!("{inner} in {pkg}")
 }

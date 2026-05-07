@@ -18,9 +18,9 @@ pub fn ensure_registry(lua: &Lua) -> mlua::Result<()> {
 pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
     let mut last = Instant::now();
     loop {
-        
         crate::libs::window::pump(lua);
         crate::libs::input::pump(lua);
+        crate::libs::gamepad::pump(lua);
         crate::libs::sfx::pump(lua);
         crate::libs::steam::pump(lua);
         crate::libs::voice::pump(lua);
@@ -40,10 +40,12 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         last = now;
 
         crate::libs::runservice::fire_render_stepped(lua, dt);
+        crate::libs::renderable::tick_animations(dt as f32);
 
         for (id, func) in snapshot {
             if let Err(e) = run_one(lua, &func, dt) {
-                eprintln!("[Ruzit] heart '{id}' error: {e}");
+                let pretty = crate::errors::pretty_format_loose(lua, &id, &e);
+                eprintln!("[Ruzit] heart '{id}' error: {pretty}");
                 let registry: Table = lua.named_registry_value(HEART_KEY)?;
                 registry.set(id, Value::Nil)?;
             }

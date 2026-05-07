@@ -47,7 +47,6 @@ pub fn is_open() -> bool {
 }
 
 pub fn pump(lua: &Lua) {
-    
     let (close_now, pending) = EVENT_LOOP.with(|el_cell| {
         APP.with(|app_cell| {
             let mut el_ref = el_cell.borrow_mut();
@@ -112,7 +111,11 @@ fn fire_change(lua: &Lua, signal: &Table, change: WindowChange) -> mlua::Result<
         WindowChange::Focused(focused) => {
             args.push_back(Value::String(lua.create_string("Focused")?));
             args.push_back(Value::Boolean(focused));
-            let key = if focused { ON_FOCUS_KEY } else { ON_UNFOCUS_KEY };
+            let key = if focused {
+                ON_FOCUS_KEY
+            } else {
+                ON_UNFOCUS_KEY
+            };
             if let Ok(side) = lua.named_registry_value::<Table>(key) {
                 if let Err(e) = signal::fire(lua, &side, MultiValue::new()) {
                     eprintln!("[Window] {key} fire error: {e}");
@@ -193,10 +196,10 @@ fn open(lua: &Lua, opts_arg: Option<Table>) -> mlua::Result<WindowHandle> {
     }
     let opts = parse_opts(opts_arg.as_ref())?;
 
-    let mut event_loop = EventLoop::new()
-        .map_err(|e| mlua::Error::RuntimeError(format!("EventLoop::new: {e}")))?;
+    let mut event_loop =
+        EventLoop::new().map_err(|e| mlua::Error::RuntimeError(format!("EventLoop::new: {e}")))?;
     let mut app = WindowApp::new(opts);
-    
+
     let _ = event_loop.pump_app_events(Some(Duration::ZERO), &mut app);
 
     EVENT_LOOP.with(|c| *c.borrow_mut() = Some(event_loop));
@@ -218,7 +221,7 @@ struct WindowApp {
     gpu: Option<GpuState>,
     close_requested: bool,
     pending: Vec<WindowChange>,
-    
+
     start: Instant,
 }
 
@@ -240,7 +243,7 @@ impl WindowApp {
         };
         let items = gui::snapshot();
         let t = self.start.elapsed().as_secs_f32();
-        
+
         gpu.render(&items, t, [0.0, 0.0, 0.0]);
     }
 }
@@ -326,10 +329,8 @@ impl ApplicationHandler for WindowApp {
             }
             WindowEvent::RedrawRequested => self.paint_frame(),
             WindowEvent::Moved(pos) => {
-                self.pending.push(WindowChange::Moved {
-                    x: pos.x,
-                    y: pos.y,
-                });
+                self.pending
+                    .push(WindowChange::Moved { x: pos.x, y: pos.y });
             }
             WindowEvent::Focused(focused) => {
                 self.pending.push(WindowChange::Focused(focused));
@@ -342,11 +343,7 @@ impl ApplicationHandler for WindowApp {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 if let Some(window) = self.window.as_ref() {
-                    input::on_cursor_moved(
-                        window.as_ref(),
-                        position.x as f32,
-                        position.y as f32,
-                    );
+                    input::on_cursor_moved(window.as_ref(), position.x as f32, position.y as f32);
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
@@ -393,15 +390,21 @@ impl UserData for WindowHandle {
             Ok(())
         });
 
-        m.add_method("BindToClose", |lua, _, func: Function| -> mlua::Result<()> {
-            let key = lua.create_registry_value(func)?;
-            CLOSE_CB.with(|c| *c.borrow_mut() = Some(key));
-            Ok(())
-        });
+        m.add_method(
+            "BindToClose",
+            |lua, _, func: Function| -> mlua::Result<()> {
+                let key = lua.create_registry_value(func)?;
+                CLOSE_CB.with(|c| *c.borrow_mut() = Some(key));
+                Ok(())
+            },
+        );
 
-        m.add_method("GetViewport", |lua, _, _: ()| -> mlua::Result<AnyUserData> {
-            lua.create_userdata(crate::libs::renderable::CameraHandle)
-        });
+        m.add_method(
+            "GetViewport",
+            |lua, _, _: ()| -> mlua::Result<AnyUserData> {
+                lua.create_userdata(crate::libs::renderable::CameraHandle)
+            },
+        );
 
         m.add_method("Resize", |_, _, (w, h): (u32, u32)| {
             with_window(|win| {

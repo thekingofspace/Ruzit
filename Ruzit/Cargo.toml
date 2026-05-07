@@ -36,6 +36,7 @@ fbxcel-dom = "0.0.10"
 anyhow = "1"
 cpal = "0.15"
 opus = "0.3"
+gilrs = "0.10"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

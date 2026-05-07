@@ -10,9 +10,7 @@ use super::codec::rt;
 
 pub fn compress_fn(lua: &Lua) -> mlua::Result<Function> {
     lua.create_function(
-        |lua,
-         (algo, data, level): (String, LuaString, Option<i32>)|
-         -> mlua::Result<LuaString> {
+        |lua, (algo, data, level): (String, LuaString, Option<i32>)| -> mlua::Result<LuaString> {
             let bytes = data.as_bytes();
             let compressed: Vec<u8> = match algo.to_lowercase().as_str() {
                 "gzip" => {

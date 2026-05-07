@@ -21,7 +21,8 @@ impl UserData for IoHandle {
                 .as_mut()
                 .ok_or_else(|| mlua::Error::RuntimeError("file is closed".to_string()))?;
             let mut buf = String::new();
-            f.read_to_string(&mut buf).map_err(|e| err("read", &this.path, e))?;
+            f.read_to_string(&mut buf)
+                .map_err(|e| err("read", &this.path, e))?;
             Ok(buf)
         });
         methods.add_method_mut("write", |_, this, content: String| -> mlua::Result<()> {

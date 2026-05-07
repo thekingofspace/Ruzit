@@ -11,14 +11,18 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         "Connect",
         lua.create_function(|_, addr: String| -> mlua::Result<TcpConnection> {
             let stream = TcpStream::connect(&addr).map_err(rt)?;
-            Ok(TcpConnection { stream: Some(stream) })
+            Ok(TcpConnection {
+                stream: Some(stream),
+            })
         })?,
     )?;
     t.set(
         "Host",
         lua.create_function(|_, addr: String| -> mlua::Result<TcpListenerHandle> {
             let listener = TcpListener::bind(&addr).map_err(rt)?;
-            Ok(TcpListenerHandle { listener: Some(listener) })
+            Ok(TcpListenerHandle {
+                listener: Some(listener),
+            })
         })?,
     )?;
     Ok(t)
@@ -76,7 +80,9 @@ impl UserData for TcpListenerHandle {
                 .as_mut()
                 .ok_or_else(|| mlua::Error::RuntimeError("TCP listener closed".into()))?;
             let (stream, _) = l.accept().map_err(rt)?;
-            Ok(TcpConnection { stream: Some(stream) })
+            Ok(TcpConnection {
+                stream: Some(stream),
+            })
         });
         m.add_method_mut("Close", |_, this, _: ()| -> mlua::Result<()> {
             this.listener = None;

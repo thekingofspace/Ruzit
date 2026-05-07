@@ -1110,6 +1110,63 @@ declare class BasePart
 	function ClearShaders(self): ()
 	function SetData(self, asset: ShaderAsset | FragmentAsset, name: string, value: number): ()
 	function GetData(self, asset: ShaderAsset | FragmentAsset, name: string): number?
+
+	-- ── Mesh deformation ──────────────────────────────────────────────────
+	-- Push every vertex within `envelope` units of `target.Position` by
+	-- `displacement * smoothstep(distance / envelope)`. Smooth radial
+	-- falloff, per-Part copy of the mesh — deforming one Part doesn't
+	-- affect other Parts that share the same source ModelAsset.
+	-- Returns the number of vertices touched.
+	function Deform(self, target: CFrame, envelope: number, displacement: Vector): number
+	-- Drop the per-Part vertex override and snap back to the source mesh.
+	-- Animations on this part still tick — call track:Reset() to clear
+	-- those.
+	function ResetDeformation(self): ()
+
+	-- ── Animation tracks ─────────────────────────────────────────────────
+	-- Get (or create) an AnimationTrack scoped to this part. If the source
+	-- ModelAsset is an FBX with a matching AnimationStack, the track's
+	-- keyframes are auto-populated from the FBX curves on first creation.
+	function GetTrack(self, name: string): AnimationTrack
+	-- Every track currently attached to the part (FBX-derived or
+	-- user-created via GetTrack).
+	function GetTracks(self): { AnimationTrack }
+	-- Names of every animation clip baked into the source FBX file. Empty
+	-- for OBJ / synthesised meshes / FBX exports without animations.
+	function GetTrackNames(self): { string }
+end
+
+-- =============================================================================
+-- AnimationTrack — playable animation clip for a single BasePart.
+-- =============================================================================
+-- Tracks come from one of two places:
+--   * `part:GetTrack("clipName")` on an FBX-backed Part — the track is
+--     pre-loaded with translation/rotation keyframes parsed from the FBX
+--     AnimationStack matching that name.
+--   * `part:GetTrack("custom")` followed by `track:AddKeyframe(...)` —
+--     fully scripted keyframes you author at runtime.
+--
+-- Tracks tick in the engine heart loop at ~60 Hz. While a track is playing
+-- it overrides `part.CFrame` for CFrame keyframes and the part's mesh for
+-- Deform keyframes. `track:Reset()` snaps everything back to whatever the
+-- part looked like the moment `track:Play()` was last called.
+declare class AnimationTrack
+	Name: string
+	FadeTime: number
+	Looped: boolean
+	Speed: number
+	Length: number
+	TimePosition: number
+	IsPlaying: boolean
+	IsPaused: boolean
+
+	function Play(self): ()
+	function Pause(self): ()
+	function Resume(self): ()
+	function Stop(self): ()
+	function Reset(self): ()
+	function AddKeyframe(self, time: number, kind: "CFrame" | "Deform", ...any): ()
+	function ClearKeyframes(self): ()
 end
 
 declare class Camera
@@ -1147,6 +1204,14 @@ export type Renderable_API = {
 	-- Snapshot the current lighting state. Useful for debug overlays or
 	-- saving to a level file.
 	GetLighting: () -> { SunDirection: Vector, SunColor: Color3, Ambient: Color3 },
+
+	-- Polygon reduction (level-of-detail). Returns a NEW ModelAsset whose
+	-- geometry is a quantization-clustered LOD of the input. `ratio` is a
+	-- 0..1 hint (default 0.5 ≈ ~half the vertex count); the result tends
+	-- to be coarser than the ratio suggests on small meshes, since the
+	-- grid is uniform. The returned asset inherits the source's animation
+	-- clips so swapping it in for distant parts keeps `:GetTrack` working.
+	SimplifyMesh: (asset: ModelAsset, ratio: number?) -> ModelAsset,
 }
 
 -- =============================================================================
@@ -1729,6 +1794,83 @@ export type Steam_API = {
 	RemotePlay: {
 		Sessions: () -> { { UserID: string, ClientName: string?, Width: number?, Height: number? } },
 	},
+
+	-- Launch metadata: how the game got started, what arguments came in,
+	-- what beta branch the user is on, etc. Useful for game-side handling
+	-- of "Join Game" rich-presence links and for branching on dev vs.
+	-- shipped runs.
+	Launch: {
+		-- Steam URL launch parameters (e.g. "+connect 1.2.3.4 +map dust"
+		-- when Steam invoked via steam://run/<appid>//+connect ...). Empty
+		-- string when the game wasn't launched via a Steam URL.
+		GetCommandLine: () -> string,
+		-- Pull a single +key value pair out of the Steam launch command
+		-- line. Returns nil if the key isn't present. Case-insensitive.
+		GetQueryParam: (key: string) -> string?,
+		-- Beta branch the user is playing on, or nil for the public branch.
+		GetCurrentBeta: () -> string?,
+		-- Aggregate run metadata. Source is one of:
+		--   "steam-url"  : came in via a steam:// deep link
+		--   "steam"      : launched normally from the Steam client
+		--   "direct"     : ran the executable directly (dev / debug / no Steam)
+		GetRunType: () -> {
+			Source: "steam-url" | "steam" | "direct",
+			WasLaunchedFromSteam: boolean,
+			CommandLine: string,
+			AppId: number,
+			BuildId: number?,
+			OwnerID: string?,
+			BetaBranch: string?,
+			InstallDir: string?,
+			Language: string?,
+			ProcessArgs: { string },
+			Env: { [string]: string },
+		},
+	},
+}
+
+-- =============================================================================
+-- Gamepad — XInput / DirectInput / udev / IOKit / SDL2 wrapped via gilrs.
+-- =============================================================================
+-- Pads are identified by an integer Id. Layout names are normalised across
+-- platforms: face buttons are South / East / North / West (Xbox A/B/Y/X,
+-- PlayStation Cross/Circle/Triangle/Square); shoulders are LeftBumper /
+-- RightBumper / LeftTrigger / RightTrigger; sticks are LeftStick* /
+-- RightStick* with X/Y axes and an optional click (LeftStick / RightStick
+-- as buttons). Trigger pulls also surface as analog buttons via the Analog
+-- kind in InputChanged.
+
+export type GamepadInfo = {
+	Id: number,
+	Name: string,
+	Connected: boolean,
+	UUID: string?,
+}
+
+export type GamepadInputEvent = {
+	Pad: number,
+	-- "Button"  — digital press / release (Value is 0 or 1)
+	-- "Analog"  — partial trigger pull (Value 0..1)
+	-- "Axis"    — stick / dpad axis (Value -1..1 for sticks, 0..1 for triggers)
+	Kind: "Button" | "Analog" | "Axis",
+	Name: string,
+	Value: number,
+}
+
+export type Gamepad_API = {
+	-- Enumerate every connected pad. Cheap (cached state) — safe to call
+	-- every frame from a settings UI.
+	GetGamepads: () -> { GamepadInfo },
+	IsButtonDown: (pad: number, name: string) -> boolean,
+	GetAxis: (pad: number, name: string) -> number,
+	-- Best-effort rumble. Currently a no-op return false on most platforms;
+	-- placeholder for future XInput/DualShock force-feedback. low and high
+	-- are 0..1 motor intensities; duration is in seconds.
+	SetVibration: (pad: number, low: number, high: number, duration: number) -> boolean,
+
+	Connected: Signal<number>,         -- pad id
+	Disconnected: Signal<number>,
+	InputChanged: Signal<GamepadInputEvent>,
 }
 
 -- =============================================================================
@@ -1935,17 +2077,10 @@ declare class Actor
 end
 
 export type Actor_API = {
-	-- Spawn a worker pool that runs the given function in parallel on other
-	-- CPU cores. You can pass either the function directly (Actor reads its
-	-- source out of the script and recompiles it for each worker) or a Luau
-	-- source string whose chunk evaluates to a function.
-	--
-	-- Restrictions on the function form:
-	--   * Must be defined inline in a .luau script, not via loadstring.
-	--   * Must NOT reference upvalues from the outer scope. Workers run in
-	--     an isolated Luau state and can't see your locals — pass anything
-	--     they need as arguments to Push.
-	--   * Method shorthand (`function obj:m(...)`) isn't supported.
+	-- Spawn a worker pool that runs the given Luau source in parallel on
+	-- other CPU cores. The source must be a string whose chunk evaluates
+	-- to a function — the function returned is what each worker invokes
+	-- per Push.
 	--
 	-- Workers run in completely isolated Luau states: they get math, table,
 	-- string, bit32, buffer, utf8, coroutine, and the basic library — but
@@ -1954,18 +2089,16 @@ export type Actor_API = {
 	-- assets, sockets, or anything else import-shaped.
 	--
 	-- threads defaults to the number of CPU cores. Pass an explicit count
-	-- for fine control (e.g. 1 for serial, 2 for I/O-bound work, etc.).
+	-- for fine control (e.g. 1 for serial, 2 for I/O-bound work).
 	--
-	-- Example (function form):
-	--   local fib = Actor.new(function(n)
-	--       if n < 2 then return n end
-	--       local a, b = 0, 1
-	--       for _ = 2, n do a, b = b, a + b end
-	--       return b
-	--   end)
-	--   for i = 1, 32 do fib:Push(i) end
+	-- Note: passing a Luau function directly is no longer supported. Use
+	-- `Actor.FromFile` to load a worker from a sibling .luau file, or pass
+	-- the function body as a string. Earlier versions of the engine
+	-- introspected the caller's chunk to recover the function source —
+	-- that path was fragile (closures over locals couldn't be carried) and
+	-- has been removed.
 	--
-	-- Example (string form, useful when you want to do worker-local setup):
+	-- Example:
 	--   local fib = Actor.new([[
 	--       local memo = {}
 	--       return function(n)
@@ -1976,8 +2109,7 @@ export type Actor_API = {
 	--           return b
 	--       end
 	--   ]])
-	new: ((fn: (...any) -> ...any, threads: number?) -> Actor)
-		& ((source: string, threads: number?) -> Actor),
+	new: (source: string, threads: number?) -> Actor,
 	-- Actor.FromFile(path, threads?) — load worker code from a separate
 	-- .luau file. Path resolution is identical to `require`, including
 	-- the project-wide file-mode setting from build.toml ("File Type"):
@@ -2037,6 +2169,7 @@ export type Actor_API = {
 export type Imports = {
 	Actor: Actor_API,
 	Asset: Asset_API,
+	Gamepad: Gamepad_API,
 	GPU: GPU_API,
 	GUI: GUI_API,
 	IO: IO_API,

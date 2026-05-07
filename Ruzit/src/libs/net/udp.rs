@@ -10,7 +10,9 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         "Bind",
         lua.create_function(|_, addr: String| -> mlua::Result<UdpHandle> {
             let socket = UdpSocket::bind(&addr).map_err(rt)?;
-            Ok(UdpHandle { socket: Some(socket) })
+            Ok(UdpHandle {
+                socket: Some(socket),
+            })
         })?,
     )?;
     Ok(t)

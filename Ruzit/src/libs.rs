@@ -1,5 +1,6 @@
 pub mod actor;
 pub mod asset;
+pub mod gamepad;
 pub mod gpu;
 pub mod gui;
 pub mod input;

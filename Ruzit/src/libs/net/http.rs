@@ -3,28 +3,25 @@ use mlua::{Function, Lua, Table, Value};
 use super::rt;
 
 pub fn serve_fn(lua: &Lua) -> mlua::Result<Function> {
-    lua.create_function(|lua, (addr, handler): (String, Function)| -> mlua::Result<()> {
-        let server = tiny_http::Server::http(&addr).map_err(rt)?;
-        println!("[Net] HTTP listening on {addr}");
-        for mut req in server.incoming_requests() {
-            let req_table = build_req_table(lua, &mut req)?;
-            let result: Value = handler.call(req_table)?;
-            let response = build_response(result)?;
-            let _ = req.respond(response);
-        }
-        Ok(())
-    })
+    lua.create_function(
+        |lua, (addr, handler): (String, Function)| -> mlua::Result<()> {
+            let server = tiny_http::Server::http(&addr).map_err(rt)?;
+            println!("[Net] HTTP listening on {addr}");
+            for mut req in server.incoming_requests() {
+                let req_table = build_req_table(lua, &mut req)?;
+                let result: Value = handler.call(req_table)?;
+                let response = build_response(result)?;
+                let _ = req.respond(response);
+            }
+            Ok(())
+        },
+    )
 }
 
 pub fn request_fn(lua: &Lua) -> mlua::Result<Function> {
     lua.create_function(
         |lua,
-         (method, url, body, headers): (
-            String,
-            String,
-            Option<String>,
-            Option<Table>,
-        )|
+         (method, url, body, headers): (String, String, Option<String>, Option<Table>)|
          -> mlua::Result<Table> {
             let mut req = ureq::request(&method, &url);
             if let Some(h) = headers {

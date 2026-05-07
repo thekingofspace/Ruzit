@@ -1,4 +1,3 @@
-
 use bytemuck::{Pod, Zeroable};
 
 #[repr(C)]
@@ -27,19 +26,16 @@ pub struct InstanceUniform3D {
 }
 
 pub const VERTEX_ATTRS: &[wgpu::VertexAttribute] = &[
-    
     wgpu::VertexAttribute {
         offset: 0,
         shader_location: 0,
         format: wgpu::VertexFormat::Float32x3,
     },
-    
     wgpu::VertexAttribute {
         offset: 12,
         shader_location: 1,
         format: wgpu::VertexFormat::Float32x3,
     },
-    
     wgpu::VertexAttribute {
         offset: 24,
         shader_location: 2,
@@ -317,7 +313,7 @@ pub fn build_pipeline_3d(
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
             front_face: wgpu::FrontFace::Ccw,
-            
+
             cull_mode: None,
             polygon_mode: wgpu::PolygonMode::Fill,
             unclipped_depth: false,
@@ -398,7 +394,7 @@ pub fn part_model_matrix(pos: [f32; 3], rot: [f32; 3], size: [f32; 3]) -> [[f32;
 
 pub fn view_matrix(pos: [f32; 3], rot: [f32; 3]) -> [[f32; 4]; 4] {
     let r = euler_rotation_matrix(rot);
-    
+
     let tx = -(r[0][0] * pos[0] + r[1][0] * pos[1] + r[2][0] * pos[2]);
     let ty = -(r[0][1] * pos[0] + r[1][1] * pos[1] + r[2][1] * pos[2]);
     let tz = -(r[0][2] * pos[0] + r[1][2] * pos[1] + r[2][2] * pos[2]);
@@ -414,10 +410,7 @@ pub fn mat4_mul(a: [[f32; 4]; 4], b: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
     let mut r = [[0.0_f32; 4]; 4];
     for i in 0..4 {
         for j in 0..4 {
-            r[i][j] = a[i][0] * b[0][j]
-                + a[i][1] * b[1][j]
-                + a[i][2] * b[2][j]
-                + a[i][3] * b[3][j];
+            r[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j] + a[i][3] * b[3][j];
         }
     }
     r

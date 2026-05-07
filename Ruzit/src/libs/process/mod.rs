@@ -27,7 +27,7 @@ fn install_constants(t: &Table) -> mlua::Result<()> {
         .map(|n| n.get())
         .unwrap_or(1);
     t.set("CpuCount", cpu_count as i64)?;
-    
+
     t.set("IsBuilt", is_built())?;
     Ok(())
 }
@@ -61,7 +61,6 @@ fn install_env(lua: &Lua, t: &Table) -> mlua::Result<()> {
     t.set(
         "SetEnv",
         lua.create_function(|_, (name, value): (String, String)| -> mlua::Result<()> {
-            
             unsafe { env::set_var(&name, &value) };
             Ok(())
         })?,
@@ -100,12 +99,10 @@ fn install_memory(lua: &Lua, t: &Table) -> mlua::Result<()> {
 }
 
 fn install_heart(lua: &Lua, t: &Table) -> mlua::Result<()> {
-    let bind = lua.create_function(
-        |lua, (id, func): (String, Function)| -> mlua::Result<()> {
-            let registry: Table = lua.named_registry_value(heart::HEART_KEY)?;
-            registry.set(id, func)
-        },
-    )?;
+    let bind = lua.create_function(|lua, (id, func): (String, Function)| -> mlua::Result<()> {
+        let registry: Table = lua.named_registry_value(heart::HEART_KEY)?;
+        registry.set(id, func)
+    })?;
     t.set("BindToHeart", bind)?;
 
     let unbind = lua.create_function(|lua, id: String| -> mlua::Result<()> {

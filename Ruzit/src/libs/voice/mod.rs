@@ -31,7 +31,12 @@ struct CaptureRegistration {
 pub enum VoiceShader {
     Volume(f32),
     Speed(f32),
-    Spatial { x: f32, y: f32, z: f32, falloff: f32 },
+    Spatial {
+        x: f32,
+        y: f32,
+        z: f32,
+        falloff: f32,
+    },
 }
 
 impl UserData for VoiceShader {}
@@ -56,30 +61,28 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     )?;
     t.set(
         "Spatial",
-        lua.create_function(
-            |_, (x, y, z, falloff): (f32, f32, f32, Option<f32>)| {
-                Ok(VoiceShader::Spatial {
-                    x,
-                    y,
-                    z,
-                    falloff: falloff.unwrap_or(8.0).max(0.1),
-                })
-            },
-        )?,
+        lua.create_function(|_, (x, y, z, falloff): (f32, f32, f32, Option<f32>)| {
+            Ok(VoiceShader::Spatial {
+                x,
+                y,
+                z,
+                falloff: falloff.unwrap_or(8.0).max(0.1),
+            })
+        })?,
     )?;
     t.set(
         "ListenerPosition",
-        lua.create_function(
-            |_, (x, y, z): (f32, f32, f32)| -> mlua::Result<()> {
-                LISTENER_POS.with(|c| *c.borrow_mut() = (x, y, z));
-                Ok(())
-            },
-        )?,
+        lua.create_function(|_, (x, y, z): (f32, f32, f32)| -> mlua::Result<()> {
+            LISTENER_POS.with(|c| *c.borrow_mut() = (x, y, z));
+            Ok(())
+        })?,
     )?;
     t.set(
         "NewRecorder",
         lua.create_function(|lua, _: ()| -> mlua::Result<AnyUserData> {
-            lua.create_userdata(Recorder { packets: Arc::new(Mutex::new(Vec::new())) })
+            lua.create_userdata(Recorder {
+                packets: Arc::new(Mutex::new(Vec::new())),
+            })
         })?,
     )?;
     t.set(
@@ -110,7 +113,9 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 packets.push(bytes[i..i + len].to_vec());
                 i += len;
             }
-            lua.create_userdata(Recording { packets: Arc::new(packets) })
+            lua.create_userdata(Recording {
+                packets: Arc::new(packets),
+            })
         })?,
     )?;
     t.set(
@@ -121,9 +126,11 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 {
                     let channel = channel_ud.borrow::<ChannelHandle>()?;
                     if let Some(opts) = &opts {
-                        if let (Ok(x), Ok(y), Ok(z)) =
-                            (opts.get::<f32>("x"), opts.get::<f32>("y"), opts.get::<f32>("z"))
-                        {
+                        if let (Ok(x), Ok(y), Ok(z)) = (
+                            opts.get::<f32>("x"),
+                            opts.get::<f32>("y"),
+                            opts.get::<f32>("z"),
+                        ) {
                             let falloff = opts.get::<f32>("falloff").unwrap_or(8.0).max(0.1);
                             let mut shaders = channel.shaders.lock().unwrap();
                             shaders.push(VoiceShader::Spatial { x, y, z, falloff });
@@ -132,14 +139,23 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                     }
                     let bytes = packet.as_bytes();
                     let mut pcm = vec![0_f32; FRAME_SAMPLES * 6];
-                    let n = match channel.decoder.lock().unwrap().decode_float(&bytes, &mut pcm, false) {
+                    let n = match channel
+                        .decoder
+                        .lock()
+                        .unwrap()
+                        .decode_float(&bytes, &mut pcm, false)
+                    {
                         Ok(n) => n,
                         Err(e) => {
                             eprintln!("[voice] PlayPacket decode err: {e}");
                             0
                         }
                     };
-                    channel.queue.lock().unwrap().extend(pcm[..n].iter().copied());
+                    channel
+                        .queue
+                        .lock()
+                        .unwrap()
+                        .extend(pcm[..n].iter().copied());
                     let handle = output_handle()?;
                     let sink = Sink::try_new(&handle)
                         .map_err(|e| mlua::Error::RuntimeError(format!("Voice sink: {e}")))?;
@@ -185,9 +201,9 @@ fn start_capture(lua: &Lua) -> mlua::Result<AnyUserData> {
     let device = host.default_input_device().ok_or_else(|| {
         mlua::Error::RuntimeError("Voice.StartCapture: no default input device".into())
     })?;
-    let supported = device.default_input_config().map_err(|e| {
-        mlua::Error::RuntimeError(format!("Voice.StartCapture: query input: {e}"))
-    })?;
+    let supported = device
+        .default_input_config()
+        .map_err(|e| mlua::Error::RuntimeError(format!("Voice.StartCapture: query input: {e}")))?;
     let device_rate = supported.sample_rate().0;
     let device_channels = supported.channels();
     let cfg = StreamConfig {
@@ -236,9 +252,7 @@ fn start_capture(lua: &Lua) -> mlua::Result<AnyUserData> {
                     let frame: Vec<f32> = frame_buf.drain(..FRAME_SAMPLES).collect();
                     let thresh = *threshold_cb.lock().unwrap();
                     if thresh > 0.0 {
-                        let peak = frame
-                            .iter()
-                            .fold(0.0_f32, |acc, &s| acc.max(s.abs()));
+                        let peak = frame.iter().fold(0.0_f32, |acc, &s| acc.max(s.abs()));
                         if peak < thresh {
                             continue;
                         }
@@ -303,7 +317,9 @@ impl UserData for CaptureHandle {
             this.stream.lock().unwrap().take();
             Ok(())
         });
-        m.add_method("IsActive", |_, this, _: ()| Ok(this.alive.load(Ordering::Relaxed)));
+        m.add_method("IsActive", |_, this, _: ()| {
+            Ok(this.alive.load(Ordering::Relaxed))
+        });
         m.add_method("Pause", |_, this, _: ()| -> mlua::Result<()> {
             this.paused.store(true, Ordering::Relaxed);
             Ok(())
@@ -312,7 +328,9 @@ impl UserData for CaptureHandle {
             this.paused.store(false, Ordering::Relaxed);
             Ok(())
         });
-        m.add_method("IsPaused", |_, this, _: ()| Ok(this.paused.load(Ordering::Relaxed)));
+        m.add_method("IsPaused", |_, this, _: ()| {
+            Ok(this.paused.load(Ordering::Relaxed))
+        });
         m.add_method("SetActive", |_, this, on: bool| -> mlua::Result<()> {
             this.paused.store(!on, Ordering::Relaxed);
             Ok(())
@@ -321,7 +339,9 @@ impl UserData for CaptureHandle {
             *this.threshold.lock().unwrap() = amp.max(0.0);
             Ok(())
         });
-        m.add_method("GetThreshold", |_, this, _: ()| Ok(*this.threshold.lock().unwrap()));
+        m.add_method("GetThreshold", |_, this, _: ()| {
+            Ok(*this.threshold.lock().unwrap())
+        });
     }
 }
 
@@ -365,24 +385,32 @@ impl UserData for ChannelHandle {
         });
     }
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
-        m.add_method("Push", |_, this, packet: mlua::String| -> mlua::Result<()> {
-            let bytes = packet.as_bytes();
-            let mut pcm = vec![0f32; FRAME_SAMPLES * 6];
-            let n = match this.decoder.lock().unwrap().decode_float(&bytes, &mut pcm, false) {
-                Ok(n) => n,
-                Err(e) => {
-                    eprintln!("[voice] decode err: {e}");
-                    return Ok(());
+        m.add_method(
+            "Push",
+            |_, this, packet: mlua::String| -> mlua::Result<()> {
+                let bytes = packet.as_bytes();
+                let mut pcm = vec![0f32; FRAME_SAMPLES * 6];
+                let n = match this
+                    .decoder
+                    .lock()
+                    .unwrap()
+                    .decode_float(&bytes, &mut pcm, false)
+                {
+                    Ok(n) => n,
+                    Err(e) => {
+                        eprintln!("[voice] decode err: {e}");
+                        return Ok(());
+                    }
+                };
+                let mut q = this.queue.lock().unwrap();
+                q.extend(pcm[..n].iter().copied());
+                if q.len() > SAMPLE_RATE as usize * 2 {
+                    let drop = q.len() - SAMPLE_RATE as usize;
+                    q.drain(..drop);
                 }
-            };
-            let mut q = this.queue.lock().unwrap();
-            q.extend(pcm[..n].iter().copied());
-            if q.len() > SAMPLE_RATE as usize * 2 {
-                let drop = q.len() - SAMPLE_RATE as usize;
-                q.drain(..drop);
-            }
-            Ok(())
-        });
+                Ok(())
+            },
+        );
         m.add_method("Play", |_, this, _: ()| -> mlua::Result<()> {
             if this.playing.load(Ordering::Relaxed) {
                 return Ok(());
@@ -482,7 +510,9 @@ impl UserData for ChannelHandle {
                 let mut shaders = this.shaders.lock().unwrap();
                 shaders.retain(|s| !matches!(s, VoiceShader::Spatial { .. }));
                 shaders.push(VoiceShader::Spatial {
-                    x, y, z,
+                    x,
+                    y,
+                    z,
                     falloff: falloff.max(0.1),
                 });
                 *this.position.lock().unwrap() = (x, y, z);
@@ -529,11 +559,21 @@ impl Iterator for VoiceSource {
         let mut pan = 0.0_f32;
         let mut atten = 1.0_f32;
         let listener_override = LISTENER_POS.with(|c| *c.borrow());
-        let listener = if listener_override.0.is_finite() && listener_override.1.is_finite() && listener_override.2.is_finite() && (listener_override.0 != 0.0 || listener_override.1 != 0.0 || listener_override.2 != 0.0) {
+        let listener = if listener_override.0.is_finite()
+            && listener_override.1.is_finite()
+            && listener_override.2.is_finite()
+            && (listener_override.0 != 0.0
+                || listener_override.1 != 0.0
+                || listener_override.2 != 0.0)
+        {
             listener_override
         } else {
             let cam = crate::libs::renderable::camera_snapshot();
-            (cam.cframe.position.x, cam.cframe.position.y, cam.cframe.position.z)
+            (
+                cam.cframe.position.x,
+                cam.cframe.position.y,
+                cam.cframe.position.z,
+            )
         };
         let pos = *self.position.lock().unwrap();
         for s in self.shaders.lock().unwrap().iter() {
@@ -602,7 +642,9 @@ fn linear_resample(input: &[f32], from: u32, to: u32) -> Vec<f32> {
 
 pub fn is_active() -> bool {
     let captures_alive = CAPTURES.with(|c| {
-        c.borrow().iter().any(|reg| reg.alive.load(Ordering::Relaxed))
+        c.borrow()
+            .iter()
+            .any(|reg| reg.alive.load(Ordering::Relaxed))
     });
     captures_alive || recordings_active()
 }
@@ -647,10 +689,16 @@ pub struct Recorder {
 
 impl UserData for Recorder {
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
-        m.add_method("Push", |_, this, packet: mlua::String| -> mlua::Result<()> {
-            this.packets.lock().unwrap().push(packet.as_bytes().to_vec());
-            Ok(())
-        });
+        m.add_method(
+            "Push",
+            |_, this, packet: mlua::String| -> mlua::Result<()> {
+                this.packets
+                    .lock()
+                    .unwrap()
+                    .push(packet.as_bytes().to_vec());
+                Ok(())
+            },
+        );
         m.add_method("Clear", |_, this, _: ()| -> mlua::Result<()> {
             this.packets.lock().unwrap().clear();
             Ok(())
@@ -661,22 +709,27 @@ impl UserData for Recorder {
         m.add_method("Duration", |_, this, _: ()| -> mlua::Result<f64> {
             Ok(this.packets.lock().unwrap().len() as f64 * (FRAME_MS as f64 / 1000.0))
         });
-        m.add_method("Serialize", |lua, this, _: ()| -> mlua::Result<mlua::String> {
-            let packets = this.packets.lock().unwrap();
-            let mut buf = Vec::with_capacity(4 + packets.len() * 64);
-            buf.extend_from_slice(&(packets.len() as u32).to_le_bytes());
-            for p in packets.iter() {
-                let len = p.len().min(u16::MAX as usize) as u16;
-                buf.extend_from_slice(&len.to_le_bytes());
-                buf.extend_from_slice(&p[..len as usize]);
-            }
-            lua.create_string(&buf)
-        });
+        m.add_method(
+            "Serialize",
+            |lua, this, _: ()| -> mlua::Result<mlua::String> {
+                let packets = this.packets.lock().unwrap();
+                let mut buf = Vec::with_capacity(4 + packets.len() * 64);
+                buf.extend_from_slice(&(packets.len() as u32).to_le_bytes());
+                for p in packets.iter() {
+                    let len = p.len().min(u16::MAX as usize) as u16;
+                    buf.extend_from_slice(&len.to_le_bytes());
+                    buf.extend_from_slice(&p[..len as usize]);
+                }
+                lua.create_string(&buf)
+            },
+        );
         m.add_method(
             "ToRecording",
             |lua, this, _: ()| -> mlua::Result<AnyUserData> {
                 let cloned = this.packets.lock().unwrap().clone();
-                lua.create_userdata(Recording { packets: Arc::new(cloned) })
+                lua.create_userdata(Recording {
+                    packets: Arc::new(cloned),
+                })
             },
         );
     }
@@ -688,7 +741,10 @@ pub struct Recording {
 
 impl UserData for Recording {
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
-        m.add_method("PacketCount", |_, this, _: ()| Ok(this.packets.len() as i64));
+        m.add_method(
+            "PacketCount",
+            |_, this, _: ()| Ok(this.packets.len() as i64),
+        );
         m.add_method("Duration", |_, this, _: ()| {
             Ok(this.packets.len() as f64 * (FRAME_MS as f64 / 1000.0))
         });
@@ -766,7 +822,12 @@ fn drip_recordings() {
                 let packet = &pb.packets[pb.index];
                 pb.index += 1;
                 let mut pcm = vec![0_f32; FRAME_SAMPLES * 6];
-                let n = match pb.decoder.lock().unwrap().decode_float(packet, &mut pcm, false) {
+                let n = match pb
+                    .decoder
+                    .lock()
+                    .unwrap()
+                    .decode_float(packet, &mut pcm, false)
+                {
                     Ok(n) => n,
                     Err(_) => continue,
                 };

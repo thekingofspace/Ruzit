@@ -1,4 +1,3 @@
-
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -21,22 +20,21 @@ thread_local! {
 
 #[derive(Default)]
 struct InputState {
-    
     cursor_x: f32,
     cursor_y: f32,
-    
+
     mouse_down: HashSet<String>,
-    
+
     keys_down: HashMap<String, u32>,
-    
+
     desired_cursor: CursorKind,
     desired_visible: bool,
     desired_locked: bool,
     focused: bool,
-    
+
     last_x: f32,
     last_y: f32,
-    
+
     pending_moves: Vec<MoveEvent>,
     pending_mouse_input: Vec<MouseInputEvent>,
     pending_scroll: Vec<MouseScrollEvent>,
@@ -211,7 +209,6 @@ pub fn is_key_down_by_id(id: u32) -> bool {
 pub fn set_cursor(window: Option<&WinitWindow>, kind: CursorKind) {
     STATE.with(|s| s.borrow_mut().desired_cursor = kind);
     if let Some(w) = window {
-        
         let focused = STATE.with(|s| s.borrow().focused);
         if focused {
             w.set_cursor(kind.to_winit());
@@ -231,7 +228,7 @@ pub fn set_visible(window: Option<&WinitWindow>, visible: bool) {
 
 pub fn set_locked(window: Option<&WinitWindow>, locked: bool) {
     STATE.with(|s| s.borrow_mut().desired_locked = locked);
-    
+
     if let Some(w) = window {
         if locked {
             recenter_cursor(w);
@@ -270,16 +267,12 @@ pub fn on_cursor_moved(window: &WinitWindow, x: f32, y: f32) {
     }
 
     STATE.with(|s| {
-        s.borrow_mut().pending_moves.push(MoveEvent {
-            x,
-            y,
-            dx,
-            dy,
-        });
+        s.borrow_mut()
+            .pending_moves
+            .push(MoveEvent { x, y, dx, dy });
     });
 
     if locked {
-        
         recenter_cursor(window);
     }
 }
@@ -291,7 +284,7 @@ pub fn on_mouse_input(button: MouseButton, state: ElementState) {
         MouseButton::Middle => "MouseButton3",
         MouseButton::Back => "MouseButton4",
         MouseButton::Forward => "MouseButton5",
-        
+
         MouseButton::Other(n) => {
             let owned = format!("MouseButton{}", (n as u32) + 5);
             STATE.with(|s| {
@@ -342,7 +335,6 @@ pub fn on_mouse_wheel(delta: MouseScrollDelta) {
 
 pub fn on_keyboard_input(physical: PhysicalKey, logical: &Key, state: ElementState, repeat: bool) {
     if repeat {
-        
         return;
     }
     let name = key_name(logical, physical);
@@ -355,14 +347,14 @@ pub fn on_keyboard_input(physical: PhysicalKey, logical: &Key, state: ElementSta
         } else {
             st.keys_down.remove(&name);
         }
-        st.pending_key_input.push(KeyInputEvent { id, name, pressed });
+        st.pending_key_input
+            .push(KeyInputEvent { id, name, pressed });
     });
 }
 
 pub fn on_focus(window: &WinitWindow, focused: bool) {
     STATE.with(|s| s.borrow_mut().focused = focused);
     if focused {
-        
         let (cursor, visible, locked) = STATE.with(|s| {
             let st = s.borrow();
             (st.desired_cursor, st.desired_visible, st.desired_locked)
@@ -373,13 +365,12 @@ pub fn on_focus(window: &WinitWindow, focused: bool) {
             recenter_cursor(window);
         }
     } else {
-        
         STATE.with(|s| {
             let mut st = s.borrow_mut();
             st.mouse_down.clear();
             st.keys_down.clear();
         });
-        
+
         window.set_cursor(CursorIcon::Default);
         window.set_cursor_visible(true);
     }
@@ -488,7 +479,6 @@ fn key_name(logical: &Key, physical: PhysicalKey) -> String {
 }
 
 fn named_key_name(named: NamedKey) -> &'static str {
-    
     match named {
         NamedKey::Enter => "Enter",
         NamedKey::Tab => "Tab",

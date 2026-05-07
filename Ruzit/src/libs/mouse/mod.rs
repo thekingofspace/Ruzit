@@ -11,7 +11,9 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         "__index",
         lua.create_function(|lua, (_t, key): (Table, String)| -> mlua::Result<Value> {
             match key.as_str() {
-                "Position" => Ok(Value::UserData(lua.create_userdata(input::cursor_position())?)),
+                "Position" => Ok(Value::UserData(
+                    lua.create_userdata(input::cursor_position())?,
+                )),
                 "Visible" => Ok(Value::Boolean(input::is_cursor_visible())),
                 "Locked" => Ok(Value::Boolean(input::is_locked())),
                 "Cursor" => Ok(Value::String(lua.create_string(input::cursor_kind_name())?)),

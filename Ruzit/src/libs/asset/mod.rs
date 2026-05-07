@@ -65,7 +65,9 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
     t.set(
         "FromString",
         lua.create_function(
-            |lua, (kind, data, label): (String, mlua::String, Option<String>)| -> mlua::Result<Value> {
+            |lua,
+             (kind, data, label): (String, mlua::String, Option<String>)|
+             -> mlua::Result<Value> {
                 let bytes = data.as_bytes().to_vec();
                 let source = label.unwrap_or_else(|| format!("<string:{}>", kind));
                 from_bytes(lua, &kind, bytes, source)
@@ -155,16 +157,34 @@ pub fn from_bytes(lua: &Lua, kind: &str, bytes: Vec<u8>, source: String) -> mlua
 
 fn detect_kind_from_extension(path: &Path) -> Option<String> {
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
-    if IMAGE_EXTS.iter().any(|e| *e == ext) { return Some("Image".into()); }
-    if SHADER_EXTS.iter().any(|e| *e == ext) { return Some("Shader".into()); }
-    if FRAGMENT_EXTS.iter().any(|e| *e == ext) { return Some("Fragment".into()); }
-    if MODEL_EXTS.iter().any(|e| *e == ext) { return Some("Model".into()); }
-    if FONT_EXTS.iter().any(|e| *e == ext) { return Some("Font".into()); }
-    if sfx::SOUND_EXTS.iter().any(|e| *e == ext) { return Some("Sound".into()); }
+    if IMAGE_EXTS.iter().any(|e| *e == ext) {
+        return Some("Image".into());
+    }
+    if SHADER_EXTS.iter().any(|e| *e == ext) {
+        return Some("Shader".into());
+    }
+    if FRAGMENT_EXTS.iter().any(|e| *e == ext) {
+        return Some("Fragment".into());
+    }
+    if MODEL_EXTS.iter().any(|e| *e == ext) {
+        return Some("Model".into());
+    }
+    if FONT_EXTS.iter().any(|e| *e == ext) {
+        return Some("Font".into());
+    }
+    if sfx::SOUND_EXTS.iter().any(|e| *e == ext) {
+        return Some("Sound".into());
+    }
     None
 }
 
-pub fn make_image_from_rgba(lua: &Lua, width: u32, height: u32, rgba: Vec<u8>, source: String) -> mlua::Result<Value> {
+pub fn make_image_from_rgba(
+    lua: &Lua,
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+    source: String,
+) -> mlua::Result<Value> {
     let asset = ImageAsset {
         id: next_shader_id(),
         width,
@@ -181,13 +201,7 @@ const FRAGMENT_EXTS: &[&str] = &["frag", "fragment", "fs", "glslf"];
 const MODEL_EXTS: &[&str] = &["obj", "fbx"];
 const FONT_EXTS: &[&str] = &["ttf", "otf"];
 
-fn get_asset(
-    lua: &Lua,
-    fs: &Fs,
-    owner: &str,
-    kind: &str,
-    path: &str,
-) -> mlua::Result<Value> {
+fn get_asset(lua: &Lua, fs: &Fs, owner: &str, kind: &str, path: &str) -> mlua::Result<Value> {
     match kind {
         "Image" => load_image(lua, fs, owner, path),
         "Sound" => load_sound(lua, fs, owner, path),
@@ -221,7 +235,9 @@ fn parse_font(lua: &Lua, bytes: Vec<u8>, source: String) -> mlua::Result<Value> 
 fn load_file(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value> {
     let bytes = read_file_bytes(fs, owner, path)?;
     let s = String::from_utf8(bytes).map_err(|e| {
-        mlua::Error::RuntimeError(format!("Asset.GetAsset: File '{path}' not valid UTF-8: {e}"))
+        mlua::Error::RuntimeError(format!(
+            "Asset.GetAsset: File '{path}' not valid UTF-8: {e}"
+        ))
     })?;
     Ok(Value::String(lua.create_string(&s)?))
 }
@@ -290,24 +306,25 @@ fn load_model(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value
 }
 
 fn parse_model(lua: &Lua, bytes: Vec<u8>, source: String) -> mlua::Result<Value> {
-    let is_fbx = bytes.starts_with(b"Kaydara FBX Binary")
-        || source.to_ascii_lowercase().ends_with(".fbx");
-    let mesh = if is_fbx {
-        crate::libs::renderable::mesh::load_fbx(&bytes).map_err(|e| {
-            mlua::Error::RuntimeError(format!("Model parse '{source}': {e}"))
-        })?
+    let is_fbx =
+        bytes.starts_with(b"Kaydara FBX Binary") || source.to_ascii_lowercase().ends_with(".fbx");
+
+    let (mesh, animations) = if is_fbx {
+        let loaded = crate::libs::renderable::mesh::load_fbx_full(&bytes)
+            .map_err(|e| mlua::Error::RuntimeError(format!("Model parse '{source}': {e}")))?;
+        (loaded.mesh, loaded.animations)
     } else {
-        let text = String::from_utf8(bytes).map_err(|e| {
-            mlua::Error::RuntimeError(format!("Model '{source}' not UTF-8: {e}"))
-        })?;
-        crate::libs::renderable::mesh::load_obj(&text).map_err(|e| {
-            mlua::Error::RuntimeError(format!("Model parse '{source}': {e}"))
-        })?
+        let text = String::from_utf8(bytes)
+            .map_err(|e| mlua::Error::RuntimeError(format!("Model '{source}' not UTF-8: {e}")))?;
+        let mesh = crate::libs::renderable::mesh::load_obj(&text)
+            .map_err(|e| mlua::Error::RuntimeError(format!("Model parse '{source}': {e}")))?;
+        (mesh, Vec::new())
     };
     let asset = ModelAsset {
         id: next_shader_id(),
         vertices: Arc::new(mesh.vertices),
         indices: Arc::new(mesh.indices),
+        animations: Arc::new(animations),
         source,
     };
     Ok(Value::UserData(lua.create_userdata(asset)?))
@@ -339,9 +356,8 @@ fn parse_text<T: TextAsset + UserData + 'static>(
     bytes: Vec<u8>,
     source: String,
 ) -> mlua::Result<Value> {
-    let code = String::from_utf8(bytes).map_err(|e| {
-        mlua::Error::RuntimeError(format!("'{source}' not UTF-8: {e}"))
-    })?;
+    let code = String::from_utf8(bytes)
+        .map_err(|e| mlua::Error::RuntimeError(format!("'{source}' not UTF-8: {e}")))?;
     Ok(Value::UserData(lua.create_userdata(T::make(code, source))?))
 }
 
@@ -401,7 +417,6 @@ fn read_bytes(
             default_id,
             ..
         } => {
-            
             let (target_id, rest_path) = if let Some(rest) = path.strip_prefix('@') {
                 if let Some((id, inner)) = rest.split_once('/') {
                     (id.to_string(), inner.to_string())
@@ -425,7 +440,7 @@ fn read_bytes(
                     "Asset.GetAsset: {kind} '{rest_path}' not found in package '{target_id}'"
                 ))
             })?;
-            
+
             let b64 = pkg.assets.get(&key).ok_or_else(|| {
                 mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' missing"))
             })?;
@@ -467,11 +482,7 @@ fn resolve_disk(root: &Path, path: &str, exts: &[&str]) -> Option<PathBuf> {
     None
 }
 
-fn resolve_bundle(
-    assets: &HashMap<String, String>,
-    path: &str,
-    exts: &[&str],
-) -> Option<String> {
+fn resolve_bundle(assets: &HashMap<String, String>, path: &str, exts: &[&str]) -> Option<String> {
     if let Some(idx) = path.rfind('.') {
         let ext = &path[idx + 1..];
         if exts.iter().any(|e| e.eq_ignore_ascii_case(ext)) {
@@ -497,11 +508,10 @@ fn dotted_to_path(dotted: &str) -> PathBuf {
 }
 
 pub struct ImageAsset {
-    
     pub id: u64,
     pub width: u32,
     pub height: u32,
-    
+
     pub data: Arc<Vec<u8>>,
     pub source: String,
 }
@@ -511,7 +521,9 @@ impl UserData for ImageAsset {
         m.add_method("Width", |_, this, _: ()| Ok(this.width as i64));
         m.add_method("Height", |_, this, _: ()| Ok(this.height as i64));
         m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
-        m.add_method("Pixels", |lua, this, _: ()| lua.create_string(this.data.as_slice()));
+        m.add_method("Pixels", |lua, this, _: ()| {
+            lua.create_string(this.data.as_slice())
+        });
     }
 }
 
@@ -523,7 +535,11 @@ pub struct ShaderAsset {
 
 impl TextAsset for ShaderAsset {
     fn make(code: String, source: String) -> Self {
-        Self { id: next_shader_id(), code, source }
+        Self {
+            id: next_shader_id(),
+            code,
+            source,
+        }
     }
 }
 
@@ -537,7 +553,11 @@ pub struct FragmentAsset {
 
 impl TextAsset for FragmentAsset {
     fn make(code: String, source: String) -> Self {
-        Self { id: next_shader_id(), code, source }
+        Self {
+            id: next_shader_id(),
+            code,
+            source,
+        }
     }
 }
 
@@ -547,13 +567,22 @@ pub struct ModelAsset {
     pub id: u64,
     pub vertices: Arc<Vec<crate::libs::renderable::mesh::Vertex3D>>,
     pub indices: Arc<Vec<u32>>,
+    /// Animation clips parsed out of the source FBX (empty for OBJ or for
+    /// FBX files that contain no AnimationStack nodes). Shared via Arc so
+    /// every Part instantiated from this asset can build AnimationTracks
+    /// from the same source data without re-parsing the FBX bytes.
+    pub animations: Arc<Vec<crate::libs::renderable::mesh::FbxAnimClip>>,
     pub source: String,
 }
 
 impl UserData for ModelAsset {
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
-        m.add_method("VertexCount", |_, this, _: ()| Ok(this.vertices.len() as i64));
-        m.add_method("TriangleCount", |_, this, _: ()| Ok((this.indices.len() / 3) as i64));
+        m.add_method("VertexCount", |_, this, _: ()| {
+            Ok(this.vertices.len() as i64)
+        });
+        m.add_method("TriangleCount", |_, this, _: ()| {
+            Ok((this.indices.len() / 3) as i64)
+        });
         m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
     }
 }

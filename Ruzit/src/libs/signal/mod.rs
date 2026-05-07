@@ -124,7 +124,7 @@ pub fn fire(lua: &Lua, signal: &Table, args: MultiValue) -> mlua::Result<()> {
     for v in args {
         full.push_back(v);
     }
-    let _ = lua; 
+    let _ = lua;
     fire_fn.call::<()>(full)?;
     Ok(())
 }

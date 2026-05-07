@@ -26,7 +26,6 @@ pub struct Package {
 #[derive(Clone)]
 #[allow(dead_code)]
 pub enum Fs {
-    
     Disk {
         root: PathBuf,
         file_type: FileType,
@@ -35,7 +34,7 @@ pub enum Fs {
         packages: Arc<HashMap<String, Arc<Package>>>,
         default_id: String,
         file_type: FileType,
-        
+
         physical_root: PathBuf,
     },
 }
@@ -226,7 +225,6 @@ fn bundle_resolve(
     caller: &str,
     name: &str,
 ) -> Option<String> {
-
     if let Some(rest) = name.strip_prefix('@') {
         let (alias, inner) = rest.split_once('/')?;
         let (caller_pkg_id, _) = split_owner(caller, default_id);

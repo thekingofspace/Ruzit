@@ -19,7 +19,9 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         "Host",
         lua.create_function(|_, addr: String| -> mlua::Result<WebSocketListenerHandle> {
             let listener = TcpListener::bind(&addr).map_err(rt)?;
-            Ok(WebSocketListenerHandle { listener: Some(listener) })
+            Ok(WebSocketListenerHandle {
+                listener: Some(listener),
+            })
         })?,
     )?;
     Ok(t)

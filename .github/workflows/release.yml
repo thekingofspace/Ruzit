@@ -21,10 +21,6 @@ jobs:
             artifact_name: Ruzit
             asset_name: ruzit-linux
             steam_lib: libsteam_api.so
-          - os: macos-latest
-            artifact_name: Ruzit
-            asset_name: ruzit-macos
-            steam_lib: libsteam_api.dylib
 
     steps:
       - uses: actions/checkout@v4

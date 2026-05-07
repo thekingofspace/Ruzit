@@ -34,20 +34,19 @@ mod win {
         let path_w: Vec<u16> = OsStr::new(exe_path).encode_wide().chain(once(0)).collect();
 
         unsafe {
-            
             let handle = BeginUpdateResourceW(path_w.as_ptr(), 0);
             if handle.is_null() {
                 return Err("BeginUpdateResource failed".into());
             }
 
             let mut grp = Vec::with_capacity(6 + entries.len() * 14);
-            grp.extend_from_slice(&[0u8, 0]); 
-            grp.extend_from_slice(&[1u8, 0]); 
+            grp.extend_from_slice(&[0u8, 0]);
+            grp.extend_from_slice(&[1u8, 0]);
             grp.extend_from_slice(&(entries.len() as u16).to_le_bytes());
 
             for (i, e) in entries.iter().enumerate() {
                 let id = (i as u16) + 1;
-                
+
                 grp.extend_from_slice(&e.meta);
                 grp.extend_from_slice(&id.to_le_bytes());
 
@@ -60,7 +59,7 @@ mod win {
                     e.image.len() as u32,
                 );
                 if ok == 0 {
-                    let _ = EndUpdateResourceW(handle, 1); 
+                    let _ = EndUpdateResourceW(handle, 1);
                     return Err(format!("UpdateResource RT_ICON {id} failed"));
                 }
             }
@@ -68,7 +67,7 @@ mod win {
             let ok = UpdateResourceW(
                 handle,
                 RT_GROUP_ICON as usize as *const u16,
-                1usize as *const u16, 
+                1usize as *const u16,
                 LANG_NEUTRAL,
                 grp.as_ptr() as *mut _,
                 grp.len() as u32,

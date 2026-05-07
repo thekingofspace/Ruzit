@@ -3,9 +3,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use mlua::{
-    AnyUserData, Lua, MultiValue, Table, UserData, UserDataFields, UserDataMethods, Value,
-};
+use mlua::{AnyUserData, Lua, MultiValue, Table, UserData, UserDataFields, UserDataMethods, Value};
 
 use crate::libs::asset::{self, FontAsset, FragmentAsset, ImageAsset, ShaderAsset};
 use crate::libs::primitives::{Color3, Dim};
@@ -16,7 +14,7 @@ pub mod render;
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
 thread_local! {
-    
+
     static REGISTRY: RefCell<Vec<Arc<Mutex<PrimitiveState>>>> = const { RefCell::new(Vec::new()) };
 
     static SKYBOX: RefCell<Option<Arc<SceneShaderState>>> = const { RefCell::new(None) };
@@ -28,9 +26,9 @@ pub enum Shape {
     Square,
     Circle,
     Triangle,
-    
+
     Image,
-    
+
     Text,
 }
 
@@ -58,11 +56,11 @@ pub struct AttachedShader {
     pub id: u64,
     #[allow(dead_code)]
     pub source: String,
-    
+
     pub wgsl: Arc<String>,
-    
+
     pub slot_of_name: Arc<std::collections::HashMap<String, u8>>,
-    
+
     pub params: Arc<Mutex<[f32; 16]>>,
 }
 
@@ -77,12 +75,12 @@ pub struct PrimitiveState {
     pub z_index: i32,
     pub visible: bool,
     pub alive: bool,
-    
+
     pub attached: Vec<AttachedShader>,
     pub changed_signal: Table,
-    
+
     pub image: Option<Arc<ImageRef>>,
-    
+
     pub text: Option<TextState>,
 }
 
@@ -93,7 +91,7 @@ pub struct TextState {
     pub content: String,
     pub size_px: f32,
     pub color: Color3,
-    
+
     pub baked: Option<Arc<ImageRef>>,
 }
 
@@ -110,7 +108,7 @@ pub struct RenderItem {
     pub color: Color3,
     pub transparency: f32,
     pub z_index: i32,
-    
+
     pub active_shader: Option<AttachedShader>,
     pub image: Option<Arc<ImageRef>>,
 }
@@ -126,7 +124,7 @@ pub fn snapshot() -> Vec<RenderItem> {
                 if !s.visible {
                     return None;
                 }
-                
+
                 let (image, size) = if matches!(s.shape, Shape::Text) {
                     let baked = bake_text_if_dirty(&mut s);
                     let size = match &baked {
@@ -186,7 +184,7 @@ fn bake_text(font: &fontdue::Font, content: &str, size_px: f32, color: Color3) -
             data: Arc::new(vec![0, 0, 0, 0]),
         });
     }
-    
+
     let mut max_x: i32 = 0;
     let mut max_y: i32 = 0;
     for g in glyphs {
@@ -248,7 +246,7 @@ impl GuiPrimitive {
             height: asset.height,
             data: asset.data.clone(),
         };
-        
+
         let size = Dim::new(asset.width as f32, asset.height as f32);
         Self::with_state(lua, Shape::Image, Some(Arc::new(image)), None, size)
     }
@@ -262,7 +260,7 @@ impl GuiPrimitive {
             color: Color3::new(1.0, 1.0, 1.0),
             baked: None,
         };
-        
+
         Self::with_state(lua, Shape::Text, None, Some(text_state), Dim::new(0.0, 0.0))
     }
 
@@ -354,7 +352,7 @@ fn parse_param_decls(src: &str) -> std::collections::HashMap<String, u8> {
         let Some(rest) = rest.strip_prefix("param") else {
             continue;
         };
-        
+
         let name = rest.split_whitespace().next().unwrap_or("").to_string();
         if name.is_empty() {
             continue;
@@ -461,16 +459,17 @@ impl UserData for GuiPrimitive {
 
         f.add_field_method_get("Text", |_, this| -> mlua::Result<String> {
             let s = this.state.lock().unwrap();
-            Ok(s.text.as_ref().map(|t| t.content.clone()).unwrap_or_default())
+            Ok(s.text
+                .as_ref()
+                .map(|t| t.content.clone())
+                .unwrap_or_default())
         });
         f.add_field_method_set("Text", |lua, this, value: String| {
             this.ensure_alive("set Text")?;
             let signal_table = {
                 let mut s = this.state.lock().unwrap();
                 let ts = s.text.as_mut().ok_or_else(|| {
-                    mlua::Error::RuntimeError(
-                        "Text is only valid on Font primitives".into(),
-                    )
+                    mlua::Error::RuntimeError("Text is only valid on Font primitives".into())
                 })?;
                 if ts.content != value {
                     ts.content = value;
@@ -489,9 +488,7 @@ impl UserData for GuiPrimitive {
             let signal_table = {
                 let mut s = this.state.lock().unwrap();
                 let ts = s.text.as_mut().ok_or_else(|| {
-                    mlua::Error::RuntimeError(
-                        "TextSize is only valid on Font primitives".into(),
-                    )
+                    mlua::Error::RuntimeError("TextSize is only valid on Font primitives".into())
                 })?;
                 let new_size = value.clamp(1.0, 1024.0);
                 if ts.size_px != new_size {
@@ -517,9 +514,7 @@ impl UserData for GuiPrimitive {
             let signal_table = {
                 let mut s = this.state.lock().unwrap();
                 let ts = s.text.as_mut().ok_or_else(|| {
-                    mlua::Error::RuntimeError(
-                        "TextColor is only valid on Font primitives".into(),
-                    )
+                    mlua::Error::RuntimeError("TextColor is only valid on Font primitives".into())
                 })?;
                 if ts.color.r != color.r || ts.color.g != color.g || ts.color.b != color.b {
                     ts.color = color;
@@ -659,7 +654,7 @@ fn build_scene_shader(asset: &AnyUserData) -> mlua::Result<Arc<SceneShaderState>
         ));
     };
     let slot_of_name = parse_param_decls(&code);
-    
+
     let prelude = render::FRAGMENT_PRELUDE;
     let wgsl = format!("{prelude}\n{code}");
     Ok(Arc::new(SceneShaderState {
@@ -708,7 +703,7 @@ impl UserData for SceneShader {
                 Ok(Some(this.state.params.lock().unwrap()[*slot as usize]))
             },
         );
-        
+
         m.add_method("Destroy", |_, this, _: ()| -> mlua::Result<()> {
             if this.current_in_slot() {
                 match this.slot {

@@ -10,15 +10,13 @@ use mlua::{
 };
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 
-use crate::libs::shader::{
-    AttachedShader, Params, read_param, shader_attach_spec, shader_id,
-};
+use crate::libs::shader::{AttachedShader, Params, read_param, shader_attach_spec, shader_id};
 use crate::libs::signal;
 
 pub const SOUND_EXTS: &[&str] = &["wav", "mp3", "ogg", "flac"];
 
 thread_local! {
-    
+
     static OUTPUT: RefCell<Option<OutputStreamHandle>> = const { RefCell::new(None) };
     static ACTIVE: RefCell<Vec<ActivePlayback>> = const { RefCell::new(Vec::new()) };
 }
@@ -134,9 +132,19 @@ pub enum Shader {
     Repeat,
     Pan(f32),
     Distortion(f32),
-    Echo { delay_ms: u32, feedback: f32, mix: f32 },
-    Reverb { mix: f32, decay: f32 },
-    Tremolo { rate: f32, depth: f32 },
+    Echo {
+        delay_ms: u32,
+        feedback: f32,
+        mix: f32,
+    },
+    Reverb {
+        mix: f32,
+        decay: f32,
+    },
+    Tremolo {
+        rate: f32,
+        depth: f32,
+    },
 }
 
 impl Shader {
@@ -223,7 +231,7 @@ fn output_handle() -> mlua::Result<OutputStreamHandle> {
         if borrow.is_none() {
             let (stream, handle) = OutputStream::try_default()
                 .map_err(|e| mlua::Error::RuntimeError(format!("SFX audio init: {e}")))?;
-            
+
             std::mem::forget(stream);
             *borrow = Some(handle);
         }
@@ -232,7 +240,6 @@ fn output_handle() -> mlua::Result<OutputStreamHandle> {
 }
 
 fn load_from_data(lua: &Lua, data: &SoundData) -> mlua::Result<AnyUserData> {
-    
     Decoder::new(Cursor::new((*data.bytes).clone())).map_err(|e| {
         mlua::Error::RuntimeError(format!("SFX.LoadSound: decode '{}': {e}", data.source))
     })?;
@@ -293,66 +300,89 @@ impl UserData for Sound {
             list.push(new_shader);
         }
         m.add_method("Volume", |_, this, factor: f32| -> mlua::Result<()> {
-            set_kind(this, Shader::Volume(factor.max(0.0))); Ok(())
+            set_kind(this, Shader::Volume(factor.max(0.0)));
+            Ok(())
         });
         m.add_method("Speed", |_, this, factor: f32| -> mlua::Result<()> {
-            set_kind(this, Shader::Speed(factor.max(0.0))); Ok(())
+            set_kind(this, Shader::Speed(factor.max(0.0)));
+            Ok(())
         });
         m.add_method("Pitch", |_, this, factor: f32| -> mlua::Result<()> {
-            set_kind(this, Shader::Speed(factor.max(0.0))); Ok(())
+            set_kind(this, Shader::Speed(factor.max(0.0)));
+            Ok(())
         });
         m.add_method("Pan", |_, this, amount: f32| -> mlua::Result<()> {
-            set_kind(this, Shader::Pan(amount)); Ok(())
+            set_kind(this, Shader::Pan(amount));
+            Ok(())
         });
         m.add_method("LowPass", |_, this, freq: u32| -> mlua::Result<()> {
-            set_kind(this, Shader::LowPass(freq)); Ok(())
+            set_kind(this, Shader::LowPass(freq));
+            Ok(())
         });
         m.add_method("HighPass", |_, this, freq: u32| -> mlua::Result<()> {
-            set_kind(this, Shader::HighPass(freq)); Ok(())
+            set_kind(this, Shader::HighPass(freq));
+            Ok(())
         });
         m.add_method("FadeIn", |_, this, secs: f64| -> mlua::Result<()> {
-            set_kind(this, Shader::FadeIn(secs)); Ok(())
+            set_kind(this, Shader::FadeIn(secs));
+            Ok(())
         });
         m.add_method("FadeOut", |_, this, secs: f64| -> mlua::Result<()> {
-            set_kind(this, Shader::FadeOut(secs)); Ok(())
+            set_kind(this, Shader::FadeOut(secs));
+            Ok(())
         });
         m.add_method("Delay", |_, this, secs: f64| -> mlua::Result<()> {
-            set_kind(this, Shader::Delay(secs)); Ok(())
+            set_kind(this, Shader::Delay(secs));
+            Ok(())
         });
         m.add_method("Loop", |_, this, _: ()| -> mlua::Result<()> {
-            set_kind(this, Shader::Repeat); Ok(())
+            set_kind(this, Shader::Repeat);
+            Ok(())
         });
         m.add_method("Distortion", |_, this, amount: f32| -> mlua::Result<()> {
-            set_kind(this, Shader::Distortion(amount)); Ok(())
+            set_kind(this, Shader::Distortion(amount));
+            Ok(())
         });
         m.add_method(
             "Echo",
-            |_, this, (delay_ms, feedback, mix): (u32, Option<f32>, Option<f32>)| -> mlua::Result<()> {
-                set_kind(this, Shader::Echo {
-                    delay_ms,
-                    feedback: feedback.unwrap_or(0.4),
-                    mix: mix.unwrap_or(0.4),
-                });
+            |_,
+             this,
+             (delay_ms, feedback, mix): (u32, Option<f32>, Option<f32>)|
+             -> mlua::Result<()> {
+                set_kind(
+                    this,
+                    Shader::Echo {
+                        delay_ms,
+                        feedback: feedback.unwrap_or(0.4),
+                        mix: mix.unwrap_or(0.4),
+                    },
+                );
                 Ok(())
             },
         );
         m.add_method(
             "Reverb",
             |_, this, (mix, decay): (Option<f32>, Option<f32>)| -> mlua::Result<()> {
-                set_kind(this, Shader::Reverb {
-                    mix: mix.unwrap_or(0.35),
-                    decay: decay.unwrap_or(0.7),
-                });
+                set_kind(
+                    this,
+                    Shader::Reverb {
+                        mix: mix.unwrap_or(0.35),
+                        decay: decay.unwrap_or(0.7),
+                    },
+                );
                 Ok(())
             },
         );
         m.add_method(
             "Tremolo",
             |_, this, (rate, depth): (Option<f32>, Option<f32>)| -> mlua::Result<()> {
-                set_kind(this, Shader::Tremolo {
-                    rate: rate.unwrap_or(5.0),
-                    depth: depth.unwrap_or(0.5),
-                });
+                set_kind(
+                    this,
+                    Shader::Tremolo {
+                        rate: rate.unwrap_or(5.0),
+                        depth: depth.unwrap_or(0.5),
+                    },
+                );
                 Ok(())
             },
         );
@@ -383,7 +413,9 @@ impl UserData for Sound {
                     _ => 20.0,
                 };
                 *this.position.lock().unwrap() = Some(SpatialPos {
-                    x, y, z,
+                    x,
+                    y,
+                    z,
                     falloff: falloff.max(0.1),
                 });
                 Ok(())
@@ -425,7 +457,7 @@ impl UserData for Sound {
                         "SetData: shader is not attached to this sound".into(),
                     )
                 })?;
-                
+
                 entry.params.lock().unwrap().insert(name, value);
                 Ok(())
             },
@@ -470,8 +502,7 @@ fn build_source(
 ) -> mlua::Result<Box<dyn Source<Item = f32> + Send>> {
     let decoder = Decoder::new(Cursor::new(bytes.to_vec()))
         .map_err(|e| mlua::Error::RuntimeError(format!("SFX decode: {e}")))?;
-    let mut source: Box<dyn Source<Item = f32> + Send> =
-        Box::new(decoder.convert_samples::<f32>());
+    let mut source: Box<dyn Source<Item = f32> + Send> = Box::new(decoder.convert_samples::<f32>());
     for sh in shaders {
         source = match *sh {
             Shader::Volume(f) => Box::new(source.amplify(f)),
@@ -484,9 +515,11 @@ fn build_source(
             Shader::Repeat => Box::new(source.repeat_infinite()),
             Shader::Pan(amount) => Box::new(StaticPan::new(source, amount)),
             Shader::Distortion(amount) => Box::new(Distortion::new(source, amount)),
-            Shader::Echo { delay_ms, feedback, mix } => {
-                Box::new(Echo::new(source, delay_ms, feedback, mix))
-            }
+            Shader::Echo {
+                delay_ms,
+                feedback,
+                mix,
+            } => Box::new(Echo::new(source, delay_ms, feedback, mix)),
             Shader::Reverb { mix, decay } => Box::new(Reverb::new(source, mix, decay)),
             Shader::Tremolo { rate, depth } => Box::new(StaticTremolo::new(source, rate, depth)),
         };
@@ -503,19 +536,18 @@ fn apply_attached(
 ) -> mlua::Result<Box<dyn Source<Item = f32> + Send>> {
     let params = attached.params.clone();
     match attached.kind.as_str() {
-        
         "wobble" | "tremolo" => Ok(Box::new(Tremolo::new(source, params))),
         "volume" | "gain" => Ok(Box::new(LiveGain::new(source, params))),
-        
+
         "speed" => Ok(Box::new(source.speed(read_param(&params, "factor", 1.0)))),
         "lowpass" => Ok(Box::new(
             source.low_pass(read_param(&params, "freq", 1000.0) as u32),
         )),
 
         "pan" => Ok(Box::new(Pan::new(source, params))),
-        
+
         "distance" | "falloff" => Ok(Box::new(Distance::new(source, params))),
-        
+
         "spatial" | "position" | "3d" => Ok(Box::new(Spatial::new(source, params))),
 
         other => Err(mlua::Error::RuntimeError(format!(
@@ -638,7 +670,7 @@ impl<I: Source<Item = f32>> Iterator for Pan<I> {
         let s = self.inner.next()?;
         let channels = self.inner.channels().max(1);
         let amount = read_param(&self.params, "amount", 0.0).clamp(-1.0, 1.0);
-        
+
         let theta = (amount + 1.0) * std::f32::consts::FRAC_PI_4;
         let gain = match (channels, self.channel_idx) {
             (1, _) => 1.0,
@@ -706,9 +738,9 @@ impl<I: Source<Item = f32>> Source for Distance<I> {
 struct Spatial<I> {
     inner: I,
     params: Params,
-    
+
     held: f32,
-    
+
     held_left: f32,
     held_right: f32,
     output_channel: u8,
@@ -740,7 +772,6 @@ impl<I: Source<Item = f32>> Iterator for Spatial<I> {
     type Item = f32;
     fn next(&mut self) -> Option<f32> {
         if self.output_channel == 0 {
-            
             self.held = self.next_mono_frame()?;
 
             let p = self.params.lock().unwrap();
@@ -774,7 +805,6 @@ impl<I: Source<Item = f32>> Iterator for Spatial<I> {
 
 impl<I: Source<Item = f32>> Source for Spatial<I> {
     fn current_frame_len(&self) -> Option<usize> {
-        
         None
     }
     fn channels(&self) -> u16 {
@@ -789,7 +819,6 @@ impl<I: Source<Item = f32>> Source for Spatial<I> {
 }
 
 fn play_sound(this: &Sound) -> mlua::Result<()> {
-    
     let prev_id = this.current_id.lock().unwrap().take();
     if let Some(id) = prev_id {
         ACTIVE.with(|c| {
@@ -802,8 +831,8 @@ fn play_sound(this: &Sound) -> mlua::Result<()> {
     }
 
     let handle = output_handle()?;
-    let sink = Sink::try_new(&handle)
-        .map_err(|e| mlua::Error::RuntimeError(format!("SFX sink: {e}")))?;
+    let sink =
+        Sink::try_new(&handle).map_err(|e| mlua::Error::RuntimeError(format!("SFX sink: {e}")))?;
     let shaders = this.shaders.lock().unwrap().clone();
     let attached = this.attached.lock().unwrap().clone();
     let source = build_source(&this.bytes, &shaders, &attached)?;
@@ -844,7 +873,6 @@ fn stop_sound(this: &Sound) {
     let id = this.current_id.lock().unwrap().take();
     if let Some(id) = id {
         ACTIVE.with(|c| {
-            
             if let Some(p) = c.borrow().iter().find(|p| p.id == id) {
                 p.sink.stop();
             }
@@ -889,7 +917,7 @@ pub fn pump(lua: &Lua) {
 
     ACTIVE.with(|c| {
         let mut active = c.borrow_mut();
-        
+
         let added = std::mem::take(&mut *active);
         keep.extend(added);
         *active = keep;
@@ -920,7 +948,12 @@ impl<I: Source<Item = f32>> FadeOut<I> {
         let fade_samples =
             (duration_secs * inner.sample_rate() as f64 * inner.channels() as f64) as u64;
         let started = total.map(|t| t.saturating_sub(fade_samples));
-        Self { inner, sample_idx: 0, fade_started_at: started, total_samples: total }
+        Self {
+            inner,
+            sample_idx: 0,
+            fade_started_at: started,
+            total_samples: total,
+        }
     }
 }
 
@@ -943,10 +976,18 @@ impl<I: Source<Item = f32>> Iterator for FadeOut<I> {
 }
 
 impl<I: Source<Item = f32>> Source for FadeOut<I> {
-    fn current_frame_len(&self) -> Option<usize> { self.inner.current_frame_len() }
-    fn channels(&self) -> u16 { self.inner.channels() }
-    fn sample_rate(&self) -> u32 { self.inner.sample_rate() }
-    fn total_duration(&self) -> Option<Duration> { self.inner.total_duration() }
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
+    }
+    fn channels(&self) -> u16 {
+        self.inner.channels()
+    }
+    fn sample_rate(&self) -> u32 {
+        self.inner.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
 }
 
 struct StaticPan<I> {
@@ -957,7 +998,11 @@ struct StaticPan<I> {
 
 impl<I: Source<Item = f32>> StaticPan<I> {
     fn new(inner: I, amount: f32) -> Self {
-        Self { inner, amount: amount.clamp(-1.0, 1.0), channel_idx: 0 }
+        Self {
+            inner,
+            amount: amount.clamp(-1.0, 1.0),
+            channel_idx: 0,
+        }
     }
 }
 
@@ -979,10 +1024,18 @@ impl<I: Source<Item = f32>> Iterator for StaticPan<I> {
 }
 
 impl<I: Source<Item = f32>> Source for StaticPan<I> {
-    fn current_frame_len(&self) -> Option<usize> { self.inner.current_frame_len() }
-    fn channels(&self) -> u16 { self.inner.channels() }
-    fn sample_rate(&self) -> u32 { self.inner.sample_rate() }
-    fn total_duration(&self) -> Option<Duration> { self.inner.total_duration() }
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
+    }
+    fn channels(&self) -> u16 {
+        self.inner.channels()
+    }
+    fn sample_rate(&self) -> u32 {
+        self.inner.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
 }
 
 struct Distortion<I> {
@@ -1008,10 +1061,18 @@ impl<I: Source<Item = f32>> Iterator for Distortion<I> {
 }
 
 impl<I: Source<Item = f32>> Source for Distortion<I> {
-    fn current_frame_len(&self) -> Option<usize> { self.inner.current_frame_len() }
-    fn channels(&self) -> u16 { self.inner.channels() }
-    fn sample_rate(&self) -> u32 { self.inner.sample_rate() }
-    fn total_duration(&self) -> Option<Duration> { self.inner.total_duration() }
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
+    }
+    fn channels(&self) -> u16 {
+        self.inner.channels()
+    }
+    fn sample_rate(&self) -> u32 {
+        self.inner.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
 }
 
 struct Echo<I> {
@@ -1049,10 +1110,18 @@ impl<I: Source<Item = f32>> Iterator for Echo<I> {
 }
 
 impl<I: Source<Item = f32>> Source for Echo<I> {
-    fn current_frame_len(&self) -> Option<usize> { self.inner.current_frame_len() }
-    fn channels(&self) -> u16 { self.inner.channels() }
-    fn sample_rate(&self) -> u32 { self.inner.sample_rate() }
-    fn total_duration(&self) -> Option<Duration> { self.inner.total_duration() }
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
+    }
+    fn channels(&self) -> u16 {
+        self.inner.channels()
+    }
+    fn sample_rate(&self) -> u32 {
+        self.inner.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
 }
 
 struct Reverb<I> {
@@ -1062,12 +1131,23 @@ struct Reverb<I> {
     mix: f32,
 }
 
-struct Comb { buf: Vec<f32>, head: usize, feedback: f32 }
-struct AllPass { buf: Vec<f32>, head: usize }
+struct Comb {
+    buf: Vec<f32>,
+    head: usize,
+    feedback: f32,
+}
+struct AllPass {
+    buf: Vec<f32>,
+    head: usize,
+}
 
 impl Comb {
     fn new(samples: usize, feedback: f32) -> Self {
-        Self { buf: vec![0.0; samples.max(1)], head: 0, feedback }
+        Self {
+            buf: vec![0.0; samples.max(1)],
+            head: 0,
+            feedback,
+        }
     }
     fn process(&mut self, x: f32) -> f32 {
         let y = self.buf[self.head];
@@ -1078,7 +1158,10 @@ impl Comb {
 }
 impl AllPass {
     fn new(samples: usize) -> Self {
-        Self { buf: vec![0.0; samples.max(1)], head: 0 }
+        Self {
+            buf: vec![0.0; samples.max(1)],
+            head: 0,
+        }
     }
     fn process(&mut self, x: f32) -> f32 {
         let g = 0.5_f32;
@@ -1107,7 +1190,12 @@ impl<I: Source<Item = f32>> Reverb<I> {
             AllPass::new((sr * ap_lens[0] as f32 / 1000.0) as usize * ch),
             AllPass::new((sr * ap_lens[1] as f32 / 1000.0) as usize * ch),
         ];
-        Self { inner, combs, allpasses, mix: mix.clamp(0.0, 1.0) }
+        Self {
+            inner,
+            combs,
+            allpasses,
+            mix: mix.clamp(0.0, 1.0),
+        }
     }
 }
 
@@ -1116,18 +1204,30 @@ impl<I: Source<Item = f32>> Iterator for Reverb<I> {
     fn next(&mut self) -> Option<f32> {
         let dry = self.inner.next()?;
         let mut wet = 0.0;
-        for c in &mut self.combs { wet += c.process(dry); }
+        for c in &mut self.combs {
+            wet += c.process(dry);
+        }
         wet *= 0.25;
-        for a in &mut self.allpasses { wet = a.process(wet); }
+        for a in &mut self.allpasses {
+            wet = a.process(wet);
+        }
         Some(dry * (1.0 - self.mix) + wet * self.mix)
     }
 }
 
 impl<I: Source<Item = f32>> Source for Reverb<I> {
-    fn current_frame_len(&self) -> Option<usize> { self.inner.current_frame_len() }
-    fn channels(&self) -> u16 { self.inner.channels() }
-    fn sample_rate(&self) -> u32 { self.inner.sample_rate() }
-    fn total_duration(&self) -> Option<Duration> { self.inner.total_duration() }
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
+    }
+    fn channels(&self) -> u16 {
+        self.inner.channels()
+    }
+    fn sample_rate(&self) -> u32 {
+        self.inner.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
 }
 
 struct StaticTremolo<I> {
@@ -1164,10 +1264,18 @@ impl<I: Source<Item = f32>> Iterator for StaticTremolo<I> {
 }
 
 impl<I: Source<Item = f32>> Source for StaticTremolo<I> {
-    fn current_frame_len(&self) -> Option<usize> { self.inner.current_frame_len() }
-    fn channels(&self) -> u16 { self.inner.channels() }
-    fn sample_rate(&self) -> u32 { self.inner.sample_rate() }
-    fn total_duration(&self) -> Option<Duration> { self.inner.total_duration() }
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
+    }
+    fn channels(&self) -> u16 {
+        self.inner.channels()
+    }
+    fn sample_rate(&self) -> u32 {
+        self.inner.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
 }
 
 struct CameraSpatial {
@@ -1179,8 +1287,17 @@ struct CameraSpatial {
 }
 
 impl CameraSpatial {
-    fn new(inner: Box<dyn Source<Item = f32> + Send>, position: Arc<Mutex<Option<SpatialPos>>>) -> Self {
-        Self { inner, position, channel_idx: 0, last_left: 0.0, last_right: 0.0 }
+    fn new(
+        inner: Box<dyn Source<Item = f32> + Send>,
+        position: Arc<Mutex<Option<SpatialPos>>>,
+    ) -> Self {
+        Self {
+            inner,
+            position,
+            channel_idx: 0,
+            last_left: 0.0,
+            last_right: 0.0,
+        }
     }
 }
 
@@ -1210,7 +1327,11 @@ impl Iterator for CameraSpatial {
             let cy_ = yaw.cos();
             let sy_ = yaw.sin();
             let local_x = cy_ * dx + sy_ * dz;
-            let pan = if dist > 0.001 { (local_x / dist).clamp(-1.0, 1.0) } else { 0.0 };
+            let pan = if dist > 0.001 {
+                (local_x / dist).clamp(-1.0, 1.0)
+            } else {
+                0.0
+            };
 
             let amp = s * atten;
             let theta = (pan + 1.0) * std::f32::consts::FRAC_PI_4;
@@ -1228,8 +1349,16 @@ impl Iterator for CameraSpatial {
 }
 
 impl Source for CameraSpatial {
-    fn current_frame_len(&self) -> Option<usize> { self.inner.current_frame_len() }
-    fn channels(&self) -> u16 { self.inner.channels().max(2) }
-    fn sample_rate(&self) -> u32 { self.inner.sample_rate() }
-    fn total_duration(&self) -> Option<Duration> { self.inner.total_duration() }
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
+    }
+    fn channels(&self) -> u16 {
+        self.inner.channels().max(2)
+    }
+    fn sample_rate(&self) -> u32 {
+        self.inner.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
 }

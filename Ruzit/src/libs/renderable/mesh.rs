@@ -1,4 +1,3 @@
-
 use std::collections::HashMap;
 
 use bytemuck::{Pod, Zeroable};
@@ -16,46 +15,328 @@ pub struct Mesh {
     pub indices: Vec<u32>,
 }
 
+/// Smooth radial-falloff "blob" deform: every vertex within `envelope` of
+/// `center` gets pushed by `displacement * weight`, where weight is a
+/// smoothstep that's 1.0 at the center and 0.0 at the envelope edge. This
+/// matches what artists expect from a soft-selection sculpt: a noticeable
+/// dent right under the cursor and a gentle taper out to the envelope.
+pub fn deform_blob(
+    vertices: &mut [Vertex3D],
+    center: [f32; 3],
+    envelope: f32,
+    displacement: [f32; 3],
+) -> usize {
+    if envelope <= 0.0 {
+        return 0;
+    }
+    let env2 = envelope * envelope;
+    let mut touched = 0usize;
+    for v in vertices.iter_mut() {
+        let dx = v.position[0] - center[0];
+        let dy = v.position[1] - center[1];
+        let dz = v.position[2] - center[2];
+        let d2 = dx * dx + dy * dy + dz * dz;
+        if d2 > env2 {
+            continue;
+        }
+        let t = (d2 / env2).sqrt();
+
+        let s = 1.0 - (3.0 * t * t - 2.0 * t * t * t);
+        v.position[0] += displacement[0] * s;
+        v.position[1] += displacement[1] * s;
+        v.position[2] += displacement[2] * s;
+        touched += 1;
+    }
+    touched
+}
+
+/// Recompute per-vertex normals from triangle face normals. Used after a
+/// deformation so lighting follows the new surface.
+pub fn recompute_normals(vertices: &mut [Vertex3D], indices: &[u32]) {
+    let mut accum = vec![[0.0_f32; 3]; vertices.len()];
+    for tri in indices.chunks(3) {
+        if tri.len() < 3 {
+            continue;
+        }
+        let (a, b, c) = (tri[0] as usize, tri[1] as usize, tri[2] as usize);
+        if a >= vertices.len() || b >= vertices.len() || c >= vertices.len() {
+            continue;
+        }
+        let pa = vertices[a].position;
+        let pb = vertices[b].position;
+        let pc = vertices[c].position;
+        let ab = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+        let ac = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
+        let n = [
+            ab[1] * ac[2] - ab[2] * ac[1],
+            ab[2] * ac[0] - ab[0] * ac[2],
+            ab[0] * ac[1] - ab[1] * ac[0],
+        ];
+        for &i in &[a, b, c] {
+            accum[i][0] += n[0];
+            accum[i][1] += n[1];
+            accum[i][2] += n[2];
+        }
+    }
+    for (i, n) in accum.iter().enumerate() {
+        let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+        if len > 1e-6 {
+            vertices[i].normal = [n[0] / len, n[1] / len, n[2] / len];
+        } else {
+            vertices[i].normal = [0.0, 1.0, 0.0];
+        }
+    }
+}
+
+/// Polygon reduction by quantization clustering. Cheap, deterministic, and
+/// works with arbitrary topology — we snap each vertex to a 3D grid, merge
+/// vertices that land in the same cell, and rebuild the index list with the
+/// cluster centroids. Triangles that collapse to fewer than three distinct
+/// vertices after merging are dropped.
+///
+/// `target_ratio` is a 0..1 hint: 1.0 returns the original mesh (after
+/// deduplication), 0.5 aims for ~50% of the vertices, 0.1 for ~10%. The
+/// result tends to be coarser than `target_ratio` suggests on small meshes,
+/// since the grid is uniform — meant for LODs of moderately dense meshes,
+/// not for sphere-of-32-vertices style assets.
+pub fn simplify(mesh: &Mesh, target_ratio: f32) -> Mesh {
+    let ratio = target_ratio.clamp(0.01, 1.0);
+    if mesh.vertices.is_empty() || mesh.indices.is_empty() {
+        return Mesh {
+            vertices: mesh.vertices.clone(),
+            indices: mesh.indices.clone(),
+        };
+    }
+    if ratio >= 0.999 {
+        return Mesh {
+            vertices: mesh.vertices.clone(),
+            indices: mesh.indices.clone(),
+        };
+    }
+
+    let mut min = [f32::INFINITY; 3];
+    let mut max = [f32::NEG_INFINITY; 3];
+    for v in &mesh.vertices {
+        for i in 0..3 {
+            if v.position[i] < min[i] {
+                min[i] = v.position[i];
+            }
+            if v.position[i] > max[i] {
+                max[i] = v.position[i];
+            }
+        }
+    }
+    let span = [
+        (max[0] - min[0]).max(1e-6),
+        (max[1] - min[1]).max(1e-6),
+        (max[2] - min[2]).max(1e-6),
+    ];
+    let target_clusters = (mesh.vertices.len() as f32 * ratio).max(4.0);
+    let cells_per_axis = target_clusters.cbrt().round().max(2.0);
+    let cell = [
+        span[0] / cells_per_axis,
+        span[1] / cells_per_axis,
+        span[2] / cells_per_axis,
+    ];
+
+    let mut bucket: HashMap<(i32, i32, i32), Vec<u32>> = HashMap::new();
+    for (i, v) in mesh.vertices.iter().enumerate() {
+        let key = (
+            ((v.position[0] - min[0]) / cell[0]).floor() as i32,
+            ((v.position[1] - min[1]) / cell[1]).floor() as i32,
+            ((v.position[2] - min[2]) / cell[2]).floor() as i32,
+        );
+        bucket.entry(key).or_default().push(i as u32);
+    }
+
+    let mut cluster_of: Vec<u32> = vec![0; mesh.vertices.len()];
+    let mut new_vertices: Vec<Vertex3D> = Vec::with_capacity(bucket.len());
+    let mut keys: Vec<(i32, i32, i32)> = bucket.keys().copied().collect();
+    keys.sort();
+    for (cluster_idx, key) in keys.iter().enumerate() {
+        let members = &bucket[key];
+        let mut sum_pos = [0.0_f32; 3];
+        let mut sum_uv = [0.0_f32; 2];
+        for &m in members {
+            let v = &mesh.vertices[m as usize];
+            for i in 0..3 {
+                sum_pos[i] += v.position[i];
+            }
+            sum_uv[0] += v.uv[0];
+            sum_uv[1] += v.uv[1];
+            cluster_of[m as usize] = cluster_idx as u32;
+        }
+        let n = members.len() as f32;
+        new_vertices.push(Vertex3D {
+            position: [sum_pos[0] / n, sum_pos[1] / n, sum_pos[2] / n],
+            normal: [0.0; 3],
+            uv: [sum_uv[0] / n, sum_uv[1] / n],
+        });
+    }
+
+    let mut new_indices: Vec<u32> = Vec::with_capacity(mesh.indices.len());
+    for tri in mesh.indices.chunks(3) {
+        if tri.len() < 3 {
+            continue;
+        }
+        let a = cluster_of[tri[0] as usize];
+        let b = cluster_of[tri[1] as usize];
+        let c = cluster_of[tri[2] as usize];
+        if a == b || b == c || a == c {
+            continue;
+        }
+        new_indices.push(a);
+        new_indices.push(b);
+        new_indices.push(c);
+    }
+
+    if new_indices.is_empty() {
+        return Mesh {
+            vertices: mesh.vertices.clone(),
+            indices: mesh.indices.clone(),
+        };
+    }
+
+    recompute_normals(&mut new_vertices, &new_indices);
+    Mesh {
+        vertices: new_vertices,
+        indices: new_indices,
+    }
+}
+
 pub fn cube() -> Mesh {
     let s = 0.5_f32;
     let v = vec![
-        
-        Vertex3D { position: [s, -s, -s], normal: [1.0, 0.0, 0.0], uv: [0.0, 1.0] },
-        Vertex3D { position: [s,  s, -s], normal: [1.0, 0.0, 0.0], uv: [0.0, 0.0] },
-        Vertex3D { position: [s,  s,  s], normal: [1.0, 0.0, 0.0], uv: [1.0, 0.0] },
-        Vertex3D { position: [s, -s,  s], normal: [1.0, 0.0, 0.0], uv: [1.0, 1.0] },
-        
-        Vertex3D { position: [-s, -s,  s], normal: [-1.0, 0.0, 0.0], uv: [0.0, 1.0] },
-        Vertex3D { position: [-s,  s,  s], normal: [-1.0, 0.0, 0.0], uv: [0.0, 0.0] },
-        Vertex3D { position: [-s,  s, -s], normal: [-1.0, 0.0, 0.0], uv: [1.0, 0.0] },
-        Vertex3D { position: [-s, -s, -s], normal: [-1.0, 0.0, 0.0], uv: [1.0, 1.0] },
-        
-        Vertex3D { position: [-s, s, -s], normal: [0.0, 1.0, 0.0], uv: [0.0, 1.0] },
-        Vertex3D { position: [-s, s,  s], normal: [0.0, 1.0, 0.0], uv: [0.0, 0.0] },
-        Vertex3D { position: [ s, s,  s], normal: [0.0, 1.0, 0.0], uv: [1.0, 0.0] },
-        Vertex3D { position: [ s, s, -s], normal: [0.0, 1.0, 0.0], uv: [1.0, 1.0] },
-        
-        Vertex3D { position: [-s, -s,  s], normal: [0.0, -1.0, 0.0], uv: [0.0, 1.0] },
-        Vertex3D { position: [-s, -s, -s], normal: [0.0, -1.0, 0.0], uv: [0.0, 0.0] },
-        Vertex3D { position: [ s, -s, -s], normal: [0.0, -1.0, 0.0], uv: [1.0, 0.0] },
-        Vertex3D { position: [ s, -s,  s], normal: [0.0, -1.0, 0.0], uv: [1.0, 1.0] },
-        
-        Vertex3D { position: [ s, -s, s], normal: [0.0, 0.0, 1.0], uv: [0.0, 1.0] },
-        Vertex3D { position: [ s,  s, s], normal: [0.0, 0.0, 1.0], uv: [0.0, 0.0] },
-        Vertex3D { position: [-s,  s, s], normal: [0.0, 0.0, 1.0], uv: [1.0, 0.0] },
-        Vertex3D { position: [-s, -s, s], normal: [0.0, 0.0, 1.0], uv: [1.0, 1.0] },
-        
-        Vertex3D { position: [-s, -s, -s], normal: [0.0, 0.0, -1.0], uv: [0.0, 1.0] },
-        Vertex3D { position: [-s,  s, -s], normal: [0.0, 0.0, -1.0], uv: [0.0, 0.0] },
-        Vertex3D { position: [ s,  s, -s], normal: [0.0, 0.0, -1.0], uv: [1.0, 0.0] },
-        Vertex3D { position: [ s, -s, -s], normal: [0.0, 0.0, -1.0], uv: [1.0, 1.0] },
+        Vertex3D {
+            position: [s, -s, -s],
+            normal: [1.0, 0.0, 0.0],
+            uv: [0.0, 1.0],
+        },
+        Vertex3D {
+            position: [s, s, -s],
+            normal: [1.0, 0.0, 0.0],
+            uv: [0.0, 0.0],
+        },
+        Vertex3D {
+            position: [s, s, s],
+            normal: [1.0, 0.0, 0.0],
+            uv: [1.0, 0.0],
+        },
+        Vertex3D {
+            position: [s, -s, s],
+            normal: [1.0, 0.0, 0.0],
+            uv: [1.0, 1.0],
+        },
+        Vertex3D {
+            position: [-s, -s, s],
+            normal: [-1.0, 0.0, 0.0],
+            uv: [0.0, 1.0],
+        },
+        Vertex3D {
+            position: [-s, s, s],
+            normal: [-1.0, 0.0, 0.0],
+            uv: [0.0, 0.0],
+        },
+        Vertex3D {
+            position: [-s, s, -s],
+            normal: [-1.0, 0.0, 0.0],
+            uv: [1.0, 0.0],
+        },
+        Vertex3D {
+            position: [-s, -s, -s],
+            normal: [-1.0, 0.0, 0.0],
+            uv: [1.0, 1.0],
+        },
+        Vertex3D {
+            position: [-s, s, -s],
+            normal: [0.0, 1.0, 0.0],
+            uv: [0.0, 1.0],
+        },
+        Vertex3D {
+            position: [-s, s, s],
+            normal: [0.0, 1.0, 0.0],
+            uv: [0.0, 0.0],
+        },
+        Vertex3D {
+            position: [s, s, s],
+            normal: [0.0, 1.0, 0.0],
+            uv: [1.0, 0.0],
+        },
+        Vertex3D {
+            position: [s, s, -s],
+            normal: [0.0, 1.0, 0.0],
+            uv: [1.0, 1.0],
+        },
+        Vertex3D {
+            position: [-s, -s, s],
+            normal: [0.0, -1.0, 0.0],
+            uv: [0.0, 1.0],
+        },
+        Vertex3D {
+            position: [-s, -s, -s],
+            normal: [0.0, -1.0, 0.0],
+            uv: [0.0, 0.0],
+        },
+        Vertex3D {
+            position: [s, -s, -s],
+            normal: [0.0, -1.0, 0.0],
+            uv: [1.0, 0.0],
+        },
+        Vertex3D {
+            position: [s, -s, s],
+            normal: [0.0, -1.0, 0.0],
+            uv: [1.0, 1.0],
+        },
+        Vertex3D {
+            position: [s, -s, s],
+            normal: [0.0, 0.0, 1.0],
+            uv: [0.0, 1.0],
+        },
+        Vertex3D {
+            position: [s, s, s],
+            normal: [0.0, 0.0, 1.0],
+            uv: [0.0, 0.0],
+        },
+        Vertex3D {
+            position: [-s, s, s],
+            normal: [0.0, 0.0, 1.0],
+            uv: [1.0, 0.0],
+        },
+        Vertex3D {
+            position: [-s, -s, s],
+            normal: [0.0, 0.0, 1.0],
+            uv: [1.0, 1.0],
+        },
+        Vertex3D {
+            position: [-s, -s, -s],
+            normal: [0.0, 0.0, -1.0],
+            uv: [0.0, 1.0],
+        },
+        Vertex3D {
+            position: [-s, s, -s],
+            normal: [0.0, 0.0, -1.0],
+            uv: [0.0, 0.0],
+        },
+        Vertex3D {
+            position: [s, s, -s],
+            normal: [0.0, 0.0, -1.0],
+            uv: [1.0, 0.0],
+        },
+        Vertex3D {
+            position: [s, -s, -s],
+            normal: [0.0, 0.0, -1.0],
+            uv: [1.0, 1.0],
+        },
     ];
     let mut i: Vec<u32> = Vec::with_capacity(36);
     for face in 0..6_u32 {
         let base = face * 4;
         i.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
-    Mesh { vertices: v, indices: i }
+    Mesh {
+        vertices: v,
+        indices: i,
+    }
 }
 
 pub fn sphere(lat: u32, long: u32) -> Mesh {
@@ -118,31 +399,21 @@ pub fn load_obj(text: &str) -> Result<Mesh, String> {
         let mut parts = line.split_whitespace();
         match parts.next() {
             Some("v") => {
-                let xyz: Vec<f32> = parts
-                    .take(3)
-                    .filter_map(|s| s.parse().ok())
-                    .collect();
+                let xyz: Vec<f32> = parts.take(3).filter_map(|s| s.parse().ok()).collect();
                 if xyz.len() == 3 {
                     positions.push([xyz[0], xyz[1], xyz[2]]);
                 }
             }
             Some("vn") => {
-                let xyz: Vec<f32> = parts
-                    .take(3)
-                    .filter_map(|s| s.parse().ok())
-                    .collect();
+                let xyz: Vec<f32> = parts.take(3).filter_map(|s| s.parse().ok()).collect();
                 if xyz.len() == 3 {
                     normals.push([xyz[0], xyz[1], xyz[2]]);
                     had_normals = true;
                 }
             }
             Some("vt") => {
-                let xy: Vec<f32> = parts
-                    .take(2)
-                    .filter_map(|s| s.parse().ok())
-                    .collect();
+                let xy: Vec<f32> = parts.take(2).filter_map(|s| s.parse().ok()).collect();
                 if xy.len() >= 2 {
-                    
                     uvs.push([xy[0], 1.0 - xy[1]]);
                 }
             }
@@ -156,15 +427,29 @@ pub fn load_obj(text: &str) -> Result<Mesh, String> {
                             .unwrap_or(0);
                         let ti = parts_t
                             .get(1)
-                            .and_then(|s| if s.is_empty() { None } else { s.parse::<i32>().ok() })
+                            .and_then(|s| {
+                                if s.is_empty() {
+                                    None
+                                } else {
+                                    s.parse::<i32>().ok()
+                                }
+                            })
                             .unwrap_or(0);
                         let ni = parts_t
                             .get(2)
                             .and_then(|s| s.parse::<i32>().ok())
                             .unwrap_or(0);
                         let p = norm_idx(pi, positions.len());
-                        let t = if ti != 0 { norm_idx(ti, uvs.len()) } else { u32::MAX };
-                        let n = if ni != 0 { norm_idx(ni, normals.len()) } else { u32::MAX };
+                        let t = if ti != 0 {
+                            norm_idx(ti, uvs.len())
+                        } else {
+                            u32::MAX
+                        };
+                        let n = if ni != 0 {
+                            norm_idx(ni, normals.len())
+                        } else {
+                            u32::MAX
+                        };
                         let key = (p, t, n);
                         if let Some(&idx) = cache.get(&key) {
                             idx
@@ -243,20 +528,42 @@ pub fn load_obj(text: &str) -> Result<Mesh, String> {
     Ok(Mesh { vertices, indices })
 }
 
-pub fn load_fbx(bytes: &[u8]) -> Result<Mesh, String> {
-    if !bytes.starts_with(b"Kaydara FBX Binary") {
-        return load_fbx_ascii(bytes);
-    }
-    load_fbx_binary(bytes)
+/// Animation clip pulled out of an FBX `AnimationStack`. Each clip is a
+/// flat list of TRS samples in seconds — the consumer turns these into
+/// `KeyframeAction::Cframe` entries on an AnimationTrack. Rotation is in
+/// FBX-native Euler degrees; we convert at evaluation time.
+#[derive(Clone, Debug, Default)]
+pub struct FbxAnimClip {
+    pub name: String,
+    pub duration: f32,
+    /// (time, translation_xyz, rotation_xyz_degrees). Either component may
+    /// be `None` if the FBX clip doesn't animate that channel — the track
+    /// builder substitutes the part's baseline in that case.
+    pub samples: Vec<(f32, Option<[f32; 3]>, Option<[f32; 3]>)>,
 }
 
-fn load_fbx_binary(bytes: &[u8]) -> Result<Mesh, String> {
+pub struct LoadedFbx {
+    pub mesh: Mesh,
+    pub animations: Vec<FbxAnimClip>,
+}
+
+pub fn load_fbx_full(bytes: &[u8]) -> Result<LoadedFbx, String> {
+    if !bytes.starts_with(b"Kaydara FBX Binary") {
+        let mesh = load_fbx_ascii(bytes)?;
+        return Ok(LoadedFbx {
+            mesh,
+            animations: Vec::new(),
+        });
+    }
+    load_fbx_binary_full(bytes)
+}
+
+fn load_fbx_binary_full(bytes: &[u8]) -> Result<LoadedFbx, String> {
     use fbxcel_dom::any::AnyDocument;
     use fbxcel_dom::v7400::object::TypedObjectHandle;
 
     let cursor = std::io::Cursor::new(bytes);
-    let doc = AnyDocument::from_seekable_reader(cursor)
-        .map_err(|e| format!("FBX parse: {e}"))?;
+    let doc = AnyDocument::from_seekable_reader(cursor).map_err(|e| format!("FBX parse: {e}"))?;
     let doc = match doc {
         AnyDocument::V7400(_, doc) => doc,
         _ => return Err("FBX: only v7.4+ binary FBX is supported".into()),
@@ -342,7 +649,203 @@ fn load_fbx_binary(bytes: &[u8]) -> Result<Mesh, String> {
         }
     }
 
-    Ok(Mesh { vertices, indices })
+    let animations = parse_fbx_animations(&doc);
+    Ok(LoadedFbx {
+        mesh: Mesh { vertices, indices },
+        animations,
+    })
+}
+
+/// Walk every AnimationStack in the FBX document and collect samples for
+/// any AnimationCurveNodes connected through it. We follow the standard
+/// FBX connection chain (Stack → Layer → CurveNode → Curve) and pick out
+/// translation (`T`) and rotation (`R`) channels — scale is intentionally
+/// ignored to keep the resulting tracks suitable for `Part.CFrame` driving.
+///
+/// The fbxcel-dom 0.0.10 crate doesn't have typed handles for animation
+/// nodes, so we fall back to raw node walking via `obj.node()` and
+/// `node.children_by_name(...)`. That's why this code is a bit verbose
+/// compared to the geometry path — the typed wrappers carry their weight
+/// for meshes but don't exist here.
+fn parse_fbx_animations(doc: &fbxcel_dom::v7400::Document) -> Vec<FbxAnimClip> {
+    use fbxcel_dom::fbxcel::low::v7400::AttributeValue;
+
+    const FBX_TIME_PER_SECOND: f64 = 46_186_158_000.0;
+
+    let mut clips: Vec<FbxAnimClip> = Vec::new();
+
+    fn read_i64_array(
+        node: fbxcel_dom::fbxcel::tree::v7400::NodeHandle<'_>,
+        child: &str,
+    ) -> Vec<i64> {
+        for c in node.children_by_name(child) {
+            for attr in c.attributes() {
+                if let AttributeValue::ArrI64(v) = attr {
+                    return v.clone();
+                }
+            }
+        }
+        Vec::new()
+    }
+    fn read_f32_array(
+        node: fbxcel_dom::fbxcel::tree::v7400::NodeHandle<'_>,
+        child: &str,
+    ) -> Vec<f32> {
+        for c in node.children_by_name(child) {
+            for attr in c.attributes() {
+                match attr {
+                    AttributeValue::ArrF32(v) => return v.clone(),
+                    AttributeValue::ArrF64(v) => {
+                        return v.iter().map(|d| *d as f32).collect();
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Vec::new()
+    }
+
+    for stack_obj in doc.objects() {
+        if stack_obj.class() != "AnimationStack" {
+            continue;
+        }
+        let clip_name = stack_obj
+            .name()
+            .map(|s| s.split('\u{0001}').next().unwrap_or(s).to_string())
+            .unwrap_or_else(|| format!("Stack_{}", stack_obj.object_id().raw()));
+
+        let mut sample_times: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
+        let mut t_curves: [Vec<(i64, f32)>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+        let mut r_curves: [Vec<(i64, f32)>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+
+        for layer in stack_obj
+            .destination_objects()
+            .chain(stack_obj.source_objects())
+        {
+            let Some(layer_obj) = layer.object_handle() else {
+                continue;
+            };
+            if layer_obj.class() != "AnimationLayer" {
+                continue;
+            }
+
+            for cn_conn in layer_obj
+                .destination_objects()
+                .chain(layer_obj.source_objects())
+            {
+                let Some(cn_obj) = cn_conn.object_handle() else {
+                    continue;
+                };
+                if cn_obj.class() != "AnimCurveNode" {
+                    continue;
+                }
+                let cn_name = cn_obj.name().unwrap_or("");
+                let target_kind: Option<usize> = match cn_name {
+                    "T" => Some(0),
+                    "R" => Some(1),
+                    _ => None,
+                };
+                let Some(kind) = target_kind else { continue };
+
+                for curve_conn in cn_obj.destination_objects().chain(cn_obj.source_objects()) {
+                    let Some(curve_obj) = curve_conn.object_handle() else {
+                        continue;
+                    };
+                    if curve_obj.class() != "AnimCurve" {
+                        continue;
+                    }
+                    let label = curve_conn.label().unwrap_or("");
+                    let axis = if label.ends_with("X") {
+                        0
+                    } else if label.ends_with("Y") {
+                        1
+                    } else if label.ends_with("Z") {
+                        2
+                    } else {
+                        continue;
+                    };
+                    let node = curve_obj.node();
+                    let times = read_i64_array(node, "KeyTime");
+                    let values = read_f32_array(node, "KeyValueFloat");
+                    let n = times.len().min(values.len());
+                    let bucket = if kind == 0 {
+                        &mut t_curves[axis]
+                    } else {
+                        &mut r_curves[axis]
+                    };
+                    for i in 0..n {
+                        bucket.push((times[i], values[i]));
+                        sample_times.insert(times[i]);
+                    }
+                }
+            }
+        }
+
+        if sample_times.is_empty() {
+            continue;
+        }
+
+        fn sample_curve(curve: &[(i64, f32)], t: i64) -> Option<f32> {
+            if curve.is_empty() {
+                return None;
+            }
+
+            let mut sorted = curve.to_vec();
+            sorted.sort_by_key(|(time, _)| *time);
+            if t <= sorted[0].0 {
+                return Some(sorted[0].1);
+            }
+            if t >= sorted.last().unwrap().0 {
+                return Some(sorted.last().unwrap().1);
+            }
+            for w in sorted.windows(2) {
+                if t >= w[0].0 && t <= w[1].0 {
+                    let dt = (w[1].0 - w[0].0) as f32;
+                    if dt.abs() < 1e-6 {
+                        return Some(w[0].1);
+                    }
+                    let blend = (t - w[0].0) as f32 / dt;
+                    return Some(w[0].1 + (w[1].1 - w[0].1) * blend);
+                }
+            }
+            None
+        }
+
+        let mut samples: Vec<(f32, Option<[f32; 3]>, Option<[f32; 3]>)> = Vec::new();
+        let any_t = !t_curves[0].is_empty() || !t_curves[1].is_empty() || !t_curves[2].is_empty();
+        let any_r = !r_curves[0].is_empty() || !r_curves[1].is_empty() || !r_curves[2].is_empty();
+        for ticks in &sample_times {
+            let secs = (*ticks as f64 / FBX_TIME_PER_SECOND) as f32;
+            let t = if any_t {
+                Some([
+                    sample_curve(&t_curves[0], *ticks).unwrap_or(0.0),
+                    sample_curve(&t_curves[1], *ticks).unwrap_or(0.0),
+                    sample_curve(&t_curves[2], *ticks).unwrap_or(0.0),
+                ])
+            } else {
+                None
+            };
+            let r = if any_r {
+                Some([
+                    sample_curve(&r_curves[0], *ticks).unwrap_or(0.0),
+                    sample_curve(&r_curves[1], *ticks).unwrap_or(0.0),
+                    sample_curve(&r_curves[2], *ticks).unwrap_or(0.0),
+                ])
+            } else {
+                None
+            };
+            samples.push((secs, t, r));
+        }
+        let duration = samples.iter().map(|(t, _, _)| *t).fold(0.0_f32, f32::max);
+
+        clips.push(FbxAnimClip {
+            name: clip_name,
+            duration,
+            samples,
+        });
+    }
+
+    clips
 }
 
 fn triangulator(
@@ -361,8 +864,7 @@ fn triangulator(
 }
 
 fn load_fbx_ascii(bytes: &[u8]) -> Result<Mesh, String> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|e| format!("ASCII FBX: not UTF-8: {e}"))?;
+    let text = std::str::from_utf8(bytes).map_err(|e| format!("ASCII FBX: not UTF-8: {e}"))?;
 
     let mut vertices: Vec<Vertex3D> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
@@ -424,9 +926,13 @@ fn load_fbx_ascii(bytes: &[u8]) -> Result<Mesh, String> {
 
     let mut accum = vec![[0.0_f32; 3]; vertices.len()];
     for tri in indices.chunks(3) {
-        if tri.len() < 3 { continue; }
+        if tri.len() < 3 {
+            continue;
+        }
         let (a, b, c) = (tri[0] as usize, tri[1] as usize, tri[2] as usize);
-        if a >= vertices.len() || b >= vertices.len() || c >= vertices.len() { continue; }
+        if a >= vertices.len() || b >= vertices.len() || c >= vertices.len() {
+            continue;
+        }
         let pa = vertices[a].position;
         let pb = vertices[b].position;
         let pc = vertices[c].position;
@@ -472,13 +978,22 @@ fn find_matching_brace(text: &str, start: usize) -> usize {
 
 fn parse_named_float_array(block: &str, name: &str) -> Vec<f64> {
     let needle = format!("{name}:");
-    let mut idx = match block.find(&needle) { Some(i) => i, None => return Vec::new() };
+    let mut idx = match block.find(&needle) {
+        Some(i) => i,
+        None => return Vec::new(),
+    };
     idx += needle.len();
     let after = &block[idx..];
-    let inner_open = match after.find('{') { Some(i) => i, None => return Vec::new() };
+    let inner_open = match after.find('{') {
+        Some(i) => i,
+        None => return Vec::new(),
+    };
     let inner_close = find_matching_brace(after, inner_open + 1);
     let inner = &after[inner_open + 1..inner_close];
-    let a_idx = match inner.find("a:") { Some(i) => i + 2, None => return Vec::new() };
+    let a_idx = match inner.find("a:") {
+        Some(i) => i + 2,
+        None => return Vec::new(),
+    };
     let payload = &inner[a_idx..];
     payload
         .split(|c: char| c == ',' || c.is_whitespace())
@@ -489,13 +1004,22 @@ fn parse_named_float_array(block: &str, name: &str) -> Vec<f64> {
 
 fn parse_named_int_array(block: &str, name: &str) -> Vec<i32> {
     let needle = format!("{name}:");
-    let mut idx = match block.find(&needle) { Some(i) => i, None => return Vec::new() };
+    let mut idx = match block.find(&needle) {
+        Some(i) => i,
+        None => return Vec::new(),
+    };
     idx += needle.len();
     let after = &block[idx..];
-    let inner_open = match after.find('{') { Some(i) => i, None => return Vec::new() };
+    let inner_open = match after.find('{') {
+        Some(i) => i,
+        None => return Vec::new(),
+    };
     let inner_close = find_matching_brace(after, inner_open + 1);
     let inner = &after[inner_open + 1..inner_close];
-    let a_idx = match inner.find("a:") { Some(i) => i + 2, None => return Vec::new() };
+    let a_idx = match inner.find("a:") {
+        Some(i) => i + 2,
+        None => return Vec::new(),
+    };
     let payload = &inner[a_idx..];
     payload
         .split(|c: char| c == ',' || c.is_whitespace())

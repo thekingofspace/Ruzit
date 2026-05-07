@@ -64,9 +64,7 @@ pub fn hash_fn(lua: &Lua) -> mlua::Result<Function> {
                 }
             };
 
-            let encoding = encoding
-                .unwrap_or_else(|| "hex".to_string())
-                .to_lowercase();
+            let encoding = encoding.unwrap_or_else(|| "hex".to_string()).to_lowercase();
             match encoding.as_str() {
                 "hex" => lua.create_string(hex::encode(&digest)),
                 "hex-upper" | "HEX" => lua.create_string(hex::encode_upper(&digest)),

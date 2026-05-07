@@ -38,7 +38,7 @@ pub struct BuildConfig {
     pub file_type: FileType,
     pub exe_name: Option<String>,
     pub exe_icon: Option<String>,
-    
+
     pub exe_windowed: bool,
     pub steam_app_id: Option<u32>,
     pub compress_scripts: bool,
@@ -209,8 +209,8 @@ impl ManagedInfo {
                 folder.display()
             ));
         }
-        let text = std::fs::read_to_string(&path)
-            .map_err(|e| format!("read {}: {e}", path.display()))?;
+        let text =
+            std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
         Self::from_toml_str(&text)
     }
 }

@@ -3,9 +3,7 @@ use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use mlua::{
-    AnyUserData, Lua, MultiValue, Table, UserData, UserDataFields, UserDataMethods, Value,
-};
+use mlua::{AnyUserData, Lua, MultiValue, Table, UserData, UserDataFields, UserDataMethods, Value};
 
 use steamworks::{
     AppId, ChatMemberStateChange, Client, FriendFlags, FriendState, LobbyChatUpdate,
@@ -120,7 +118,10 @@ fn register_server_callbacks(server: &Server) {
     let q = evq.clone();
     let _ = server.register_callback(move |v: ValidateAuthTicketResponse| {
         if v.response.is_ok() {
-            q.lock().unwrap().server_client_authed.push(v.steam_id.raw());
+            q.lock()
+                .unwrap()
+                .server_client_authed
+                .push(v.steam_id.raw());
         }
     });
 }
@@ -252,8 +253,7 @@ fn drain_events(lua: &Lua) -> mlua::Result<()> {
     }
 
     for id in drained.server_client_authed {
-        let sig_opt =
-            SERVER_SIGNALS.with(|s| s.borrow().as_ref().map(|s| s.client_authed.clone()));
+        let sig_opt = SERVER_SIGNALS.with(|s| s.borrow().as_ref().map(|s| s.client_authed.clone()));
         if let Some(sig) = sig_opt {
             let mut args = MultiValue::new();
             args.push_back(Value::String(lua.create_string(&id.to_string())?));
@@ -316,7 +316,10 @@ impl UserData for LobbyHandle {
             let c = CLIENT
                 .get()
                 .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
-            Ok(c.matchmaking().lobby_owner(LobbyId::from_raw(this.id)).raw().to_string())
+            Ok(c.matchmaking()
+                .lobby_owner(LobbyId::from_raw(this.id))
+                .raw()
+                .to_string())
         });
         f.add_field_method_get("OnMemberJoined", |_, this| Ok(this.member_joined.clone()));
         f.add_field_method_get("OnMemberLeft", |_, this| Ok(this.member_left.clone()));
@@ -414,16 +417,13 @@ impl UserData for ServerHandle {
             s.set_map_name(&name);
             Ok(())
         });
-        m.add_method(
-            "SetMaxPlayers",
-            |_, _, max: i32| -> mlua::Result<()> {
-                let s = SERVER
-                    .get()
-                    .ok_or_else(|| mlua::Error::RuntimeError("Steam server not started".into()))?;
-                s.set_max_players(max);
-                Ok(())
-            },
-        );
+        m.add_method("SetMaxPlayers", |_, _, max: i32| -> mlua::Result<()> {
+            let s = SERVER
+                .get()
+                .ok_or_else(|| mlua::Error::RuntimeError("Steam server not started".into()))?;
+            s.set_max_players(max);
+            Ok(())
+        });
         m.add_method("LogOnAnonymous", |_, _, _: ()| -> mlua::Result<()> {
             let s = SERVER
                 .get()
@@ -454,7 +454,142 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     t.set("Cloud", build_cloud(lua)?)?;
     t.set("Workshop", build_workshop(lua)?)?;
     t.set("RemotePlay", build_remote_play(lua)?)?;
+    t.set("Launch", build_launch(lua)?)?;
     Ok(t)
+}
+
+/// `Steam.Launch.*` exposes everything we know about *how* the current
+/// process started up — Steam URL parameters, OS-level argv, env vars,
+/// active beta branch — so user code can adapt to "the player clicked a
+/// 'steam://run/<appid>//+connect 1.2.3.4' link" or "we were started
+/// directly from a desktop shortcut" without each subsystem having to
+/// re-derive that.
+fn build_launch(lua: &Lua) -> mlua::Result<Table> {
+    let t = lua.create_table()?;
+
+    t.set(
+        "GetCommandLine",
+        lua.create_function(|_, _: ()| -> mlua::Result<String> {
+            let c = CLIENT
+                .get()
+                .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
+            Ok(c.apps().launch_command_line())
+        })?,
+    )?;
+
+    t.set(
+        "GetQueryParam",
+        lua.create_function(|_, key: String| -> mlua::Result<Option<String>> {
+            let line = match CLIENT.get() {
+                Some(c) => c.apps().launch_command_line(),
+                None => return Ok(None),
+            };
+            Ok(parse_query_param(&line, &key))
+        })?,
+    )?;
+
+    t.set(
+        "GetCurrentBeta",
+        lua.create_function(|_, _: ()| -> mlua::Result<Option<String>> {
+            let c = CLIENT
+                .get()
+                .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
+            Ok(c.apps().current_beta_name())
+        })?,
+    )?;
+
+    t.set(
+        "GetRunType",
+        lua.create_function(|lua, _: ()| -> mlua::Result<Table> {
+            let info = lua.create_table()?;
+            let client = CLIENT.get();
+            let app_id_env = std::env::var("RUZIT_STEAM_APPID")
+                .ok()
+                .and_then(|s| s.parse::<u32>().ok());
+
+            let steam_command = client
+                .map(|c| c.apps().launch_command_line())
+                .unwrap_or_default();
+
+            let steam_env_signals = [
+                "SteamAppId",
+                "SteamGameId",
+                "SteamClientLaunch",
+                "STEAM_RUNTIME",
+            ];
+            let from_steam = steam_env_signals.iter().any(|k| std::env::var(k).is_ok())
+                || !steam_command.is_empty();
+
+            let source = if !steam_command.is_empty() {
+                "steam-url"
+            } else if from_steam {
+                "steam"
+            } else {
+                "direct"
+            };
+
+            info.set("Source", source)?;
+            info.set("WasLaunchedFromSteam", from_steam)?;
+            info.set("CommandLine", steam_command)?;
+
+            let app_id = client
+                .map(|c| c.utils().app_id().0)
+                .or(app_id_env)
+                .unwrap_or(0);
+            info.set("AppId", app_id)?;
+
+            if let Some(c) = client {
+                info.set("BuildId", c.apps().app_build_id())?;
+                info.set("OwnerID", c.apps().app_owner().raw().to_string())?;
+                if let Some(beta) = c.apps().current_beta_name() {
+                    info.set("BetaBranch", beta)?;
+                }
+                info.set("InstallDir", c.apps().app_install_dir(AppId(app_id)))?;
+                info.set("Language", c.apps().current_game_language())?;
+            }
+
+            let args = lua.create_table()?;
+            for (i, a) in std::env::args().skip(1).enumerate() {
+                args.set(i + 1, a)?;
+            }
+            info.set("ProcessArgs", args)?;
+
+            let env = lua.create_table()?;
+            for key in [
+                "SteamAppId",
+                "SteamGameId",
+                "SteamUser",
+                "STEAM_RUNTIME",
+                "STEAM_COMPAT_DATA_PATH",
+                "RUZIT_STEAM_APPID",
+            ] {
+                if let Ok(v) = std::env::var(key) {
+                    env.set(key, v)?;
+                }
+            }
+            info.set("Env", env)?;
+
+            Ok(info)
+        })?,
+    )?;
+
+    Ok(t)
+}
+
+/// Pull a `+key value` style argument out of a Steam launch command line.
+/// Steam delivers them as a single flat string (e.g. `+connect 1.2.3.4 +map dust`),
+/// so we tokenize by whitespace and scan for `+<key>` pairs. Returns the
+/// raw value token, with no quote-stripping — the caller is in a better
+/// position to know whether quotes are meaningful.
+fn parse_query_param(line: &str, key: &str) -> Option<String> {
+    let needle = format!("+{key}");
+    let mut iter = line.split_whitespace();
+    while let Some(tok) = iter.next() {
+        if tok.eq_ignore_ascii_case(&needle) {
+            return iter.next().map(|s| s.to_string());
+        }
+    }
+    None
 }
 
 fn build_app(lua: &Lua) -> mlua::Result<Table> {
@@ -731,18 +866,20 @@ fn build_cloud(lua: &Lua) -> mlua::Result<Table> {
     )?;
     t.set(
         "Write",
-        lua.create_function(|_, (name, data): (String, mlua::String)| -> mlua::Result<()> {
-            use std::io::Write;
-            let c = CLIENT
-                .get()
-                .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
-            let file = c.remote_storage().file(&name);
-            let mut writer = file.write();
-            writer
-                .write_all(&data.as_bytes())
-                .map_err(|e| mlua::Error::RuntimeError(format!("Cloud.Write: {e}")))?;
-            Ok(())
-        })?,
+        lua.create_function(
+            |_, (name, data): (String, mlua::String)| -> mlua::Result<()> {
+                use std::io::Write;
+                let c = CLIENT
+                    .get()
+                    .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
+                let file = c.remote_storage().file(&name);
+                let mut writer = file.write();
+                writer
+                    .write_all(&data.as_bytes())
+                    .map_err(|e| mlua::Error::RuntimeError(format!("Cloud.Write: {e}")))?;
+                Ok(())
+            },
+        )?,
     )?;
     t.set(
         "Delete",
@@ -782,10 +919,22 @@ fn build_workshop(lua: &Lua) -> mlua::Result<Table> {
                 .map_err(|e| mlua::Error::RuntimeError(format!("ItemState: bad id: {e}")))?;
             let state = c.ugc().item_state(steamworks::PublishedFileId(raw));
             let info = lua.create_table()?;
-            info.set("Subscribed", state.contains(steamworks::ItemState::SUBSCRIBED))?;
-            info.set("Installed", state.contains(steamworks::ItemState::INSTALLED))?;
-            info.set("NeedsUpdate", state.contains(steamworks::ItemState::NEEDS_UPDATE))?;
-            info.set("Downloading", state.contains(steamworks::ItemState::DOWNLOADING))?;
+            info.set(
+                "Subscribed",
+                state.contains(steamworks::ItemState::SUBSCRIBED),
+            )?;
+            info.set(
+                "Installed",
+                state.contains(steamworks::ItemState::INSTALLED),
+            )?;
+            info.set(
+                "NeedsUpdate",
+                state.contains(steamworks::ItemState::NEEDS_UPDATE),
+            )?;
+            info.set(
+                "Downloading",
+                state.contains(steamworks::ItemState::DOWNLOADING),
+            )?;
             info.set(
                 "DownloadPending",
                 state.contains(steamworks::ItemState::DOWNLOAD_PENDING),
@@ -841,9 +990,9 @@ fn build_workshop(lua: &Lua) -> mlua::Result<Table> {
                 let c = CLIENT
                     .get()
                     .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
-                let raw: u64 = id_str.parse().map_err(|e| {
-                    mlua::Error::RuntimeError(format!("DownloadItem: bad id: {e}"))
-                })?;
+                let raw: u64 = id_str
+                    .parse()
+                    .map_err(|e| mlua::Error::RuntimeError(format!("DownloadItem: bad id: {e}")))?;
                 Ok(c.ugc().download_item(
                     steamworks::PublishedFileId(raw),
                     high_priority.unwrap_or(false),
@@ -864,10 +1013,22 @@ fn build_workshop(lua: &Lua) -> mlua::Result<Table> {
             let state = c.ugc().item_state(pid);
             let info = lua.create_table()?;
             info.set("ID", id_str)?;
-            info.set("Subscribed", state.contains(steamworks::ItemState::SUBSCRIBED))?;
-            info.set("Installed", state.contains(steamworks::ItemState::INSTALLED))?;
-            info.set("NeedsUpdate", state.contains(steamworks::ItemState::NEEDS_UPDATE))?;
-            info.set("Downloading", state.contains(steamworks::ItemState::DOWNLOADING))?;
+            info.set(
+                "Subscribed",
+                state.contains(steamworks::ItemState::SUBSCRIBED),
+            )?;
+            info.set(
+                "Installed",
+                state.contains(steamworks::ItemState::INSTALLED),
+            )?;
+            info.set(
+                "NeedsUpdate",
+                state.contains(steamworks::ItemState::NEEDS_UPDATE),
+            )?;
+            info.set(
+                "Downloading",
+                state.contains(steamworks::ItemState::DOWNLOADING),
+            )?;
             info.set(
                 "DownloadPending",
                 state.contains(steamworks::ItemState::DOWNLOAD_PENDING),
@@ -887,10 +1048,7 @@ fn build_workshop(lua: &Lua) -> mlua::Result<Table> {
                                 if let Ok(ft) = entry.file_type() {
                                     if ft.is_file() {
                                         i += 1;
-                                        arr.set(
-                                            i,
-                                            entry.path().to_string_lossy().into_owned(),
-                                        )?;
+                                        arr.set(i, entry.path().to_string_lossy().into_owned())?;
                                     }
                                 }
                             }
@@ -1148,8 +1306,9 @@ fn build_user(lua: &Lua) -> mlua::Result<Table> {
                         .or_default()
                         .push((size, signal_table.clone()));
                 });
-                let still_loading =
-                    c.friends().request_user_information(SteamId::from_raw(raw), false);
+                let still_loading = c
+                    .friends()
+                    .request_user_information(SteamId::from_raw(raw), false);
                 if !still_loading {
                     let pending = PENDING_AVATARS.with(|m| m.borrow_mut().remove(&raw));
                     if let Some(entries) = pending {
@@ -1171,9 +1330,9 @@ fn build_user(lua: &Lua) -> mlua::Result<Table> {
             let c = CLIENT
                 .get()
                 .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
-            let raw: u64 = id_str.parse().map_err(|e| {
-                mlua::Error::RuntimeError(format!("GetFriendInfo: bad id: {e}"))
-            })?;
+            let raw: u64 = id_str
+                .parse()
+                .map_err(|e| mlua::Error::RuntimeError(format!("GetFriendInfo: bad id: {e}")))?;
             let friend = c.friends().get_friend(SteamId::from_raw(raw));
             let info = lua.create_table()?;
             info.set("ID", friend.id().raw().to_string())?;
@@ -1208,9 +1367,9 @@ fn build_user(lua: &Lua) -> mlua::Result<Table> {
                 let c = CLIENT
                     .get()
                     .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
-                let raw: u64 = id_str.parse().map_err(|e| {
-                    mlua::Error::RuntimeError(format!("RequestInfo: bad id: {e}"))
-                })?;
+                let raw: u64 = id_str
+                    .parse()
+                    .map_err(|e| mlua::Error::RuntimeError(format!("RequestInfo: bad id: {e}")))?;
                 Ok(c.friends()
                     .request_user_information(SteamId::from_raw(raw), name_only.unwrap_or(false)))
             },
@@ -1223,11 +1382,12 @@ fn build_user(lua: &Lua) -> mlua::Result<Table> {
                 let c = CLIENT
                     .get()
                     .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
-                let raw: u64 = id_str.parse().map_err(|e| {
-                    mlua::Error::RuntimeError(format!("InviteToGame: bad id: {e}"))
-                })?;
+                let raw: u64 = id_str
+                    .parse()
+                    .map_err(|e| mlua::Error::RuntimeError(format!("InviteToGame: bad id: {e}")))?;
                 let _friend = c.friends().get_friend(SteamId::from_raw(raw));
-                c.friends().activate_game_overlay_to_user("steamid", SteamId::from_raw(raw));
+                c.friends()
+                    .activate_game_overlay_to_user("steamid", SteamId::from_raw(raw));
                 let _ = connect_str;
                 Ok(())
             },
@@ -1517,7 +1677,9 @@ fn build_server(lua: &Lua) -> mlua::Result<Table> {
             }
             let game_port: u16 = opts.get("port").unwrap_or(27015);
             let query_port: u16 = opts.get("queryPort").unwrap_or(27016);
-            let mode_str: String = opts.get("mode").unwrap_or_else(|_| "NoAuthentication".into());
+            let mode_str: String = opts
+                .get("mode")
+                .unwrap_or_else(|_| "NoAuthentication".into());
             let version: String = opts.get("version").unwrap_or_else(|_| "1.0.0.0".into());
             let mode = match mode_str.as_str() {
                 "Authentication" => ServerMode::Authentication,
@@ -1546,9 +1708,7 @@ fn build_server(lua: &Lua) -> mlua::Result<Table> {
             register_server_callbacks(&server);
             let client_authed = signal::new_instance(lua)?;
             SERVER_SIGNALS.with(|s| {
-                *s.borrow_mut() = Some(ServerSignals {
-                    client_authed,
-                });
+                *s.borrow_mut() = Some(ServerSignals { client_authed });
             });
 
             let _ = SERVER.set(server);

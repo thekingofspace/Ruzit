@@ -1,9 +1,9 @@
-
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod commands;
 mod config;
 mod console;
+mod errors;
 mod heart;
 mod icon;
 mod libs;
@@ -25,12 +25,22 @@ fn print_usage() {
     eprintln!("Ruzit — Luau runner & packager\n");
     eprintln!("Usage:");
     eprintln!("  Ruzit Init        [path]        scaffold a new project");
-    eprintln!("  Ruzit InitPackage [path]        scaffold a Managed package folder (ManagedInfo.toml + init.luau)");
-    eprintln!("  Ruzit Test        [path]        run a Luau file (default: Main.luau next to the exe / in CWD)");
-    eprintln!("  Ruzit Build       [path] [-o]   produce Generated/<exe> + Generated/Managed/*.managed");
-    eprintln!("  Ruzit Package     [folder] [-o] produce <id>.scripts.managed + <id>.assets.managed from a folder containing ManagedInfo.toml");
+    eprintln!(
+        "  Ruzit InitPackage [path]        scaffold a Managed package folder (ManagedInfo.toml + init.luau)"
+    );
+    eprintln!(
+        "  Ruzit Test        [path]        run a Luau file (default: Main.luau next to the exe / in CWD)"
+    );
+    eprintln!(
+        "  Ruzit Build       [path] [-o]   produce Generated/<exe> + Generated/Managed/*.managed"
+    );
+    eprintln!(
+        "  Ruzit Package     [folder] [-o] produce <id>.scripts.managed + <id>.assets.managed from a folder containing ManagedInfo.toml"
+    );
     eprintln!("\nGlobal flags:");
-    eprintln!("  --console                       attach/allocate a console window (for windowed launchers)");
+    eprintln!(
+        "  --console                       attach/allocate a console window (for windowed launchers)"
+    );
 }
 
 fn dispatch(args: &[String]) -> Result<(), String> {
@@ -105,22 +115,32 @@ fn run_launcher(info: package::LauncherInfo) -> Result<(), String> {
             managed_dir.display()
         ));
     }
-    let default = loaded
-        .get(&info.default_id)
-        .ok_or_else(|| {
-            format!(
-                "default package '{}' not found in {} (loaded: {})",
-                info.default_id,
-                managed_dir.display(),
-                loaded.keys().cloned().collect::<Vec<_>>().join(", ")
-            )
-        })?;
+    let default = loaded.get(&info.default_id).ok_or_else(|| {
+        format!(
+            "default package '{}' not found in {} (loaded: {})",
+            info.default_id,
+            managed_dir.display(),
+            loaded.keys().cloned().collect::<Vec<_>>().join(", ")
+        )
+    })?;
 
     println!(
         "[Ruzit] Launcher → {} v{} by {}  (default: {}, packages: {})",
-        if info.name.is_empty() { &info.default_id } else { &info.name },
-        if info.version.is_empty() { "?" } else { &info.version },
-        if info.creator.is_empty() { "(no creator)" } else { &info.creator },
+        if info.name.is_empty() {
+            &info.default_id
+        } else {
+            &info.name
+        },
+        if info.version.is_empty() {
+            "?"
+        } else {
+            &info.version
+        },
+        if info.creator.is_empty() {
+            "(no creator)"
+        } else {
+            &info.creator
+        },
         info.default_id,
         loaded.len()
     );
@@ -157,10 +177,6 @@ fn run_launcher(info: package::LauncherInfo) -> Result<(), String> {
     runtime::run_entry(fs_layer, &default_entry)
 }
 
-// The Steamworks redistributable ships under different file names on each OS,
-// so we embed whichever one matches the host target at build time. build.rs
-// copies the right file into OUT_DIR (or writes an empty stub if Steamworks
-// isn't being linked, which we treat as "skip").
 #[cfg(target_os = "windows")]
 const EMBEDDED_STEAM_LIB: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/steam_api64.dll"));
 #[cfg(target_os = "windows")]
@@ -185,8 +201,12 @@ fn ensure_steam_redist_alongside_exe() {
     if EMBEDDED_STEAM_LIB.is_empty() || STEAM_LIB_NAME.is_empty() {
         return;
     }
-    let Ok(self_exe) = env::current_exe() else { return };
-    let Some(self_dir) = self_exe.parent() else { return };
+    let Ok(self_exe) = env::current_exe() else {
+        return;
+    };
+    let Some(self_dir) = self_exe.parent() else {
+        return;
+    };
     let lib_path = self_dir.join(STEAM_LIB_NAME);
     if lib_path.is_file() {
         return;

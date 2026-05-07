@@ -1,4 +1,3 @@
-
 use mlua::{AnyUserData, Lua, Table, UserData, UserDataFields, UserDataMethods, Value};
 
 fn lerp_f(a: f32, b: f32, t: f32) -> f32 {
@@ -67,7 +66,7 @@ impl UserData for Dim {
                 Ok(Dim::new(a.x - b.x, a.y - b.y))
             },
         );
-        
+
         m.add_meta_function("__mul", |_, (a, b): (Value, Value)| -> mlua::Result<Dim> {
             let (d, s) = pair_with_scalar::<Dim>(&a, &b, "Dim * expects (Dim, number)")?;
             Ok(Dim::new(d.x * s, d.y * s))
@@ -404,7 +403,7 @@ impl UserData for CFrame {
                     && a.rotation.z == b.rotation.z)
             },
         );
-        
+
         m.add_meta_function(
             "__lt",
             |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<bool> {
@@ -431,7 +430,7 @@ impl UserData for CFrame {
                     && a.rotation.z <= b.rotation.z)
             },
         );
-        
+
         m.add_meta_function(
             "__add",
             |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<CFrame> {
@@ -475,9 +474,7 @@ impl UserData for CFrame {
             "__mul",
             |lua, (a, b): (Value, Value)| -> mlua::Result<Value> {
                 let lhs = as_userdata::<CFrame>(&a).ok_or_else(|| {
-                    mlua::Error::RuntimeError(
-                        "CFrame * expects CFrame on the left".into(),
-                    )
+                    mlua::Error::RuntimeError("CFrame * expects CFrame on the left".into())
                 })?;
                 let lhs_mat = euler_to_matrix(lhs.rotation);
 
@@ -587,20 +584,10 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     vec_class.set(
         "new",
         lua.create_function(|_, args: mlua::MultiValue| -> mlua::Result<Vector> {
-            
             let mut iter = args.into_iter();
-            let x = iter
-                .next()
-                .and_then(|v| as_scalar(&v))
-                .unwrap_or(0.0);
-            let y = iter
-                .next()
-                .and_then(|v| as_scalar(&v))
-                .unwrap_or(0.0);
-            let z = iter
-                .next()
-                .and_then(|v| as_scalar(&v))
-                .unwrap_or(0.0);
+            let x = iter.next().and_then(|v| as_scalar(&v)).unwrap_or(0.0);
+            let y = iter.next().and_then(|v| as_scalar(&v)).unwrap_or(0.0);
+            let z = iter.next().and_then(|v| as_scalar(&v)).unwrap_or(0.0);
             Ok(Vector::new(x, y, z))
         })?,
     )?;
@@ -639,7 +626,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
             },
         )?,
     )?;
-    
+
     cframe_class.set(
         "Angles",
         lua.create_function(|_, (rx, ry, rz): (f32, f32, f32)| {

@@ -75,9 +75,7 @@ fn table_to_json(t: &Table) -> mlua::Result<JsonValue> {
         }
     }
 
-    let is_array = total_keys > 0
-        && numeric_keys == total_keys
-        && len as usize == total_keys;
+    let is_array = total_keys > 0 && numeric_keys == total_keys && len as usize == total_keys;
 
     if is_array {
         let mut arr = Vec::with_capacity(len as usize);

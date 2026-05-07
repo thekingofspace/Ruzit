@@ -1,4 +1,3 @@
-
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -63,7 +62,6 @@ fn walk(
             continue;
         }
         if path.is_dir() {
-            
             if path.join("ManagedInfo.toml").is_file() {
                 continue;
             }
@@ -80,10 +78,7 @@ fn walk(
         }
         if rel.starts_with("assets/") {
             let bytes = fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-            // Strip the leading "assets/" component so the stored key matches
-            // the user-facing path. Asset.GetAsset("Image", "ui.logo") and
-            // Asset.GetAsset("Image", "ui/logo") both resolve to the bundle
-            // key "ui/logo.png" — never "assets/ui/logo.png".
+
             let key = rel
                 .strip_prefix("assets/")
                 .map(|s| s.to_string())
@@ -133,7 +128,7 @@ fn walk_for_dlcs(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), 
         }
         if path.join("ManagedInfo.toml").is_file() {
             out.push(path);
-            continue; 
+            continue;
         }
         walk_for_dlcs(root, &path, out)?;
     }
@@ -374,7 +369,11 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
                 if let Some(obj) = parsed.get("files").and_then(|v| v.as_object()) {
                     for (k, v) in obj {
                         if let Some(s) = v.as_str() {
-                            let stored = if header_compressed { s.to_string() } else { strip_bom(s.to_string()) };
+                            let stored = if header_compressed {
+                                s.to_string()
+                            } else {
+                                strip_bom(s.to_string())
+                            };
                             pkg.files.insert(k.clone(), stored);
                         }
                     }
@@ -385,10 +384,8 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
                 if let Some(obj) = parsed.get("assets").and_then(|v| v.as_object()) {
                     for (k, v) in obj {
                         if let Some(b64) = v.as_str() {
-                            let normalized = k
-                                .strip_prefix("assets/")
-                                .unwrap_or(k.as_str())
-                                .to_string();
+                            let normalized =
+                                k.strip_prefix("assets/").unwrap_or(k.as_str()).to_string();
                             pkg.assets.insert(normalized, b64.to_string());
                         }
                     }
@@ -417,14 +414,9 @@ pub fn write_launcher_exe(
     let trailer_bytes = serde_json::to_vec(&trailer).map_err(|e| e.to_string())?;
 
     let self_exe = env::current_exe().map_err(|e| e.to_string())?;
-    let mut exe_bytes = fs::read(&self_exe)
-        .map_err(|e| format!("read {}: {e}", self_exe.display()))?;
+    let mut exe_bytes =
+        fs::read(&self_exe).map_err(|e| format!("read {}: {e}", self_exe.display()))?;
 
-    // PE subsystem patching (windowed vs console) is Windows-only — the bytes
-    // we just read are an ELF or Mach-O on Linux/macOS and have no PE header
-    // to patch. winit/wgpu still spawn a graphical window on those platforms
-    // regardless of `windowed`, since there's no equivalent of "console
-    // subsystem" outside Windows.
     #[cfg(windows)]
     {
         if windowed {
@@ -447,9 +439,6 @@ pub fn write_launcher_exe(
     }
     drop(exe_bytes);
 
-    // Icon embedding rewrites the PE resource directory; it's Windows-only.
-    // Linux/macOS desktop icons are set by .desktop files / .app bundles, not
-    // by editing the binary, so we silently skip the icon there.
     #[cfg(windows)]
     if let Some(ico) = icon_bytes {
         let mut last_err = String::new();
@@ -531,7 +520,13 @@ pub fn try_self_launcher() -> Option<LauncherInfo> {
         steam_app_id: parsed
             .get("steam_app_id")
             .and_then(|v| v.as_u64())
-            .and_then(|v| if v <= u32::MAX as u64 { Some(v as u32) } else { None }),
+            .and_then(|v| {
+                if v <= u32::MAX as u64 {
+                    Some(v as u32)
+                } else {
+                    None
+                }
+            }),
     })
 }
 

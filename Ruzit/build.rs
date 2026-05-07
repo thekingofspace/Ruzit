@@ -16,10 +16,6 @@ fn main() {
 
     let sys_out = locate_steamworks_sys_out(&out_dir);
 
-    // Per-OS list of redistributable file names that steamworks-sys drops in
-    // its OUT_DIR. On Windows we also ship the import library so /DELAYLOAD
-    // resolves at link time; on Linux/macOS the dynamic loader handles it via
-    // rpath at runtime.
     let candidates: &[&str] = match target_os.as_str() {
         "windows" => &[
             "steam_api64.dll",
@@ -42,8 +38,7 @@ fn main() {
                 }
             }
         }
-        // Also stage the runtime-loadable library inside OUT_DIR so include_bytes!
-        // in main.rs can pick it up.
+
         let runtime_libs: &[&str] = match target_os.as_str() {
             "windows" => &["steam_api64.dll", "steam_api.dll"],
             "linux" => &["libsteam_api.so"],
@@ -59,10 +54,6 @@ fn main() {
         }
     }
 
-    // include_bytes! in main.rs requires the file to exist even if it's empty
-    // (e.g. Steamworks isn't being linked, or we're cross-compiling without the
-    // matching SDK). An empty stub makes EMBEDDED_STEAM_LIB.is_empty() true at
-    // runtime and the Steam plumbing silently no-ops.
     let stub_libs: &[&str] = match target_os.as_str() {
         "windows" => &["steam_api64.dll", "steam_api.dll"],
         "linux" => &["libsteam_api.so"],
@@ -76,12 +67,6 @@ fn main() {
         }
     }
 
-    // Linker plumbing so the Steamworks redistributable is found next to the
-    // launcher executable instead of via a system-wide search path.
-    //   * Windows/MSVC: DELAYLOAD postpones binding until first call, so a
-    //     missing DLL never aborts startup; delayimp.lib provides the helper.
-    //   * Linux: $ORIGIN rpath looks in the directory containing the binary.
-    //   * macOS: @executable_path serves the same purpose.
     if cfg!(target_env = "msvc") {
         println!("cargo:rustc-link-arg-bin=Ruzit=/DELAYLOAD:steam_api64.dll");
         println!("cargo:rustc-link-arg-bin=Ruzit=delayimp.lib");

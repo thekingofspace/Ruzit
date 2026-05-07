@@ -1,18 +1,18 @@
-
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use mlua::{
-    AnyUserData, Lua, MultiValue, Table, UserData, UserDataFields, UserDataMethods, Value,
-};
+use mlua::{AnyUserData, Lua, MultiValue, Table, UserData, UserDataFields, UserDataMethods, Value};
 
 use crate::libs::asset::{FragmentAsset, ImageAsset, ModelAsset, ShaderAsset};
 use crate::libs::primitives::{CFrame, Color3, Vector};
 use crate::libs::signal;
 
+pub mod animation;
 pub mod mesh;
+
+use animation::{AnimationTrack, Keyframe, KeyframeAction, TrackBaseline, TrackRef, TrackState};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -59,12 +59,29 @@ pub struct PartState {
     pub changed_signal: Table,
 
     pub model: Option<ModelRef>,
+    /// Per-part deformed vertex data; takes precedence over `model.vertices`
+    /// at render time. Lazily initialised on the first `Deform` call so parts
+    /// that never deform pay nothing extra. Bumping `deform_version` is what
+    /// tells the renderer's bind-group cache to re-upload.
+    pub deformed: Option<ModelRef>,
+    pub deform_version: u64,
 
     pub texture: Option<PartTextureRef>,
 
     pub cast_shadow: bool,
     pub receive_shadow: bool,
     pub ignore_raycast: bool,
+
+    /// Tracks owned by this part. Indexed by name from the Lua side so the
+    /// same track is returned for repeated `:GetTrack("walk")` calls — the
+    /// AnimationTrack userdata carries the Arc<Mutex<...>>.
+    pub tracks: Vec<TrackRef>,
+
+    /// FBX-parsed animation clips inherited from the source ModelAsset.
+    /// `:GetTrack(name)` consults this when materialising a new track so
+    /// the keyframes are pre-populated from the FBX file. None for
+    /// non-FBX models or for synthesised meshes (Cube/Sphere).
+    pub source_animations: Option<Arc<Vec<mesh::FbxAnimClip>>>,
 }
 
 thread_local! {
@@ -112,12 +129,8 @@ pub struct CameraState {
 
 impl Default for CameraState {
     fn default() -> Self {
-        
         Self {
-            cframe: CFrame::new(
-                Vector::new(4.0, 3.0, 5.0),
-                Vector::new(-0.4, 0.65, 0.0),
-            ),
+            cframe: CFrame::new(Vector::new(4.0, 3.0, 5.0), Vector::new(-0.4, 0.65, 0.0)),
             fov_deg: 60.0,
             near: 0.1,
             far: 1000.0,
@@ -173,7 +186,8 @@ pub fn snapshot() -> Vec<PartRender> {
                     size: s.size,
                     color: s.color,
                     active_shader: s.attached.last().cloned(),
-                    model: s.model.clone(),
+
+                    model: s.deformed.clone().or_else(|| s.model.clone()),
                     texture: s.texture.clone(),
                     cast_shadow: s.cast_shadow,
                     receive_shadow: s.receive_shadow,
@@ -193,6 +207,15 @@ impl PartHandle {
     }
 
     fn new_shape(lua: &Lua, shape: PartShape, model: Option<ModelRef>) -> mlua::Result<Self> {
+        Self::new_shape_with(lua, shape, model, None)
+    }
+
+    fn new_shape_with(
+        lua: &Lua,
+        shape: PartShape,
+        model: Option<ModelRef>,
+        source_animations: Option<Arc<Vec<mesh::FbxAnimClip>>>,
+    ) -> mlua::Result<Self> {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         let changed_signal = signal::new_instance(lua)?;
         let state = Arc::new(Mutex::new(PartState {
@@ -206,10 +229,14 @@ impl PartHandle {
             attached: Vec::new(),
             changed_signal,
             model,
+            deformed: None,
+            deform_version: 0,
             texture: None,
             cast_shadow: true,
             receive_shadow: true,
             ignore_raycast: false,
+            tracks: Vec::new(),
+            source_animations,
         }));
         PARTS.with(|cell| cell.borrow_mut().push(state.clone()));
         Ok(Self { state })
@@ -415,7 +442,6 @@ impl UserData for PartHandle {
         });
 
         f.add_field_method_get("Texture", |lua, this| -> mlua::Result<Value> {
-            
             let s = this.state.lock().unwrap();
             match &s.texture {
                 Some(_) => Ok(Value::Boolean(true)),
@@ -512,9 +538,7 @@ impl UserData for PartHandle {
                 let id = shader_asset_id(&asset)?;
                 let s = this.state.lock().unwrap();
                 let entry = s.attached.iter().find(|e| e.id == id).ok_or_else(|| {
-                    mlua::Error::RuntimeError(
-                        "SetData: shader is not attached to this part".into(),
-                    )
+                    mlua::Error::RuntimeError("SetData: shader is not attached to this part".into())
                 })?;
                 let slot = *entry.slot_of_name.get(&name).ok_or_else(|| {
                     mlua::Error::RuntimeError(format!(
@@ -531,9 +555,7 @@ impl UserData for PartHandle {
                 let id = shader_asset_id(&asset)?;
                 let s = this.state.lock().unwrap();
                 let entry = s.attached.iter().find(|e| e.id == id).ok_or_else(|| {
-                    mlua::Error::RuntimeError(
-                        "GetData: shader is not attached to this part".into(),
-                    )
+                    mlua::Error::RuntimeError("GetData: shader is not attached to this part".into())
                 })?;
                 let Some(slot) = entry.slot_of_name.get(&name) else {
                     return Ok(None);
@@ -541,6 +563,432 @@ impl UserData for PartHandle {
                 Ok(Some(entry.params.lock().unwrap()[*slot as usize]))
             },
         );
+
+        m.add_method(
+            "Deform",
+            |_, this, (target, envelope, disp): (AnyUserData, f32, AnyUserData)| -> mlua::Result<u32> {
+                this.ensure_alive("Deform")?;
+                let cf = *target.borrow::<CFrame>().map_err(|_| {
+                    mlua::Error::RuntimeError(
+                        "Deform: first argument must be a CFrame (target point on the mesh)".into(),
+                    )
+                })?;
+                let d = *disp.borrow::<Vector>().map_err(|_| {
+                    mlua::Error::RuntimeError(
+                        "Deform: third argument must be a Vector (displacement)".into(),
+                    )
+                })?;
+                let mut s = this.state.lock().unwrap();
+                let base_model = s
+                    .deformed
+                    .clone()
+                    .or_else(|| s.model.clone())
+                    .ok_or_else(|| {
+                        mlua::Error::RuntimeError(
+                            "Deform: this Part has no mesh (Deform only applies to Renderable.BaseModel parts)"
+                                .into(),
+                        )
+                    })?;
+                let base_id = s.model.as_ref().map(|m| m.id).unwrap_or(base_model.id);
+                let mut working: Vec<mesh::Vertex3D> = (*base_model.vertices).clone();
+                let touched = mesh::deform_blob(
+                    &mut working,
+                    [cf.position.x, cf.position.y, cf.position.z],
+                    envelope,
+                    [d.x, d.y, d.z],
+                );
+                mesh::recompute_normals(&mut working, &base_model.indices);
+                s.deformed = Some(ModelRef {
+                    id: base_id,
+                    vertices: Arc::new(working),
+                    indices: base_model.indices.clone(),
+                });
+                s.deform_version = s.deform_version.wrapping_add(1);
+                Ok(touched as u32)
+            },
+        );
+
+        m.add_method("ResetDeformation", |_, this, _: ()| -> mlua::Result<()> {
+            this.ensure_alive("ResetDeformation")?;
+            let mut s = this.state.lock().unwrap();
+            if s.deformed.is_some() {
+                s.deformed = None;
+                s.deform_version = s.deform_version.wrapping_add(1);
+            }
+            Ok(())
+        });
+
+        m.add_method(
+            "GetTrack",
+            |_, this, name: String| -> mlua::Result<AnimationTrackHandle> {
+                this.ensure_alive("GetTrack")?;
+                let mut s = this.state.lock().unwrap();
+                if let Some(existing) = s
+                    .tracks
+                    .iter()
+                    .find(|t| t.lock().unwrap().name == name)
+                    .cloned()
+                {
+                    return Ok(AnimationTrackHandle {
+                        track: existing,
+                        part: this.state.clone(),
+                    });
+                }
+                let mut track = AnimationTrack::new(name.clone());
+                if let Some(anims) = &s.source_animations {
+                    if let Some(clip) = anims.iter().find(|c| c.name == name) {
+                        populate_track_from_fbx(&mut track, clip);
+                    }
+                }
+                let new_track = Arc::new(Mutex::new(track));
+                s.tracks.push(new_track.clone());
+                Ok(AnimationTrackHandle {
+                    track: new_track,
+                    part: this.state.clone(),
+                })
+            },
+        );
+
+        m.add_method("GetTrackNames", |lua, this, _: ()| -> mlua::Result<Table> {
+            let s = this.state.lock().unwrap();
+            let out = lua.create_table()?;
+            if let Some(anims) = &s.source_animations {
+                for (i, clip) in anims.iter().enumerate() {
+                    out.set(i + 1, clip.name.clone())?;
+                }
+            }
+            Ok(out)
+        });
+
+        m.add_method("GetTracks", |lua, this, _: ()| -> mlua::Result<Table> {
+            let s = this.state.lock().unwrap();
+            let out = lua.create_table()?;
+            for (i, t) in s.tracks.iter().enumerate() {
+                out.set(
+                    i + 1,
+                    AnimationTrackHandle {
+                        track: t.clone(),
+                        part: this.state.clone(),
+                    },
+                )?;
+            }
+            Ok(out)
+        });
+    }
+}
+
+/// Userdata wrapper around `Arc<Mutex<AnimationTrack>>` plus the part it's
+/// attached to (needed so Play()/Reset() can read the part's CFrame and
+/// model as a baseline).
+#[derive(Clone)]
+pub struct AnimationTrackHandle {
+    pub track: TrackRef,
+    pub part: Arc<Mutex<PartState>>,
+}
+
+impl UserData for AnimationTrackHandle {
+    fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
+        f.add_field_method_get("Name", |_, this| {
+            Ok(this.track.lock().unwrap().name.clone())
+        });
+        f.add_field_method_get("FadeTime", |_, this| {
+            Ok(this.track.lock().unwrap().fade_time)
+        });
+        f.add_field_method_set("FadeTime", |_, this, v: f32| {
+            this.track.lock().unwrap().fade_time = v.max(0.0);
+            Ok(())
+        });
+        f.add_field_method_get("Looped", |_, this| Ok(this.track.lock().unwrap().looped));
+        f.add_field_method_set("Looped", |_, this, v: bool| {
+            this.track.lock().unwrap().looped = v;
+            Ok(())
+        });
+        f.add_field_method_get("Speed", |_, this| Ok(this.track.lock().unwrap().speed));
+        f.add_field_method_set("Speed", |_, this, v: f32| {
+            this.track.lock().unwrap().speed = v;
+            Ok(())
+        });
+        f.add_field_method_get("Length", |_, this| Ok(this.track.lock().unwrap().duration));
+        f.add_field_method_get("TimePosition", |_, this| {
+            Ok(this.track.lock().unwrap().time)
+        });
+        f.add_field_method_set("TimePosition", |_, this, v: f32| {
+            this.track.lock().unwrap().time = v.max(0.0);
+            Ok(())
+        });
+        f.add_field_method_get("IsPlaying", |_, this| {
+            Ok(this.track.lock().unwrap().state == TrackState::Playing)
+        });
+        f.add_field_method_get("IsPaused", |_, this| {
+            Ok(this.track.lock().unwrap().state == TrackState::Paused)
+        });
+    }
+
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method("Play", |_, this, _: ()| -> mlua::Result<()> {
+            let baseline = {
+                let p = this.part.lock().unwrap();
+                let model = p.deformed.clone().or_else(|| p.model.clone());
+                TrackBaseline {
+                    cframe: Some(p.cframe),
+                    vertices: model.as_ref().map(|m| m.vertices.clone()),
+                }
+            };
+            let mut t = this.track.lock().unwrap();
+            t.baseline = baseline;
+            t.time = 0.0;
+            t.state = TrackState::Playing;
+            Ok(())
+        });
+
+        m.add_method("Pause", |_, this, _: ()| -> mlua::Result<()> {
+            let mut t = this.track.lock().unwrap();
+            if t.state == TrackState::Playing {
+                t.state = TrackState::Paused;
+            }
+            Ok(())
+        });
+
+        m.add_method("Resume", |_, this, _: ()| -> mlua::Result<()> {
+            let mut t = this.track.lock().unwrap();
+            if t.state == TrackState::Paused {
+                t.state = TrackState::Playing;
+            }
+            Ok(())
+        });
+
+        m.add_method("Stop", |_, this, _: ()| -> mlua::Result<()> {
+            let mut t = this.track.lock().unwrap();
+            t.state = TrackState::Stopped;
+            t.time = 0.0;
+            Ok(())
+        });
+
+        m.add_method("Reset", |_, this, _: ()| -> mlua::Result<()> {
+            let baseline = {
+                let mut t = this.track.lock().unwrap();
+                t.state = TrackState::Stopped;
+                t.time = 0.0;
+                t.baseline.clone()
+            };
+            let mut p = this.part.lock().unwrap();
+            if let Some(cf) = baseline.cframe {
+                p.cframe = cf;
+            }
+
+            if let Some(verts) = baseline.vertices {
+                let base_model = p.model.clone();
+                let same_as_base = base_model
+                    .as_ref()
+                    .map(|m| Arc::ptr_eq(&m.vertices, &verts))
+                    .unwrap_or(false);
+                if same_as_base {
+                    p.deformed = None;
+                } else if let Some(m) = base_model {
+                    p.deformed = Some(ModelRef {
+                        id: m.id,
+                        vertices: verts,
+                        indices: m.indices.clone(),
+                    });
+                }
+                p.deform_version = p.deform_version.wrapping_add(1);
+            }
+            Ok(())
+        });
+
+        m.add_method(
+            "AddKeyframe",
+            |_, this, args: MultiValue| -> mlua::Result<()> {
+                let mut iter = args.into_iter();
+                let time = match iter.next() {
+                    Some(Value::Number(n)) => n as f32,
+                    Some(Value::Integer(n)) => n as f32,
+                    _ => {
+                        return Err(mlua::Error::RuntimeError(
+                            "AddKeyframe: first arg must be a number (time in seconds)".into(),
+                        ));
+                    }
+                };
+                let kind = match iter.next() {
+                    Some(Value::String(s)) => s.to_str()?.to_string(),
+                    _ => {
+                        return Err(mlua::Error::RuntimeError(
+                            "AddKeyframe: second arg must be \"CFrame\" or \"Deform\"".into(),
+                        ));
+                    }
+                };
+                let action = match kind.as_str() {
+                    "CFrame" => {
+                        let cf_ud = match iter.next() {
+                            Some(Value::UserData(u)) => u,
+                            _ => {
+                                return Err(mlua::Error::RuntimeError(
+                                    "AddKeyframe(\"CFrame\"): need a CFrame as the third arg"
+                                        .into(),
+                                ));
+                            }
+                        };
+                        let cf = *cf_ud.borrow::<CFrame>()?;
+                        KeyframeAction::Cframe(cf)
+                    }
+                    "Deform" => {
+                        let cf_ud = match iter.next() {
+                            Some(Value::UserData(u)) => u,
+                            _ => {
+                                return Err(mlua::Error::RuntimeError(
+                                    "AddKeyframe(\"Deform\"): need (cframe, envelope, displacement) after the kind".into(),
+                                ));
+                            }
+                        };
+                        let envelope = match iter.next() {
+                            Some(Value::Number(n)) => n as f32,
+                            Some(Value::Integer(n)) => n as f32,
+                            _ => {
+                                return Err(mlua::Error::RuntimeError(
+                                    "AddKeyframe(\"Deform\"): envelope must be a number".into(),
+                                ));
+                            }
+                        };
+                        let disp_ud = match iter.next() {
+                            Some(Value::UserData(u)) => u,
+                            _ => {
+                                return Err(mlua::Error::RuntimeError(
+                                    "AddKeyframe(\"Deform\"): displacement must be a Vector"
+                                        .into(),
+                                ));
+                            }
+                        };
+                        let cf = *cf_ud.borrow::<CFrame>()?;
+                        let d = *disp_ud.borrow::<Vector>()?;
+                        KeyframeAction::Deform {
+                            center: [cf.position.x, cf.position.y, cf.position.z],
+                            envelope,
+                            displacement: [d.x, d.y, d.z],
+                        }
+                    }
+                    other => {
+                        return Err(mlua::Error::RuntimeError(format!(
+                            "AddKeyframe: unknown kind '{other}' (expected \"CFrame\" or \"Deform\")"
+                        )));
+                    }
+                };
+                this.track
+                    .lock()
+                    .unwrap()
+                    .add_keyframe(Keyframe { time, action });
+                Ok(())
+            },
+        );
+
+        m.add_method("ClearKeyframes", |_, this, _: ()| -> mlua::Result<()> {
+            let mut t = this.track.lock().unwrap();
+            t.keyframes.clear();
+            t.duration = 0.0;
+            Ok(())
+        });
+    }
+}
+
+/// Translate an FBX-extracted animation clip into AnimationTrack keyframes.
+/// Each FBX sample becomes one CFrame keyframe whose position is the FBX
+/// translation channel and whose rotation is the FBX Euler-degree channel
+/// (we store rotation in the same XYZ-degree convention `CFrame.new` already
+/// uses, so no extra conversion is needed). Looped is left to the user —
+/// the FBX file format has no "should this clip loop" flag.
+fn populate_track_from_fbx(track: &mut AnimationTrack, clip: &mesh::FbxAnimClip) {
+    track.duration = clip.duration;
+    for (t, trans, rot) in &clip.samples {
+        let pos = trans
+            .map(|p| Vector::new(p[0], p[1], p[2]))
+            .unwrap_or_else(|| Vector::new(0.0, 0.0, 0.0));
+        let r = rot
+            .map(|r| Vector::new(r[0], r[1], r[2]))
+            .unwrap_or_else(|| Vector::new(0.0, 0.0, 0.0));
+        track.keyframes.push(Keyframe {
+            time: *t,
+            action: KeyframeAction::Cframe(CFrame::new(pos, r)),
+        });
+    }
+    track.keyframes.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+}
+
+/// Tick every track attached to every alive part by `dt` seconds. Called
+/// once per frame from the heart loop. Multi-track parts are evaluated in
+/// insertion order and later tracks overwrite earlier ones — the simplest
+/// behavior that's still useful, with proper blending left for later.
+pub fn tick_animations(dt: f32) {
+    if dt <= 0.0 {
+        return;
+    }
+    let parts = list_part_states();
+    for part_arc in parts {
+        let snapshot = {
+            let p = part_arc.lock().unwrap();
+            if p.tracks.is_empty() {
+                continue;
+            }
+            let base_model = p.model.clone();
+            let base_cframe = p.cframe;
+            (
+                p.tracks.clone(),
+                base_cframe,
+                base_model.as_ref().map(|m| m.vertices.clone()),
+                base_model.as_ref().map(|m| m.indices.clone()),
+                base_model.as_ref().map(|m| m.id),
+            )
+        };
+        let (tracks, base_cframe, base_verts, base_indices, base_id) = snapshot;
+        for tref in tracks {
+            let mut track = tref.lock().unwrap();
+            let baseline_cf = track.baseline.cframe.unwrap_or(base_cframe);
+            let baseline_verts = track
+                .baseline
+                .vertices
+                .clone()
+                .or_else(|| base_verts.clone());
+            let baseline_indices = base_indices.clone();
+            let (Some(bv), Some(bi)) = (baseline_verts, baseline_indices) else {
+                let eval = animation::tick_track(
+                    &mut track,
+                    dt,
+                    baseline_cf,
+                    Arc::new(Vec::new()),
+                    Arc::new(Vec::new()),
+                );
+                drop(track);
+                if let Some(cf) = eval.cframe_override {
+                    let mut p = part_arc.lock().unwrap();
+                    p.cframe = cf;
+                }
+                continue;
+            };
+            let eval = animation::tick_track(&mut track, dt, baseline_cf, bv, bi);
+            drop(track);
+
+            let mut p = part_arc.lock().unwrap();
+            if let Some(cf) = eval.cframe_override {
+                p.cframe = cf;
+            }
+            if let Some(verts) = eval.vertices_override {
+                let id = base_id.unwrap_or(0);
+                let indices = eval.indices_for_normals.unwrap_or_else(|| {
+                    p.model
+                        .as_ref()
+                        .map(|m| m.indices.clone())
+                        .unwrap_or_else(|| Arc::new(Vec::new()))
+                });
+                p.deformed = Some(ModelRef {
+                    id,
+                    vertices: verts,
+                    indices,
+                });
+                p.deform_version = p.deform_version.wrapping_add(1);
+            }
+        }
     }
 }
 
@@ -548,9 +996,7 @@ pub struct CameraHandle;
 
 impl UserData for CameraHandle {
     fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
-        f.add_field_method_get("CFrame", |_, _| {
-            Ok(CAMERA.with(|c| c.borrow().cframe))
-        });
+        f.add_field_method_get("CFrame", |_, _| Ok(CAMERA.with(|c| c.borrow().cframe)));
         f.add_field_method_set("CFrame", |_, _, value: AnyUserData| {
             let cf = *value
                 .borrow::<CFrame>()
@@ -581,18 +1027,20 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
 
     t.set(
         "BasePart",
-        lua.create_function(|lua, shape_name: Option<String>| -> mlua::Result<PartHandle> {
-            let shape = match shape_name.as_deref().unwrap_or("Cube") {
-                "Cube" | "cube" | "Box" | "box" => PartShape::Cube,
-                "Sphere" | "sphere" | "Ball" | "ball" => PartShape::Sphere,
-                other => {
-                    return Err(mlua::Error::RuntimeError(format!(
-                        "BasePart: unknown shape '{other}' (try 'Cube' or 'Sphere')"
-                    )));
-                }
-            };
-            PartHandle::new_shape(lua, shape, None)
-        })?,
+        lua.create_function(
+            |lua, shape_name: Option<String>| -> mlua::Result<PartHandle> {
+                let shape = match shape_name.as_deref().unwrap_or("Cube") {
+                    "Cube" | "cube" | "Box" | "box" => PartShape::Cube,
+                    "Sphere" | "sphere" | "Ball" | "ball" => PartShape::Sphere,
+                    other => {
+                        return Err(mlua::Error::RuntimeError(format!(
+                            "BasePart: unknown shape '{other}' (try 'Cube' or 'Sphere')"
+                        )));
+                    }
+                };
+                PartHandle::new_shape(lua, shape, None)
+            },
+        )?,
     )?;
 
     t.set(
@@ -608,11 +1056,45 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 vertices: ma.vertices.clone(),
                 indices: ma.indices.clone(),
             };
-            PartHandle::new_shape(lua, PartShape::Model, Some(model))
+            let anims = if ma.animations.is_empty() {
+                None
+            } else {
+                Some(ma.animations.clone())
+            };
+            PartHandle::new_shape_with(lua, PartShape::Model, Some(model), anims)
         })?,
     )?;
 
     t.set("Camera", lua.create_userdata(CameraHandle)?)?;
+
+    t.set(
+        "SimplifyMesh",
+        lua.create_function(
+            |lua, (asset, ratio): (AnyUserData, Option<f32>)| -> mlua::Result<AnyUserData> {
+                let ma = asset.borrow::<ModelAsset>().map_err(|_| {
+                    mlua::Error::RuntimeError(
+                        "SimplifyMesh: first arg must be a ModelAsset (Asset.GetAsset(\"Model\", ...))".into(),
+                    )
+                })?;
+                let r = ratio.unwrap_or(0.5).clamp(0.01, 1.0);
+                let input = mesh::Mesh {
+                    vertices: (*ma.vertices).clone(),
+                    indices: (*ma.indices).clone(),
+                };
+                let simplified = mesh::simplify(&input, r);
+                let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+                let new_asset = ModelAsset {
+                    id,
+                    vertices: Arc::new(simplified.vertices),
+                    indices: Arc::new(simplified.indices),
+
+animations: ma.animations.clone(),
+                    source: format!("{} (LOD {:.0}%)", ma.source, r * 100.0),
+                };
+                lua.create_userdata(new_asset)
+            },
+        )?,
+    )?;
 
     t.set(
         "SetSun",
