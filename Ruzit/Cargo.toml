@@ -32,6 +32,10 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 rodio = { version = "0.20", default-features = false, features = ["symphonia-all"] }
 fontdue = "0.9"
 steamworks = "0.11"
+fbxcel-dom = "0.0.10"
+anyhow = "1"
+cpal = "0.15"
+opus = "0.3"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

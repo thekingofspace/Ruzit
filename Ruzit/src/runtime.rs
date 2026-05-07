@@ -140,6 +140,7 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             "SFX" => Ok(Value::Table(libs::sfx::create(lua)?)),
             "Signal" => Ok(Value::Table(libs::signal::class(lua)?)),
             "Steam" => Ok(Value::Table(libs::steam::create(lua)?)),
+            "Voice" => Ok(Value::Table(libs::voice::create(lua)?)),
             "Window" => Ok(Value::Table(libs::window::create(lua)?)),
             other => Err(mlua::Error::RuntimeError(format!(
                 "import: unknown library '{other}'"

@@ -14,13 +14,16 @@ pub struct Package {
     pub entry: String,
     #[allow(dead_code)]
     pub file_type: FileType,
-    
-    
+
+
     pub physical_root: Option<PathBuf>,
     pub files: HashMap<String, String>,
-    
-    
+
+
     pub assets: HashMap<String, String>,
+    /// When true, every value in `files` and `assets` is base64(zstd(raw)).
+    /// Decompressed lazily on access.
+    pub compressed: bool,
 }
 
 #[derive(Clone)]
@@ -120,7 +123,19 @@ pub fn read_module(fs: &Fs, key: &str) -> Option<String> {
             ..
         } => {
             let (pkg_id, inner) = split_owner(key, default_id);
-            packages.get(pkg_id).and_then(|p| p.files.get(inner).cloned())
+            let pkg = packages.get(pkg_id)?;
+            let stored = pkg.files.get(inner)?;
+            if pkg.compressed {
+                use base64::Engine;
+                let compressed = base64::engine::general_purpose::STANDARD
+                    .decode(stored.as_bytes())
+                    .ok()?;
+                let bytes = zstd::stream::decode_all(compressed.as_slice()).ok()?;
+                let s = String::from_utf8(bytes).ok()?;
+                Some(strip_bom(s))
+            } else {
+                Some(stored.clone())
+            }
         }
     }
 }

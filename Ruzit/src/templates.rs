@@ -12,6 +12,21 @@ Creator = ""
                       # window unless --console is passed. Set to false to
                       # ship a console-subsystem launcher whose stdout is
                       # always visible.
+# compress = true     # shorthand: sets compress_scripts AND compress_assets.
+# compress_scripts = true   # zstd-compress every Lua script before encryption.
+# compress_assets = true    # zstd-compress every asset before encryption.
+                            # Both decompress lazily on access (per-script on
+                            # require, per-asset on Asset.GetAsset). Smaller
+                            # `.managed` files at the cost of a one-time
+                            # decompression per access.
+# shard_assets = true       # split assets across `<id>.assets.shardNNNN.managed`
+                            # files instead of one monolithic `<id>.assets.managed`,
+                            # plus a small `.assets.manifest.managed` index. Shard
+                            # size is auto-tuned (~ceil(sqrt(asset_count)) shards,
+                            # 4-256 MB each) so patches only re-download the shards
+                            # that actually changed — huge win for content updates
+                            # over Steam Pipe / CDNs without drowning the OS in
+                            # thousands of tiny files.
 
 [steam]
 # app_id = 480        # Steam app id used by `import("Steam")`. 480 is Spacewar
@@ -73,9 +88,7 @@ pub const VSCODE_SETTINGS: &str = r#"{
 }
 "#;
 
-pub const TYPES_DLUAU: &str = r#"--!strict
--- Ruzit type declarations
--- The Luau LSP picks this file up via .vscode/settings.json.
+pub const TYPES_DLUAU: &str = r#"
 
 declare class IOHandle
 	function read(self, format: string?): string
@@ -84,7 +97,7 @@ declare class IOHandle
 	function path(self): string
 end
 
-type IO_API = {
+export type IO_API = {
 	read: (path: string) -> string,
 	write: (path: string, content: string) -> (),
 	append: (path: string, content: string) -> (),
@@ -138,10 +151,10 @@ declare class WebSocketListener
 	function Close(self): ()
 end
 
-type HttpRequest = { method: string, path: string, headers: { [string]: string }, body: string }
-type HttpResponse = { status: number, headers: { [string]: string }, body: string }
+export type HttpRequest = { method: string, path: string, headers: { [string]: string }, body: string }
+export type HttpResponse = { status: number, headers: { [string]: string }, body: string }
 
-type Net_API = {
+export type Net_API = {
 	Serve: (addr: string, handler: (HttpRequest) -> (HttpResponse | string)) -> (),
 	Request: (method: string, url: string, body: string?, headers: { [string]: string }?) -> HttpResponse,
 	TCP: { Connect: (addr: string) -> TcpConnection, Host: (addr: string) -> TcpListener },
@@ -150,10 +163,10 @@ type Net_API = {
 	Socket: { Connect: (url: string) -> WebSocketConn, Host: (addr: string) -> WebSocketListener },
 }
 
-type HashAlgo = "md5" | "sha1" | "sha224" | "sha256" | "sha384" | "sha512" | "sha3-256" | "sha3-512" | "keccak256" | "blake3"
-type CompressAlgo = "gzip" | "zlib" | "deflate" | "zstd"
+export type HashAlgo = "md5" | "sha1" | "sha224" | "sha256" | "sha384" | "sha512" | "sha3-256" | "sha3-512" | "keccak256" | "blake3"
+export type CompressAlgo = "gzip" | "zlib" | "deflate" | "zstd"
 
-type Serde_API = {
+export type Serde_API = {
 	Encode: (format: ("json" | "toml" | "yaml"), data: any, pretty: boolean?) -> string,
 	Decode: (format: ("json" | "toml" | "yaml"), text: string) -> any,
 	Hash: (algo: HashAlgo, data: string, encoding: ("hex" | "base64" | "bytes")?) -> string,
@@ -161,7 +174,7 @@ type Serde_API = {
 	Decompress: (algo: CompressAlgo, data: string) -> string,
 }
 
-type Process_API = {
+export type Process_API = {
 	Os: string,
 	Arch: string,
 	Family: string,
@@ -189,16 +202,16 @@ declare class SoundData
 	function ByteCount(self): number
 end
 
--- Opaque shader handles. Loaded from disk/bundle and attached to host objects
--- (sounds, meshes, UI). Their data is exchanged through the host's :SetData.
+
 declare class ShaderAsset end
 declare class FragmentAsset end
+
 
 declare class FontAsset
 	function Source(self): string
 end
 
-type Asset_API = {
+export type Asset_API = {
 	GetAsset: ((kind: "Image", path: string) -> ImageAsset)
 		& ((kind: "Sound", path: string) -> SoundData)
 		& ((kind: "Shader", path: string) -> ShaderAsset)
@@ -213,6 +226,10 @@ type Asset_API = {
 		& ((kind: "Model", data: string, label: string?) -> ModelAsset)
 		& ((kind: "Font", data: string, label: string?) -> FontAsset)
 		& ((kind: "File", data: string, label: string?) -> string),
+	-- Load an asset from any disk path (mod folders, Workshop items, user
+	-- profile, etc.). Pass "Auto" or "" as the kind to infer it from the
+	-- file extension. Useful for mods that drop loose files alongside the
+	-- game and load them at runtime.
 	ImportAsset: ((kind: "Image", path: string) -> ImageAsset)
 		& ((kind: "Sound", path: string) -> SoundData)
 		& ((kind: "Shader", path: string) -> ShaderAsset)
@@ -224,7 +241,7 @@ type Asset_API = {
 	FromPixels: (width: number, height: number, rgba: string) -> ImageAsset,
 }
 
-type WindowOptions = {
+export type WindowOptions = {
 	title: string?, width: number?, height: number?,
 	min_width: number?, min_height: number?, max_width: number?, max_height: number?,
 	fullscreen: boolean?, borderless: boolean?, resizable: boolean?,
@@ -237,20 +254,24 @@ declare class Connection
 	function Disconnect(self): ()
 end
 
-declare class Signal
-	function Connect(self, fn: (...any) -> ()): Connection
-	function Once(self, fn: (...any) -> ()): Connection
-	function Wait(self): ...any
-	function Fire(self, ...: any): ()
+-- Generic over the args it carries: `Signal<number, string>` fires `(number, string)`.
+-- Use `Signal<>` for a no-arg signal. Plain `Signal` (no generics) still works
+-- for code that doesn't care, defaulting to `...any`.
+declare class Signal<T...>
+	function Connect(self, fn: (T...) -> ()): Connection
+	function Once(self, fn: (T...) -> ()): Connection
+	function Wait(self): T...
+	function Fire(self, T...): ()
 	function DisconnectAll(self): ()
 end
 
-type Signal_API = { new: () -> Signal }
+export type Signal_API = { new: <T...>() -> Signal<T...> }
 
 declare class WindowHandle
-	Changed: Signal
-	OnFocus: Signal
-	OnUnfocus: Signal
+	-- Fires with the property name that changed: "Title", "Size", "Position", "Fullscreen", etc.
+	Changed: Signal<string>
+	OnFocus: Signal<>
+	OnUnfocus: Signal<>
 	function Close(self): ()
 	function BindToClose(self, fn: () -> ()): ()
 	function Resize(self, width: number, height: number): ()
@@ -270,40 +291,76 @@ declare class WindowHandle
 	function Title(self): string
 	function IsFullscreen(self): boolean
 	function IsOpen(self): boolean
+	
+	
 	function GetViewport(self): Camera
 end
 
-type Window_API = { Open: (opts: WindowOptions?) -> WindowHandle }
+export type Window_API = { Open: (opts: WindowOptions?) -> WindowHandle }
 
--- Built-in transformations applied via :ApplyShader. Distinct from ShaderAsset,
--- which is loaded from disk and uses :AttachShader / :SetData.
+
 declare class SoundShader end
 
 declare class Sound
-	Started: Signal
-	Stopped: Signal
+	Started: Signal<>
+	Stopped: Signal<>
 	Source: string
 	function Play(self): ()
 	function Stop(self): ()
 	function IsPlaying(self): boolean
+	-- Fluent built-in shaders: each one replaces any prior call to the same
+	-- method on this Sound (so Volume(0.5) → Volume(0.8) ends at 0.8, no
+	-- stacking). Call before :Play() — they apply on the next playback.
+	function Volume(self, factor: number): ()
+	function Speed(self, factor: number): ()
+	function Pitch(self, factor: number): ()
+	function Pan(self, amount: number): ()
+	function LowPass(self, freq: number): ()
+	function HighPass(self, freq: number): ()
+	function FadeIn(self, seconds: number): ()
+	function FadeOut(self, seconds: number): ()
+	function Delay(self, seconds: number): ()
+	function Loop(self): ()
+	function Distortion(self, amount: number): ()
+	function Echo(self, delay_ms: number, feedback: number?, mix: number?): ()
+	function Reverb(self, mix: number?, decay: number?): ()
+	function Tremolo(self, rate: number?, depth: number?): ()
+	function Reset(self): ()
+	-- 3D world position. Listener = the active Renderable.Camera (the
+	-- viewport). Distance falloff defaults to 20 world units; pass an
+	-- explicit value to tighten or widen. Call ClearPosition() to revert
+	-- to non-positional (centered) playback.
+	function SetPosition(self, x: number, y: number, z: number, falloff: number?): ()
+	function ClearPosition(self): ()
+	-- Legacy / advanced: build shader instances yourself.
 	function ApplyShader(self, shader: SoundShader): ()
 	function ClearShaders(self): ()
 	function AttachShader(self, asset: ShaderAsset | FragmentAsset): ()
 	function DetachShader(self, asset: ShaderAsset | FragmentAsset): ()
 	function SetData(self, asset: ShaderAsset | FragmentAsset, name: string, value: number): ()
 	function GetData(self, asset: ShaderAsset | FragmentAsset, name: string): number?
-	function LinkToUpdate(self, interval: number): Signal
+	-- Fires every `interval` seconds with the elapsed time since playback began.
+	function LinkToUpdate(self, interval: number): Signal<number>
 end
 
-type SFX_API = {
+export type SFX_API = {
 	LoadSound: (data: SoundData) -> Sound,
-	-- Built-in transformations (applied via :ApplyShader, snapshot at Play).
+	-- Shader factories: same set as Sound's fluent methods, but as standalone
+	-- userdata you can stack on any sound via :ApplyShader. Sometimes useful
+	-- for building shader presets.
 	Volume: (factor: number) -> SoundShader,
 	Speed: (factor: number) -> SoundShader,
+	Pan: (amount: number) -> SoundShader,
 	FadeIn: (seconds: number) -> SoundShader,
+	FadeOut: (seconds: number) -> SoundShader,
 	LowPass: (freq: number) -> SoundShader,
+	HighPass: (freq: number) -> SoundShader,
 	Delay: (seconds: number) -> SoundShader,
 	Repeat: () -> SoundShader,
+	Distortion: (amount: number) -> SoundShader,
+	Echo: (delay_ms: number, feedback: number?, mix: number?) -> SoundShader,
+	Reverb: (mix: number?, decay: number?) -> SoundShader,
+	Tremolo: (rate: number?, depth: number?) -> SoundShader,
 }
 
 declare class Package
@@ -319,7 +376,7 @@ declare class Package
 	function Assets(self): { string }
 end
 
-type Managed_API = {
+export type Managed_API = {
 	IsPackage: (id: string) -> boolean,
 	GetPackage: (id: string) -> Package?,
 	List: () -> { string },
@@ -332,6 +389,8 @@ declare class Dim
 	function Lerp(self, other: Dim, t: number): Dim
 	function __add(self, other: Dim): Dim
 	function __sub(self, other: Dim): Dim
+	
+	
 	function __mul(self, other: number): Dim
 	function __div(self, other: number): Dim
 	function __unm(self): Dim
@@ -342,6 +401,7 @@ declare class Color3
 	G: number
 	B: number
 	function Lerp(self, other: Color3, t: number): Color3
+	
 	function __add(self, other: Color3): Color3
 	function __sub(self, other: Color3): Color3
 end
@@ -366,13 +426,14 @@ declare class ModelAsset
 end
 
 declare class BasePart
-	Shape: string
+	Shape: "Cube" | "Sphere" | "Model"
 	CFrame: CFrame
 	Size: Vector
 	Color: Color3
 	Render: boolean
 	Texture: ImageAsset?
-	Changed: Signal
+	-- Fires with the property name that was set: "CFrame", "Size", "Color", "Render", "Texture", "Destroyed".
+	Changed: Signal<string>
 	function Destroy(self): ()
 	function AttachShader(self, asset: ShaderAsset | FragmentAsset): ()
 	function DetachShader(self, asset: ShaderAsset | FragmentAsset): ()
@@ -388,8 +449,8 @@ declare class Camera
 	Far: number
 end
 
-type Renderable_API = {
-	BasePart: (shape: string?) -> BasePart,
+export type Renderable_API = {
+	BasePart: (shape: ("Cube" | "Sphere")?) -> BasePart,
 	BaseModel: (asset: ModelAsset) -> BasePart,
 	Camera: Camera,
 }
@@ -398,27 +459,29 @@ declare class CFrame
 	Position: Vector
 	Rotation: Vector
 	function Lerp(self, other: CFrame, t: number): CFrame
+	
+	
 	function __mul(self, other: CFrame | Vector): CFrame
 	function __add(self, other: CFrame): CFrame
 	function __sub(self, other: CFrame): CFrame
 end
 
-type Dim_API = { new: (x: number, y: number) -> Dim }
-type Color3_API = {
+export type Dim_API = { new: (x: number, y: number) -> Dim }
+export type Color3_API = {
 	new: (r: number, g: number, b: number) -> Color3,
 	fromHex: (hex: string) -> Color3,
 }
-type Vector_API = {
+export type Vector_API = {
 	new: ((x: number?, y: number?, z: number?) -> Vector),
 	zero: () -> Vector,
 	one: () -> Vector,
 }
-type CFrame_API = {
+export type CFrame_API = {
 	new: (position: Vector?, rotation: Vector?) -> CFrame,
 	Angles: (rx: number, ry: number, rz: number) -> CFrame,
 }
 
-type Primitives_API = {
+export type Primitives_API = {
 	Dim: Dim_API,
 	Color3: Color3_API,
 	Vector: Vector_API,
@@ -426,14 +489,16 @@ type Primitives_API = {
 }
 
 declare class Primitive
-	Shape: string
+	Shape: "Square" | "Circle" | "Triangle" | "Image" | "Text"
 	Size: Dim
 	Position: Dim
 	Color: Color3
 	Transparency: number
 	ZIndex: number
 	Visible: boolean
-	Changed: Signal
+	-- Fires with the property name that was set ("Position", "Size", "Text", etc.).
+	Changed: Signal<string>
+	
 	Text: string
 	TextSize: number
 	TextColor: Color3
@@ -451,50 +516,168 @@ declare class SceneShader
 	function Destroy(self): ()
 end
 
-type GUI_API = {
+export type GUI_API = {
 	Basic: {
 		Circle: () -> Primitive,
 		Square: () -> Primitive,
 		Triangle: () -> Primitive,
+		
+		
 		Image: (asset: ImageAsset) -> Primitive,
+		
+		
 		Font: (asset: FontAsset) -> Primitive,
 	},
+	
+	
 	SetSkybox: (asset: ShaderAsset | FragmentAsset) -> SceneShader,
 	ClearSkybox: () -> (),
 	SetPostEffect: (asset: ShaderAsset | FragmentAsset) -> SceneShader,
 	ClearPostEffect: () -> (),
 }
 
-type Mouse_API = {
+export type MouseButton = "MouseButton1" | "MouseButton2" | "MouseButton3" | "MouseButton4" | "MouseButton5"
+export type CursorName = "default" | "pointer" | "text" | "crosshair" | "wait" | "progress" | "help"
+	| "move" | "not_allowed" | "grab" | "grabbing"
+	| "resize_n" | "resize_s" | "resize_e" | "resize_w" | "resize_ne" | "resize_nw" | "resize_se" | "resize_sw"
+	| "resize_ns" | "resize_ew" | "resize_nesw" | "resize_nwse"
+	| "context_menu" | "copy" | "alias" | "no_drop" | "all_scroll" | "zoom_in" | "zoom_out"
+	| "vertical_text" | "cell"
+
+export type Mouse_API = {
 	Position: Dim,
 	Visible: boolean,
 	Locked: boolean,
-	Cursor: string,
-	Moved: Signal,
-	InputReceived: Signal,
-	SetCursor: (self: Mouse_API, name: string) -> (),
+	Cursor: CursorName,
+	-- Fires with (position: Dim, delta: Dim).
+	Moved: Signal<Dim, Dim>,
+	-- Fires with (button: MouseButton, pressed: boolean).
+	InputReceived: Signal<MouseButton, boolean>,
+	SetCursor: (self: Mouse_API, name: CursorName) -> (),
 	Lock: (self: Mouse_API) -> (),
 	Unlock: (self: Mouse_API) -> (),
-	IsButtonDown: (self: Mouse_API, button: string) -> boolean,
+	IsButtonDown: (self: Mouse_API, button: MouseButton) -> boolean,
 }
 
-type Keyboard_API = {
-	InputChanged: Signal,
+export type Keyboard_API = {
+	-- Fires with (id: number, name: string, pressed: boolean). `name` is the
+	-- key name like "w", "Escape", "Space", "F1", "ArrowUp", etc.
+	InputChanged: Signal<number, string, boolean>,
 	IsKeyDown: (self: Keyboard_API, key: string | number) -> boolean,
 	GetKeyId: (self: Keyboard_API, name: string) -> number,
 }
 
-type RunService_API = {
-	Heartbeat: Signal,
-	RenderStepped: Signal,
+export type RunService_API = {
+	-- Per-frame signal carrying the dt (seconds since last tick).
+	Heartbeat: Signal<number>,
+	RenderStepped: Signal<number>,
+}
+
+declare class VoiceShader end
+
+declare class VoiceCapture
+	-- Fires with each Opus-encoded audio packet (~20ms = 50 packets/sec).
+	-- Pass `bytes` to peers via Steam.Lobby chat / P2P / our Net library /
+	-- whatever transport you're using.
+	OnPacket: Signal<string>
+	function Stop(self): ()
+	function IsActive(self): boolean
+	-- Push-to-talk: Pause() to stop emitting packets, Resume() to start
+	-- again. The mic stream stays open the whole time so toggling is
+	-- cheap (one atomic). SetActive(true|false) is an alias.
+	function Pause(self): ()
+	function Resume(self): ()
+	function SetActive(self, on: boolean): ()
+	function IsPaused(self): boolean
+	-- Voice activation: peak amplitude (0..1). 0 = always send (default).
+	-- Typical: 0.02..0.05 just above ambient noise. 0.1 = pretty hot mic.
+	-- Frames whose peak amplitude is below the threshold are dropped before
+	-- they hit the Opus encoder.
+	function SetThreshold(self, amplitude: number): ()
+	function GetThreshold(self): number
+end
+
+declare class VoiceChannel
+	IsPlaying: boolean
+	-- Feed an Opus packet (received from a peer). Decoded and queued for
+	-- playback. Auto-clamps backlog to ~1 second to prevent runaway latency.
+	function Push(self, packet: string): ()
+	function Play(self): ()
+	function Stop(self): ()
+	-- Voice-side shaders: same idea as SFX. Apply Voice.Volume / Voice.Speed
+	-- / Voice.Spatial to alter playback. Stack multiple for compound effects.
+	function ApplyShader(self, shader: VoiceShader): ()
+	function ClearShaders(self): ()
+	-- 3D position is STATIC — set it once and the channel stays anchored to
+	-- that world point as the camera moves around (just like Renderable parts).
+	-- Listener = the active Renderable.Camera, so turning the camera also
+	-- rotates where the voice comes from. Pass nil (or no args) to clear.
+	function SetPosition(self, x: number?, y: number?, z: number?): ()
+	-- Same idea but also installs/replaces the Spatial shader with this
+	-- distance falloff in one call. Pass nil to clear the spatial shader.
+	function SetSpatial(self, x: number?, y: number?, z: number?, falloff: number?): ()
+end
+
+declare class VoiceRecorder
+	function Push(self, packet: string): ()
+	function Clear(self): ()
+	function Length(self): number
+	-- Total recorded duration in seconds.
+	function Duration(self): number
+	-- Length-prefixed binary serialization. Save with IO.write or to Steam
+	-- Cloud, send over the network, etc. Reload with Voice.LoadRecording.
+	function Serialize(self): string
+	-- Snapshot the current packet list as a Recording without serializing.
+	function ToRecording(self): VoiceRecording
+end
+
+declare class VoiceRecording
+	function PacketCount(self): number
+	function Duration(self): number
+	-- Streams the recording's packets into `channel` at the original
+	-- ~50 packets/sec pacing. Returns immediately — playback is dripped
+	-- by the heart pump. Options: { loop = true, speed = 0.25..4.0 }.
+	function PlayInto(self, channel: VoiceChannel, opts: { loop: boolean?, speed: number? }?): ()
+end
+
+export type Voice_API = {
+	-- Open the default microphone, encode 20ms Opus frames, fire OnPacket
+	-- for each one. Stop with `:Stop()` when done.
+	StartCapture: () -> VoiceCapture,
+	-- Create a per-peer playback channel. Each remote speaker gets one.
+	CreateChannel: () -> VoiceChannel,
+	-- Fire-and-forget: spin up a transient channel, decode + play the
+	-- packet, optionally pinned to a world position. Best for one-off
+	-- received messages. For ongoing peer voice prefer CreateChannel().
+	PlayPacket: (packet: string, opts: { x: number?, y: number?, z: number?, falloff: number? }?) -> VoiceChannel,
+	-- Empty packet collector. Hook to mic.OnPacket OR to received-from-peer
+	-- packets — each :Push(bytes) appends to the recorded stream. Save it
+	-- with :Serialize() when done.
+	NewRecorder: () -> VoiceRecorder,
+	-- Inverse of Recorder:Serialize(). Returns a replayable Recording.
+	LoadRecording: (data: string) -> VoiceRecording,
+	-- Built-in shaders. `Volume(0.5)` halves loudness, `Speed(1.2)` makes
+	-- them sound 20% faster, `Spatial(x, y, z)` pans + attenuates by
+	-- distance from the listener (the active Renderable.Camera, or set
+	-- explicitly via Voice.ListenerPosition).
+	Volume: (factor: number) -> VoiceShader,
+	Speed: (factor: number) -> VoiceShader,
+	Spatial: (x: number, y: number, z: number, falloff: number?) -> VoiceShader,
+	-- Override the listener (defaults to the active Renderable.Camera).
+	-- Read by Spatial shaders. Pass (0, 0, 0) to revert to camera-tracking.
+	ListenerPosition: (x: number, y: number, z: number) -> (),
 }
 
 declare class SteamLobby
 	ID: string
 	Owner: string
-	OnMemberJoined: Signal
-	OnMemberLeft: Signal
-	OnDataUpdate: Signal
+	-- Fires with (memberSteamId: string).
+	OnMemberJoined: Signal<string>
+	-- Fires with (memberSteamId: string).
+	OnMemberLeft: Signal<string>
+	-- Fires with (memberSteamId: string?). Nil when lobby-wide data changed,
+	-- otherwise the id of the member whose per-member data changed.
+	OnDataUpdate: Signal<string?>
 	function Members(self): { string }
 	function SetData(self, key: string, value: string): ()
 	function GetData(self, key: string): string?
@@ -504,7 +687,8 @@ end
 
 declare class SteamServer
 	ID: string
-	OnClientAuthed: Signal
+	-- Fires with (clientSteamId: string) when a client successfully authenticates.
+	OnClientAuthed: Signal<string>
 	function SetServerName(self, name: string): ()
 	function SetMapName(self, map: string): ()
 	function SetMaxPlayers(self, max: number): ()
@@ -512,15 +696,36 @@ declare class SteamServer
 	function Stop(self): ()
 end
 
-type SteamFriend = { ID: string, Name: string, State: string }
-type SteamLobbyInfo = { ID: string, MemberCount: number?, Name: string? }
+export type SteamPersonaState = "Offline" | "Online" | "Busy" | "Away" | "Snooze" | "LookingToTrade" | "LookingToPlay"
+export type SteamAvatarSize = "small" | "medium" | "large"
+export type SteamLobbyKind = "Public" | "Private" | "FriendsOnly" | "Invisible"
+export type SteamServerMode = "NoAuthentication" | "Authentication" | "AuthenticationAndSecure"
+export type SteamOverlayDialog = "Friends" | "Community" | "Players" | "Settings" | "Stats" | "Achievements" | "OfficialGameGroup"
+export type SteamOverlayUserDialog = "steamid" | "chat" | "jointrade" | "stats" | "achievements"
+	| "friendadd" | "friendremove" | "friendrequestaccept" | "friendrequestignore"
+export type SteamOverlayStoreMode = "None" | "AddToCart" | "AddToCartAndShow"
+export type SteamNotificationPosition = "TopLeft" | "TopRight" | "BottomLeft" | "BottomRight"
 
-type SteamServerOptions = {
-	port: number?, queryPort: number?, mode: string?, version: string?,
-	name: string?, map: string?, max: number?,
+export type SteamFriend = { ID: string, Name: string, State: SteamPersonaState }
+export type SteamLobbyInfo = { ID: string, MemberCount: number?, Name: string? }
+
+export type SteamServerOptions = {
+	port: number?,
+	queryPort: number?,
+	mode: SteamServerMode?,
+	version: string?,
+	name: string?,
+	map: string?,
+	max: number?,
 }
 
-type Steam_API = {
+export type SteamCloudFile = { Name: string, Size: number }
+export type SteamFriendInfo = {
+	ID: string, Name: string, Nickname: string?, State: SteamPersonaState,
+	Game: { AppID: number }?,
+}
+
+export type Steam_API = {
 	User: {
 		ID: string,
 		Name: string,
@@ -528,10 +733,15 @@ type Steam_API = {
 		AccountID: () -> number,
 		LoggedOn: () -> boolean,
 		GetFriends: () -> { SteamFriend },
-		GetAvatar: (size: string?) -> ImageAsset?,
-		GetFriendAvatar: (id: string, size: string?) -> ImageAsset?,
-		GetAvatarAsync: (id: string, size: string?) -> Signal,
-		GetFriendInfo: (id: string) -> { ID: string, Name: string, Nickname: string?, State: string, Game: { AppID: number }? },
+		GetAvatar: (size: SteamAvatarSize?) -> ImageAsset?,
+		GetFriendAvatar: (id: string, size: SteamAvatarSize?) -> ImageAsset?,
+		-- Async lookup that works for ANY Steam ID, not just friends. Hits
+		-- cache instantly when the avatar is already known; otherwise asks
+		-- Steam for the user's profile data and fires the signal when it
+		-- arrives (a frame or two later). Signal fires once with
+		-- (ImageAsset?) — nil if Steam couldn't load the user.
+		GetAvatarAsync: (id: string, size: SteamAvatarSize?) -> Signal<ImageAsset?>,
+		GetFriendInfo: (id: string) -> SteamFriendInfo,
 		RequestInfo: (id: string, nameOnly: boolean?) -> boolean,
 		InviteToGame: (id: string, connectString: string) -> (),
 	},
@@ -549,21 +759,24 @@ type Steam_API = {
 		Store: () -> (),
 	},
 	Lobby: {
-		Create: (maxMembers: number?, kind: string?) -> Signal,
-		Join: (id: string) -> Signal,
-		List: () -> Signal,
+		-- Returns a Signal that fires once with (lobby: SteamLobby?, err: string?).
+		Create: (maxMembers: number?, kind: SteamLobbyKind?) -> Signal<SteamLobby?, string?>,
+		-- Returns a Signal that fires once with (lobby: SteamLobby?, err: string?).
+		Join: (id: string) -> Signal<SteamLobby?, string?>,
+		-- Returns a Signal that fires once with the matching lobbies.
+		List: () -> Signal<{ SteamLobbyInfo }>,
 	},
 	Server: {
 		Start: (opts: SteamServerOptions) -> SteamServer,
 	},
 	Overlay: {
-		Show: (dialog: string) -> (),
+		Show: (dialog: SteamOverlayDialog) -> (),
 		ShowFriends: () -> (),
 		ShowAchievements: () -> (),
 		ShowSettings: () -> (),
 		ShowURL: (url: string) -> (),
-		ShowStore: (appId: number?, mode: string?) -> (),
-		ShowUser: (id: string, dialog: string?) -> (),
+		ShowStore: (appId: number?, mode: SteamOverlayStoreMode?) -> (),
+		ShowUser: (id: string, dialog: SteamOverlayUserDialog?) -> (),
 		ShowInvite: (lobbyId: string) -> (),
 	},
 	App: {
@@ -585,7 +798,7 @@ type Steam_API = {
 		ServerTime: () -> number,
 		IsSteamDeck: () -> boolean,
 		AppID: () -> number,
-		SetOverlayPosition: (position: string) -> (),
+		SetOverlayPosition: (position: SteamNotificationPosition) -> (),
 	},
 	RichPresence: {
 		Set: (key: string, value: string?) -> boolean,
@@ -595,7 +808,7 @@ type Steam_API = {
 		IsEnabledForAccount: () -> boolean,
 		IsEnabledForApp: () -> boolean,
 		SetEnabledForApp: (enabled: boolean) -> (),
-		Files: () -> { { Name: string, Size: number } },
+		Files: () -> { SteamCloudFile },
 		Exists: (name: string) -> boolean,
 		Read: (name: string) -> string?,
 		Write: (name: string, data: string) -> (),
@@ -603,12 +816,20 @@ type Steam_API = {
 	},
 	Workshop: {
 		SubscribedItems: () -> { string },
-		ItemState: (id: string) -> { Subscribed: boolean, Installed: boolean, NeedsUpdate: boolean, Downloading: boolean, DownloadPending: boolean },
+		ItemState: (id: string) -> {
+			Subscribed: boolean, Installed: boolean, NeedsUpdate: boolean,
+			Downloading: boolean, DownloadPending: boolean,
+		},
 		InstallInfo: (id: string) -> { Folder: string, SizeOnDisk: number, Timestamp: number }?,
 		DownloadProgress: (id: string) -> { Downloaded: number, Total: number }?,
 		DownloadItem: (id: string, highPriority: boolean?) -> boolean,
+		-- Combined fetch: returns a table with state flags AND install info if
+		-- the item is on disk, plus a Files() helper that lists every file
+		-- in the install folder (absolute paths — pass them straight to
+		-- Asset.ImportAsset).
 		GetItem: (id: string) -> {
-			ID: string, Subscribed: boolean, Installed: boolean, NeedsUpdate: boolean,
+			ID: string,
+			Subscribed: boolean, Installed: boolean, NeedsUpdate: boolean,
 			Downloading: boolean, DownloadPending: boolean,
 			Folder: string?, SizeOnDisk: number?, Timestamp: number?,
 			DownloadProgress: { Downloaded: number, Total: number }?,
@@ -620,7 +841,8 @@ type Steam_API = {
 	},
 }
 
-type Imports = {
+
+export type Imports = {
 	Asset: Asset_API,
 	GUI: GUI_API,
 	IO: IO_API,
@@ -636,12 +858,11 @@ type Imports = {
 	SFX: SFX_API,
 	Signal: Signal_API,
 	Steam: Steam_API,
+	Voice: Voice_API,
 	Window: Window_API,
 }
 
--- `keyof<Imports> & K` constrains the literal arg to a key, `index<Imports, K>`
--- looks up the matching row's type. Requires the new Luau type solver
--- (luau-lsp >= 1.50). If your LSP is older, replace with `(name: string) -> any`.
+
 declare import: <K>(name: keyof<Imports> & K) -> index<Imports, K>
 
 declare __dirname: string

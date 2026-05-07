@@ -32,7 +32,11 @@ pub struct LoadedPackage {
     pub file_type: FileType,
     pub physical_root: Option<std::path::PathBuf>,
     pub files: HashMap<String, String>,
-    pub assets: HashMap<String, String>, 
+    pub assets: HashMap<String, String>,
+    /// When true, every value in `files` and `assets` is base64(zstd(raw)).
+    /// Decompressed lazily on access — vfs::read_module for scripts,
+    /// Asset.GetAsset for assets.
+    pub compressed: bool,
 }
 
 
@@ -141,14 +145,17 @@ fn should_skip(rel: &str) -> bool {
     {
         return true;
     }
-    if rel == "build.toml"
-        || rel == "types.d.luau"
-        || rel == "ManagedInfo.toml"
-        || rel == ".DS_Store"
-    {
+    if rel == "build.toml" || rel == "ManagedInfo.toml" || rel == ".DS_Store" {
         return true;
     }
-    if rel.to_lowercase().ends_with(".exe") || rel.to_lowercase().ends_with(".managed") {
+    let lower = rel.to_lowercase();
+    // Declaration files exist purely for the LSP — they aren't real modules
+    // and shouldn't be packed into scripts.managed. Catches `types.d.luau`
+    // at any depth plus any other `*.d.luau` / `*.d.lua` the user adds.
+    if lower.ends_with(".d.luau") || lower.ends_with(".d.lua") {
+        return true;
+    }
+    if lower.ends_with(".exe") || lower.ends_with(".managed") {
         return true;
     }
     false
@@ -164,10 +171,18 @@ pub fn write_scripts_managed(
     entry: &str,
     file_type: FileType,
     files: &HashMap<String, String>,
+    compress: bool,
 ) -> Result<(), String> {
     let mut json_files = serde_json::Map::new();
     for (k, v) in files {
-        json_files.insert(k.clone(), JsonValue::String(v.clone()));
+        let value = if compress {
+            let compressed = zstd::stream::encode_all(v.as_bytes(), 3)
+                .map_err(|e| format!("compress {k}: {e}"))?;
+            B64.encode(&compressed)
+        } else {
+            v.clone()
+        };
+        json_files.insert(k.clone(), JsonValue::String(value));
     }
     let body = json!({
         "kind": "scripts",
@@ -177,6 +192,7 @@ pub fn write_scripts_managed(
         "creator": creator,
         "entry": entry,
         "file_type": file_type.as_str(),
+        "compressed": compress,
         "files": json_files,
     });
     let plain = serde_json::to_vec(&body).map_err(|e| e.to_string())?;
@@ -184,25 +200,138 @@ pub fn write_scripts_managed(
     fs::write(path, encrypted).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
+/// Single-file write of every asset. Use `write_assets_sharded` to split
+/// across multiple files for diff-friendly updates.
 pub fn write_assets_managed(
     path: &Path,
     id: &str,
     name: &str,
     assets: &HashMap<String, Vec<u8>>,
+    compress: bool,
 ) -> Result<(), String> {
     let mut json_assets = serde_json::Map::new();
     for (k, bytes) in assets {
-        json_assets.insert(k.clone(), JsonValue::String(B64.encode(bytes)));
+        let payload: Vec<u8> = if compress {
+            zstd::stream::encode_all(bytes.as_slice(), 3)
+                .map_err(|e| format!("compress {k}: {e}"))?
+        } else {
+            bytes.clone()
+        };
+        json_assets.insert(k.clone(), JsonValue::String(B64.encode(&payload)));
     }
     let body = json!({
         "kind": "assets",
         "id": id,
         "name": name,
+        "compressed": compress,
         "assets": json_assets,
     });
     let plain = serde_json::to_vec(&body).map_err(|e| e.to_string())?;
     let encrypted = crate::managed::encrypt_payload(&plain)?;
     fs::write(path, encrypted).map_err(|e| format!("write {}: {e}", path.display()))
+}
+
+/// Auto-tune shard size so updates over Steam Pipe / a CDN don't have to
+/// rewrite one giant file. Aims for `~ceil(sqrt(asset_count))` shards
+/// (so a typical patch touches ~1/sqrt(N) of the bundle on average), with
+/// per-shard size clamped to [4 MB, 256 MB]. The wide ceiling means
+/// AAA-scale projects (~6 GB) settle around 24-32 shards of ~200 MB each
+/// instead of 200+ tiny shards — fewer files for Steam Pipe / OS to track,
+/// while still small enough that a single touched shard's re-download
+/// finishes in seconds on a normal connection.
+fn dynamic_shard_target(asset_count: usize, total_bytes: u64) -> u64 {
+    const MIN_SHARD: u64 = 4 * 1024 * 1024;
+    const MAX_SHARD: u64 = 256 * 1024 * 1024;
+    if asset_count == 0 || total_bytes <= MIN_SHARD {
+        return MIN_SHARD;
+    }
+    // Cap shard count at 256 so absurdly fragmented projects don't drown
+    // the OS in tiny files; floor at 2 so we always at least try to split.
+    let target_shards = ((asset_count as f64).sqrt().ceil() as u64).clamp(2, 256);
+    let per_shard = total_bytes / target_shards;
+    per_shard.clamp(MIN_SHARD, MAX_SHARD)
+}
+
+/// Sharded asset write: partitions assets into N `<id>.assets.shardNNNN.managed`
+/// files (each one is a normal assets.managed) plus a small manifest at
+/// `<id>.assets.manifest.managed` that lists which assets live in which shard.
+/// Walks assets in alphabetical order so a given asset always lands in the
+/// same shard run-to-run — keeps shard hashes stable across builds so a
+/// CDN / Steam Pipe only re-downloads touched shards on patch.
+///
+/// Shard size is computed automatically based on total payload size + asset
+/// count, optimizing for "many smallish files that update fast" rather than
+/// "one huge file Steam has to fully rewrite". Targets ~ceil(sqrt(N)) shards
+/// (so 100 assets → 10 shards, 400 → 20, 1000 → 32) clamped to a 2 MB floor
+/// and a 32 MB ceiling per shard.
+pub fn write_assets_sharded(
+    managed_dir: &Path,
+    id: &str,
+    name: &str,
+    assets: &HashMap<String, Vec<u8>>,
+    compress: bool,
+) -> Result<usize, String> {
+    if assets.is_empty() {
+        return Ok(0);
+    }
+    let total_bytes: u64 = assets.values().map(|v| v.len() as u64).sum();
+    let target_bytes = dynamic_shard_target(assets.len(), total_bytes);
+
+    let mut keys: Vec<&String> = assets.keys().collect();
+    keys.sort();
+
+    let mut shards: Vec<Vec<&String>> = Vec::new();
+    let mut current: Vec<&String> = Vec::new();
+    let mut current_bytes: u64 = 0;
+    for k in &keys {
+        let len = assets[*k].len() as u64;
+        if !current.is_empty() && current_bytes + len > target_bytes {
+            shards.push(std::mem::take(&mut current));
+            current_bytes = 0;
+        }
+        current.push(*k);
+        current_bytes += len;
+        if len > target_bytes && !current.is_empty() {
+            shards.push(std::mem::take(&mut current));
+            current_bytes = 0;
+        }
+    }
+    if !current.is_empty() {
+        shards.push(current);
+    }
+
+    let mut shard_descriptors = Vec::with_capacity(shards.len());
+    for (idx, shard) in shards.iter().enumerate() {
+        let shard_name = format!("{id}.assets.shard{:04}.managed", idx + 1);
+        let shard_path = managed_dir.join(&shard_name);
+        let mut shard_assets: HashMap<String, Vec<u8>> = HashMap::new();
+        for k in shard {
+            shard_assets.insert((*k).clone(), assets[*k].clone());
+        }
+        write_assets_managed(&shard_path, id, name, &shard_assets, compress)?;
+        let size = fs::metadata(&shard_path).map(|m| m.len()).unwrap_or(0);
+        shard_descriptors.push(json!({
+            "name": shard_name,
+            "asset_count": shard.len(),
+            "size_bytes": size,
+            "assets": shard,
+        }));
+    }
+
+    let manifest_path = managed_dir.join(format!("{id}.assets.manifest.managed"));
+    let body = json!({
+        "kind": "assets_manifest",
+        "id": id,
+        "name": name,
+        "compressed": compress,
+        "shards": shard_descriptors,
+    });
+    let plain = serde_json::to_vec(&body).map_err(|e| e.to_string())?;
+    let encrypted = crate::managed::encrypt_payload(&plain)?;
+    fs::write(&manifest_path, encrypted)
+        .map_err(|e| format!("write {}: {e}", manifest_path.display()))?;
+
+    Ok(shards.len())
 }
 
 
@@ -239,7 +368,11 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
             physical_root: None,
             files: HashMap::new(),
             assets: HashMap::new(),
+            compressed: false,
         });
+        if parsed.get("compressed").and_then(|v| v.as_bool()).unwrap_or(false) {
+            pkg.compressed = true;
+        }
 
         if let Some(s) = parsed.get("name").and_then(|v| v.as_str()) {
             pkg.name = s.to_string();
@@ -264,7 +397,11 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
                 if let Some(obj) = parsed.get("files").and_then(|v| v.as_object()) {
                     for (k, v) in obj {
                         if let Some(s) = v.as_str() {
-                            pkg.files.insert(k.clone(), strip_bom(s.to_string()));
+                            // Preserve the encoded form when compressed —
+                            // decompression + BOM stripping happens in
+                            // vfs::read_module on access.
+                            let stored = if pkg.compressed { s.to_string() } else { strip_bom(s.to_string()) };
+                            pkg.files.insert(k.clone(), stored);
                         }
                     }
                 }

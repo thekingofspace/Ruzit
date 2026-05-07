@@ -65,6 +65,7 @@ pub fn cmd_test(arg: Option<&String>) -> Result<(), String> {
             physical_root: Some(root.clone()),
             files: def_files,
             assets: encode_assets_b64(def_assets),
+            compressed: false,
         }),
     );
 
@@ -90,6 +91,7 @@ pub fn cmd_test(arg: Option<&String>) -> Result<(), String> {
                 physical_root: Some(dlc.clone()),
                 files: dlc_files,
                 assets: encode_assets_b64(dlc_assets),
+                compressed: false,
             }),
         );
     }
@@ -171,6 +173,11 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         Some(o) => PathBuf::from(o),
         None => package::default_generated_dir()?,
     };
+    if generated_dir.is_dir() {
+        fs::remove_dir_all(&generated_dir).map_err(|e| {
+            format!("clear {}: {e}", generated_dir.display())
+        })?;
+    }
     let managed_dir = generated_dir.join("Managed");
     fs::create_dir_all(&managed_dir)
         .map_err(|e| format!("mkdir {}: {e}", managed_dir.display()))?;
@@ -209,19 +216,42 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         &entry_rel,
         config.file_type,
         &files,
+        config.compress_scripts,
     )?;
 
     
     let assets_path = managed_dir.join(format!("{pkg_id}.assets.managed"));
     if !assets.is_empty() {
-        package::write_assets_managed(&assets_path, &pkg_id, &config.name, &assets)?;
+        if config.shard_assets {
+            // Sharded write — produces N shardNNNN.managed files plus a
+            // <id>.assets.manifest.managed listing them. Patch updates only
+            // re-download the touched shards instead of the whole archive.
+            // No monolithic <id>.assets.managed is emitted in this mode.
+            let n = package::write_assets_sharded(
+                &managed_dir,
+                &pkg_id,
+                &config.name,
+                &assets,
+                config.compress_assets,
+            )?;
+            if assets_path.exists() {
+                let _ = fs::remove_file(&assets_path);
+            }
+            println!(
+                "        Managed/{}.assets.shardNNNN.managed  ({} shards)",
+                pkg_id, n
+            );
+        } else {
+            package::write_assets_managed(
+                &assets_path, &pkg_id, &config.name, &assets, config.compress_assets,
+            )?;
+        }
     } else if assets_path.exists() {
         let _ = fs::remove_file(&assets_path);
     }
 
     config.print_banner();
     let scripts_size = fs::metadata(&scripts_path).map(|m| m.len()).unwrap_or(0);
-    let assets_size = fs::metadata(&assets_path).map(|m| m.len()).unwrap_or(0);
     println!(
         "[Ruzit] Build → {}",
         generated_dir.display()
@@ -233,7 +263,8 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         files.len(),
         scripts_size / 1024
     );
-    if !assets.is_empty() {
+    if !assets.is_empty() && !config.shard_assets {
+        let assets_size = fs::metadata(&assets_path).map(|m| m.len()).unwrap_or(0);
         println!(
             "        Managed/{}.assets.managed  ({} assets, {} KB)",
             pkg_id,
@@ -245,7 +276,13 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
     
     let dlc_folders = package::find_dlc_folders(root)?;
     for dlc in &dlc_folders {
-        match build_dlc(&managed_dir, dlc) {
+        match build_dlc(
+            &managed_dir,
+            dlc,
+            config.compress_scripts,
+            config.compress_assets,
+            config.shard_assets,
+        ) {
             Ok((id, n_files, n_assets)) => {
                 println!(
                     "        Managed/{}.scripts.managed  (DLC, {} files{})",
@@ -268,7 +305,13 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
     Ok(())
 }
 
-fn build_dlc(managed_dir: &Path, folder: &Path) -> Result<(String, usize, usize), String> {
+fn build_dlc(
+    managed_dir: &Path,
+    folder: &Path,
+    compress_scripts: bool,
+    compress_assets: bool,
+    shard_assets: bool,
+) -> Result<(String, usize, usize), String> {
     let info = ManagedInfo::load(folder)?;
     let (files, assets) = package::collect_project(folder)?;
     if !files.contains_key(&info.entry) {
@@ -287,10 +330,26 @@ fn build_dlc(managed_dir: &Path, folder: &Path) -> Result<(String, usize, usize)
         &info.entry,
         info.file_type,
         &files,
+        compress_scripts,
     )?;
     let assets_path = managed_dir.join(format!("{}.assets.managed", info.id));
     if !assets.is_empty() {
-        package::write_assets_managed(&assets_path, &info.id, &info.name, &assets)?;
+        if shard_assets {
+            package::write_assets_sharded(
+                managed_dir,
+                &info.id,
+                &info.name,
+                &assets,
+                compress_assets,
+            )?;
+            if assets_path.exists() {
+                let _ = fs::remove_file(&assets_path);
+            }
+        } else {
+            package::write_assets_managed(
+                &assets_path, &info.id, &info.name, &assets, compress_assets,
+            )?;
+        }
     } else if assets_path.exists() {
         let _ = fs::remove_file(&assets_path);
     }
@@ -339,11 +398,12 @@ pub fn cmd_package(arg: Option<&String>, output: Option<&String>) -> Result<(), 
         &info.entry,
         info.file_type,
         &files,
+        false,
     )?;
 
     let assets_path = out_dir.join(format!("{}.assets.managed", info.id));
     if !assets.is_empty() {
-        package::write_assets_managed(&assets_path, &info.id, &info.name, &assets)?;
+        package::write_assets_managed(&assets_path, &info.id, &info.name, &assets, false)?;
     } else if assets_path.exists() {
         let _ = fs::remove_file(&assets_path);
     }

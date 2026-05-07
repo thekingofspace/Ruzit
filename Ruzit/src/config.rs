@@ -42,6 +42,9 @@ pub struct BuildConfig {
     
     pub exe_windowed: bool,
     pub steam_app_id: Option<u32>,
+    pub compress_scripts: bool,
+    pub compress_assets: bool,
+    pub shard_assets: bool,
 }
 
 impl Default for BuildConfig {
@@ -55,6 +58,9 @@ impl Default for BuildConfig {
             exe_icon: None,
             exe_windowed: true,
             steam_app_id: None,
+            compress_scripts: false,
+            compress_assets: false,
+            shard_assets: false,
         }
     }
 }
@@ -91,6 +97,21 @@ impl BuildConfig {
             }
             if let Some(b) = exe.get("windowed").and_then(|x| x.as_bool()) {
                 cfg.exe_windowed = b;
+            }
+            // `compress = true|false` is shorthand for setting both
+            // compress_scripts and compress_assets at once.
+            if let Some(b) = exe.get("compress").and_then(|x| x.as_bool()) {
+                cfg.compress_scripts = b;
+                cfg.compress_assets = b;
+            }
+            if let Some(b) = exe.get("compress_scripts").and_then(|x| x.as_bool()) {
+                cfg.compress_scripts = b;
+            }
+            if let Some(b) = exe.get("compress_assets").and_then(|x| x.as_bool()) {
+                cfg.compress_assets = b;
+            }
+            if let Some(b) = exe.get("shard_assets").and_then(|x| x.as_bool()) {
+                cfg.shard_assets = b;
             }
         }
         if let Some(steam) = v.get("steam") {

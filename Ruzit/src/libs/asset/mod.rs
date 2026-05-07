@@ -134,7 +134,7 @@ pub fn make_image_from_rgba(lua: &Lua, width: u32, height: u32, rgba: Vec<u8>, s
 const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "bmp", "gif", "webp"];
 const SHADER_EXTS: &[&str] = &["shader", "glsl", "wgsl", "hlsl", "vert", "metal"];
 const FRAGMENT_EXTS: &[&str] = &["frag", "fragment", "fs", "glslf"];
-const MODEL_EXTS: &[&str] = &["obj"];
+const MODEL_EXTS: &[&str] = &["obj", "fbx"];
 const FONT_EXTS: &[&str] = &["ttf", "otf"];
 
 fn get_asset(
@@ -225,11 +225,18 @@ fn read_file_bytes(fs: &Fs, owner: &str, path: &str) -> mlua::Result<Vec<u8>> {
                     "Asset.GetAsset: File '{key}' not found in package '{target_id}'"
                 ))
             })?;
-            base64::engine::general_purpose::STANDARD
+            let raw = base64::engine::general_purpose::STANDARD
                 .decode(b64)
                 .map_err(|e| {
                     mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' base64 decode: {e}"))
+                })?;
+            if pkg.compressed {
+                zstd::stream::decode_all(raw.as_slice()).map_err(|e| {
+                    mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' zstd: {e}"))
                 })
+            } else {
+                Ok(raw)
+            }
         }
     }
 }
@@ -240,12 +247,20 @@ fn load_model(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value
 }
 
 fn parse_model(lua: &Lua, bytes: Vec<u8>, source: String) -> mlua::Result<Value> {
-    let text = String::from_utf8(bytes).map_err(|e| {
-        mlua::Error::RuntimeError(format!("Model '{source}' not UTF-8: {e}"))
-    })?;
-    let mesh = crate::libs::renderable::mesh::load_obj(&text).map_err(|e| {
-        mlua::Error::RuntimeError(format!("Model parse '{source}': {e}"))
-    })?;
+    let is_fbx = bytes.starts_with(b"Kaydara FBX Binary")
+        || source.to_ascii_lowercase().ends_with(".fbx");
+    let mesh = if is_fbx {
+        crate::libs::renderable::mesh::load_fbx(&bytes).map_err(|e| {
+            mlua::Error::RuntimeError(format!("Model parse '{source}': {e}"))
+        })?
+    } else {
+        let text = String::from_utf8(bytes).map_err(|e| {
+            mlua::Error::RuntimeError(format!("Model '{source}' not UTF-8: {e}"))
+        })?;
+        crate::libs::renderable::mesh::load_obj(&text).map_err(|e| {
+            mlua::Error::RuntimeError(format!("Model parse '{source}': {e}"))
+        })?
+    };
     let asset = ModelAsset {
         id: next_shader_id(),
         vertices: Arc::new(mesh.vertices),
@@ -372,11 +387,18 @@ fn read_bytes(
             let b64 = pkg.assets.get(&key).ok_or_else(|| {
                 mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' missing"))
             })?;
-            let bytes = base64::engine::general_purpose::STANDARD
+            let raw = base64::engine::general_purpose::STANDARD
                 .decode(b64)
                 .map_err(|e| {
                     mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' base64 decode: {e}"))
                 })?;
+            let bytes = if pkg.compressed {
+                zstd::stream::decode_all(raw.as_slice()).map_err(|e| {
+                    mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' zstd: {e}"))
+                })?
+            } else {
+                raw
+            };
             Ok((bytes, format!("@{target_id}/{key}")))
         }
     }

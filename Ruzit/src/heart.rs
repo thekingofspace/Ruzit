@@ -24,12 +24,14 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         crate::libs::input::pump(lua);
         crate::libs::sfx::pump(lua);
         crate::libs::steam::pump(lua);
+        crate::libs::voice::pump(lua);
 
         let snapshot = snapshot_handlers(lua)?;
         let window_open = crate::libs::window::is_open();
         let sfx_active = crate::libs::sfx::is_active();
+        let voice_active = crate::libs::voice::is_active();
 
-        if snapshot.is_empty() && !window_open && !sfx_active {
+        if snapshot.is_empty() && !window_open && !sfx_active && !voice_active {
             return Ok(());
         }
 
