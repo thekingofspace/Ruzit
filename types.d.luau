@@ -1524,6 +1524,53 @@ export type Actor_API = {
 	--   ]])
 	new: ((fn: (...any) -> ...any, threads: number?) -> Actor)
 		& ((source: string, threads: number?) -> Actor),
+	-- Actor.FromFile(path, threads?) — load worker code from a separate
+	-- .luau file. Path resolution is identical to `require`, including
+	-- the project-wide file-mode setting from build.toml ("File Type"):
+	--
+	-- Relative mode (the default; matching most projects):
+	--   "./worker"          — relative to the calling script's directory.
+	--   "../shared/work"    — parent-relative.
+	--   "subdir/helper"     — relative-without-./ also works.
+	--   "@PkgId/jobs/heavy" — explicit cross-package lookup.
+	--   "@self/jobs/heavy"  — same package as the caller, root-relative.
+	--
+	-- Global mode (when build.toml sets `"File Type" = "Global"`):
+	--   "workers/fib"       — resolved from the project root, NOT the
+	--                          caller's directory.
+	--   "@PkgId/..."        — same as in Relative mode.
+	--
+	-- The .luau / .lua extension is appended automatically; pass the
+	-- bare module name. `init.luau` is honored for folder-style modules.
+	-- DLC packages and Packages/ imports each use THEIR OWN file-mode
+	-- setting (from each package's ManagedInfo.toml), so a Relative-mode
+	-- DLC keeps resolving relative to the caller even inside a Global
+	-- host project.
+	--
+	-- The file's raw text is read and used verbatim as the actor's
+	-- source — same rules as the string form of Actor.new (the chunk
+	-- must evaluate to a function, and the function must not reference
+	-- any upvalue from the surrounding script).
+	--
+	-- Useful when worker code grows past a one-liner — keep it in its
+	-- own file with full LSP support and full Luau syntax instead of
+	-- buried inside a `[[...]]` literal.
+	--
+	-- Example:
+	--   -- workers/fib.luau
+	--   local memo = {}
+	--   return function(n)
+	--       if memo[n] then return memo[n] end
+	--       local a, b = 0, 1
+	--       for _ = 2, n do a, b = b, a + b end
+	--       memo[n] = b
+	--       return b
+	--   end
+	--
+	--   -- main.luau
+	--   local fib = Actor.FromFile("./workers/fib")
+	--   for i = 1, 32 do fib:Push(i) end
+	FromFile: (path: string, threads: number?) -> Actor,
 }
 
 

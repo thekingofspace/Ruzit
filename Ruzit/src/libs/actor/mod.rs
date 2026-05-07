@@ -8,24 +8,41 @@ use mlua::{
     UserDataMethods, Value,
 };
 
-use crate::vfs::{Fs, read_module};
+use crate::vfs::{self, Fs, read_module};
 
 const MAX_DEPTH: u32 = 64;
 const FALLBACK_THREADS: usize = 4;
 
-pub fn create(lua: &Lua, fs: Fs) -> mlua::Result<Table> {
+pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
     let t = lua.create_table()?;
-    let fs_clone = fs.clone();
+
+    let fs_for_new = fs.clone();
+    let owner_for_new = owner.clone();
     t.set(
         "new",
-        lua.create_function(move |lua, args: MultiValue| -> mlua::Result<ActorHandle> {
-            actor_new(lua, args, &fs_clone)
+        lua.create_function(move |_lua, args: MultiValue| -> mlua::Result<ActorHandle> {
+            actor_new(_lua, args, &fs_for_new, &owner_for_new)
         })?,
     )?;
+
+    let fs_for_file = fs;
+    let owner_for_file = owner;
+    t.set(
+        "FromFile",
+        lua.create_function(move |_lua, args: MultiValue| -> mlua::Result<ActorHandle> {
+            actor_from_file(_lua, args, &fs_for_file, &owner_for_file)
+        })?,
+    )?;
+
     Ok(t)
 }
 
-fn actor_new(lua: &Lua, args: MultiValue, fs: &Fs) -> mlua::Result<ActorHandle> {
+fn actor_new(
+    lua: &Lua,
+    args: MultiValue,
+    fs: &Fs,
+    _owner: &str,
+) -> mlua::Result<ActorHandle> {
     let mut iter = args.into_iter();
     let body = iter.next().ok_or_else(|| {
         mlua::Error::RuntimeError(
@@ -45,21 +62,69 @@ fn actor_new(lua: &Lua, args: MultiValue, fs: &Fs) -> mlua::Result<ActorHandle> 
         }
     };
 
-    let threads = match thread_arg {
-        Some(Value::Nil) | None => default_threads(),
-        Some(Value::Integer(n)) if n >= 1 => (n as usize).min(256),
-        Some(Value::Number(n)) if n >= 1.0 => (n as usize).min(256),
+    let threads = parse_thread_arg("Actor.new", thread_arg)?;
+    spawn_actor("Actor.new", source, threads)
+}
+
+// Actor.FromFile(path, threads?) — load `path` through the same resolver
+// `require` uses (relative to the calling script, package-relative @PkgId/...,
+// auto .luau / .lua / init.luau extension), grab its raw text, and ship that
+// to the worker pool as if it had been passed inline. Lets you keep worker
+// code in its own file instead of inside a `[[...]]` string literal.
+fn actor_from_file(
+    _lua: &Lua,
+    args: MultiValue,
+    fs: &Fs,
+    owner: &str,
+) -> mlua::Result<ActorHandle> {
+    let mut iter = args.into_iter();
+    let path = match iter.next() {
+        Some(Value::String(s)) => s.to_str()?.to_string(),
         Some(other) => {
             return Err(mlua::Error::RuntimeError(format!(
-                "Actor.new: thread count must be a positive integer (got {})",
+                "Actor.FromFile: first arg must be a path string (got {})",
                 other.type_name()
             )));
         }
+        None => {
+            return Err(mlua::Error::RuntimeError(
+                "Actor.FromFile: missing path argument".into(),
+            ));
+        }
     };
+    let thread_arg = iter.next();
 
-    let bytecode = Compiler::new().compile(&source).map_err(|e| {
-        mlua::Error::RuntimeError(format!("Actor.new: compile failed: {e}"))
+    let resolved = vfs::resolve(fs, owner, &path).ok_or_else(|| {
+        mlua::Error::RuntimeError(format!(
+            "Actor.FromFile: file '{path}' not found (resolved from '{owner}')"
+        ))
     })?;
+    let source = read_module(fs, &resolved).ok_or_else(|| {
+        mlua::Error::RuntimeError(format!(
+            "Actor.FromFile: could not read '{resolved}'"
+        ))
+    })?;
+
+    let threads = parse_thread_arg("Actor.FromFile", thread_arg)?;
+    spawn_actor("Actor.FromFile", source, threads)
+}
+
+fn parse_thread_arg(api: &str, arg: Option<Value>) -> mlua::Result<usize> {
+    match arg {
+        Some(Value::Nil) | None => Ok(default_threads()),
+        Some(Value::Integer(n)) if n >= 1 => Ok((n as usize).min(256)),
+        Some(Value::Number(n)) if n >= 1.0 => Ok((n as usize).min(256)),
+        Some(other) => Err(mlua::Error::RuntimeError(format!(
+            "{api}: thread count must be a positive integer (got {})",
+            other.type_name()
+        ))),
+    }
+}
+
+fn spawn_actor(api: &str, source: String, threads: usize) -> mlua::Result<ActorHandle> {
+    let bytecode = Compiler::new()
+        .compile(&source)
+        .map_err(|e| mlua::Error::RuntimeError(format!("{api}: compile failed: {e}")))?;
 
     let (in_tx, in_rx) = mpsc::channel::<Vec<u8>>();
     let in_rx = Arc::new(Mutex::new(in_rx));
@@ -78,7 +143,7 @@ fn actor_new(lua: &Lua, args: MultiValue, fs: &Fs) -> mlua::Result<ActorHandle> 
             .name(format!("ruzit-actor-{idx}"))
             .spawn(move || worker_main(bytecode, in_rx, out_tx, pending, shutdown))
             .map_err(|e| {
-                mlua::Error::RuntimeError(format!("Actor.new: spawn worker: {e}"))
+                mlua::Error::RuntimeError(format!("{api}: spawn worker: {e}"))
             })?;
         handles.push(h);
     }
