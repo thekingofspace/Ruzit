@@ -90,6 +90,14 @@ impl Default for CameraState {
     }
 }
 
+pub fn list_part_states() -> Vec<Arc<Mutex<PartState>>> {
+    PARTS.with(|cell| {
+        let mut reg = cell.borrow_mut();
+        reg.retain(|p| p.lock().unwrap().alive);
+        reg.clone()
+    })
+}
+
 pub fn camera_snapshot() -> CameraState {
     CAMERA.with(|c| {
         let s = c.borrow();
@@ -137,10 +145,14 @@ pub fn snapshot() -> Vec<PartRender> {
 }
 
 pub struct PartHandle {
-    state: Arc<Mutex<PartState>>,
+    pub(crate) state: Arc<Mutex<PartState>>,
 }
 
 impl PartHandle {
+    pub fn from_state(state: Arc<Mutex<PartState>>) -> Self {
+        Self { state }
+    }
+
     fn new_shape(lua: &Lua, shape: PartShape, model: Option<ModelRef>) -> mlua::Result<Self> {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         let changed_signal = signal::new_instance(lua)?;

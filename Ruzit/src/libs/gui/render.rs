@@ -1,7 +1,7 @@
 
 use std::collections::HashMap;
 use std::num::NonZeroU64;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
@@ -10,8 +10,26 @@ use super::{ImageRef, RenderItem, SceneShaderState};
 
 use crate::libs::renderable::{
     self,
-    render as r3d, 
+    render as r3d,
 };
+
+#[derive(Clone, Debug)]
+pub struct GpuMeta {
+    pub name: String,
+    pub vendor: u32,
+    pub device: u32,
+    pub backend: String,
+    pub driver: String,
+    pub driver_info: String,
+    pub device_type: String,
+    pub max_texture_size: u32,
+    pub max_buffer_size: u64,
+    pub max_bind_groups: u32,
+    pub max_vertex_buffers: u32,
+    pub max_compute_workgroup_size: [u32; 3],
+}
+
+pub static GPU_META: OnceLock<GpuMeta> = OnceLock::new();
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
@@ -288,6 +306,26 @@ impl GpuState {
         .map_err(|e| format!("request_device: {e}"))?;
 
         let max_dim = device.limits().max_texture_dimension_2d;
+        let limits = device.limits();
+        let info = adapter.get_info();
+        let _ = GPU_META.set(GpuMeta {
+            name: info.name.clone(),
+            vendor: info.vendor,
+            device: info.device,
+            backend: format!("{:?}", info.backend),
+            driver: info.driver.clone(),
+            driver_info: info.driver_info.clone(),
+            device_type: format!("{:?}", info.device_type),
+            max_texture_size: limits.max_texture_dimension_2d,
+            max_buffer_size: limits.max_buffer_size,
+            max_bind_groups: limits.max_bind_groups,
+            max_vertex_buffers: limits.max_vertex_buffers,
+            max_compute_workgroup_size: [
+                limits.max_compute_workgroup_size_x,
+                limits.max_compute_workgroup_size_y,
+                limits.max_compute_workgroup_size_z,
+            ],
+        });
         let caps = surface.get_capabilities(&adapter);
         let format = caps
             .formats

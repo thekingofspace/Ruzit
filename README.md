@@ -47,6 +47,11 @@ as a single `.exe` plus a `Managed/` folder of encrypted asset bundles.
   GUI primitives (square / circle / triangle / image / text) with a
   shared shader pipeline. Custom shaders for parts, primitives, sound,
   voice, plus full-screen post effects and skybox shaders.
+- **GPU introspection + CPU raycasts.** `import("GPU")` exposes adapter
+  info (name / vendor / backend / driver / device type), wgpu device
+  limits, live frame stats, and a filterable raycast against every
+  renderable part — pair with `Mouse.Position` + `GPU.ScreenToRay` for
+  click-to-select.
 - **Parallel CPU.** `import("Actor")` spawns a worker pool. Pass a
   function (Ruzit reads its source out of your script and recompiles
   it for each worker), Push args, Pop results in finish-order. Workers
@@ -120,6 +125,7 @@ short version:
 | `Mouse`        | position, buttons, scroll, lock / cursor                           |
 | `Keyboard`     | key state + InputChanged signal                                    |
 | `Asset`        | load images / sounds / shaders / models / fonts / files            |
+| `GPU`          | adapter info, device limits, frame stats, scene raycast            |
 | `SFX`          | play sounds, fluent Volume / Speed / Echo / Reverb / Spatial / ... |
 | `Voice`        | mic capture (Opus), per-peer playback channels, recordings         |
 | `Steam`        | User, Achievements, Stats, Lobby, Server, Overlay, Cloud, Workshop |

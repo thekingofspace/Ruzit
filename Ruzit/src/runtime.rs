@@ -121,6 +121,7 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
                 fs.clone(),
                 owner.clone(),
             )?)),
+            "GPU" => Ok(Value::Table(libs::gpu::create(lua)?)),
             "GUI" => Ok(Value::Table(libs::gui::create(lua)?)),
             "IO" => Ok(Value::Table(libs::io::create(
                 lua,

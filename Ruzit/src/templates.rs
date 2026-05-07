@@ -1387,6 +1387,135 @@ export type Steam_API = {
 
 
 -- =============================================================================
+-- GPU — info about the active graphics adapter, frame stats, and a CPU-side
+-- raycast against the 3D scene. Useful for click-to-select, line-of-sight
+-- gameplay checks, and surfacing hardware capabilities to settings menus.
+-- =============================================================================
+
+-- Snapshot of one ray hit returned by GPU.Raycast. The Position / Normal are
+-- in world space; Distance is the world-space length from the ray's origin.
+export type RaycastHit = {
+	Part: BasePart,
+	Position: Vector,
+	Distance: number,
+	Normal: Vector,
+}
+
+-- Static info about the GPU Ruzit ended up running on. All fields are filled
+-- once at window-open time and don't change for the rest of the process.
+export type GPUInfo = {
+	-- Display name reported by the driver (e.g. "NVIDIA GeForce RTX 4070").
+	Name: string,
+	-- Friendly vendor label: "NVIDIA" / "AMD" / "Intel" / "Apple" / "ARM" /
+	-- "Qualcomm" / "Imagination" / "Microsoft" / "Other" / "Unknown". The
+	-- raw PCI vendor id is also exposed as VendorID.
+	Vendor: string,
+	VendorID: number,
+	DeviceID: number,
+	-- Graphics backend wgpu chose at boot: "Dx12" on Windows by default,
+	-- "Vulkan" / "Metal" / "Gl" / "BrowserWebGpu" elsewhere.
+	Backend: string,
+	-- Driver version string, free-form.
+	Driver: string,
+	-- Extra driver detail (build, date, etc.) — may be empty.
+	DriverInfo: string,
+	-- "DiscreteGpu" / "IntegratedGpu" / "VirtualGpu" / "Cpu" / "Other".
+	-- Useful for picking quality presets at startup.
+	DeviceType: string,
+}
+
+-- Hard caps reported by the wgpu device. Useful for picking texture sizes,
+-- splitting work across compute dispatches, etc. wgpu doesn't expose total
+-- VRAM portably; MaxBufferSize is the closest proxy for a single allocation.
+export type GPULimits = {
+	-- Largest 2D texture dimension you can create (e.g. 16384 on most GPUs).
+	MaxTextureSize: number,
+	-- Largest single buffer allocation in bytes. Closest stand-in for "VRAM
+	-- per allocation" — actual VRAM is usually larger but split across many
+	-- allocations.
+	MaxBufferSize: number,
+	-- Max simultaneously bound bind groups in one pipeline.
+	MaxBindGroups: number,
+	-- Max vertex buffers attached to one pipeline.
+	MaxVertexBuffers: number,
+	-- Max compute workgroup size per axis (when compute is added).
+	MaxComputeWorkgroup: { X: number, Y: number, Z: number },
+}
+
+-- Live frame stats. Smoothed dt is an EMA so the FPS reading doesn't strobe.
+export type GPUFrameStats = {
+	-- Smoothed frames-per-second.
+	FPS: number,
+	-- Smoothed frame time in seconds.
+	FrameTime: number,
+	-- Total frames drawn since process start.
+	FrameCount: number,
+	-- Wall-clock seconds since the GPU module started tracking.
+	Uptime: number,
+	-- Live count of renderable parts in the scene.
+	PartCount: number,
+}
+
+export type GPU_API = {
+	-- Static adapter info (name, vendor, backend, driver, device type). Cached
+	-- — calling repeatedly is free. Useful for logging, settings menus, and
+	-- gating high-cost features behind DeviceType == "DiscreteGpu".
+	Info: () -> GPUInfo,
+	-- Hard limits the active GPU device reported. wgpu doesn't expose total
+	-- VRAM portably across DX12/Vulkan/Metal — MaxBufferSize is the closest
+	-- single number you can rely on for "biggest thing I can allocate".
+	Limits: () -> GPULimits,
+	-- FPS / frame time / scene part count. Updated once per heart tick.
+	-- Cheap; safe to poll every frame for a debug overlay.
+	FrameStats: () -> GPUFrameStats,
+	-- CPU-side ray test against every renderable BasePart in the scene.
+	--
+	--   origin      : world-space ray start (Vector).
+	--   direction   : world-space ray direction (Vector). Length doesn't
+	--                 matter — Ruzit normalizes it. Zero-length errors.
+	--   filter      : optional callback. Hits are visited in nearest-first
+	--                 order. For each hit, `filter(part)` is invoked; return
+	--                 true to accept it as the result, return false (or nil)
+	--                 to skip past it and check the next-nearest hit. If
+	--                 omitted, the first hit is always accepted.
+	--   maxDistance : optional cap in world units. Hits past this distance
+	--                 are ignored. Defaults to ~1e6.
+	--
+	-- Returns a RaycastHit for the first accepted intersection, or nil if
+	-- nothing within range passed the filter.
+	--
+	-- Geometry: cubes/models are tested as oriented bounding boxes derived
+	-- from the part's CFrame + Size. Spheres are tested as ellipsoids with
+	-- the same CFrame + Size. Parts with Render = false are skipped.
+	--
+	-- Example — pick a part under the mouse, ignoring red ones:
+	--   local Mouse = import("Mouse")
+	--   local origin, dir = GPU.ScreenToRay(Mouse.Position)
+	--   local hit = GPU.Raycast(origin, dir, function(part)
+	--       return part.Color ~= Color3.new(1, 0, 0)
+	--   end)
+	--   if hit then
+	--       print("clicked", hit.Part, "at", hit.Position, "distance", hit.Distance)
+	--   end
+	Raycast: (
+		origin: Vector,
+		direction: Vector,
+		filter: ((part: BasePart) -> boolean)?,
+		maxDistance: number?
+	) -> RaycastHit?,
+	-- Convert a screen pixel (Mouse.Position style) to a world-space ray.
+	-- Returns (origin, direction) — feed straight into GPU.Raycast.
+	-- Uses the active Renderable.Camera as the eye + projection.
+	ScreenToRay: (point: Dim) -> (Vector, Vector),
+	-- Project a world-space point onto the screen. Returns:
+	--   (Dim, false) — point is in front of the camera; Dim is the pixel.
+	--   (nil, true)  — point is at or behind the near plane; no projection.
+	-- Useful for billboards, world-anchored UI, off-screen indicators.
+	WorldToScreen: (world: Vector) -> (Dim?, boolean),
+}
+
+
+-- =============================================================================
 -- Actor — parallel CPU work. Spin up a worker pool; Push args to run a
 -- function on another core; Pop the results back on the main thread.
 -- =============================================================================
@@ -1483,6 +1612,7 @@ export type Actor_API = {
 export type Imports = {
 	Actor: Actor_API,
 	Asset: Asset_API,
+	GPU: GPU_API,
 	GUI: GUI_API,
 	IO: IO_API,
 	Keyboard: Keyboard_API,
