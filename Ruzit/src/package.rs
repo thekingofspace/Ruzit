@@ -80,7 +80,15 @@ fn walk(
         }
         if rel.starts_with("assets/") {
             let bytes = fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-            assets.insert(rel, bytes);
+            // Strip the leading "assets/" component so the stored key matches
+            // the user-facing path. Asset.GetAsset("Image", "ui.logo") and
+            // Asset.GetAsset("Image", "ui/logo") both resolve to the bundle
+            // key "ui/logo.png" — never "assets/ui/logo.png".
+            let key = rel
+                .strip_prefix("assets/")
+                .map(|s| s.to_string())
+                .unwrap_or(rel);
+            assets.insert(key, bytes);
         }
     }
     Ok(())
@@ -377,7 +385,15 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
                 if let Some(obj) = parsed.get("assets").and_then(|v| v.as_object()) {
                     for (k, v) in obj {
                         if let Some(b64) = v.as_str() {
-                            pkg.assets.insert(k.clone(), b64.to_string());
+                            // Older builds stored asset keys with the
+                            // "assets/" prefix; strip it on load so a single
+                            // canonical form lives in pkg.assets and the
+                            // resolver can find it.
+                            let normalized = k
+                                .strip_prefix("assets/")
+                                .unwrap_or(k.as_str())
+                                .to_string();
+                            pkg.assets.insert(normalized, b64.to_string());
                         }
                     }
                 }

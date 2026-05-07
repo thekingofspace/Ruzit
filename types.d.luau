@@ -260,9 +260,140 @@ declare class SoundData
 end
 
 
--- Compiled shader text. ShaderAssets are vertex-stage; FragmentAssets are
--- fragment/pixel-stage. Apply via :AttachShader on Sound, BasePart, or
--- Primitive, or via GUI.SetSkybox / GUI.SetPostEffect at scene level.
+-- =============================================================================
+-- Shaders
+-- =============================================================================
+-- Ruzit shaders are written in WGSL — wgpu's native shader language.
+-- (If you've used GLSL/HLSL, WGSL reads similarly: typed structs, explicit
+-- uniform buffers, attribute-declared entry points.) The runtime is wgpu 22
+-- on top of DX12 (Windows) / Vulkan / Metal / GL.
+--
+-- There are two stages, each loaded as its own asset kind:
+--   * ShaderAsset    — VERTEX stage (.shader / .glsl / .wgsl / .hlsl /
+--                      .vert / .metal extensions). Most projects never
+--                      override this; the engine's default vertex stage
+--                      handles transform / projection / interpolation.
+--   * FragmentAsset  — FRAGMENT (pixel) stage (.frag / .fragment / .fs /
+--                      .glslf extensions). This is where ~all custom shader
+--                      work lives — surface lighting, dissolve effects,
+--                      stylized lighting, scrolling textures, post effects.
+--
+-- Where shaders go (the four hook points):
+--   * BasePart:AttachShader(asset)        — runs once per pixel of a 3D part.
+--   * Primitive:AttachShader(asset)       — runs per pixel of a 2D GUI shape.
+--   * Sound:AttachShader(asset)           — DSP "shader" for audio (separate
+--                                           contract — see Sound docs).
+--   * GUI.SetSkybox(asset) / .SetPostEffect(asset) — fullscreen scene passes.
+--
+-- Shaders written for one hook can't be reused on another; the available
+-- bindings differ. Each section below documents the contract.
+--
+-- Custom uniforms (`// @ruzit param`):
+--   Declare named float parameters in your shader source via single-line
+--   comments. Up to 16 floats per shader.
+--
+--     // @ruzit param speed
+--     // @ruzit param amplitude
+--     // @ruzit param tint_g
+--
+--   Then read them in WGSL via the `p(idx)` helper (slot order = decl order):
+--
+--     let speed     = p(0u);
+--     let amplitude = p(1u);
+--     let tint_g    = p(2u);
+--
+--   Set / read from Lua:
+--     part:SetData(shader, "speed", 1.5)
+--     local v = part:GetData(shader, "speed")
+--
+--   Setting a name that isn't declared throws — typo guard.
+--
+-- ──────────────────────────────────────────────────────────────────────────
+-- 2D primitive fragment contract
+--   (FragmentAsset attached to Primitive, or fed to SetSkybox / SetPostEffect)
+--
+-- Available WGSL globals (the engine prepends these as a prelude — DON'T
+-- redeclare them in your shader):
+--
+--   struct VsOut {
+--       @builtin(position) clip: vec4<f32>,
+--       @location(0) uv: vec2<f32>,    // 0..1, top-left origin
+--   };
+--   struct RuzitUni {
+--       pos: vec2<f32>,                 // primitive top-left in pixels
+--       size: vec2<f32>,                // primitive width/height
+--       color: vec4<f32>,               // RGBA tint (alpha = 1 - Transparency)
+--       resolution: vec2<f32>,          // window inner size in pixels
+--       time: f32,                      // seconds since window opened
+--       shape: u32,                     // 0=Square 1=Circle 2=Triangle 3=Image
+--       params: array<vec4<f32>, 4>,    // your @ruzit params, packed
+--   };
+--   @group(0) @binding(0) var<uniform> U: RuzitUni;
+--   @group(0) @binding(1) var IMG: texture_2d<f32>;        // bound asset, or
+--                                                          // 1×1 white if none
+--   @group(0) @binding(2) var IMG_SAMP: sampler;
+--   fn p(idx: u32) -> f32                  // @ruzit param accessor
+--   fn ruzit_inside_shape(uv, shape): bool // mask for the primitive's geometry
+--   fn ruzit_apply_alpha(rgb): vec4<f32>   // wrap rgb in U.color.a
+--
+-- Required entry point:
+--   @fragment
+--   fn fs_main(in: VsOut) -> @location(0) vec4<f32> { ... }
+--
+-- Minimum useful shader (replicates the default — solid tint, shape-masked):
+--   @fragment
+--   fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+--       if (!ruzit_inside_shape(in.uv, U.shape)) { discard; }
+--       let tex = textureSample(IMG, IMG_SAMP, in.uv);
+--       return tex * U.color;
+--   }
+--
+-- ──────────────────────────────────────────────────────────────────────────
+-- 3D part fragment contract
+--   (FragmentAsset attached to BasePart)
+--
+-- Same idea but with view/world data instead of window/screen data:
+--
+--   struct VsOut {
+--       @builtin(position) clip: vec4<f32>,
+--       @location(0) world_pos: vec3<f32>,
+--       @location(1) world_normal: vec3<f32>,    // already normalized
+--       @location(2) uv: vec2<f32>,
+--   };
+--   struct Frame {
+--       view_proj: mat4x4<f32>,
+--       light_dir: vec3<f32>,                    // engine sun direction
+--       time: f32,
+--       camera_pos: vec3<f32>,
+--       _pad: f32,
+--   };
+--   struct Instance {
+--       model: mat4x4<f32>,
+--       color: vec4<f32>,                        // BasePart.Color
+--       params: array<vec4<f32>, 4>,
+--   };
+--   @group(0) @binding(0) var<uniform> F: Frame;
+--   @group(0) @binding(1) var<uniform> I: Instance;
+--   @group(0) @binding(2) var IMG: texture_2d<f32>;     // BasePart.Texture
+--   @group(0) @binding(3) var IMG_SAMP: sampler;
+--   fn p(idx: u32) -> f32
+--
+-- Required entry point:
+--   @fragment
+--   fn fs_main(in: VsOut) -> @location(0) vec4<f32> { ... }
+--
+-- Minimum useful shader (replicates the default half-Lambert lighting):
+--   @fragment
+--   fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+--       let n = normalize(in.world_normal);
+--       let nl = dot(n, -F.light_dir);
+--       let lit = 0.25 + 0.75 * (nl * 0.5 + 0.5);   // half-Lambert + ambient
+--       let tex = textureSample(IMG, IMG_SAMP, in.uv);
+--       return vec4<f32>(I.color.rgb * tex.rgb * lit, I.color.a);
+--   }
+--
+-- =============================================================================
+
 declare class ShaderAsset end
 declare class FragmentAsset end
 
@@ -855,13 +986,84 @@ export type GUI_API = {
 		-- (sized by .TextSize / colored by .TextColor).
 		Font: (asset: FontAsset) -> Primitive,
 	},
-	-- Replace the cleared-color background with a fragment-shader skybox.
-	-- Returns a handle for live `SetData(...)` tweaks.
+	-- ── Skybox ────────────────────────────────────────────────────────
+	-- Install a fragment shader that runs across the whole window before
+	-- the 3D scene draws. Replaces the flat clear color with whatever the
+	-- shader produces — gradient sky, procedural stars, animated clouds,
+	-- a screenspace ray-march, anything. The 3D scene draws on top of
+	-- it normally, so opaque parts naturally occlude it.
+	--
+	-- Contract: same FragmentAsset shape as a 2D primitive shader (uses
+	-- the RuzitUni / IMG / p(idx) prelude). The shader is run on a
+	-- fullscreen quad; in.uv is 0..1 over the window. The texture
+	-- binding (IMG) is a 1×1 white default — there's no scene texture to
+	-- sample in the skybox pass. Useful uniforms:
+	--   U.resolution  — window pixel size for aspect-correct math.
+	--   U.time        — seconds since window opened, for animation.
+	--   p(0u)..p(15u) — your `@ruzit param` floats, controllable from Lua.
+	--
+	-- Returns a SceneShader handle. Keep it around to call :SetData /
+	-- :GetData / :Destroy. Letting it drop AND calling ClearSkybox both
+	-- remove the skybox.
+	--
+	-- Example (vertical gradient sky):
+	--   // @ruzit param horizon_r
+	--   // @ruzit param horizon_g
+	--   // @ruzit param horizon_b
+	--   @fragment
+	--   fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+	--       let zenith = vec3<f32>(0.10, 0.20, 0.55);
+	--       let horizon = vec3<f32>(p(0u), p(1u), p(2u));
+	--       let t = clamp(in.uv.y, 0.0, 1.0);
+	--       return vec4<f32>(mix(zenith, horizon, t), 1.0);
+	--   }
 	SetSkybox: (asset: ShaderAsset | FragmentAsset) -> SceneShader,
+	-- Remove the active skybox; reverts to the flat clear color.
 	ClearSkybox: () -> (),
-	-- Apply a fullscreen post-process pass after 3D + GUI are drawn (CRT,
-	-- bloom, vignette, color grading, whatever you write).
+	-- ── Post-processing ──────────────────────────────────────────────
+	-- Install a fragment shader that runs ONCE per frame as the final
+	-- pass — every cube, model, GUI primitive, skybox, and shader is
+	-- composited into a single 2D image first, then your post shader
+	-- transforms that image and writes the result to the swapchain.
+	-- This is the right hook for:
+	--   * Color grading / LUT-style remapping (warm/cold, sepia, ...)
+	--   * Vignette, film grain, CRT, scanlines, chromatic aberration
+	--   * Bloom (sample neighbors via in.uv offsets)
+	--   * Pixelation, posterize, dithering
+	--   * Damage flashes, low-health red-vignette overlays
+	--   * Distortion / heat haze (offset the uv before sampling)
+	--
+	-- Contract: same FragmentAsset shape as a 2D primitive shader, with
+	-- ONE crucial difference — IMG is bound to the offscreen scene
+	-- texture (the rendered frame BEFORE this pass). textureSample(IMG,
+	-- IMG_SAMP, in.uv) returns the pixel that would have ended up on
+	-- screen, so a no-op shader is literally:
+	--   return textureSample(IMG, IMG_SAMP, in.uv);
+	--
+	-- The shader runs on a fullscreen quad covering the whole window,
+	-- in.uv ∈ [0,1] with top-left origin. Use U.resolution if you need
+	-- pixel-space math (e.g. neighbor taps for blur), U.time for
+	-- animation, and `p(idx)` to read live params.
+	--
+	-- Returns a SceneShader handle. Hold onto it for runtime tweaks
+	-- (e.g. ramping vignette strength when the player takes damage).
+	--
+	-- Example (CRT-ish vignette + scanlines):
+	--   // @ruzit param strength
+	--   @fragment
+	--   fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+	--       let scene = textureSample(IMG, IMG_SAMP, in.uv).rgb;
+	--       let d = in.uv - vec2<f32>(0.5);
+	--       let vignette = 1.0 - dot(d, d) * 1.5 * p(0u);
+	--       let scan = 0.92 + 0.08 * sin(in.uv.y * U.resolution.y * 3.14);
+	--       return vec4<f32>(scene * vignette * scan, 1.0);
+	--   }
+	--   -- main.luau:
+	--   local effect = GUI.SetPostEffect(Asset.GetAsset("Fragment", "post.crt"))
+	--   effect:SetData("strength", 0.6)
 	SetPostEffect: (asset: ShaderAsset | FragmentAsset) -> SceneShader,
+	-- Remove the active post effect; the rendered scene goes straight to
+	-- the swapchain again.
 	ClearPostEffect: () -> (),
 }
 
