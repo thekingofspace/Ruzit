@@ -6,16 +6,42 @@ use std::sync::Arc;
 
 use crate::config::FileType;
 
+pub struct Package {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub creator: String,
+    pub entry: String,
+    #[allow(dead_code)]
+    pub file_type: FileType,
+    /// On-disk location backing this package, when one exists (Test mode + DLCs
+    /// that live as folders alongside Main.luau). `None` means the package is
+    /// only present in memory (launcher mode), and IO operations from inside
+    /// it fall back to the bundle's `physical_root`.
+    pub physical_root: Option<PathBuf>,
+    pub files: HashMap<String, String>,
+    /// Base64-encoded raw bytes. Decoded lazily by `Asset.GetAsset` so startup
+    /// stays cheap with large asset sets.
+    pub assets: HashMap<String, String>,
+}
+
 #[derive(Clone)]
+#[allow(dead_code)]
 pub enum Fs {
+    /// Reserved variant for future plain-disk runs without a bundle layer.
+    /// Currently unused because `Ruzit Test` snapshots into a `Bundle`.
     Disk {
         root: PathBuf,
         file_type: FileType,
     },
     Bundle {
-        files: Arc<HashMap<String, String>>,
-        assets: Arc<HashMap<String, Vec<u8>>>,
+        packages: Arc<HashMap<String, Arc<Package>>>,
+        default_id: String,
         file_type: FileType,
+        /// Default IO root for packages that don't carry a `physical_root` of
+        /// their own. In a launcher this is the directory next to the exe;
+        /// in `Ruzit Test` it's the project folder.
+        physical_root: PathBuf,
     },
 }
 
@@ -25,6 +51,20 @@ impl Fs {
             Fs::Disk { file_type, .. } | Fs::Bundle { file_type, .. } => *file_type,
         }
     }
+}
+
+/// Owners (chunk names) inside a bundle look like:
+///   - "Main.luau"            (default package)
+///   - "@dlc1/lib/foo.luau"   (DLC package "dlc1")
+///
+/// This splits an owner into (package_id, inner_path).
+pub fn split_owner<'a>(owner: &'a str, default_id: &'a str) -> (&'a str, &'a str) {
+    if let Some(rest) = owner.strip_prefix('@') {
+        if let Some((id, inner)) = rest.split_once('/') {
+            return (id, inner);
+        }
+    }
+    (default_id, owner)
 }
 
 pub fn normalize(p: &Path) -> PathBuf {
@@ -70,22 +110,34 @@ pub fn resolve(fs: &Fs, caller: &str, name: &str) -> Option<String> {
             file_type: FileType::Global,
         } => disk_global(root, name),
         Fs::Bundle {
-            files,
-            file_type: FileType::Relative,
+            packages,
+            default_id,
+            file_type,
             ..
-        } => bundle_relative(files, caller, name),
-        Fs::Bundle {
-            files,
-            file_type: FileType::Global,
-            ..
-        } => bundle_global(files, name),
+        } => bundle_resolve(packages, default_id, *file_type, caller, name),
     }
 }
 
 pub fn read_module(fs: &Fs, key: &str) -> Option<String> {
     match fs {
-        Fs::Disk { .. } => fs::read_to_string(key).ok(),
-        Fs::Bundle { files, .. } => files.get(key).cloned(),
+        Fs::Disk { .. } => fs::read_to_string(key).ok().map(strip_bom),
+        Fs::Bundle {
+            packages,
+            default_id,
+            ..
+        } => {
+            let (pkg_id, inner) = split_owner(key, default_id);
+            packages.get(pkg_id).and_then(|p| p.files.get(inner).cloned())
+        }
+    }
+}
+
+fn strip_bom(s: String) -> String {
+    const BOM: &str = "\u{feff}";
+    if s.starts_with(BOM) {
+        s[BOM.len()..].to_string()
+    } else {
+        s
     }
 }
 
@@ -95,10 +147,19 @@ pub fn caller_dir(fs: &Fs, owner: &str) -> PathBuf {
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_default(),
-        Fs::Bundle { .. } => {
-            let exe_dir = exe_dir();
-            let v_parent = Path::new(owner).parent().unwrap_or(Path::new(""));
-            exe_dir.join(v_parent)
+        Fs::Bundle {
+            packages,
+            default_id,
+            physical_root,
+            ..
+        } => {
+            let (pkg_id, inner) = split_owner(owner, default_id);
+            let pkg_root = packages
+                .get(pkg_id)
+                .and_then(|p| p.physical_root.clone())
+                .unwrap_or_else(|| physical_root.clone());
+            let v_parent = Path::new(inner).parent().unwrap_or(Path::new(""));
+            pkg_root.join(v_parent)
         }
     }
 }
@@ -106,7 +167,7 @@ pub fn caller_dir(fs: &Fs, owner: &str) -> PathBuf {
 pub fn fs_root(fs: &Fs) -> PathBuf {
     match fs {
         Fs::Disk { root, .. } => root.clone(),
-        Fs::Bundle { .. } => exe_dir(),
+        Fs::Bundle { physical_root, .. } => physical_root.clone(),
     }
 }
 
@@ -122,6 +183,7 @@ pub fn physical_path(fs: &Fs, owner: &str, path: &str) -> PathBuf {
     normalize(&resolved)
 }
 
+#[allow(dead_code)]
 fn exe_dir() -> PathBuf {
     env::current_exe()
         .ok()
@@ -155,13 +217,48 @@ fn disk_lookup(base: &Path) -> Option<String> {
     None
 }
 
-fn bundle_relative(files: &HashMap<String, String>, caller: &str, name: &str) -> Option<String> {
-    let dir = Path::new(caller).parent().unwrap_or(Path::new(""));
-    bundle_lookup(files, &dir.join(name))
-}
+fn bundle_resolve(
+    packages: &HashMap<String, Arc<Package>>,
+    default_id: &str,
+    file_type: FileType,
+    caller: &str,
+    name: &str,
+) -> Option<String> {
+    // 1. Aliased absolute paths: "@<alias>/some/path".
+    //    "@self" is the calling file's own package; "@<id>" is any package by id.
+    if let Some(rest) = name.strip_prefix('@') {
+        let (alias, inner) = rest.split_once('/')?;
+        let (caller_pkg_id, _) = split_owner(caller, default_id);
+        let target_id: &str = if alias == "self" {
+            caller_pkg_id
+        } else {
+            alias
+        };
+        let pkg = packages.get(target_id)?;
+        let key = bundle_lookup(&pkg.files, Path::new(strip_anchors(inner)))?;
+        return Some(if target_id == default_id {
+            key
+        } else {
+            format!("@{target_id}/{key}")
+        });
+    }
 
-fn bundle_global(files: &HashMap<String, String>, name: &str) -> Option<String> {
-    bundle_lookup(files, Path::new(strip_anchors(name)))
+    // 2. Plain path: resolve in the caller's package.
+    let (caller_pkg_id, caller_inner) = split_owner(caller, default_id);
+    let pkg = packages.get(caller_pkg_id)?;
+    let base = match file_type {
+        FileType::Relative => {
+            let dir = Path::new(caller_inner).parent().unwrap_or(Path::new(""));
+            dir.join(name)
+        }
+        FileType::Global => Path::new(strip_anchors(name)).to_path_buf(),
+    };
+    let key = bundle_lookup(&pkg.files, &base)?;
+    if caller_pkg_id == default_id {
+        Some(key)
+    } else {
+        Some(format!("@{caller_pkg_id}/{key}"))
+    }
 }
 
 fn bundle_lookup(files: &HashMap<String, String>, base: &Path) -> Option<String> {

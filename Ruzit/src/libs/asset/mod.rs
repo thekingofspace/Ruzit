@@ -1,10 +1,23 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
+use base64::Engine;
 use image::ImageReader;
 use mlua::{Lua, Table, UserData, UserDataMethods, Value};
 
-use crate::vfs::{self, Fs};
+use crate::libs::sfx::{self, SoundData};
+use crate::vfs::{self, Fs, split_owner};
+
+/// Monotonic id used by shader-style assets so attached effects can be
+/// identified across `:SetData`/`:DetachShader` calls without relying on
+/// userdata pointer equality.
+static SHADER_ID: AtomicU64 = AtomicU64::new(1);
+
+pub(crate) fn next_shader_id() -> u64 {
+    SHADER_ID.fetch_add(1, Ordering::Relaxed)
+}
 
 pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
     let t = lua.create_table()?;
@@ -22,24 +35,57 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
 }
 
 const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "bmp", "gif", "webp"];
+const SHADER_EXTS: &[&str] = &["shader", "glsl", "wgsl", "hlsl", "vert", "metal"];
+const FRAGMENT_EXTS: &[&str] = &["frag", "fragment", "fs", "glslf"];
 
 fn get_asset(
     lua: &Lua,
     fs: &Fs,
-    _owner: &str,
+    owner: &str,
     kind: &str,
     path: &str,
 ) -> mlua::Result<Value> {
     match kind {
-        "Image" => load_image(lua, fs, path),
+        "Image" => load_image(lua, fs, owner, path),
+        "Sound" => load_sound(lua, fs, owner, path),
+        "Shader" => load_text::<ShaderAsset>(lua, fs, owner, path, SHADER_EXTS, "Shader"),
+        "Fragment" => load_text::<FragmentAsset>(lua, fs, owner, path, FRAGMENT_EXTS, "Fragment"),
         other => Err(mlua::Error::RuntimeError(format!(
-            "Asset.GetAsset: unknown kind '{other}' (try 'Image')"
+            "Asset.GetAsset: unknown kind '{other}' (try 'Image', 'Sound', 'Shader', 'Fragment')"
         ))),
     }
 }
 
-fn load_image(lua: &Lua, fs: &Fs, path: &str) -> mlua::Result<Value> {
-    let (bytes, source) = read_image_bytes(fs, path)?;
+fn load_sound(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value> {
+    let (bytes, source) = read_bytes(fs, owner, path, sfx::SOUND_EXTS, "Sound")?;
+    let data = SoundData {
+        bytes: Arc::new(bytes),
+        source,
+    };
+    Ok(Value::UserData(lua.create_userdata(data)?))
+}
+
+fn load_text<T: TextAsset + UserData + 'static>(
+    lua: &Lua,
+    fs: &Fs,
+    owner: &str,
+    path: &str,
+    exts: &[&str],
+    kind: &str,
+) -> mlua::Result<Value> {
+    let (bytes, source) = read_bytes(fs, owner, path, exts, kind)?;
+    let code = String::from_utf8(bytes).map_err(|e| {
+        mlua::Error::RuntimeError(format!("Asset.GetAsset: '{source}' not valid UTF-8: {e}"))
+    })?;
+    Ok(Value::UserData(lua.create_userdata(T::make(code, source))?))
+}
+
+trait TextAsset {
+    fn make(code: String, source: String) -> Self;
+}
+
+fn load_image(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value> {
+    let (bytes, source) = read_bytes(fs, owner, path, IMAGE_EXTS, "Image")?;
 
     let img = ImageReader::new(std::io::Cursor::new(&bytes))
         .with_guessed_format()
@@ -60,13 +106,19 @@ fn load_image(lua: &Lua, fs: &Fs, path: &str) -> mlua::Result<Value> {
     Ok(Value::UserData(lua.create_userdata(asset)?))
 }
 
-fn read_image_bytes(fs: &Fs, path: &str) -> mlua::Result<(Vec<u8>, String)> {
+fn read_bytes(
+    fs: &Fs,
+    owner: &str,
+    path: &str,
+    exts: &[&str],
+    kind: &str,
+) -> mlua::Result<(Vec<u8>, String)> {
     match fs {
         Fs::Disk { .. } => {
             let root = vfs::fs_root(fs);
-            let resolved = resolve_disk(&root, path).ok_or_else(|| {
+            let resolved = resolve_disk(&root, path, exts).ok_or_else(|| {
                 mlua::Error::RuntimeError(format!(
-                    "Asset.GetAsset: image '{path}' not found under {}",
+                    "Asset.GetAsset: {kind} '{path}' not found under {}",
                     root.display()
                 ))
             })?;
@@ -75,24 +127,54 @@ fn read_image_bytes(fs: &Fs, path: &str) -> mlua::Result<(Vec<u8>, String)> {
             })?;
             Ok((bytes, resolved.to_string_lossy().into_owned()))
         }
-        Fs::Bundle { assets, .. } => {
-            let key = resolve_bundle(assets, path).ok_or_else(|| {
+        Fs::Bundle {
+            packages,
+            default_id,
+            ..
+        } => {
+            // Either an explicit "@<id>/..." prefix overrides, or we use the calling
+            // file's package as context.
+            let (target_id, rest_path) = if let Some(rest) = path.strip_prefix('@') {
+                if let Some((id, inner)) = rest.split_once('/') {
+                    (id.to_string(), inner.to_string())
+                } else {
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "Asset.GetAsset: bad package path '{path}'"
+                    )));
+                }
+            } else {
+                let (caller_pkg, _) = split_owner(owner, default_id);
+                (caller_pkg.to_string(), path.to_string())
+            };
+
+            let pkg = packages.get(&target_id).ok_or_else(|| {
                 mlua::Error::RuntimeError(format!(
-                    "Asset.GetAsset: image '{path}' not found in bundle"
+                    "Asset.GetAsset: package '{target_id}' is not loaded"
                 ))
             })?;
-            let bytes = assets.get(&key).cloned().ok_or_else(|| {
+            let key = resolve_bundle(&pkg.assets, &rest_path, exts).ok_or_else(|| {
+                mlua::Error::RuntimeError(format!(
+                    "Asset.GetAsset: {kind} '{rest_path}' not found in package '{target_id}'"
+                ))
+            })?;
+            // Lazy decode: assets are kept as base64 strings until access.
+            let b64 = pkg.assets.get(&key).ok_or_else(|| {
                 mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' missing"))
             })?;
-            Ok((bytes, format!("<bundle>/{key}")))
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .map_err(|e| {
+                    mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' base64 decode: {e}"))
+                })?;
+            Ok((bytes, format!("@{target_id}/{key}")))
         }
     }
 }
 
-fn resolve_disk(root: &Path, path: &str) -> Option<PathBuf> {
+fn resolve_disk(root: &Path, path: &str, exts: &[&str]) -> Option<PathBuf> {
     if let Some(idx) = path.rfind('.') {
         let ext = &path[idx + 1..];
-        if IMAGE_EXTS.iter().any(|e| e.eq_ignore_ascii_case(ext)) {
+        if exts.iter().any(|e| e.eq_ignore_ascii_case(ext)) {
             let stem = &path[..idx];
             let direct = root.join(dotted_to_path(stem)).with_extension(ext);
             if direct.is_file() {
@@ -101,7 +183,7 @@ fn resolve_disk(root: &Path, path: &str) -> Option<PathBuf> {
         }
     }
     let base = root.join(dotted_to_path(path));
-    for ext in IMAGE_EXTS {
+    for ext in exts {
         let candidate = base.with_extension(ext);
         if candidate.is_file() {
             return Some(candidate);
@@ -110,11 +192,15 @@ fn resolve_disk(root: &Path, path: &str) -> Option<PathBuf> {
     None
 }
 
-fn resolve_bundle(assets: &HashMap<String, Vec<u8>>, path: &str) -> Option<String> {
+fn resolve_bundle(
+    assets: &HashMap<String, String>,
+    path: &str,
+    exts: &[&str],
+) -> Option<String> {
     if let Some(idx) = path.rfind('.') {
         let ext = &path[idx + 1..];
-        if IMAGE_EXTS.iter().any(|e| e.eq_ignore_ascii_case(ext)) {
-            let stem = &path[..idx].replace('.', "/");
+        if exts.iter().any(|e| e.eq_ignore_ascii_case(ext)) {
+            let stem = path[..idx].replace('.', "/");
             let key = format!("{stem}.{ext}");
             if assets.contains_key(&key) {
                 return Some(key);
@@ -122,7 +208,7 @@ fn resolve_bundle(assets: &HashMap<String, Vec<u8>>, path: &str) -> Option<Strin
         }
     }
     let base = path.replace('.', "/");
-    for ext in IMAGE_EXTS {
+    for ext in exts {
         let key = format!("{base}.{ext}");
         if assets.contains_key(&key) {
             return Some(key);
@@ -138,7 +224,7 @@ fn dotted_to_path(dotted: &str) -> PathBuf {
 pub struct ImageAsset {
     pub width: u32,
     pub height: u32,
-    pub data: Vec<u8>, // RGBA8
+    pub data: Vec<u8>,
     pub source: String,
 }
 
@@ -150,3 +236,34 @@ impl UserData for ImageAsset {
         m.add_method("Pixels", |lua, this, _: ()| lua.create_string(&this.data));
     }
 }
+
+/// Opaque shader handle. The source text is intentionally not exposed to Lua —
+/// these are meant to be attached to host objects (sounds, meshes, UI) and
+/// parameterized via `:SetData(shader, name, value)`.
+pub struct ShaderAsset {
+    pub id: u64,
+    pub code: String,
+    pub source: String,
+}
+
+impl TextAsset for ShaderAsset {
+    fn make(code: String, source: String) -> Self {
+        Self { id: next_shader_id(), code, source }
+    }
+}
+
+impl UserData for ShaderAsset {}
+
+pub struct FragmentAsset {
+    pub id: u64,
+    pub code: String,
+    pub source: String,
+}
+
+impl TextAsset for FragmentAsset {
+    fn make(code: String, source: String) -> Self {
+        Self { id: next_shader_id(), code, source }
+    }
+}
+
+impl UserData for FragmentAsset {}

@@ -38,6 +38,10 @@ pub struct BuildConfig {
     pub file_type: FileType,
     pub exe_name: Option<String>,
     pub exe_icon: Option<String>,
+    /// `true` → launcher built as windows-subsystem (no console flash from
+    /// Explorer; needs `--console` to see prints). `false` (default) →
+    /// console-subsystem so cmd launches always show output.
+    pub exe_windowed: bool,
 }
 
 impl BuildConfig {
@@ -69,6 +73,9 @@ impl BuildConfig {
             }
             if let Some(s) = exe.get("icon").and_then(|x| x.as_str()) {
                 cfg.exe_icon = Some(s.to_string());
+            }
+            if let Some(b) = exe.get("windowed").and_then(|x| x.as_bool()) {
+                cfg.exe_windowed = b;
             }
         }
         Ok(cfg)
@@ -104,3 +111,67 @@ impl BuildConfig {
         }
     }
 }
+
+#[derive(Debug, Clone, Default)]
+pub struct ManagedInfo {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub creator: String,
+    pub entry: String,
+    pub file_type: FileType,
+}
+
+impl ManagedInfo {
+    pub fn from_toml_str(text: &str) -> Result<Self, String> {
+        let v: toml::Value = text
+            .parse::<toml::Value>()
+            .map_err(|e| format!("invalid ManagedInfo.toml: {e}"))?;
+        let id = v
+            .get("ID")
+            .and_then(|x| x.as_str())
+            .ok_or("ManagedInfo.toml missing 'ID'")?
+            .to_string();
+        let mut info = ManagedInfo {
+            id,
+            entry: "init.luau".to_string(),
+            ..Default::default()
+        };
+        if let Some(s) = v.get("Name").and_then(|x| x.as_str()) {
+            info.name = s.to_string();
+        } else {
+            info.name = info.id.clone();
+        }
+        if let Some(s) = v.get("Version").and_then(|x| x.as_str()) {
+            info.version = s.to_string();
+        }
+        if let Some(s) = v.get("Creator").and_then(|x| x.as_str()) {
+            info.creator = s.to_string();
+        }
+        if let Some(s) = v.get("Entry").and_then(|x| x.as_str()) {
+            info.entry = s.to_string();
+        }
+        if let Some(configs) = v.get("configs") {
+            if let Some(ft_str) = configs.get("File Type").and_then(|x| x.as_str()) {
+                info.file_type = FileType::parse(ft_str).ok_or_else(|| {
+                    format!("File Type must be 'Relative' or 'Global', got '{ft_str}'")
+                })?;
+            }
+        }
+        Ok(info)
+    }
+
+    pub fn load(folder: &std::path::Path) -> Result<Self, String> {
+        let path = folder.join("ManagedInfo.toml");
+        if !path.is_file() {
+            return Err(format!(
+                "ManagedInfo.toml not found in {}",
+                folder.display()
+            ));
+        }
+        let text = std::fs::read_to_string(&path)
+            .map_err(|e| format!("read {}: {e}", path.display()))?;
+        Self::from_toml_str(&text)
+    }
+}
+

@@ -27,7 +27,16 @@ fn install_constants(t: &Table) -> mlua::Result<()> {
         .map(|n| n.get())
         .unwrap_or(1);
     t.set("CpuCount", cpu_count as i64)?;
+    // True when this exe was produced by `Ruzit Build` (carries a launcher
+    // trailer); false under `Ruzit Test` / dev-tool runs.
+    t.set("IsBuilt", is_built())?;
     Ok(())
+}
+
+fn is_built() -> bool {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<bool> = OnceLock::new();
+    *CACHE.get_or_init(|| crate::package::try_self_launcher().is_some())
 }
 
 fn install_env(lua: &Lua, t: &Table) -> mlua::Result<()> {

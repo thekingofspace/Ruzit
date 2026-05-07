@@ -1,7 +1,9 @@
 pub mod asset;
 pub mod io;
+pub mod managed;
 pub mod net;
 pub mod process;
 pub mod serde;
+pub mod sfx;
 pub mod signal;
 pub mod window;

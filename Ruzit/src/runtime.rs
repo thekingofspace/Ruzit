@@ -98,9 +98,11 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
                 fs.clone(),
                 owner.clone(),
             )?)),
+            "Managed" => Ok(Value::Table(libs::managed::create(lua, fs.clone())?)),
             "Net" => Ok(Value::Table(libs::net::create(lua)?)),
             "Process" => Ok(Value::Table(libs::process::create(lua)?)),
             "Serde" => Ok(Value::Table(libs::serde::create(lua)?)),
+            "SFX" => Ok(Value::Table(libs::sfx::create(lua)?)),
             "Signal" => Ok(Value::Table(libs::signal::class(lua)?)),
             "Window" => Ok(Value::Table(libs::window::create(lua)?)),
             other => Err(mlua::Error::RuntimeError(format!(

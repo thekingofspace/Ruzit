@@ -8,6 +8,8 @@ Creator = ""
 [exe]
 # name = "{name}"     # output exe name when running `Ruzit Build` (defaults to entry stem)
 # icon = "logo"       # looks for <icon>.ico next to build.toml and embeds it as the exe icon
+# windowed = false    # true → no console flash from Explorer (needs --console for prints).
+                      #         Default leaves prints visible from cmd or Explorer.
 "#;
 
 pub const MAIN_LUAU: &str = r#"--!strict
@@ -124,6 +126,7 @@ type Process_API = {
 	Family: string,
 	Pid: number,
 	CpuCount: number,
+	IsBuilt: boolean,
 	Env: ((name: string) -> string?) & (() -> { [string]: string }),
 	SetEnv: (name: string, value: string) -> (),
 	Close: (code: number?) -> never,
@@ -140,7 +143,22 @@ declare class ImageAsset
 	function Pixels(self): string
 end
 
-type Asset_API = { GetAsset: (kind: "Image", path: string) -> ImageAsset }
+declare class SoundData
+	function Source(self): string
+	function ByteCount(self): number
+end
+
+-- Opaque shader handles. Loaded from disk/bundle and attached to host objects
+-- (sounds, meshes, UI). Their data is exchanged through the host's :SetData.
+declare class ShaderAsset end
+declare class FragmentAsset end
+
+type Asset_API = {
+	GetAsset: ((kind: "Image", path: string) -> ImageAsset)
+		& ((kind: "Sound", path: string) -> SoundData)
+		& ((kind: "Shader", path: string) -> ShaderAsset)
+		& ((kind: "Fragment", path: string) -> FragmentAsset),
+}
 
 type WindowOptions = {
 	title: string?, width: number?, height: number?,
@@ -167,6 +185,8 @@ type Signal_API = { new: () -> Signal }
 
 declare class WindowHandle
 	Changed: Signal
+	OnFocus: Signal
+	OnUnfocus: Signal
 	function Close(self): ()
 	function BindToClose(self, fn: () -> ()): ()
 	function Resize(self, width: number, height: number): ()
@@ -190,11 +210,64 @@ end
 
 type Window_API = { Open: (opts: WindowOptions?) -> WindowHandle }
 
+-- Built-in transformations applied via :ApplyShader. Distinct from ShaderAsset,
+-- which is loaded from disk and uses :AttachShader / :SetData.
+declare class SoundShader end
+
+declare class Sound
+	Started: Signal
+	Stopped: Signal
+	Source: string
+	function Play(self): ()
+	function Stop(self): ()
+	function IsPlaying(self): boolean
+	function ApplyShader(self, shader: SoundShader): ()
+	function ClearShaders(self): ()
+	function AttachShader(self, asset: ShaderAsset | FragmentAsset): ()
+	function DetachShader(self, asset: ShaderAsset | FragmentAsset): ()
+	function SetData(self, asset: ShaderAsset | FragmentAsset, name: string, value: number): ()
+	function GetData(self, asset: ShaderAsset | FragmentAsset, name: string): number?
+	function LinkToUpdate(self, interval: number): Signal
+end
+
+type SFX_API = {
+	LoadSound: (data: SoundData) -> Sound,
+	-- Built-in transformations (applied via :ApplyShader, snapshot at Play).
+	Volume: (factor: number) -> SoundShader,
+	Speed: (factor: number) -> SoundShader,
+	FadeIn: (seconds: number) -> SoundShader,
+	LowPass: (freq: number) -> SoundShader,
+	Delay: (seconds: number) -> SoundShader,
+	Repeat: () -> SoundShader,
+}
+
+declare class Package
+	ID: string
+	Name: string
+	Version: string
+	Creator: string
+	Entry: string
+	Origin: string
+	function HasFile(self, key: string): boolean
+	function HasAsset(self, key: string): boolean
+	function Files(self): { string }
+	function Assets(self): { string }
+end
+
+type Managed_API = {
+	IsPackage: (id: string) -> boolean,
+	GetPackage: (id: string) -> Package?,
+	List: () -> { string },
+	Default: () -> Package?,
+}
+
 declare import: ((name: "Asset") -> Asset_API)
 	& ((name: "IO") -> IO_API)
+	& ((name: "Managed") -> Managed_API)
 	& ((name: "Net") -> Net_API)
 	& ((name: "Process") -> Process_API)
 	& ((name: "Serde") -> Serde_API)
+	& ((name: "SFX") -> SFX_API)
 	& ((name: "Signal") -> Signal_API)
 	& ((name: "Window") -> Window_API)
 

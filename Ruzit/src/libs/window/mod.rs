@@ -18,6 +18,8 @@ use crate::libs::asset::ImageAsset;
 use crate::libs::signal;
 
 const CHANGED_KEY: &str = "ruzit_window_changed";
+const ON_FOCUS_KEY: &str = "ruzit_window_on_focus";
+const ON_UNFOCUS_KEY: &str = "ruzit_window_on_unfocus";
 
 #[derive(Debug)]
 enum WindowChange {
@@ -102,6 +104,12 @@ fn fire_change(lua: &Lua, signal: &Table, change: WindowChange) -> mlua::Result<
         WindowChange::Focused(focused) => {
             args.push_back(Value::String(lua.create_string("Focused")?));
             args.push_back(Value::Boolean(focused));
+            let key = if focused { ON_FOCUS_KEY } else { ON_UNFOCUS_KEY };
+            if let Ok(side) = lua.named_registry_value::<Table>(key) {
+                if let Err(e) = signal::fire(lua, &side, MultiValue::new()) {
+                    eprintln!("[Window] {key} fire error: {e}");
+                }
+            }
         }
         WindowChange::ScaleFactor(scale) => {
             args.push_back(Value::String(lua.create_string("ScaleFactor")?));
@@ -189,6 +197,10 @@ fn open(lua: &Lua, opts_arg: Option<Table>) -> mlua::Result<WindowHandle> {
     // Spin up a fresh Changed signal for this window and stash it where pump() can find it.
     let changed = signal::new_instance(lua)?;
     lua.set_named_registry_value(CHANGED_KEY, changed)?;
+    let on_focus = signal::new_instance(lua)?;
+    lua.set_named_registry_value(ON_FOCUS_KEY, on_focus)?;
+    let on_unfocus = signal::new_instance(lua)?;
+    lua.set_named_registry_value(ON_UNFOCUS_KEY, on_unfocus)?;
 
     Ok(WindowHandle)
 }
@@ -335,6 +347,12 @@ impl UserData for WindowHandle {
     fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
         f.add_field_method_get("Changed", |lua, _| -> mlua::Result<Table> {
             lua.named_registry_value(CHANGED_KEY)
+        });
+        f.add_field_method_get("OnFocus", |lua, _| -> mlua::Result<Table> {
+            lua.named_registry_value(ON_FOCUS_KEY)
+        });
+        f.add_field_method_get("OnUnfocus", |lua, _| -> mlua::Result<Table> {
+            lua.named_registry_value(ON_UNFOCUS_KEY)
         });
     }
 

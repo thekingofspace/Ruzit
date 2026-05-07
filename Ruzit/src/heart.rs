@@ -21,11 +21,13 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         // Pump window events first; this can call std::process::exit if the user
         // closed the window (after running BindToClose, if registered).
         crate::libs::window::pump(lua);
+        crate::libs::sfx::pump(lua);
 
         let snapshot = snapshot_handlers(lua)?;
         let window_open = crate::libs::window::is_open();
+        let sfx_active = crate::libs::sfx::is_active();
 
-        if snapshot.is_empty() && !window_open {
+        if snapshot.is_empty() && !window_open && !sfx_active {
             return Ok(());
         }
 
