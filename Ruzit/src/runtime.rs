@@ -1,7 +1,9 @@
 use std::io::Write;
+use std::path::{Path, PathBuf};
 
 use mlua::{Lua, MultiValue, Table, Value};
 
+use crate::config::FileType;
 use crate::errors;
 use crate::heart;
 use crate::libs;
@@ -67,6 +69,7 @@ fn build_env(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
     install_dirname(&env, &fs, &owner)?;
     install_import(lua, &env, &fs, &owner)?;
     install_print(lua, &env)?;
+    install_load(lua, &env, &fs, &owner)?;
 
     Ok(env)
 }
@@ -142,6 +145,7 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             "Net" => Ok(Value::Table(libs::net::create(lua)?)),
             "Primitives" => Ok(Value::Table(libs::primitives::create(lua)?)),
             "Process" => Ok(Value::Table(libs::process::create(lua)?)),
+            "Register" => Ok(Value::Table(libs::register::create(lua)?)),
             "Renderable" => Ok(Value::Table(libs::renderable::create(lua)?)),
             "RunService" => Ok(Value::Table(libs::runservice::create(lua)?)),
             "Serde" => Ok(Value::Table(libs::serde::create(lua)?)),
@@ -158,6 +162,88 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
         }
     })?;
     env.set("import", import)
+}
+
+/// `load(path)` — sibling to `require` that takes a raw filesystem path
+/// instead of a vfs key. Useful for loading mods, user-content scripts,
+/// or anything that lives outside the project's bundled tree. Loaded
+/// modules get the full runtime env (`require` / `import` / `__dirname`
+/// / `print` / `load`) with file-resolution rooted at the loaded file's
+/// own directory — so a script loaded from `C:/mods/foo.luau` can
+/// `require("./bar")` and get `C:/mods/bar.luau`.
+///
+/// Path forms:
+///   * absolute: used as-is.
+///   * relative: joined against the calling script's directory
+///     (`vfs::caller_dir`).
+///
+/// The loaded chunk evaluates immediately and its return value is the
+/// return value of `load()`. If the chunk returns nothing, `true` comes
+/// back (matching how `require` handles bare side-effect modules).
+fn install_load(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<()> {
+    let caller_fs = fs.clone();
+    let caller_owner = owner.to_string();
+    let load = lua.create_function(move |lua, raw: String| -> mlua::Result<Value> {
+        let abs = resolve_load_path(&caller_fs, &caller_owner, &raw)?;
+        load_disk_file(lua, &abs)
+    })?;
+    env.set("load", load)
+}
+
+fn resolve_load_path(fs: &Fs, owner: &str, raw: &str) -> mlua::Result<PathBuf> {
+    let p = Path::new(raw);
+    let mut candidate = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        vfs::caller_dir(fs, owner).join(raw)
+    };
+    candidate = vfs::normalize(&candidate);
+
+    if candidate.is_file() {
+        return Ok(candidate);
+    }
+
+    if candidate.extension().is_none() {
+        for ext in ["luau", "lua"] {
+            let mut probed = candidate.clone();
+            probed.set_extension(ext);
+            if probed.is_file() {
+                return Ok(probed);
+            }
+        }
+    }
+    Err(mlua::Error::RuntimeError(format!(
+        "load: file not found '{}' (resolved to '{}')",
+        raw,
+        candidate.display()
+    )))
+}
+
+fn load_disk_file(lua: &Lua, abs: &Path) -> mlua::Result<Value> {
+    let source = std::fs::read_to_string(abs)
+        .map_err(|e| mlua::Error::RuntimeError(format!("load: read {}: {e}", abs.display())))?;
+    let parent = abs
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("/"));
+
+    let load_fs = Fs::Disk {
+        root: parent,
+        file_type: FileType::Relative,
+    };
+    let owner = abs.to_string_lossy().to_string();
+    let env = build_env(lua, load_fs, owner.clone())?;
+    let chunk_name = format!("@{owner}");
+    let result: Value = lua
+        .load(&source)
+        .set_name(&chunk_name)
+        .set_environment(env)
+        .eval()?;
+    Ok(if matches!(result, Value::Nil) {
+        Value::Boolean(true)
+    } else {
+        result
+    })
 }
 
 /// Compact "<script> in <package>" descriptor for error messages emitted from

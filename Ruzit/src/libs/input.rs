@@ -425,7 +425,6 @@ pub fn pump(lua: &Lua) {
                         continue;
                     }
                 }));
-                args.push_back(Value::Boolean(ev.pressed));
 
                 args.push_back(Value::String(
                     match lua.create_string(if ev.pressed { "Begin" } else { "End" }) {
@@ -468,7 +467,7 @@ pub fn pump(lua: &Lua) {
                         continue;
                     }
                 }));
-                args.push_back(Value::Boolean(ev.pressed));
+
                 args.push_back(Value::String(
                     match lua.create_string(if ev.pressed { "Begin" } else { "End" }) {
                         Ok(s) => s,

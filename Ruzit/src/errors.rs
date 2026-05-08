@@ -18,6 +18,7 @@ pub const IMPORT_LIBS: &[&str] = &[
     "Net",
     "Primitives",
     "Process",
+    "Register",
     "Renderable",
     "RunService",
     "Serde",

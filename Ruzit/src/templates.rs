@@ -1382,10 +1382,11 @@ export type Mouse_API = {
 	-- Fires with (position: Dim, delta: Dim).
 	Moved: Signal<Dim, Dim>,
 	-- Fires with (button: MouseButton, pressed: boolean).
-	-- Fires (button, pressed, state) where state is "Begin" on press and
-	-- "End" on release. The legacy boolean is kept so existing scripts
-	-- keep working; new code can read the explicit string.
-	InputReceived: Signal<MouseButton, boolean, "Begin" | "End">,
+	-- Fires (button, state) where state is "Begin" on press and "End" on
+	-- release. As of Ruzit 3.2 the legacy `pressed` boolean was dropped —
+	-- the State string is now the single source of truth. See the
+	-- "Deprecated" section in the Mouse docs for a one-line migration.
+	InputReceived: Signal<MouseButton, "Begin" | "End">,
 	-- Fires with (deltaX: number, deltaY: number) in lines (one notch of a
 	-- standard mouse wheel = ±1). +deltaY is scroll up / away from the user;
 	-- +deltaX is scroll right. Precise touchpads emit fractional values.
@@ -1409,10 +1410,11 @@ export type Mouse_API = {
 export type Keyboard_API = {
 	-- Fires with (id: number, name: string, pressed: boolean). `name` is the
 	-- key name like "w", "Escape", "Space", "F1", "ArrowUp", etc.
-	-- Fires (id, name, pressed, state) where state is "Begin" on press
-	-- and "End" on release. The boolean stays as the third argument for
-	-- backward compatibility.
-	InputChanged: Signal<number, string, boolean, "Begin" | "End">,
+	-- Fires (id, name, state) where state is "Begin" on press and "End"
+	-- on release. As of Ruzit 3.2 the legacy `pressed` boolean was
+	-- dropped — the State string is now the single source of truth. See
+	-- the "Deprecated" section in the Keyboard docs for migration.
+	InputChanged: Signal<number, string, "Begin" | "End">,
 	-- Snapshot whether a key is currently held. Pass either the name string
 	-- ("w", "Space") or the numeric id you got from InputChanged / GetKeyId.
 	-- Numeric ids are stable across runs and faster to compare.
@@ -2350,6 +2352,30 @@ export type Actor_API = {
 -- everywhere.
 -- =============================================================================
 
+-- =============================================================================
+-- Register — named shared tables. Two scripts that have never seen each
+-- other can coordinate by agreeing on a name: Register.new("foo") always
+-- returns the SAME table for the same name across the entire Lua state.
+-- =============================================================================
+
+export type Register_API = {
+	-- Get (or create) the named register. First call with a given name
+	-- creates a fresh empty table; every subsequent call with the same
+	-- name returns the same instance, regardless of which script asks.
+	-- Mutate the table normally — additions / deletions are visible to
+	-- every other script holding a handle to it.
+	new: (name: string) -> { [any]: any },
+	-- True if a register with this name already exists. Useful for
+	-- "first-script-in-wins" seeding patterns.
+	Has: (name: string) -> boolean,
+	-- Release the named register. Existing handles already returned by
+	-- `new` keep working; freshly-fetched ones get a new empty table.
+	-- Returns true if the register existed before this call.
+	Drop: (name: string) -> boolean,
+	-- Every currently-registered name. Handy for debug overlays.
+	Names: () -> { string },
+}
+
 export type Imports = {
 	Actor: Actor_API,
 	Asset: Asset_API,
@@ -2363,6 +2389,7 @@ export type Imports = {
 	Net: Net_API,
 	Primitives: Primitives_API,
 	Process: Process_API,
+	Register: Register_API,
 	Renderable: Renderable_API,
 	RunService: RunService_API,
 	Serde: Serde_API,
@@ -2381,5 +2408,19 @@ declare import: <K>(name: keyof<Imports> & K) -> index<Imports, K>
 -- The directory of the calling script as an absolute path. Combine with
 -- `require(__dirname .. "/...")` to load sibling Luau modules.
 declare __dirname: string
+
+-- The global `load(path)` — sibling to `require` that takes a raw
+-- filesystem path instead of a vfs key. Useful for loading mods, user-
+-- content scripts, or anything outside the project bundle. Loaded
+-- modules get the full runtime env (require / import / __dirname / load
+-- / print) with file resolution rooted at the loaded file's own
+-- directory, so nested loads resolve relative to the loaded file rather
+-- than to the host project. Returns whatever the loaded chunk returns
+-- (or `true` for bare side-effect modules).
+--
+--   load("C:/mods/init.luau")
+--   load("./helper")           -- relative to the calling script's __dirname
+--   load("/usr/local/share/ruzit/script.luau")
+declare load: (path: string) -> any
 
 "##;

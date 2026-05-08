@@ -11,6 +11,7 @@ pub mod mouse;
 pub mod net;
 pub mod primitives;
 pub mod process;
+pub mod register;
 pub mod renderable;
 pub mod runservice;
 pub mod serde;

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mouse — Ruzit Docs</title>
     <link rel="stylesheet" href="style.css">
+    <script src="theme.js"></script>
 </head>
 <body>
 
@@ -25,7 +26,7 @@
 Mouse.Moved:Connect(<span class="hl-kw">function</span>(pos, delta)
     aim:RotateBy(delta.X * <span class="hl-num">0.1</span>, delta.Y * <span class="hl-num">0.1</span>)
 <span class="hl-kw">end</span>)
-Mouse.InputReceived:Connect(<span class="hl-kw">function</span>(button, pressed, state)
+Mouse.InputReceived:Connect(<span class="hl-kw">function</span>(button, state)
     <span class="hl-kw">if</span> button == <span class="hl-str">"MouseButton1"</span> <span class="hl-kw">and</span> state == <span class="hl-str">"Begin"</span> <span class="hl-kw">then</span>
         fire_weapon()
     <span class="hl-kw">end</span>
@@ -72,11 +73,12 @@ Mouse.InputReceived:Connect(<span class="hl-kw">function</span>(button, pressed,
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">.InputReceived</span><span class="member-type">Signal&lt;MouseButton, boolean, "Begin" | "End"&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <div class="member-header"><span class="member-name">.InputReceived</span><span class="member-type">Signal&lt;MouseButton, "Begin" | "End"&gt;</span><span class="tag tag-readonly">read-only</span></div>
         <p class="member-desc">
-            Fires with <code>(button, pressed, state)</code>. The legacy
-            boolean is kept for backward compat; new code can branch on
-            the explicit string.
+            Fires with <code>(button, state)</code>. <code>state</code>
+            is <code>"Begin"</code> on press and <code>"End"</code> on
+            release. See <a href="#deprecated">Deprecated</a> below if
+            you're migrating from a pre-3.2 codebase.
         </p>
     </div>
     <div class="member">
@@ -124,6 +126,50 @@ Mouse.InputReceived:Connect(<span class="hl-kw">function</span>(button, pressed,
         <tr><td><code>"MouseButton5"</code></td><td>Forward (extra 2).</td></tr>
     </tbody>
 </table>
+
+<h2 id="deprecated">Deprecated</h2>
+
+<p>
+    APIs removed or changed since the older shape. Code written against
+    pre-3.2 docs goes here.
+</p>
+
+<h3>Pre-3.2: <code>InputReceived</code> with <code>pressed</code> boolean</h3>
+
+<p>
+    Older versions fired <code>InputReceived</code> with the legacy
+    <code>(button, pressed, state)</code> signature &mdash; a boolean
+    duplicating the <code>state</code> string. <strong>As of Ruzit 3.2 the
+    boolean is gone.</strong> Any version 3.2 or newer fires
+    <code>(button, state)</code> only.
+</p>
+
+<table>
+    <thead><tr><th>Pre-3.2</th><th>3.2+</th></tr></thead>
+    <tbody>
+        <tr>
+            <td>
+<pre><code>Mouse.InputReceived:Connect(<span class="hl-kw">function</span>(button, pressed)
+    <span class="hl-kw">if</span> pressed <span class="hl-kw">then</span> fire_weapon() <span class="hl-kw">end</span>
+<span class="hl-kw">end</span>)</code></pre>
+            </td>
+            <td>
+<pre><code>Mouse.InputReceived:Connect(<span class="hl-kw">function</span>(button, state)
+    <span class="hl-kw">if</span> state == <span class="hl-str">"Begin"</span> <span class="hl-kw">then</span> fire_weapon() <span class="hl-kw">end</span>
+<span class="hl-kw">end</span>)</code></pre>
+            </td>
+        </tr>
+    </tbody>
+</table>
+
+<div class="callout warn">
+    <strong>Migration note.</strong>
+    The boolean was the second argument; the State string took its place.
+    A connect-side find/replace works: replace <code>(button, pressed)</code>
+    with <code>(button, state)</code> and <code>pressed</code> /
+    <code>not&nbsp;pressed</code> with
+    <code>state == "Begin"</code> / <code>state == "End"</code>.
+</div>
 
 <h2 id="cursor-name">CursorName (string)</h2>
 
