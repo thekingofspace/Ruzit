@@ -426,6 +426,16 @@ pub fn pump(lua: &Lua) {
                     }
                 }));
                 args.push_back(Value::Boolean(ev.pressed));
+
+                args.push_back(Value::String(
+                    match lua.create_string(if ev.pressed { "Begin" } else { "End" }) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            eprintln!("[Mouse] state string: {e}");
+                            continue;
+                        }
+                    },
+                ));
                 if let Err(e) = signal::fire(lua, &sig, args) {
                     eprintln!("[Mouse] InputReceived fire: {e}");
                 }
@@ -459,6 +469,15 @@ pub fn pump(lua: &Lua) {
                     }
                 }));
                 args.push_back(Value::Boolean(ev.pressed));
+                args.push_back(Value::String(
+                    match lua.create_string(if ev.pressed { "Begin" } else { "End" }) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            eprintln!("[Keyboard] state string: {e}");
+                            continue;
+                        }
+                    },
+                ));
                 if let Err(e) = signal::fire(lua, &sig, args) {
                     eprintln!("[Keyboard] InputChanged fire: {e}");
                 }

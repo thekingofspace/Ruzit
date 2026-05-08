@@ -1075,7 +1075,7 @@ declare class AnimationTrack
 	function Resume(self): ()
 	function Stop(self): ()
 	function Reset(self): ()
-	function AddKeyframe(self, time: number, kind: "CFrame" | "Deform", ...any): ()
+	function AddKeyframe(self, time: number, kind: "CFrame" | "Deform", ...: any): ()
 	function ClearKeyframes(self): ()
 end
 
@@ -1292,7 +1292,10 @@ export type Mouse_API = {
 	-- Fires with (position: Dim, delta: Dim).
 	Moved: Signal<Dim, Dim>,
 	-- Fires with (button: MouseButton, pressed: boolean).
-	InputReceived: Signal<MouseButton, boolean>,
+	-- Fires (button, pressed, state) where state is "Begin" on press and
+	-- "End" on release. The legacy boolean is kept so existing scripts
+	-- keep working; new code can read the explicit string.
+	InputReceived: Signal<MouseButton, boolean, "Begin" | "End">,
 	-- Fires with (deltaX: number, deltaY: number) in lines (one notch of a
 	-- standard mouse wheel = ±1). +deltaY is scroll up / away from the user;
 	-- +deltaX is scroll right. Precise touchpads emit fractional values.
@@ -1316,7 +1319,10 @@ export type Mouse_API = {
 export type Keyboard_API = {
 	-- Fires with (id: number, name: string, pressed: boolean). `name` is the
 	-- key name like "w", "Escape", "Space", "F1", "ArrowUp", etc.
-	InputChanged: Signal<number, string, boolean>,
+	-- Fires (id, name, pressed, state) where state is "Begin" on press
+	-- and "End" on release. The boolean stays as the third argument for
+	-- backward compatibility.
+	InputChanged: Signal<number, string, boolean, "Begin" | "End">,
 	-- Snapshot whether a key is currently held. Pass either the name string
 	-- ("w", "Space") or the numeric id you got from InputChanged / GetKeyId.
 	-- Numeric ids are stable across runs and faster to compare.
@@ -1765,6 +1771,11 @@ export type GamepadInputEvent = {
 	Kind: "Button" | "Analog" | "Axis",
 	Name: string,
 	Value: number,
+	-- Begin/End state. "Begin" on a press / trigger crossing 0.5,
+	-- "End" on a release / trigger falling below 0.5, "Change" for
+	-- analog axis updates (sticks, dpads) where there's no
+	-- press/release semantics.
+	State: "Begin" | "End" | "Change",
 }
 
 export type Gamepad_API = {
@@ -1773,14 +1784,187 @@ export type Gamepad_API = {
 	GetGamepads: () -> { GamepadInfo },
 	IsButtonDown: (pad: number, name: string) -> boolean,
 	GetAxis: (pad: number, name: string) -> number,
-	-- Best-effort rumble. Currently a no-op return false on most platforms;
-	-- placeholder for future XInput/DualShock force-feedback. low and high
-	-- are 0..1 motor intensities; duration is in seconds.
+
+	-- Force-feedback. low and high are 0..1 motor intensities (low =
+	-- strong / low-frequency rumble, high = weak / high-frequency buzz);
+	-- duration is in seconds. Returns true when the rumble was actually
+	-- scheduled — XInput pads on Windows always support FF; Bluetooth-
+	-- paired controllers and most pads outside Windows often don't, so
+	-- treat the bool as a "did the haptic actually fire" probe.
 	SetVibration: (pad: number, low: number, high: number, duration: number) -> boolean,
+	-- Convenience wrapper: drives both motors at the same intensity.
+	-- `gamepad.Vibrate(padId, 0.5, 0.1)` is a 100ms half-strength buzz.
+	Vibrate: (pad: number, intensity: number, duration: number) -> boolean,
+	-- Cancel any pending rumble effects. The `pad` argument is accepted
+	-- for symmetry but is ignored — gilrs only tracks effects globally.
+	StopVibration: (pad: number?) -> (),
+	-- Battery charge level for the given pad (0..1) or nil if the
+	-- driver doesn't report it (wired pads, generic HID gamepads).
+	GetBatteryLevel: (pad: number) -> number?,
 
 	Connected: Signal<number>,         -- pad id
 	Disconnected: Signal<number>,
 	InputChanged: Signal<GamepadInputEvent>,
+}
+
+-- =============================================================================
+-- VR — head-mounted display + motion controllers.
+-- =============================================================================
+-- Two-step lifecycle: detect, then link.
+--
+--   local VR = import("VR")
+--   if not VR.IsVrPresent() then return end
+--   local cam = VR.LinkVRView()  -- engine camera now follows BodyCframe + HeadCframe
+--   cam.BodyCframe = CFrame.new(Vector.new(0, 1.6, 0), Vector.new(0, 0, 0))
+--   cam.HeadMoved:Connect(function(cf) ... end)
+--   local pads = cam:GetControllers()
+--   pads.Right.OnInput:Connect(function(name, value, state)
+--       -- state is "Begin" or "End"; name is "Trigger" / "Grip" / "A" / etc.
+--   end)
+--   ...
+--   cam:Unlink()
+--
+-- Coordinate space: BodyCframe is world-relative — it's where the player's
+-- VR rig sits in the scene. HeadCframe is the headset pose; the engine
+-- composes Body ∘ Head onto the active 3D camera each frame so existing
+-- BasePart / Renderable code keeps working without any VR-aware changes.
+--
+-- GUI: 2D primitives created via the GUI library stay screen-locked in VR
+-- mode — they render at the same monitor positions they would on a normal
+-- window, which is the right default for HUDs and menus.
+
+export type VRController = {
+	-- "Left" or "Right" — which hand this controller represents.
+	Side: "Left" | "Right",
+	-- Current world-space pose of the controller. Read-only — driven by
+	-- the runtime each frame.
+	CFrame: CFrame,
+	-- World-space linear velocity in metres per second. Useful for
+	-- throwing physics: at the moment of release, multiply by mass and
+	-- apply as initial velocity.
+	Velocity: Vector,
+	-- Angular velocity in degrees per second around X / Y / Z.
+	AngularVelocity: Vector,
+	-- True while the runtime reports the controller as tracked + paired.
+	-- Goes false on disconnect, runtime suspend, or when the user holsters
+	-- a hand-tracked controller.
+	IsConnected: boolean,
+	-- 0..1 battery charge, or nil if the runtime doesn't report it
+	-- (wired devices, hand tracking, etc.).
+	BatteryLevel: number?,
+	-- Cached input axes from the most recent OnInput event. Reading these
+	-- is the polling-style alternative to subscribing to OnInput — useful
+	-- for "while held" loops driven from RunService.
+	Trigger: number,    -- 0..1
+	Grip: number,       -- 0..1
+	Thumbstick: Vector, -- x = -1..1 horizontal, y = -1..1 vertical, z = 0
+	-- Fires when the runtime reports a pose update. Signal payload is the
+	-- new CFrame.
+	Moved: Signal<CFrame>,
+	-- Per-controller input events. Fires (name, value, state) where:
+	--   name  is the input identifier ("Trigger", "Grip", "A", "B",
+	--         "ThumbstickX", "ThumbstickY", "Menu", etc.)
+	--   value is 0..1 for analog buttons / triggers, -1..1 for stick axes,
+	--         and 0 or 1 for digital buttons.
+	--   state is "Begin" when the input crossed into the active range
+	--         (button press / trigger past half-pull) and "End" when it
+	--         left the active range (release / trigger below half-pull).
+	OnInput: Signal<string, number, "Begin" | "End">,
+
+	-- Fire a haptic pulse. duration is in seconds; frequency (Hz) and
+	-- amplitude (0..1) default to a "click" pulse if omitted. Returns
+	-- true when the pulse was scheduled, false on devices that don't
+	-- support haptics (some hand-tracked controllers, some cheaper
+	-- 3DoF pads). Multiple overlapping calls layer additively.
+	Vibrate: (
+		self: VRController,
+		duration: number,
+		frequency: number?,
+		amplitude: number?
+	) -> boolean,
+	-- Cancel any pulses currently playing on this controller.
+	StopVibration: (self: VRController) -> (),
+}
+
+export type VRPlayArea = {
+	-- Width / Depth in metres. Both 0 when the runtime hasn't reported a
+	-- play area (seated mode, runtime not calibrated, hand-tracking-only
+	-- session).
+	Width: number,
+	Depth: number,
+}
+
+export type VRCamera = {
+	-- Player body pose in the world. Writable — set this to teleport,
+	-- snap-turn, or otherwise move the VR rig around. The engine adds
+	-- HeadCframe on top each frame so the user's actual head movement is
+	-- preserved on top of whatever you script.
+	BodyCframe: CFrame,
+	-- Headset pose. Read-only — writing this would let your code lie to
+	-- itself about where the headset really is.
+	HeadCframe: CFrame,
+	-- True while LinkVRView() is active. Becomes false after Unlink().
+	IsLinked: boolean,
+	-- Detected VR runtime: "SteamVR" / "Oculus" / "OpenXR" / "Unknown".
+	-- Read-only — set at link time.
+	RuntimeName: string,
+	-- Headset refresh rate in Hz (90 by default; the runtime usually
+	-- reports 72/90/120/144 depending on device + user settings).
+	RefreshRate: number,
+	-- Proximity-sensor state: true while the headset is on the user's
+	-- head, false otherwise. Most modern HMDs have this; older ones
+	-- always report true.
+	IsHeadsetWorn: boolean,
+	-- Interpupillary distance in metres. Default 0.063 (human average).
+	IPD: number,
+
+	-- Fires every time the runtime reports a head pose update. Payload
+	-- is the new HeadCframe.
+	HeadMoved: Signal<CFrame>,
+	-- Fires when the headset connects, disconnects, or the proximity
+	-- sensor changes state. Payload: a "Connected" / "Disconnected" /
+	-- "Worn" / "Removed" string.
+	Connected: Signal<string>,
+
+	-- Release the engine camera back to user-driven control and tear
+	-- down the VR session. Idempotent — calling on an already-unlinked
+	-- camera is a no-op.
+	Unlink: (self: VRCamera) -> (),
+	-- Re-anchor the play space so the user's current head pose becomes
+	-- the origin facing +Z. Common after a teleport or seated/standing
+	-- transition.
+	Recenter: (self: VRCamera) -> (),
+	-- World-space pose of either eye, derived from HeadCframe + IPD.
+	-- Useful for stereo-aware effects (depth-of-field, lens distortion
+	-- previews) — the engine handles eye-buffer rendering itself.
+	GetEyePose: (self: VRCamera, side: "Left" | "Right") -> CFrame,
+	-- Chaperone / guardian play-space dimensions in metres. (0, 0) when
+	-- the runtime hasn't reported a play area.
+	GetPlayArea: (self: VRCamera) -> VRPlayArea,
+	-- Fade the headset view to/from a solid colour over `duration`
+	-- seconds. Useful for teleport transitions and motion-sickness
+	-- reduction. Pass duration < 0 to interrupt an in-flight fade.
+	Fade: (self: VRCamera, color: Color3, duration: number) -> (),
+	-- Fetch the pair of controller handles. Returns the same logical
+	-- controllers on every call (the userdata is freshly allocated but
+	-- the underlying state is shared) so signals connected on one
+	-- handle still fire when the runtime reports input on the same
+	-- controller.
+	GetControllers: (self: VRCamera) -> {
+		Left: VRController,
+		Right: VRController,
+	},
+}
+
+export type VR_API = {
+	-- True if a VR runtime (SteamVR, OpenXR, etc.) is installed on this
+	-- host. Does NOT require a headset to be currently plugged in —
+	-- it's the "should we even offer the VR option in the menu" check.
+	IsVrPresent: () -> boolean,
+	-- Hand the engine camera over to the VR pipeline and return a
+	-- VRCamera handle. Calling LinkVRView() while already linked is
+	-- safe and returns a fresh handle observing the same state.
+	LinkVRView: () -> VRCamera,
 }
 
 -- =============================================================================
@@ -2096,6 +2280,7 @@ export type Imports = {
 	Signal: Signal_API,
 	Steam: Steam_API,
 	Voice: Voice_API,
+	VR: VR_API,
 	Window: Window_API,
 }
 

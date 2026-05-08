@@ -21,6 +21,7 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         crate::libs::window::pump(lua);
         crate::libs::input::pump(lua);
         crate::libs::gamepad::pump(lua);
+        crate::libs::vr::pump(lua);
         crate::libs::sfx::pump(lua);
         crate::libs::steam::pump(lua);
         crate::libs::voice::pump(lua);

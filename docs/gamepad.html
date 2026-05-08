@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gamepad — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Gamepad</h1>
+<p class="lede">
+    Native controller support via gilrs &mdash; XInput / DirectInput / udev /
+    IOKit / SDL2 wrapped behind one Lua API. Layout names are normalised
+    across vendors so the same code works for Xbox, PlayStation, and Switch
+    pads.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Gamepad = <span class="hl-fn">import</span>(<span class="hl-str">"Gamepad"</span>)
+
+Gamepad.Connected:Connect(<span class="hl-kw">function</span>(id) <span class="hl-fn">print</span>(<span class="hl-str">"pad "</span> .. id .. <span class="hl-str">" connected"</span>) <span class="hl-kw">end</span>)
+
+Gamepad.InputChanged:Connect(<span class="hl-kw">function</span>(ev)
+    <span class="hl-kw">if</span> ev.Kind == <span class="hl-str">"Button"</span> <span class="hl-kw">and</span> ev.Name == <span class="hl-str">"South"</span> <span class="hl-kw">and</span> ev.State == <span class="hl-str">"Begin"</span> <span class="hl-kw">then</span>
+        Gamepad.Vibrate(ev.Pad, <span class="hl-num">0.5</span>, <span class="hl-num">0.1</span>)   <span class="hl-com">-- 100ms half-strength buzz</span>
+    <span class="hl-kw">end</span>
+<span class="hl-kw">end</span>)</code></pre>
+
+<h2 id="layout">Button &amp; axis names</h2>
+
+<p>
+    Cross-platform names; the same Xbox A button is <code>"South"</code>
+    everywhere.
+</p>
+
+<table>
+    <thead><tr><th>Name</th><th>Xbox</th><th>PlayStation</th></tr></thead>
+    <tbody>
+        <tr><td><code>"South"</code></td><td>A</td><td>Cross</td></tr>
+        <tr><td><code>"East"</code></td><td>B</td><td>Circle</td></tr>
+        <tr><td><code>"North"</code></td><td>Y</td><td>Triangle</td></tr>
+        <tr><td><code>"West"</code></td><td>X</td><td>Square</td></tr>
+        <tr><td><code>"LeftBumper" / "RightBumper"</code></td><td>LB / RB</td><td>L1 / R1</td></tr>
+        <tr><td><code>"LeftTrigger" / "RightTrigger"</code></td><td>LT / RT</td><td>L2 / R2</td></tr>
+        <tr><td><code>"LeftStick" / "RightStick"</code></td><td>L3 / R3</td><td>L3 / R3</td></tr>
+        <tr><td><code>"DPadUp" / "DPadDown" / "DPadLeft" / "DPadRight"</code></td><td colspan="2">D-pad direction</td></tr>
+        <tr><td><code>"Start" / "Select" / "Mode"</code></td><td>Menu / View / Xbox</td><td>Options / Touchpad / PS</td></tr>
+    </tbody>
+</table>
+
+<p>
+    Axis names: <code>"LeftStickX"</code>, <code>"LeftStickY"</code>,
+    <code>"RightStickX"</code>, <code>"RightStickY"</code>,
+    <code>"LeftZ"</code>, <code>"RightZ"</code>,
+    <code>"DPadX"</code>, <code>"DPadY"</code>.
+</p>
+
+<h2 id="api">Gamepad API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Gamepad.GetGamepads()</span>
+            <span class="member-type">→ { GamepadInfo }</span>
+        </div>
+        <p class="member-desc">
+            Enumerate connected pads. Cheap (cached state) &mdash; safe
+            from a settings UI per frame.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Gamepad.IsButtonDown(pad, name)</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Gamepad.GetAxis(pad, name)</span>
+            <span class="member-type">→ number</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Gamepad.GetBatteryLevel(pad)</span>
+            <span class="member-type">→ number?</span>
+        </div>
+        <p class="member-desc">
+            0..1 charge level, or <code>nil</code> for wired pads /
+            generic HID gamepads.
+        </p>
+    </div>
+</div>
+
+<h3>Force feedback</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Gamepad.SetVibration(pad, low, high, duration)</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+        <p class="member-desc">
+            <code>low</code> drives the strong / low-frequency motor
+            (rumble), <code>high</code> drives the weak / high-frequency
+            motor (buzz). Both 0..1; <code>duration</code> in seconds.
+            Returns true when the rumble was actually scheduled &mdash;
+            XInput pads on Windows always support FF; Bluetooth-paired
+            controllers and most pads outside Windows often don't.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Gamepad.Vibrate(pad, intensity, duration)</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+        <p class="member-desc">Convenience: drives both motors at the same intensity.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Gamepad.StopVibration(pad?)</span>
+        </div>
+        <p class="member-desc">
+            Cancel pending rumble. The <code>pad</code> argument is
+            accepted for symmetry but ignored &mdash; gilrs only tracks
+            effects globally.
+        </p>
+    </div>
+</div>
+
+<h3>Signals</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">Gamepad.Connected</span><span class="member-type">Signal&lt;number&gt;</span></div>
+        <p class="member-desc">Pad id.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">Gamepad.Disconnected</span><span class="member-type">Signal&lt;number&gt;</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">Gamepad.InputChanged</span><span class="member-type">Signal&lt;GamepadInputEvent&gt;</span></div>
+    </div>
+</div>
+
+<h2 id="event">GamepadInputEvent</h2>
+
+<table>
+    <tbody>
+        <tr><td><code>Pad</code></td><td>number &mdash; pad id.</td></tr>
+        <tr><td><code>Kind</code></td><td><code>"Button"</code> &middot; <code>"Analog"</code> &middot; <code>"Axis"</code></td></tr>
+        <tr><td><code>Name</code></td><td>Button / axis name from the table above.</td></tr>
+        <tr><td><code>Value</code></td><td>0 or 1 for digital buttons; 0..1 for analog triggers; -1..1 for stick axes.</td></tr>
+        <tr><td><code>State</code></td><td><code>"Begin"</code> on press / trigger crossing 0.5; <code>"End"</code> on release / trigger falling below 0.5; <code>"Change"</code> for axis updates.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="info">GamepadInfo</h2>
+
+<table>
+    <tbody>
+        <tr><td><code>Id</code></td><td>number</td></tr>
+        <tr><td><code>Name</code></td><td>Driver-reported product name.</td></tr>
+        <tr><td><code>Connected</code></td><td>boolean</td></tr>
+        <tr><td><code>UUID</code></td><td>string? &mdash; HID UUID when known.</td></tr>
+    </tbody>
+</table>
+
+</main>
+
+</body>
+</html>

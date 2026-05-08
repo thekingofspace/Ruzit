@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Renderable — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Renderable</h1>
+<p class="lede">
+    The 3D scene. Parts and models, the camera, sun and ambient lighting,
+    LOD, mesh deformation, and animation tracks.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Renderable = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
+<span class="hl-kw">local</span> Vector = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Vector
+
+<span class="hl-kw">local</span> cube = Renderable.BasePart(<span class="hl-str">"Cube"</span>)
+cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</span>, <span class="hl-num">2</span>)</code></pre>
+
+<h2 id="api">Renderable API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Renderable.BasePart(shape?)</span>
+            <span class="member-type">→ BasePart</span>
+        </div>
+        <p class="member-desc">
+            Spawn a primitive part. <code>shape</code> is
+            <code>"Cube"</code> (default) or <code>"Sphere"</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Renderable.BaseModel(asset)</span>
+            <span class="member-type">→ BasePart</span>
+        </div>
+        <p class="member-desc">
+            Spawn a part backed by a <code>ModelAsset</code> (loaded via
+            <code>Asset.GetAsset("Model", ...)</code>). Inherits the
+            asset's animation clips.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Renderable.Camera</span>
+            <span class="member-type">Camera</span>
+        </div>
+        <p class="member-desc">
+            The active 3D camera. Writable
+            (<code>Renderable.Camera.CFrame = ...</code>); same instance
+            the window references via
+            <code>WindowHandle:GetViewport()</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Renderable.SetSun(direction, color?)</span>
+        </div>
+        <p class="member-desc">
+            Set the directional sun. <code>direction</code> points from
+            the sun toward the scene. Engine default is
+            <code>Vector.new(-0.4, -1.0, -0.3)</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Renderable.SetSunColor(color)</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Renderable.SetAmbient(color)</span>
+        </div>
+        <p class="member-desc">
+            Ambient light term added to every lit pixel before the sun
+            contribution. Default <code>Color3.new(0.25, 0.25, 0.25)</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Renderable.GetLighting()</span>
+            <span class="member-type">→ { SunDirection, SunColor, Ambient }</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Renderable.SimplifyMesh(asset, ratio?)</span>
+            <span class="member-type">→ ModelAsset</span>
+        </div>
+        <p class="member-desc">
+            Polygon reduction by quantization clustering. <code>ratio</code>
+            is a 0..1 hint (default 0.5 &asymp; half the vertices). The
+            returned LOD inherits the source's animation clips.
+        </p>
+    </div>
+</div>
+
+<h2 id="basepart">BasePart</h2>
+
+<p>
+    The world-space drawable. Created via <code>Renderable.BasePart</code>
+    or <code>BaseModel</code>. All transforms are immutable assignments
+    &mdash; setting <code>part.CFrame = ...</code> swaps the whole pose
+    atomically.
+</p>
+
+<h3>Properties</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.Shape</span>
+            <span class="member-type">"Cube" | "Sphere" | "Model"</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.CFrame</span>
+            <span class="member-type">CFrame</span>
+        </div>
+        <p class="member-desc">World pose. Writable.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.Size</span>
+            <span class="member-type">Vector</span>
+        </div>
+        <p class="member-desc">Object-space scale, in world units.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.Color</span>
+            <span class="member-type">Color3</span>
+        </div>
+        <p class="member-desc">Albedo when no Texture is set; tint multiplier when one is.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.Render</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">Set false to keep the part in the scene graph but skip drawing it.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.Texture</span>
+            <span class="member-type">ImageAsset?</span>
+        </div>
+        <p class="member-desc">Optional surface texture. Uses <code>.Color</code> as a tint.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.CastShadow / .ReceiveShadow</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">
+            Render hints surfaced to user shaders as
+            <code>I.cast_shadow</code> / <code>I.receive_shadow</code> (u32
+            0/1). Defaults: both <code>true</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.IgnoreInRaycast</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">
+            <code>GPU.Raycast</code> skips this part. Default
+            <code>false</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.Changed</span>
+            <span class="member-type">Signal&lt;string&gt;</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            Fires with the property name on every mutation:
+            <code>"CFrame"</code>, <code>"Size"</code>, <code>"Color"</code>,
+            <code>"Render"</code>, <code>"Texture"</code>,
+            <code>"CastShadow"</code>, <code>"ReceiveShadow"</code>,
+            <code>"IgnoreInRaycast"</code>, or <code>"Destroyed"</code>.
+        </p>
+    </div>
+</div>
+
+<h3>Methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">part:Destroy()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Remove from the scene. Connections to <code>Changed</code>
+            still receive one final <code>"Destroyed"</code> fire.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">part:AttachShader(asset)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Attach a <code>ShaderAsset</code> or <code>FragmentAsset</code>.
+            See <a href="shaders.html">Shaders</a> for the WGSL contract.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">part:DetachShader(asset)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">part:ClearShaders()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">part:SetData(asset, name, value)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Set a <code>// @ruzit param</code> slot on an attached shader
+            to a number.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">part:GetData(asset, name)</span>
+            <span class="member-type">→ number?</span>
+            <span class="tag tag-method">method</span>
+        </div>
+    </div>
+</div>
+
+<h3 id="deform">Mesh deformation</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">part:Deform(target, envelope, displacement)</span>
+            <span class="member-type">→ number</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Push every vertex within <code>envelope</code> units of
+            <code>target.Position</code> by <code>displacement *
+            smoothstep(distance / envelope)</code>. Smooth radial falloff;
+            per-Part copy of the mesh, so deforming one Part doesn't
+            affect others sharing the same source asset. Returns the
+            number of vertices touched.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">part:ResetDeformation()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Drop the per-Part vertex override and snap back to the source
+            mesh.
+        </p>
+    </div>
+</div>
+
+<h3 id="tracks">Animation tracks</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">part:GetTrack(name)</span>
+            <span class="member-type">→ AnimationTrack</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Get or create a track scoped to this part. If the source
+            <code>ModelAsset</code> is an FBX with a matching
+            AnimationStack, the track is pre-populated from the FBX
+            curves.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">part:GetTracks()</span>
+            <span class="member-type">→ { AnimationTrack }</span>
+            <span class="tag tag-method">method</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">part:GetTrackNames()</span>
+            <span class="member-type">→ { string }</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Names of every animation clip baked into the source FBX.
+            Empty for OBJ / synthesised meshes.
+        </p>
+    </div>
+</div>
+
+<h2 id="animation-track">AnimationTrack</h2>
+
+<p>
+    Tracks come from one of two places:
+</p>
+
+<ul>
+    <li>
+        <code>part:GetTrack("clipName")</code> on an FBX-backed Part &mdash;
+        the track is pre-loaded with translation/rotation keyframes from
+        the matching AnimationStack.
+    </li>
+    <li>
+        <code>part:GetTrack("custom")</code> followed by
+        <code>track:AddKeyframe(...)</code> &mdash; fully scripted keyframes.
+    </li>
+</ul>
+
+<h3>Properties</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Name</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.FadeTime</span><span class="member-type">number</span></div>
+        <p class="member-desc">
+            Cross-fade duration in seconds when blending into / out of
+            this track. Currently informational &mdash; full blending is
+            future work.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Looped</span><span class="member-type">boolean</span></div>
+        <p class="member-desc">
+            When true and the playhead reaches Length, time wraps to 0
+            and the part is restored to the captured baseline before
+            replaying.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Speed</span><span class="member-type">number</span></div>
+        <p class="member-desc">Time multiplier. 1.0 = normal speed; -1 reverses.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Length</span><span class="member-type">number</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.TimePosition</span><span class="member-type">number</span></div>
+        <p class="member-desc">Current playhead. Writable to scrub.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.IsPlaying / .IsPaused</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+</div>
+
+<h3>Methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">track:Play()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Capture a fresh baseline (so Reset has somewhere to restore to)
+            and start ticking. Calling on a paused track resets and restarts;
+            use <code>Resume()</code> to continue from a pause.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">track:Pause()</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">track:Resume()</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">track:Stop()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Like Pause, but rewinds to time 0. The visible pose is left in
+            place &mdash; call Reset to snap back to baseline.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">track:Reset()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Restore the captured baseline (CFrame + mesh) and rewind.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">track:AddKeyframe(time, kind, ...)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Author a keyframe. <code>kind</code> is <code>"CFrame"</code>
+            (followed by the target CFrame) or <code>"Deform"</code>
+            (followed by <code>cframe, envelope, displacement</code>).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">track:ClearKeyframes()</span><span class="tag tag-method">method</span></div>
+    </div>
+</div>
+
+<h2 id="camera">Camera</h2>
+
+<p>
+    Single instance, accessed via <code>Renderable.Camera</code>. All
+    fields are writable.
+</p>
+
+<table>
+    <tbody>
+        <tr><td><code>.CFrame</code></td><td>World pose. Position is the eye; Rotation aims the look vector.</td></tr>
+        <tr><td><code>.FOV</code></td><td>Vertical field of view, degrees.</td></tr>
+        <tr><td><code>.Near</code></td><td>Near clipping plane.</td></tr>
+        <tr><td><code>.Far</code></td><td>Far clipping plane.</td></tr>
+    </tbody>
+</table>
+
+<div class="callout note">
+    <strong>VR takeover.</strong>
+    When <code>VR.LinkVRView()</code> is active, the engine overwrites
+    <code>Camera.CFrame</code> each frame with the composed
+    <code>BodyCframe + HeadCframe</code>. Writes from user code still
+    apply briefly but are corrected on the next tick.
+</div>
+
+</main>
+
+</body>
+</html>

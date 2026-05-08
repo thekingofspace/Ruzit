@@ -15,7 +15,9 @@
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 
+use gilrs::ff::{BaseEffect, BaseEffectType, Effect, EffectBuilder, Replay, Ticks};
 use gilrs::{Axis, Button, Event, EventType, Gamepad as GpHandle, GamepadId, Gilrs};
 use mlua::{Lua, MultiValue, Table, Value};
 
@@ -36,6 +38,11 @@ struct PadState {
 
 static GILRS: OnceLock<Mutex<Option<Gilrs>>> = OnceLock::new();
 static PADS: OnceLock<Mutex<HashMap<u32, PadState>>> = OnceLock::new();
+/// Active force-feedback effects with the deadline at which we can drop
+/// them. We have to keep `Effect` handles alive for the duration of the
+/// rumble — dropping them stops playback immediately. The pump prunes
+/// expired entries each frame so the list doesn't grow unbounded.
+static FF_ACTIVE: OnceLock<Mutex<Vec<(Effect, Instant)>>> = OnceLock::new();
 
 fn gilrs_lock() -> &'static Mutex<Option<Gilrs>> {
     GILRS.get_or_init(|| Mutex::new(None))
@@ -43,6 +50,10 @@ fn gilrs_lock() -> &'static Mutex<Option<Gilrs>> {
 
 fn pads_lock() -> &'static Mutex<HashMap<u32, PadState>> {
     PADS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn ff_active_lock() -> &'static Mutex<Vec<(Effect, Instant)>> {
+    FF_ACTIVE.get_or_init(|| Mutex::new(Vec::new()))
 }
 
 /// Convert a gilrs `GamepadId` into a stable u32 we can hand out to Lua.
@@ -126,6 +137,12 @@ fn axis_name(a: Axis) -> Option<&'static str> {
 /// when no Gilrs has been initialised (the library import is what brings
 /// it up, lazily).
 pub fn pump(lua: &Lua) {
+    {
+        let now = Instant::now();
+        let mut active = ff_active_lock().lock().unwrap();
+        active.retain(|(_, deadline)| *deadline > now);
+    }
+
     let gilrs_cell = gilrs_lock();
     let mut guard = gilrs_cell.lock().unwrap();
     let Some(gilrs) = guard.as_mut() else {
@@ -212,6 +229,25 @@ fn fire_input(lua: &Lua, signals: &Table, idx: u32, kind: &str, name: &str, valu
     let _ = payload.set("Kind", kind);
     let _ = payload.set("Name", name);
     let _ = payload.set("Value", value);
+
+    let state = match kind {
+        "Button" => {
+            if value > 0.5 {
+                "Begin"
+            } else {
+                "End"
+            }
+        }
+        "Analog" => {
+            if value > 0.5 {
+                "Begin"
+            } else {
+                "End"
+            }
+        }
+        _ => "Change",
+    };
+    let _ = payload.set("State", state);
     let mut args = MultiValue::new();
     args.push_back(Value::Table(payload));
     let _ = signal::fire(lua, &sig, args);
@@ -329,13 +365,130 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     api.set(
         "SetVibration",
         lua.create_function(
-            |_, (_pad, _low, _high, _duration): (i64, f32, f32, f32)| -> mlua::Result<bool> {
-                Ok(false)
+            |_, (pad, low, high, duration): (i64, f32, f32, f32)| -> mlua::Result<bool> {
+                Ok(start_rumble(pad, low, high, duration))
             },
         )?,
     )?;
+    api.set(
+        "Vibrate",
+        lua.create_function(
+            |_, (pad, intensity, duration): (i64, f32, f32)| -> mlua::Result<bool> {
+                Ok(start_rumble(pad, intensity, intensity, duration))
+            },
+        )?,
+    )?;
+    api.set(
+        "StopVibration",
+        lua.create_function(|_, _pad: Option<i64>| -> mlua::Result<()> {
+            stop_all_rumble();
+            Ok(())
+        })?,
+    )?;
+    api.set(
+        "GetBatteryLevel",
+        lua.create_function(|_, pad: i64| -> mlua::Result<Option<f32>> {
+            let cell = gilrs_lock();
+            let guard = cell.lock().unwrap();
+            let Some(g) = guard.as_ref() else {
+                return Ok(None);
+            };
+            for (id, gp) in g.gamepads() {
+                if pad_index(id) as i64 == pad {
+                    return Ok(battery_level(&gp));
+                }
+            }
+            Ok(None)
+        })?,
+    )?;
 
     Ok(api)
+}
+
+/// Build and schedule a force-feedback effect that plays for `duration`
+/// seconds with the given strong/weak motor intensities (each in 0..1).
+/// We hold onto the `Effect` handle in a static list because dropping it
+/// stops the rumble immediately — the pump prunes the list once each
+/// effect's deadline passes.
+fn start_rumble(pad: i64, low: f32, high: f32, duration: f32) -> bool {
+    let cell = gilrs_lock();
+    let mut guard = cell.lock().unwrap();
+    let Some(g) = guard.as_mut() else {
+        return false;
+    };
+
+    let mut target: Option<GamepadId> = None;
+    let mut supports_ff = false;
+    for (id, gp) in g.gamepads() {
+        if pad_index(id) as i64 == pad {
+            target = Some(id);
+            supports_ff = gp.is_ff_supported();
+            break;
+        }
+    }
+    let Some(id) = target else {
+        return false;
+    };
+    if !supports_ff {
+        return false;
+    }
+
+    let dur_ms = (duration * 1000.0).clamp(0.0, 60_000.0) as u32;
+    if dur_ms == 0 {
+        return false;
+    }
+    let ticks = Ticks::from_ms(dur_ms);
+
+    let strong = (low.clamp(0.0, 1.0) * u16::MAX as f32) as u16;
+    let weak = (high.clamp(0.0, 1.0) * u16::MAX as f32) as u16;
+
+    let mut builder = EffectBuilder::new();
+    let pads = [id];
+    builder.gamepads(&pads);
+    if strong > 0 {
+        builder.add_effect(BaseEffect {
+            kind: BaseEffectType::Strong { magnitude: strong },
+            scheduling: Replay {
+                play_for: ticks,
+                with_delay: Ticks::from_ms(0),
+                ..Default::default()
+            },
+            envelope: Default::default(),
+        });
+    }
+    if weak > 0 {
+        builder.add_effect(BaseEffect {
+            kind: BaseEffectType::Weak { magnitude: weak },
+            scheduling: Replay {
+                play_for: ticks,
+                with_delay: Ticks::from_ms(0),
+                ..Default::default()
+            },
+            envelope: Default::default(),
+        });
+    }
+    let effect = match builder.finish(g) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+    if effect.play().is_err() {
+        return false;
+    }
+    let deadline = Instant::now() + std::time::Duration::from_millis(dur_ms as u64 + 50);
+    ff_active_lock().lock().unwrap().push((effect, deadline));
+    true
+}
+
+fn stop_all_rumble() {
+    ff_active_lock().lock().unwrap().clear();
+}
+
+fn battery_level(gp: &GpHandle<'_>) -> Option<f32> {
+    use gilrs::PowerInfo;
+    match gp.power_info() {
+        PowerInfo::Discharging(p) | PowerInfo::Charging(p) => Some(p as f32 / 100.0),
+        _ => None,
+    }
 }
 
 #[allow(dead_code)]

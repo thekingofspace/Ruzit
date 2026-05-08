@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Steam — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Steam</h1>
+<p class="lede">
+    User identity, friends, achievements, stats, lobbies, game-server
+    hosting, the in-game overlay, Cloud saves, Workshop, Remote Play, and
+    rich presence. All wrapped over the Steamworks SDK.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Steam = <span class="hl-fn">import</span>(<span class="hl-str">"Steam"</span>)
+
+<span class="hl-fn">print</span>(<span class="hl-str">"Hi, "</span> .. Steam.User.Name)
+Steam.Achievements.Unlock(<span class="hl-str">"FIRST_KILL"</span>)
+Steam.Achievements.Store()</code></pre>
+
+<div class="callout note">
+    <strong>Steam app id is required.</strong>
+    Set <code>steam-app-id = N</code> in <code>build.toml</code> (or the
+    <code>RUZIT_STEAM_APPID</code> env var). Calling
+    <code>import("Steam")</code> without one throws.
+</div>
+
+<h2 id="user">Steam.User</h2>
+
+<table>
+    <tbody>
+        <tr><td><code>.ID</code></td><td>Steam ID string.</td></tr>
+        <tr><td><code>.Name</code></td><td>Persona name.</td></tr>
+        <tr><td><code>.Level</code></td><td>Steam community level.</td></tr>
+        <tr><td><code>:AccountID()</code></td><td>Lower 32 bits of the Steam ID.</td></tr>
+        <tr><td><code>:LoggedOn()</code></td><td>True while connected to Steam.</td></tr>
+        <tr><td><code>:GetFriends()</code></td><td><code>{ SteamFriend }</code> snapshot.</td></tr>
+        <tr><td><code>:GetAvatar(size?)</code></td><td>ImageAsset of your own avatar.</td></tr>
+        <tr><td><code>:GetFriendAvatar(id, size?)</code></td><td>Friend / lobby member's avatar.</td></tr>
+        <tr><td><code>:GetAvatarAsync(id, size?)</code></td><td>Signal-returning lookup that works for any Steam ID.</td></tr>
+        <tr><td><code>:GetFriendInfo(id)</code></td><td>Persona state, nickname, current game.</td></tr>
+        <tr><td><code>:RequestInfo(id, nameOnly?)</code></td><td>Force Steam to re-fetch profile data.</td></tr>
+        <tr><td><code>:InviteToGame(id, connectString)</code></td><td>Send a Steam invite to your game.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="achievements">Steam.Achievements</h2>
+
+<p>
+    <code>name</code> is the API id from the partner site, not the display
+    name. Always call <code>Store()</code> after a batch of unlocks.
+</p>
+
+<table>
+    <tbody>
+        <tr><td><code>.Unlock(name)</code></td><td></td></tr>
+        <tr><td><code>.Clear(name)</code></td><td></td></tr>
+        <tr><td><code>.IsUnlocked(name)</code></td><td>→ boolean</td></tr>
+        <tr><td><code>.Store()</code></td><td>Push pending unlocks/stats to Steam.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="stats">Steam.Stats</h2>
+
+<table>
+    <tbody>
+        <tr><td><code>.SetInt(name, value)</code></td><td></td></tr>
+        <tr><td><code>.SetFloat(name, value)</code></td><td></td></tr>
+        <tr><td><code>.GetInt(name)</code></td><td>→ number</td></tr>
+        <tr><td><code>.GetFloat(name)</code></td><td>→ number</td></tr>
+        <tr><td><code>.Store()</code></td><td>Push to Steam.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="lobby">Steam.Lobby</h2>
+
+<p>
+    Each entry returns a <code>Signal</code> that fires <em>once</em> with
+    the result. Connect once to handle the response.
+</p>
+
+<table>
+    <tbody>
+        <tr><td><code>.Create(maxMembers?, kind?)</code></td><td>→ <code>Signal&lt;SteamLobby?, string?&gt;</code></td></tr>
+        <tr><td><code>.Join(id)</code></td><td>→ <code>Signal&lt;SteamLobby?, string?&gt;</code></td></tr>
+        <tr><td><code>.List()</code></td><td>→ <code>Signal&lt;{ SteamLobbyInfo }&gt;</code></td></tr>
+    </tbody>
+</table>
+
+<pre><code>Steam.Lobby.Create(<span class="hl-num">8</span>, <span class="hl-str">"FriendsOnly"</span>):Connect(<span class="hl-kw">function</span>(lobby, err)
+    <span class="hl-kw">if</span> err <span class="hl-kw">then</span> <span class="hl-fn">print</span>(<span class="hl-str">"create failed: "</span> .. err) <span class="hl-kw">return</span> <span class="hl-kw">end</span>
+    <span class="hl-fn">print</span>(<span class="hl-str">"lobby "</span> .. lobby.ID .. <span class="hl-str">" up"</span>)
+<span class="hl-kw">end</span>)</code></pre>
+
+<h2 id="overlay">Steam.Overlay</h2>
+
+<table>
+    <tbody>
+        <tr><td><code>.Show(dialog)</code></td><td>One of the built-in panels.</td></tr>
+        <tr><td><code>.ShowFriends()</code></td><td></td></tr>
+        <tr><td><code>.ShowAchievements()</code></td><td></td></tr>
+        <tr><td><code>.ShowSettings()</code></td><td></td></tr>
+        <tr><td><code>.ShowProfile(id)</code></td><td></td></tr>
+        <tr><td><code>.ShowChat(id)</code></td><td></td></tr>
+        <tr><td><code>.ShowWebPage(url)</code></td><td></td></tr>
+        <tr><td><code>.ShowStore(appId?)</code></td><td></td></tr>
+        <tr><td><code>.ShowInviteDialog(lobbyId)</code></td><td></td></tr>
+    </tbody>
+</table>
+
+<h2 id="app">Steam.App</h2>
+
+<table>
+    <tbody>
+        <tr><td><code>.IsAppInstalled(appId)</code></td><td>→ boolean</td></tr>
+        <tr><td><code>.IsDlcInstalled(appId)</code></td><td>→ boolean</td></tr>
+        <tr><td><code>.IsSubscribed()</code></td><td>→ boolean</td></tr>
+        <tr><td><code>.IsVacBanned()</code></td><td>→ boolean</td></tr>
+        <tr><td><code>.BuildId()</code></td><td>→ number</td></tr>
+        <tr><td><code>.InstallDir(appId)</code></td><td>→ string</td></tr>
+        <tr><td><code>.OwnerID()</code></td><td>→ string</td></tr>
+        <tr><td><code>.CurrentLanguage()</code></td><td>→ string</td></tr>
+        <tr><td><code>.AvailableLanguages()</code></td><td>→ <code>{ string }</code></td></tr>
+    </tbody>
+</table>
+
+<h2 id="cloud">Steam.Cloud</h2>
+
+<p>
+    Per-user file storage that auto-syncs across devices. Files are scoped
+    to the calling user; quota is set in the partner site.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.WriteFile(name, data)</span><span class="member-type">→ boolean</span></div>
+        <p class="member-desc">Returns true on success.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.ReadFile(name)</span><span class="member-type">→ string?</span></div>
+        <p class="member-desc">Nil if the file doesn't exist.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.DeleteFile(name)</span><span class="member-type">→ boolean</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.FileExists(name)</span><span class="member-type">→ boolean</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.ListFiles()</span><span class="member-type">→ { SteamCloudFile }</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Quota()</span><span class="member-type">→ { Total: number, Available: number }</span></div>
+        <p class="member-desc">Both fields in bytes.</p>
+    </div>
+</div>
+
+<h2 id="workshop">Steam.Workshop</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.SubscribedItems()</span><span class="member-type">→ { string }</span></div>
+        <p class="member-desc">Item ids the user is subscribed to.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.ItemState(id)</span><span class="member-type">→ WorkshopItemState</span></div>
+        <p class="member-desc">Live install state. See <a href="#workshop-state">WorkshopItemState</a>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.InstallInfo(id)</span><span class="member-type">→ WorkshopInstallInfo?</span></div>
+        <p class="member-desc">Local install info; nil while not installed.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.DownloadProgress(id)</span><span class="member-type">→ { Downloaded: number, Total: number }?</span></div>
+        <p class="member-desc">Live progress; nil if not downloading. Both in bytes.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.DownloadItem(id, highPriority?)</span><span class="member-type">→ boolean</span></div>
+        <p class="member-desc">Force-trigger a download. <code>highPriority</code> jumps the Steam queue.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.GetItem(id)</span><span class="member-type">→ WorkshopItem</span></div>
+        <p class="member-desc">
+            Combined fetch: state flags + install info + a <code>Files()</code>
+            helper. See <a href="#workshop-item">WorkshopItem</a>.
+        </p>
+    </div>
+</div>
+
+<h2 id="server">Steam.Server</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Steam.Server.Start(opts)</span>
+            <span class="member-type">→ SteamServer</span>
+        </div>
+        <p class="member-desc">
+            Spin up a Steam game server. Logon mode is set with
+            <code>:LogOnAnonymous()</code>.
+        </p>
+    </div>
+</div>
+
+<h2 id="rich-presence">Steam.RichPresence</h2>
+
+<table>
+    <tbody>
+        <tr><td><code>.Set(key, value)</code></td><td>Set a rich-presence k/v pair.</td></tr>
+        <tr><td><code>.Clear()</code></td><td>Clear all keys.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="launch">Steam.Launch</h2>
+
+<p>
+    Metadata about how the current process started. Useful for handling
+    "Join Game" deep links and for branching dev vs. shipped runs.
+</p>
+
+<table>
+    <tbody>
+        <tr><td><code>.GetCommandLine()</code></td><td>Steam URL launch params (<code>+connect 1.2.3.4 +map dust</code>).</td></tr>
+        <tr><td><code>.GetQueryParam(key)</code></td><td>Pull a single <code>+key value</code> pair.</td></tr>
+        <tr><td><code>.GetCurrentBeta()</code></td><td>Beta branch name or <code>nil</code>.</td></tr>
+        <tr><td><code>.GetRunType()</code></td><td>Aggregate metadata table; see below.</td></tr>
+    </tbody>
+</table>
+
+<h3>RunType payload</h3>
+
+<table>
+    <tbody>
+        <tr><td><code>Source</code></td><td><code>"steam-url"</code> / <code>"steam"</code> / <code>"direct"</code></td></tr>
+        <tr><td><code>WasLaunchedFromSteam</code></td><td>boolean</td></tr>
+        <tr><td><code>CommandLine</code></td><td>string</td></tr>
+        <tr><td><code>AppId</code></td><td>number</td></tr>
+        <tr><td><code>BuildId / OwnerID / BetaBranch / InstallDir / Language</code></td><td>optional metadata.</td></tr>
+        <tr><td><code>ProcessArgs</code></td><td><code>{ string }</code></td></tr>
+        <tr><td><code>Env</code></td><td><code>{ [string]: string }</code> &mdash; selected Steam-related env vars.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="utils">Steam.Utils</h2>
+
+<table>
+    <tbody>
+        <tr><td><code>.Country()</code></td><td>ISO country code of the local user.</td></tr>
+        <tr><td><code>.AppCount()</code></td><td>Steam API level.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="remoteplay">Steam.RemotePlay</h2>
+
+<table>
+    <tbody>
+        <tr><td><code>.Sessions()</code></td><td><code>{ { UserID, ClientName?, Width?, Height? } }</code></td></tr>
+    </tbody>
+</table>
+
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<h2 id="objects">Object reference</h2>
+
+<p>
+    Every type returned by Steam methods, in one place. The string-literal
+    types up top are pure aliases &mdash; <code>"Public"</code>,
+    <code>"Online"</code>, etc.
+</p>
+
+<h3 id="lobby-obj">SteamLobby</h3>
+
+<p>
+    Returned by <code>Steam.Lobby.Create</code> and <code>Steam.Lobby.Join</code>.
+    Holds member state, lobby-wide and per-member key/value data, and a chat
+    channel.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.ID</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Lobby's Steam id (decimal string).</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Owner</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Owner's Steam id.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnMemberJoined</span><span class="member-type">Signal&lt;string&gt;</span></div>
+        <p class="member-desc">Fires with the joining member's Steam id.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnMemberLeft</span><span class="member-type">Signal&lt;string&gt;</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnDataUpdate</span><span class="member-type">Signal&lt;string?&gt;</span></div>
+        <p class="member-desc">
+            <code>nil</code> when lobby-wide data changed; otherwise the
+            member id whose per-member data changed.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">lobby:Members()</span><span class="member-type">→ { string }</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Snapshot of every member's Steam id.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">lobby:SetData(key, value)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Lobby-wide key/value store. Visible to every member.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">lobby:GetData(key)</span><span class="member-type">→ string?</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">lobby:SendChat(message)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">lobby:Leave()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Leave the lobby. The handle goes inert after this.</p>
+    </div>
+</div>
+
+<h3 id="server-obj">SteamServer</h3>
+
+<p>
+    Returned by <code>Steam.Server.Start</code>. The game-server side of the
+    Steamworks SDK.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.ID</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnClientAuthed</span><span class="member-type">Signal&lt;string&gt;</span></div>
+        <p class="member-desc">Fires with the client Steam id when a client successfully authenticates.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">srv:SetServerName(name)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">srv:SetMapName(map)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">srv:SetMaxPlayers(max)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">srv:LogOnAnonymous()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Anonymous logon &mdash; no game-server-account credentials required.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">srv:Stop()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Stop and clean up. Idempotent.</p>
+    </div>
+</div>
+
+<h3 id="server-options">SteamServerOptions</h3>
+
+<p>Plain table passed to <code>Steam.Server.Start</code>.</p>
+
+<table>
+    <tbody>
+        <tr><td><code>port</code></td><td>number? &mdash; game-server port. Default 27015.</td></tr>
+        <tr><td><code>queryPort</code></td><td>number? &mdash; server-query (master-server) port. Default 27016.</td></tr>
+        <tr><td><code>mode</code></td><td><code>SteamServerMode?</code> &mdash; <code>"NoAuthentication"</code>, <code>"Authentication"</code>, or <code>"AuthenticationAndSecure"</code>.</td></tr>
+        <tr><td><code>version</code></td><td>string? &mdash; free-form version Steam uses for compatibility filtering.</td></tr>
+        <tr><td><code>name / map</code></td><td>string? &mdash; display name and map tag for server browsers.</td></tr>
+        <tr><td><code>max</code></td><td>number? &mdash; slot count.</td></tr>
+    </tbody>
+</table>
+
+<h3 id="friend">SteamFriend</h3>
+
+<p>Returned in lists by <code>Steam.User:GetFriends()</code>.</p>
+
+<table>
+    <tbody>
+        <tr><td><code>ID</code></td><td>string</td></tr>
+        <tr><td><code>Name</code></td><td>string &mdash; persona name.</td></tr>
+        <tr><td><code>State</code></td><td><code>SteamPersonaState</code></td></tr>
+    </tbody>
+</table>
+
+<h3 id="friend-info">SteamFriendInfo</h3>
+
+<p>Returned by <code>Steam.User:GetFriendInfo(id)</code>. Adds nickname + game.</p>
+
+<table>
+    <tbody>
+        <tr><td><code>ID</code></td><td>string</td></tr>
+        <tr><td><code>Name</code></td><td>string</td></tr>
+        <tr><td><code>Nickname</code></td><td>string? &mdash; the local user's nickname for this friend.</td></tr>
+        <tr><td><code>State</code></td><td><code>SteamPersonaState</code></td></tr>
+        <tr><td><code>Game</code></td><td><code>{ AppID: number }?</code> &mdash; populated when the friend is in a game.</td></tr>
+    </tbody>
+</table>
+
+<h3 id="lobby-info">SteamLobbyInfo</h3>
+
+<p>Returned by <code>Steam.Lobby.List</code> &mdash; lighter-weight than a live <code>SteamLobby</code>.</p>
+
+<table>
+    <tbody>
+        <tr><td><code>ID</code></td><td>string</td></tr>
+        <tr><td><code>MemberCount</code></td><td>number?</td></tr>
+        <tr><td><code>Name</code></td><td>string? &mdash; whatever the host set as <code>"name"</code> in lobby data.</td></tr>
+    </tbody>
+</table>
+
+<h3 id="cloud-file">SteamCloudFile</h3>
+
+<p>One entry from <code>Steam.Cloud.ListFiles()</code>.</p>
+
+<table>
+    <tbody>
+        <tr><td><code>Name</code></td><td>string</td></tr>
+        <tr><td><code>Size</code></td><td>number &mdash; bytes.</td></tr>
+    </tbody>
+</table>
+
+<h3 id="workshop-state">WorkshopItemState</h3>
+
+<p>Returned by <code>Steam.Workshop.ItemState(id)</code>.</p>
+
+<table>
+    <tbody>
+        <tr><td><code>Subscribed</code></td><td>boolean &mdash; user is subscribed to the item.</td></tr>
+        <tr><td><code>Installed</code></td><td>boolean &mdash; install is on disk.</td></tr>
+        <tr><td><code>NeedsUpdate</code></td><td>boolean &mdash; an update is available but not yet downloaded.</td></tr>
+        <tr><td><code>Downloading</code></td><td>boolean</td></tr>
+        <tr><td><code>DownloadPending</code></td><td>boolean &mdash; queued behind other Steam downloads.</td></tr>
+    </tbody>
+</table>
+
+<h3 id="workshop-install">WorkshopInstallInfo</h3>
+
+<p>Returned by <code>Steam.Workshop.InstallInfo(id)</code> when the item is on disk.</p>
+
+<table>
+    <tbody>
+        <tr><td><code>Folder</code></td><td>string &mdash; absolute path to the install directory.</td></tr>
+        <tr><td><code>SizeOnDisk</code></td><td>number &mdash; bytes.</td></tr>
+        <tr><td><code>Timestamp</code></td><td>number &mdash; Unix epoch seconds of last update.</td></tr>
+    </tbody>
+</table>
+
+<h3 id="workshop-item">WorkshopItem</h3>
+
+<p>
+    Combined snapshot from <code>Steam.Workshop.GetItem(id)</code> &mdash;
+    union of <code>WorkshopItemState</code> + <code>WorkshopInstallInfo</code>
+    + a file lister.
+</p>
+
+<table>
+    <tbody>
+        <tr><td><code>ID</code></td><td>string</td></tr>
+        <tr><td><code>Subscribed / Installed / NeedsUpdate / Downloading / DownloadPending</code></td><td>boolean &mdash; state flags.</td></tr>
+        <tr><td><code>Folder</code></td><td>string? &mdash; absolute path to the install dir, when installed.</td></tr>
+        <tr><td><code>SizeOnDisk</code></td><td>number? &mdash; bytes.</td></tr>
+        <tr><td><code>Timestamp</code></td><td>number? &mdash; last-update Unix seconds.</td></tr>
+        <tr><td><code>DownloadProgress</code></td><td><code>{ Downloaded: number, Total: number }?</code></td></tr>
+        <tr><td><code>Files()</code></td><td><code>(() -&gt; { string })?</code> &mdash; lists every file in the install folder. Absolute paths &mdash; pass straight to <code>Asset.ImportAsset</code>.</td></tr>
+    </tbody>
+</table>
+
+<h3 id="remoteplay-session">RemotePlaySession</h3>
+
+<p>One entry from <code>Steam.RemotePlay.Sessions()</code>.</p>
+
+<table>
+    <tbody>
+        <tr><td><code>UserID</code></td><td>string &mdash; remote user's Steam id.</td></tr>
+        <tr><td><code>ClientName</code></td><td>string? &mdash; client device name.</td></tr>
+        <tr><td><code>Width</code> / <code>Height</code></td><td>number? &mdash; stream resolution.</td></tr>
+    </tbody>
+</table>
+
+<h3 id="run-type">RunType</h3>
+
+<p>Returned by <code>Steam.Launch.GetRunType()</code>.</p>
+
+<table>
+    <tbody>
+        <tr><td><code>Source</code></td><td><code>"steam-url" | "steam" | "direct"</code></td></tr>
+        <tr><td><code>WasLaunchedFromSteam</code></td><td>boolean</td></tr>
+        <tr><td><code>CommandLine</code></td><td>string &mdash; Steam URL launch params.</td></tr>
+        <tr><td><code>AppId</code></td><td>number</td></tr>
+        <tr><td><code>BuildId</code></td><td>number?</td></tr>
+        <tr><td><code>OwnerID</code></td><td>string?</td></tr>
+        <tr><td><code>BetaBranch</code></td><td>string?</td></tr>
+        <tr><td><code>InstallDir</code></td><td>string?</td></tr>
+        <tr><td><code>Language</code></td><td>string?</td></tr>
+        <tr><td><code>ProcessArgs</code></td><td><code>{ string }</code> &mdash; argv past the executable.</td></tr>
+        <tr><td><code>Env</code></td><td><code>{ [string]: string }</code> &mdash; selected Steam-related env vars.</td></tr>
+    </tbody>
+</table>
+
+<h3 id="enums">String enums</h3>
+
+<table>
+    <thead><tr><th>Type</th><th>Values</th></tr></thead>
+    <tbody>
+        <tr>
+            <td><code>SteamPersonaState</code></td>
+            <td><code>"Offline" | "Online" | "Busy" | "Away" | "Snooze" | "LookingToTrade" | "LookingToPlay"</code></td>
+        </tr>
+        <tr>
+            <td><code>SteamAvatarSize</code></td>
+            <td><code>"small"</code> (32&times;32) <code>| "medium"</code> (64&times;64) <code>| "large"</code> (184&times;184)</td>
+        </tr>
+        <tr>
+            <td><code>SteamLobbyKind</code></td>
+            <td><code>"Public" | "Private" | "FriendsOnly" | "Invisible"</code></td>
+        </tr>
+        <tr>
+            <td><code>SteamServerMode</code></td>
+            <td><code>"NoAuthentication" | "Authentication" | "AuthenticationAndSecure"</code></td>
+        </tr>
+        <tr>
+            <td><code>SteamOverlayDialog</code></td>
+            <td><code>"Friends" | "Community" | "Players" | "Settings" | "Stats" | "Achievements" | "OfficialGameGroup"</code></td>
+        </tr>
+        <tr>
+            <td><code>SteamOverlayUserDialog</code></td>
+            <td><code>"steamid" | "chat" | "jointrade" | "stats" | "achievements" | "friendadd" | "friendremove" | "friendrequestaccept" | "friendrequestignore"</code></td>
+        </tr>
+        <tr>
+            <td><code>SteamOverlayStoreMode</code></td>
+            <td><code>"None" | "AddToCart" | "AddToCartAndShow"</code></td>
+        </tr>
+        <tr>
+            <td><code>SteamNotificationPosition</code></td>
+            <td><code>"TopLeft" | "TopRight" | "BottomLeft" | "BottomRight"</code></td>
+        </tr>
+    </tbody>
+</table>
+
+</main>
+
+</body>
+</html>

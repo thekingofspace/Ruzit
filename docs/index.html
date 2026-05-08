@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ruzit — Luau-scripted game engine</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<section class="hero">
+    <div class="eyebrow">Game Engine</div>
+    <h1>Ruzit</h1>
+    <p>
+        A Luau-scripted game engine written in Rust. Hot-reloadable scripts,
+        a Roblox-flavoured API, real 3D rendering through wgpu, and a single
+        <code>Ruzit Build</code> command that bundles your project into a
+        self-contained launcher.
+    </p>
+    <div class="cta-row">
+        <a class="btn btn-primary" href="#quick-start">Quick Start</a>
+        <a class="btn btn-ghost" href="primitives.html">API Reference</a>
+        <a class="btn btn-ghost" href="https://github.com/thekingofspace/Ruzit">GitHub</a>
+    </div>
+</section>
+
+<h2>What is Ruzit?</h2>
+
+<p>
+    Ruzit is a single-file game engine you script in Luau. The engine itself
+    is a Rust binary that ships every system a game needs &mdash; renderer,
+    audio, networking, asset loading, packaging &mdash; behind a Lua API
+    designed to feel familiar if you've used Roblox Studio.
+</p>
+
+<p>
+    You write your game as <code>.luau</code> files in a folder. The engine
+    boots them as the entry point of a virtual scene graph; the same source
+    runs unchanged inside a packaged executable shipped to players.
+</p>
+
+<div class="feature-grid">
+    <div class="feature">
+        <h3>Luau scripting</h3>
+        <p>
+            Full Luau (Roblox-flavoured Lua) with autocomplete and
+            type-checking via <code>types.d.luau</code>.
+        </p>
+    </div>
+    <div class="feature">
+        <h3>3D rendering</h3>
+        <p>
+            wgpu-backed renderer. Vulkan / Metal / DX12 transparently;
+            user shaders authored in WGSL with engine preludes injected.
+        </p>
+    </div>
+    <div class="feature">
+        <h3>One-command shipping</h3>
+        <p>
+            <code>Ruzit Build</code> packages scripts, assets, and a
+            launcher into a single executable. Cross-platform launchers
+            on Windows / Linux / macOS.
+        </p>
+    </div>
+    <div class="feature">
+        <h3>DLC &amp; Packages</h3>
+        <p>
+            Drop a folder with a <code>ManagedInfo.toml</code> next to
+            your project; it ships as a separate, encrypted
+            <code>.managed</code> bundle the launcher mounts at runtime.
+        </p>
+    </div>
+    <div class="feature">
+        <h3>Steam built in</h3>
+        <p>
+            Achievements, leaderboards, Workshop, lobby, rich presence,
+            launch parameters &mdash; all via <code>import("Steam")</code>.
+        </p>
+    </div>
+    <div class="feature">
+        <h3>VR &amp; controllers</h3>
+        <p>
+            Native gamepad support via gilrs and a typed VR API
+            (<code>import("VR")</code>) with controllers, haptics, and
+            head-pose tracking.
+        </p>
+    </div>
+</div>
+
+<h2 id="quick-start">Quick Start</h2>
+
+<p>Scaffold a new project and run it in three commands:</p>
+
+<pre><code><span class="hl-com"># Drop the Ruzit binary somewhere on your PATH, then:</span>
+Ruzit Init MyGame
+cd MyGame
+Ruzit Test</code></pre>
+
+<p>
+    <code>Ruzit Init</code> writes a starter project to the named folder
+    (<code>build.toml</code>, <code>Main.luau</code>,
+    <code>types.d.luau</code>, an empty <code>assets/</code>). The
+    scaffolded <code>Main.luau</code> opens a window, draws a cube, and
+    exits when you close the window &mdash; you replace it with your game.
+</p>
+
+<h3>The five commands</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Ruzit Init [path]</span>
+        </div>
+        <p class="member-desc">
+            Scaffold a new project. Path defaults to the current
+            directory. Re-running keeps your edits but always
+            regenerates <code>types.d.luau</code> so autocomplete
+            stays current with whichever Ruzit version you're on.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Ruzit InitPackage [path]</span>
+        </div>
+        <p class="member-desc">
+            Scaffold a Managed package folder
+            (<code>ManagedInfo.toml</code> + <code>init.luau</code>) you
+            can drop next to a project as a DLC.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Ruzit Test [path]</span>
+        </div>
+        <p class="member-desc">
+            Run a project from source. No packaging, no encryption &mdash;
+            edits hit the next <code>Test</code> immediately. The default
+            entry is <code>Main.luau</code>; pass a path for a different
+            file.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Ruzit Build [path] [-o out]</span>
+        </div>
+        <p class="member-desc">
+            Produce <code>Generated/&lt;exe&gt;</code> +
+            <code>Generated/Managed/*.managed</code>. The launcher is a
+            copy of the running Ruzit binary with the metadata appended
+            as a trailer; ship the whole <code>Generated/</code> folder
+            to players.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Ruzit Package [folder] [-o out]</span>
+        </div>
+        <p class="member-desc">
+            Package a single Managed folder into
+            <code>&lt;id&gt;.scripts.managed</code> +
+            <code>&lt;id&gt;.assets.managed</code>. Used to publish
+            standalone Workshop / mod packages a player can drop into a
+            game's <code>Packages/</code> folder.
+        </p>
+    </div>
+</div>
+
+<h3>Hello world</h3>
+
+<p>The smallest meaningful Ruzit program:</p>
+
+<pre><code><span class="hl-com">-- Main.luau</span>
+<span class="hl-kw">local</span> Window = <span class="hl-fn">import</span>(<span class="hl-str">"Window"</span>)
+<span class="hl-kw">local</span> Renderable = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
+<span class="hl-kw">local</span> Vector = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Vector
+
+<span class="hl-kw">local</span> win = Window.Open({ Title = <span class="hl-str">"Hello, Ruzit"</span>, Width = <span class="hl-num">1280</span>, Height = <span class="hl-num">720</span> })
+
+<span class="hl-kw">local</span> cube = Renderable.BasePart(<span class="hl-str">"Cube"</span>)
+cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</span>, <span class="hl-num">2</span>)</code></pre>
+
+<p>
+    <code>import</code> is the global library accessor &mdash; it returns a
+    typed handle to one of the engine subsystems. The Luau LSP follows the
+    return type through every <code>import("X")</code> call, so hover docs
+    and autocomplete work everywhere.
+</p>
+
+<h2 id="architecture">Architecture</h2>
+
+<p>
+    Three layers, top to bottom:
+</p>
+
+<table>
+    <thead>
+        <tr><th>Layer</th><th>What lives here</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code>.luau</code> game code</td>
+            <td>
+                Your scripts. Run inside a single Luau VM. The entry
+                script boots; <code>RunService.Heartbeat</code> drives
+                per-frame logic.
+            </td>
+        </tr>
+        <tr>
+            <td><code>import("X")</code> libraries</td>
+            <td>
+                Renderable, GUI, Asset, Window, Net, SFX, Steam, VR,
+                Gamepad, Actor, IO, Process, RunService, Signal,
+                Primitives, Serde, Voice, Managed.
+            </td>
+        </tr>
+        <tr>
+            <td>Rust engine</td>
+            <td>
+                wgpu, winit, cpal/rodio, mlua, fbxcel-dom,
+                steamworks, gilrs &mdash; wired up so the Luau side
+                only sees the abstractions.
+            </td>
+        </tr>
+    </tbody>
+</table>
+
+<p>
+    A packaged game is the same engine binary with a JSON trailer pointing
+    at <code>Managed/*.managed</code>. The launcher detects the trailer at
+    startup and boots the bundled scripts instead of the CLI dispatcher,
+    so the engine binary and the user's launcher are literally the same
+    file.
+</p>
+
+<div class="callout note">
+    <strong>Where to next?</strong>
+    Start with <a href="primitives.html">Primitives</a> &mdash; the math
+    types every other API is built on. Then work your way through the
+    sidebar.
+</div>
+
+</main>
+
+</body>
+</html>

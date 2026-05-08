@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Packages &amp; DLC — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Packages &amp; DLC</h1>
+<p class="lede">
+    Three flavours of bundle, one underlying format. Drop-in DLC, third-party
+    add-ons, and the project itself all ship as encrypted
+    <code>.managed</code> files; only the layout around them differs.
+</p>
+
+<h2>The .managed format</h2>
+
+<p>
+    A <code>.managed</code> file is one of two kinds:
+</p>
+
+<ul>
+    <li>
+        <code>&lt;id&gt;.scripts.managed</code> &mdash; encrypted JSON of every
+        <code>.luau</code> file in the package, plus metadata (id, name,
+        version, creator, entry script, file mode).
+    </li>
+    <li>
+        <code>&lt;id&gt;.assets.managed</code> &mdash; encrypted JSON of every
+        file under <code>assets/</code>, base64-encoded. With
+        <code>shard-assets</code> on, splits into
+        <code>&lt;id&gt;.assets.shard&lt;N&gt;.managed</code> files plus a
+        <code>&lt;id&gt;.assets.manifest.managed</code> index.
+    </li>
+</ul>
+
+<p>
+    Both are AES-256-GCM encrypted with a key baked into the engine binary.
+    The encryption is intentional but not cryptographic protection &mdash;
+    it's there to keep casual asset rippers out, not to defeat a determined
+    extractor.
+</p>
+
+<h2>Loading order</h2>
+
+<p>
+    At launcher startup the engine scans <code>Managed/</code> next to the
+    executable and loads every <code>.managed</code> file. Each file's
+    declared id (<code>"id"</code> in <code>ManagedInfo.toml</code> or the
+    project's <code>exe-name</code>) becomes a require namespace. The
+    package whose id matches the launcher's
+    <code>default_id</code> trailer field is the entry &mdash; it's what
+    runs when the launcher boots.
+</p>
+
+<pre><code>Generated/
+    MyGame.exe                              <span class="hl-com"># launcher; default_id = "MyGame"</span>
+    Managed/
+        MyGame.scripts.managed              <span class="hl-com"># ← entry: id = "MyGame"</span>
+        MyGame.assets.managed
+        Physics.scripts.managed             <span class="hl-com"># DLC: id = "Physics"</span>
+        Physics.assets.managed
+        community-mod.scripts.managed       <span class="hl-com"># Workshop drop-in</span></code></pre>
+
+<h2>require() across packages</h2>
+
+<p>
+    Every package gets its own require namespace prefixed with
+    <code>@id/</code>:
+</p>
+
+<pre><code><span class="hl-com">-- From inside MyGame:</span>
+<span class="hl-kw">local</span> phys   = <span class="hl-fn">require</span>(<span class="hl-str">"@Physics/init"</span>)       <span class="hl-com">-- DLC API</span>
+<span class="hl-kw">local</span> common = <span class="hl-fn">require</span>(<span class="hl-str">"@self/lib/util"</span>)      <span class="hl-com">-- own package, root-relative</span>
+<span class="hl-kw">local</span> sib    = <span class="hl-fn">require</span>(<span class="hl-str">"./helper"</span>)             <span class="hl-com">-- caller-relative</span></code></pre>
+
+<p>
+    <code>@self</code> is an alias for the calling script's own package id
+    &mdash; useful in DLC code that doesn't know the project name.
+</p>
+
+<h2 id="dlc">DLC: built-in side packages</h2>
+
+<p>
+    A DLC is a folder inside your project that contains a
+    <code>ManagedInfo.toml</code>. <code>Ruzit Build</code> auto-discovers
+    them and packages each one alongside the project:
+</p>
+
+<pre><code>MyGame/
+    build.toml
+    Main.luau
+    assets/
+    Physics/                          <span class="hl-com"># ← DLC folder</span>
+        ManagedInfo.toml
+        init.luau
+        body.luau
+        assets/</code></pre>
+
+<p><code>ManagedInfo.toml</code>:</p>
+
+<pre><code>id      = <span class="hl-str">"Physics"</span>
+name    = <span class="hl-str">"Physics DLC"</span>
+version = <span class="hl-str">"1.0.0"</span>
+creator = <span class="hl-str">"Studio Name"</span>
+entry   = <span class="hl-str">"init.luau"</span>
+<span class="hl-str">"File Type"</span> = <span class="hl-str">"Relative"</span></code></pre>
+
+<p>
+    Scaffold a fresh DLC folder with <code>Ruzit InitPackage Physics</code>.
+</p>
+
+<h2 id="external">External packages: Workshop / mods</h2>
+
+<p>
+    Third-party packages live as <code>.managed</code> files in a
+    <code>Packages/</code> folder, either in the project root (during
+    <code>Ruzit Test</code>) or next to the launcher (after
+    <code>Ruzit Build</code>). They're loaded the same way DLC is, but
+    aren't bundled into the project's launcher &mdash; they're drop-ins.
+</p>
+
+<pre><code>MyGame/
+    build.toml
+    Main.luau
+    Packages/
+        community-mod.scripts.managed
+        community-mod.assets.managed</code></pre>
+
+<p>
+    Producers ship their package by running <code>Ruzit Package</code>
+    against a folder with a <code>ManagedInfo.toml</code> &mdash; same shape
+    as a DLC folder, just packaged independently of any project.
+</p>
+
+<div class="callout note">
+    <strong>Conflict resolution.</strong>
+    If a third-party package's id matches a DLC or the project itself,
+    the launcher prefers the project &mdash; the third-party file is
+    skipped with a warning. This stops malicious mods from shadowing
+    your scripts.
+</div>
+
+<h2>Patching</h2>
+
+<p>
+    With <code>shard-assets = true</code> in <code>build.toml</code>, the
+    asset bundle splits into ~64&nbsp;MB shards keyed by content. Patches
+    only have to re-download the shards whose content changed; the manifest
+    file lists which assets are in which shard, so the player's launcher
+    can decide what to fetch.
+</p>
+
+<p>
+    Scripts always ship as a single <code>.scripts.managed</code> per
+    package &mdash; sharding compiled bytecode rarely pays off.
+</p>
+
+</main>
+
+</body>
+</html>

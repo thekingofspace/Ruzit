@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Actor — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Actor</h1>
+<p class="lede">
+    Spawn worker pools that run Luau on other CPU cores. Each worker has
+    its own isolated Luau state &mdash; jobs go in via <code>Push</code>,
+    results come out via <code>Pop</code>.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Actor = <span class="hl-fn">import</span>(<span class="hl-str">"Actor"</span>)
+
+<span class="hl-kw">local</span> fib = Actor.new([[
+    <span class="hl-kw">local</span> memo = {}
+    <span class="hl-kw">return</span> <span class="hl-kw">function</span>(n)
+        <span class="hl-kw">if</span> memo[n] <span class="hl-kw">then</span> <span class="hl-kw">return</span> memo[n] <span class="hl-kw">end</span>
+        <span class="hl-kw">local</span> a, b = <span class="hl-num">0</span>, <span class="hl-num">1</span>
+        <span class="hl-kw">for</span> _ = <span class="hl-num">2</span>, n <span class="hl-kw">do</span> a, b = b, a + b <span class="hl-kw">end</span>
+        memo[n] = b
+        <span class="hl-kw">return</span> b
+    <span class="hl-kw">end</span>
+]])
+
+<span class="hl-kw">for</span> i = <span class="hl-num">1</span>, <span class="hl-num">32</span> <span class="hl-kw">do</span> fib:Push(i) <span class="hl-kw">end</span>
+<span class="hl-kw">while</span> fib:Pending() &gt; <span class="hl-num">0</span> <span class="hl-kw">do</span>
+    <span class="hl-fn">print</span>(fib:Pop(<span class="hl-kw">true</span>))
+<span class="hl-kw">end</span></code></pre>
+
+<h2 id="api">Actor API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Actor.new(source, threads?)</span>
+            <span class="member-type">→ Actor</span>
+        </div>
+        <p class="member-desc">
+            Create a worker pool. <code>source</code> must be a Luau
+            source string whose chunk evaluates to a function &mdash;
+            that function is what each worker invokes per
+            <code>Push</code>. <code>threads</code> defaults to the CPU
+            core count (1..256).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Actor.FromFile(path, threads?)</span>
+            <span class="member-type">→ Actor</span>
+        </div>
+        <p class="member-desc">
+            Load worker code from a separate <code>.luau</code> file.
+            Path resolution mirrors <code>require</code>: relative,
+            parent-relative, <code>@PkgId/...</code>, <code>@self/...</code>.
+        </p>
+    </div>
+</div>
+
+<div class="callout warn">
+    <strong>Workers are isolated.</strong>
+    They run in independent Luau states with no
+    <code>import</code> / <code>require</code> / <code>print</code> /
+    <code>loadstring</code> / <code>__dirname</code>, and can't touch the
+    main thread's globals, GUI, assets, or sockets. Pass everything they
+    need as arguments to <code>Push</code>.
+</div>
+
+<h2 id="instance">Actor methods</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">actor:Push(...)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Queue one job. Arguments are deep-copied to a worker.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">actor:Pop(yield_for_result?)</span><span class="member-type">→ ...any</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Pop the next ready result. With <code>yield_for_result =
+            true</code> blocks until one's available; without (default),
+            returns <code>nil</code> immediately if nothing's ready.
+            Order is first-to-finish, not Push order &mdash; work runs in
+            parallel. Re-raises any error a worker hit.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">actor:Pending()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Number of jobs in flight + ready results not yet popped.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">actor:Threads()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">actor:Close()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Stop accepting jobs; workers exit when they finish their current
+            call. Already-completed results stay drainable. Idempotent.
+        </p>
+    </div>
+</div>
+
+<h2 id="patterns">Patterns</h2>
+
+<h3>Drain loop</h3>
+
+<pre><code><span class="hl-kw">while</span> actor:Pending() &gt; <span class="hl-num">0</span> <span class="hl-kw">do</span>
+    <span class="hl-kw">local</span> r = actor:Pop()
+    <span class="hl-kw">if</span> r ~= <span class="hl-kw">nil</span> <span class="hl-kw">then</span>
+        process(r)
+    <span class="hl-kw">end</span>
+<span class="hl-kw">end</span></code></pre>
+
+<h3>Sized pool for concurrent HTTP requests</h3>
+
+<pre><code><span class="hl-kw">local</span> fetch = Actor.new([[
+    <span class="hl-kw">return</span> <span class="hl-kw">function</span>(url)
+        <span class="hl-com">-- Workers can't import("Net"), but they CAN open sockets via</span>
+        <span class="hl-com">-- the standard `socket` library if you load it. Or use a tiny</span>
+        <span class="hl-com">-- HTTP client written in pure Lua. The point is: independent</span>
+        <span class="hl-com">-- threads of execution.</span>
+        <span class="hl-kw">return</span> url, <span class="hl-fn">tostring</span>(<span class="hl-fn">os</span>.time())
+    <span class="hl-kw">end</span>
+]], <span class="hl-num">8</span>)
+
+<span class="hl-kw">for</span> _, url <span class="hl-kw">in</span> <span class="hl-fn">ipairs</span>(targets) <span class="hl-kw">do</span> fetch:Push(url) <span class="hl-kw">end</span>
+<span class="hl-kw">while</span> fetch:Pending() &gt; <span class="hl-num">0</span> <span class="hl-kw">do</span>
+    <span class="hl-kw">local</span> url, ts = fetch:Pop(<span class="hl-kw">true</span>)
+    <span class="hl-fn">print</span>(url, ts)
+<span class="hl-kw">end</span>
+fetch:Close()</code></pre>
+
+</main>
+
+</body>
+</html>

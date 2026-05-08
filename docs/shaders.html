@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shaders — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Shaders</h1>
+<p class="lede">
+    User shaders are WGSL fragments authored in <code>.shader</code> /
+    <code>.frag</code> files and attached to render targets via
+    <code>:AttachShader(asset)</code>. The engine wraps every snippet in a
+    prelude that exposes the right uniforms, samplers, and storage bindings
+    so you only have to write the interesting bits.
+</p>
+
+<h2>Three contexts</h2>
+
+<table>
+    <thead>
+        <tr><th>Where</th><th>Method</th><th>Variant</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>2D primitives</td>
+            <td><code>primitive:AttachShader(asset)</code></td>
+            <td>Per-pixel fragment shader for one GUI element.</td>
+        </tr>
+        <tr>
+            <td>3D parts / models</td>
+            <td><code>part:AttachShader(asset)</code></td>
+            <td>Per-pixel fragment shader for one 3D part. Storage buffers and shadow flags available.</td>
+        </tr>
+        <tr>
+            <td>Skybox</td>
+            <td><code>GUI.SetSkybox(asset)</code></td>
+            <td>Run once per pixel as the scene background.</td>
+        </tr>
+        <tr>
+            <td>Post-effect</td>
+            <td><code>GUI.SetPostEffect(asset)</code></td>
+            <td>Run after everything else with the rendered scene as input.</td>
+        </tr>
+        <tr>
+            <td>Sounds</td>
+            <td><code>sound:AttachShader(asset)</code></td>
+            <td>Per-sample DSP shader. Works on the audio buffer, not the GPU.</td>
+        </tr>
+    </tbody>
+</table>
+
+<h2 id="prelude">Prelude</h2>
+
+<p>
+    Every shader is concatenated with a prelude that declares the bind groups
+    and provides helpers. You write the body; the engine handles wiring.
+</p>
+
+<h3>2D fragment</h3>
+
+<pre><code><span class="hl-com">// Bindings provided by the prelude:</span>
+<span class="hl-com">// @group(0) @binding(0) var&lt;uniform&gt; F: Frame;</span>
+<span class="hl-com">// @group(0) @binding(1) var&lt;uniform&gt; I: Instance;</span>
+<span class="hl-com">// @group(0) @binding(2) var IMG: texture_2d&lt;f32&gt;;</span>
+<span class="hl-com">// @group(0) @binding(3) var IMG_SAMPLER: sampler;</span>
+
+@fragment
+<span class="hl-kw">fn</span> fs_main(in: VsOut) -&gt; @location(<span class="hl-num">0</span>) vec4&lt;f32&gt; {
+    <span class="hl-kw">let</span> base = textureSample(IMG, IMG_SAMPLER, in.uv);
+    <span class="hl-kw">return</span> base * I.color;
+}</code></pre>
+
+<h3>3D part fragment</h3>
+
+<pre><code><span class="hl-com">// Frame uniform: view_proj, time, light_dir, sun_color, ambient, viewport, ...</span>
+<span class="hl-com">// Instance uniform: model, color, params[16], cast_shadow, receive_shadow</span>
+<span class="hl-com">// Storage @group(0) @binding(4): user data via GPU.NewBuffer / SetBuffer</span>
+
+@fragment
+<span class="hl-kw">fn</span> fs_main(in: VsOut) -&gt; @location(<span class="hl-num">0</span>) vec4&lt;f32&gt; {
+    <span class="hl-kw">if</span> (I.receive_shadow == <span class="hl-num">0u</span>) {
+        <span class="hl-kw">return</span> vec4&lt;f32&gt;(I.color.rgb, <span class="hl-num">1.0</span>);
+    }
+    <span class="hl-kw">let</span> N = normalize(in.world_normal);
+    <span class="hl-kw">let</span> L = normalize(-F.light_dir);
+    <span class="hl-kw">let</span> diffuse = max(dot(N, L), <span class="hl-num">0.0</span>);
+    <span class="hl-kw">let</span> lit = F.ambient + F.sun_color * diffuse;
+    <span class="hl-kw">return</span> vec4&lt;f32&gt;(I.color.rgb * lit, <span class="hl-num">1.0</span>);
+}</code></pre>
+
+<h2 id="params">@ruzit param &mdash; runtime parameters</h2>
+
+<p>
+    Mark <code>// @ruzit param &lt;name&gt;</code> at the top of your shader to
+    expose a float slot. Each shader can declare up to 16 of them, ordered
+    by appearance.
+</p>
+
+<pre><code><span class="hl-com">// @ruzit param threshold</span>
+<span class="hl-com">// @ruzit param strength</span>
+
+@fragment
+<span class="hl-kw">fn</span> fs_main(in: VsOut) -&gt; @location(<span class="hl-num">0</span>) vec4&lt;f32&gt; {
+    <span class="hl-kw">let</span> threshold = I.params[<span class="hl-num">0</span>];   <span class="hl-com">// slot 0</span>
+    <span class="hl-kw">let</span> strength  = I.params[<span class="hl-num">1</span>];   <span class="hl-com">// slot 1</span>
+    ...
+}</code></pre>
+
+<p>From Lua:</p>
+
+<pre><code><span class="hl-kw">local</span> shader = Asset.GetAsset(<span class="hl-str">"Shader"</span>, <span class="hl-str">"effects/glow.shader"</span>)
+part:AttachShader(shader)
+part:SetData(shader, <span class="hl-str">"threshold"</span>, <span class="hl-num">0.6</span>)
+part:SetData(shader, <span class="hl-str">"strength"</span>, <span class="hl-num">2.0</span>)</code></pre>
+
+<h2 id="storage">Storage buffers</h2>
+
+<p>
+    The 3D pipeline exposes a read-only storage buffer at
+    <code>@group(0) @binding(4)</code> that user code can populate via the
+    <code>GPU</code> library. Useful for instancing data, splat positions,
+    cast-shadow lists, etc.
+</p>
+
+<pre><code><span class="hl-kw">local</span> GPU = <span class="hl-fn">import</span>(<span class="hl-str">"GPU"</span>)
+<span class="hl-kw">local</span> buf = GPU.NewBuffer(<span class="hl-num">1024</span>)        <span class="hl-com">-- 1024 floats</span>
+buf:Write(<span class="hl-num">0</span>, { <span class="hl-num">1</span>, <span class="hl-num">2</span>, <span class="hl-num">3</span>, <span class="hl-num">4</span> })
+GPU.SetBuffer(buf)                  <span class="hl-com">-- bind to @binding(4)</span></code></pre>
+
+<pre><code>@group(<span class="hl-num">0</span>) @binding(<span class="hl-num">4</span>) <span class="hl-kw">var</span>&lt;storage, read&gt; SDATA: array&lt;f32&gt;;
+
+@fragment
+<span class="hl-kw">fn</span> fs_main(in: VsOut) -&gt; @location(<span class="hl-num">0</span>) vec4&lt;f32&gt; {
+    <span class="hl-kw">let</span> count = u32(SDATA[<span class="hl-num">0</span>]);
+    ...
+}</code></pre>
+
+<h2 id="skybox">Skybox</h2>
+
+<p>
+    A skybox shader runs once per screen pixel as the scene background &mdash;
+    the engine still draws every <code>BasePart</code> on top.
+</p>
+
+<pre><code><span class="hl-com">// @ruzit param horizon_y</span>
+
+@fragment
+<span class="hl-kw">fn</span> fs_main(in: VsOut) -&gt; @location(<span class="hl-num">0</span>) vec4&lt;f32&gt; {
+    <span class="hl-kw">let</span> y = in.uv.y;
+    <span class="hl-kw">let</span> sky    = vec3&lt;f32&gt;(<span class="hl-num">0.30</span>, <span class="hl-num">0.55</span>, <span class="hl-num">0.95</span>);
+    <span class="hl-kw">let</span> ground = vec3&lt;f32&gt;(<span class="hl-num">0.10</span>, <span class="hl-num">0.10</span>, <span class="hl-num">0.10</span>);
+    <span class="hl-kw">return</span> vec4&lt;f32&gt;(mix(sky, ground, smoothstep(<span class="hl-num">0.45</span>, <span class="hl-num">0.55</span>, y)), <span class="hl-num">1.0</span>);
+}</code></pre>
+
+<p>From Lua:</p>
+
+<pre><code><span class="hl-kw">local</span> sky = Asset.GetAsset(<span class="hl-str">"Shader"</span>, <span class="hl-str">"sky.shader"</span>)
+GUI.SetSkybox(sky)</code></pre>
+
+<h2 id="post">Post-effects</h2>
+
+<p>
+    A post-effect shader gets the rendered scene as <code>SCENE_TEX</code>
+    and writes the final pixel. Stack them by attaching multiple effects;
+    they run in attach order.
+</p>
+
+<pre><code><span class="hl-com">// @ruzit param vignette_strength</span>
+
+@group(<span class="hl-num">0</span>) @binding(<span class="hl-num">5</span>) <span class="hl-kw">var</span> SCENE_TEX: texture_2d&lt;f32&gt;;
+@group(<span class="hl-num">0</span>) @binding(<span class="hl-num">6</span>) <span class="hl-kw">var</span> SCENE_SAMP: sampler;
+
+@fragment
+<span class="hl-kw">fn</span> fs_main(in: VsOut) -&gt; @location(<span class="hl-num">0</span>) vec4&lt;f32&gt; {
+    <span class="hl-kw">let</span> base = textureSample(SCENE_TEX, SCENE_SAMP, in.uv);
+    <span class="hl-kw">let</span> r = distance(in.uv, vec2&lt;f32&gt;(<span class="hl-num">0.5</span>, <span class="hl-num">0.5</span>));
+    <span class="hl-kw">let</span> v = <span class="hl-num">1.0</span> - I.params[<span class="hl-num">0</span>] * r * r;
+    <span class="hl-kw">return</span> vec4&lt;f32&gt;(base.rgb * v, <span class="hl-num">1.0</span>);
+}</code></pre>
+
+<h2 id="audio">Sound shaders</h2>
+
+<p>
+    Per-sample audio DSP. The shader runs in CPU code (not on the GPU)
+    against the playback buffer. Used for filters, distortion, environmental
+    EQ, voice effects.
+</p>
+
+<pre><code><span class="hl-com">-- A simple low-pass via a one-pole IIR.</span>
+<span class="hl-com">-- @ruzit param cutoff</span>
+
+<span class="hl-kw">local</span> prev = <span class="hl-num">0.0</span>
+<span class="hl-kw">function</span> on_sample(s, params, dt)
+    <span class="hl-kw">local</span> a = math.exp(-<span class="hl-num">2</span> * math.pi * params.cutoff * dt)
+    prev = (<span class="hl-num">1</span> - a) * s + a * prev
+    <span class="hl-kw">return</span> prev
+<span class="hl-kw">end</span></code></pre>
+
+<h2 id="helpers">WGSL helpers (3D pipeline)</h2>
+
+<p>
+    The 3D prelude declares utility functions you can call freely. Skim
+    these before writing your own &mdash; the engine versions are tuned to
+    match the lighting setup the rest of the renderer uses.
+</p>
+
+<table>
+    <tbody>
+        <tr><td><code>view_dir(pos)</code></td><td>Normalized vector from <code>pos</code> toward the camera.</td></tr>
+        <tr><td><code>tangent_basis(N)</code></td><td>Returns an orthonormal (T, B, N) basis from a normal.</td></tr>
+        <tr><td><code>fresnel_schlick(cos_theta, F0)</code></td><td>Schlick approximation for view-angle reflectance.</td></tr>
+        <tr><td><code>to_screen_uv(world_pos)</code></td><td>Project a world-space point to screen-space UV.</td></tr>
+        <tr><td><code>linearize_depth(d, near, far)</code></td><td>Turn a non-linear depth-buffer value into world units.</td></tr>
+        <tr><td><code>srgb_to_linear(c)</code> / <code>linear_to_srgb(c)</code></td><td>Colour-space conversions.</td></tr>
+        <tr><td><code>hash3(p)</code></td><td>3D fragment hash, useful for procedural noise / dithering.</td></tr>
+    </tbody>
+</table>
+
+</main>
+
+</body>
+</html>

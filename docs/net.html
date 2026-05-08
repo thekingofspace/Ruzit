@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Net — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Net</h1>
+<p class="lede">
+    HTTP, TCP, UDP, IPC, and WebSockets. Synchronous APIs &mdash; if you need
+    concurrency, run handlers through <a href="actor.html">Actor</a>.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Net = <span class="hl-fn">import</span>(<span class="hl-str">"Net"</span>)
+
+<span class="hl-kw">local</span> res = Net.Request(<span class="hl-str">"GET"</span>, <span class="hl-str">"https://example.com/api"</span>)
+<span class="hl-fn">print</span>(res.status, res.body)</code></pre>
+
+<h2 id="http">HTTP</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Net.Request(method, url, body?, headers?)</span>
+            <span class="member-type">→ HttpResponse</span>
+        </div>
+        <p class="member-desc">
+            Synchronous HTTP client. Throws on connection failure; non-2xx
+            statuses come back via <code>.status</code>, not as exceptions.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Net.Serve(addr, handler)</span>
+        </div>
+        <p class="member-desc">
+            Blocking HTTP server. The handler returns either an
+            <code>HttpResponse</code> table or a plain string (wrapped as
+            <code>200 OK text/plain</code>).
+        </p>
+    </div>
+</div>
+
+<h3>HttpRequest / HttpResponse</h3>
+
+<table>
+    <tbody>
+        <tr><td><code>HttpRequest.method</code></td><td>string</td></tr>
+        <tr><td><code>HttpRequest.path</code></td><td>string</td></tr>
+        <tr><td><code>HttpRequest.headers</code></td><td><code>{ [string]: string }</code></td></tr>
+        <tr><td><code>HttpRequest.body</code></td><td>string</td></tr>
+        <tr><td><code>HttpResponse.status</code></td><td>number</td></tr>
+        <tr><td><code>HttpResponse.headers</code></td><td><code>{ [string]: string }</code></td></tr>
+        <tr><td><code>HttpResponse.body</code></td><td>string</td></tr>
+    </tbody>
+</table>
+
+<h2 id="tcp">TCP</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Net.TCP.Connect(addr)</span>
+            <span class="member-type">→ TcpConnection</span>
+        </div>
+        <p class="member-desc">Dial a remote <code>"host:port"</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Net.TCP.Host(addr)</span>
+            <span class="member-type">→ TcpListener</span>
+        </div>
+        <p class="member-desc">Bind + listen on a local <code>"host:port"</code>. Pass <code>:0</code> for an OS-assigned port.</p>
+    </div>
+</div>
+
+<h3>TcpConnection</h3>
+
+<table>
+    <tbody>
+        <tr><td><code>conn:Send(data)</code></td><td>Block until the OS accepts the bytes.</td></tr>
+        <tr><td><code>conn:Receive(n?)</code></td><td>Read up to <code>n</code> bytes (default 4096). <code>""</code> on clean close.</td></tr>
+        <tr><td><code>conn:Close()</code></td><td>Half-close. Subsequent Send/Receive throws.</td></tr>
+        <tr><td><code>conn:Peer()</code></td><td>Remote <code>"host:port"</code>.</td></tr>
+    </tbody>
+</table>
+
+<h3>TcpListener</h3>
+
+<table>
+    <tbody>
+        <tr><td><code>lst:Accept()</code></td><td>Block until a client connects.</td></tr>
+        <tr><td><code>lst:Close()</code></td><td>Stop accepting. Existing connections keep working.</td></tr>
+        <tr><td><code>lst:Address()</code></td><td>Local <code>"host:port"</code> &mdash; useful when you bound to port 0.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="udp">UDP</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Net.UDP.Bind(addr)</span>
+            <span class="member-type">→ UdpHandle</span>
+        </div>
+    </div>
+</div>
+
+<table>
+    <tbody>
+        <tr><td><code>udp:Send(addr, data)</code></td><td>Returns bytes actually delivered to the OS.</td></tr>
+        <tr><td><code>udp:Receive(n?)</code></td><td>Block for the next datagram. Returns (bytes, sender <code>"host:port"</code>).</td></tr>
+        <tr><td><code>udp:Close()</code></td><td></td></tr>
+        <tr><td><code>udp:Address()</code></td><td>Local <code>"host:port"</code>.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="ipc">IPC</h2>
+
+<p>
+    Local-only stream over a Windows named pipe / Unix domain socket. Same
+    semantics as TCP, restricted to the same machine. Pass a pipe/socket
+    <em>name</em>, not a path; the OS-specific prefix is added for you.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Net.IPC.Connect(name)</span>
+            <span class="member-type">→ IpcConnection</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Net.IPC.Host(name)</span>
+            <span class="member-type">→ IpcListener</span>
+        </div>
+    </div>
+</div>
+
+<h2 id="ws">WebSocket</h2>
+
+<p>
+    Frame-oriented messaging. Each <code>Send</code> is one WebSocket
+    message; <code>Receive</code> returns one full message (fragmentation
+    handled for you).
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Net.Socket.Connect(url)</span>
+            <span class="member-type">→ WebSocketConn</span>
+        </div>
+        <p class="member-desc">Pass a <code>ws://</code> or <code>wss://</code> URL.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Net.Socket.Host(addr)</span>
+            <span class="member-type">→ WebSocketListener</span>
+        </div>
+        <p class="member-desc">
+            Pass <code>"addr:port"</code>. TLS isn't auto-enabled on
+            <code>Host</code>; terminate it in front of Ruzit.
+        </p>
+    </div>
+</div>
+
+</main>
+
+</body>
+</html>

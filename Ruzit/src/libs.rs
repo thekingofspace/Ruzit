@@ -19,4 +19,5 @@ pub mod shader;
 pub mod signal;
 pub mod steam;
 pub mod voice;
+pub mod vr;
 pub mod window;

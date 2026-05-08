@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLI — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Command Line</h1>
+<p class="lede">
+    The Ruzit binary is a single executable that does everything: scaffold,
+    run, and ship. Drop it on your <code>PATH</code> and you have the full
+    engine.
+</p>
+
+<pre><code>Ruzit Init        [path]        scaffold a new project
+Ruzit InitPackage [path]        scaffold a Managed package folder
+Ruzit Test        [path]        run a Luau file
+Ruzit Build       [path] [-o]   produce Generated/&lt;exe&gt; + Generated/Managed/*.managed
+Ruzit Package     [folder] [-o] produce &lt;id&gt;.scripts.managed + &lt;id&gt;.assets.managed
+                  --console     attach a console window (for windowed launchers)
+                  --help        print this help</code></pre>
+
+<h2 id="init">Ruzit Init</h2>
+
+<div class="sig">Ruzit Init [path]</div>
+
+<p>
+    Creates a new project at <code>path</code> (current directory if omitted).
+    Writes:
+</p>
+
+<table>
+    <thead><tr><th>File</th><th>What's in it</th></tr></thead>
+    <tbody>
+        <tr><td><code>build.toml</code></td><td>Project metadata and build settings.</td></tr>
+        <tr><td><code>Main.luau</code></td><td>The entry script the engine runs.</td></tr>
+        <tr><td><code>types.d.luau</code></td><td>API type declarations for the Luau LSP. Always rewritten.</td></tr>
+        <tr><td><code>.vscode/settings.json</code></td><td>Wires luau-lsp up to <code>types.d.luau</code>.</td></tr>
+        <tr><td><code>assets/</code></td><td>Empty folder. Anything you drop in is auto-bundled.</td></tr>
+        <tr><td><code>Packages/</code></td><td>Empty folder for third-party <code>.managed</code> drop-ins.</td></tr>
+    </tbody>
+</table>
+
+<div class="callout note">
+    <strong>Re-running is safe.</strong>
+    User files (<code>build.toml</code>, <code>Main.luau</code>) are skipped
+    if they already exist. <code>types.d.luau</code> is always rewritten so
+    your autocomplete tracks whichever Ruzit version you're on.
+</div>
+
+<h2 id="initpackage">Ruzit InitPackage</h2>
+
+<div class="sig">Ruzit InitPackage [path]</div>
+
+<p>
+    Scaffolds a Managed package folder &mdash; the unit of distribution for
+    DLC, mods, and shareable libraries. Writes:
+</p>
+
+<ul>
+    <li><code>ManagedInfo.toml</code> &mdash; package id, name, entry script, file mode.</li>
+    <li><code>init.luau</code> &mdash; the entry returned to <code>require("@PkgId/init")</code>.</li>
+</ul>
+
+<p>
+    Drop the folder next to your project's <code>build.toml</code> and
+    <code>Ruzit Build</code> will pick it up as a DLC. See
+    <a href="packages.html">Packages &amp; DLC</a> for the full lifecycle.
+</p>
+
+<h2 id="test">Ruzit Test</h2>
+
+<div class="sig">Ruzit Test [path]</div>
+
+<p>
+    Runs a project from source. No packaging, no encryption &mdash; the
+    engine reads your <code>.luau</code> files directly off disk and the next
+    edit hits the next run.
+</p>
+
+<p>
+    With no path, the engine searches for <code>Main.luau</code> next to the
+    Ruzit executable, then in the working directory, then walks parent
+    folders. Pass an explicit path to override:
+</p>
+
+<pre><code>Ruzit Test                       <span class="hl-com"># auto-find Main.luau</span>
+Ruzit Test ./MyGame              <span class="hl-com"># project dir → MyGame/Main.luau</span>
+Ruzit Test ./MyGame/scenes/level1.luau</code></pre>
+
+<p>
+    Any DLC folders adjacent to the project (folders containing
+    <code>ManagedInfo.toml</code>) are loaded too &mdash; same as in a
+    packaged build.
+</p>
+
+<h2 id="build">Ruzit Build</h2>
+
+<div class="sig">Ruzit Build [path] [-o output] [--console]</div>
+
+<p>
+    Packages a project for shipping. Output layout:
+</p>
+
+<pre><code>Generated/
+    MyGame.exe                          <span class="hl-com"># launcher (Ruzit binary + JSON trailer)</span>
+    steam_api64.dll                     <span class="hl-com"># Steam redistributable (Windows)</span>
+    Managed/
+        MyGame.scripts.managed          <span class="hl-com"># encrypted .luau bundle</span>
+        MyGame.assets.managed           <span class="hl-com"># encrypted asset bundle</span>
+        MyGame.assets.shard0001.managed <span class="hl-com"># sharded asset bundles (if enabled)</span>
+        MyDlc.scripts.managed           <span class="hl-com"># discovered DLC, packaged in</span>
+        MyDlc.assets.managed</code></pre>
+
+<p>
+    <strong>Ship the entire <code>Generated/</code> folder.</strong> The
+    launcher reads its own JSON trailer at startup, finds <code>Managed/</code>
+    next to itself, and boots the bundled scripts.
+</p>
+
+<h3>Flags</h3>
+
+<table>
+    <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+    <tbody>
+        <tr>
+            <td><code>-o &lt;dir&gt;</code></td>
+            <td>Write output to <code>&lt;dir&gt;</code> instead of <code>./Generated</code>.</td>
+        </tr>
+        <tr>
+            <td><code>--console</code></td>
+            <td>
+                Attach (or allocate) a console for <code>print()</code> output. Useful
+                when <code>build.toml</code> sets <code>exe-windowed = true</code>
+                and you still need stdout for debugging.
+            </td>
+        </tr>
+    </tbody>
+</table>
+
+<div class="callout warn">
+    <strong>Per-platform launchers.</strong>
+    <code>Ruzit Build</code> always produces a launcher for the OS Ruzit
+    is running on &mdash; it's a copy of the running binary plus a JSON
+    trailer. To ship Windows + Linux + macOS, build Ruzit on each OS (or
+    use the GitHub Actions matrix), then run <code>Ruzit Build</code> on
+    each.
+</div>
+
+<h2 id="package">Ruzit Package</h2>
+
+<div class="sig">Ruzit Package [folder] [-o output]</div>
+
+<p>
+    Packages a single Managed folder into <code>.scripts.managed</code> +
+    <code>.assets.managed</code> files &mdash; the format used by DLC and
+    Workshop drops. The folder must contain a <code>ManagedInfo.toml</code>.
+</p>
+
+<pre><code>cd MyMod
+Ruzit Package                  <span class="hl-com"># → MyMod/Generated/Managed/&lt;id&gt;.scripts.managed</span>
+Ruzit Package . -o ../release  <span class="hl-com"># custom output dir</span></code></pre>
+
+<p>
+    Players install your package by copying the <code>.managed</code> files
+    into a host game's <code>Packages/</code> folder. The host game's
+    runtime mounts them as <code>require("@your-id/...")</code>.
+</p>
+
+<h2 id="globals">Global flags</h2>
+
+<table>
+    <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+    <tbody>
+        <tr>
+            <td><code>--console</code></td>
+            <td>
+                Attach the parent console (or allocate a new one). Works on
+                packaged launchers too &mdash; useful when a windowed game
+                needs an emergency stdout.
+            </td>
+        </tr>
+        <tr>
+            <td><code>--help</code> / <code>-h</code></td>
+            <td>Print the usage banner.</td>
+        </tr>
+    </tbody>
+</table>
+
+</main>
+
+</body>
+</html>

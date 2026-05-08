@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GUI — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>GUI</h1>
+<p class="lede">
+    2D overlay primitives, post-processing, and skybox shaders. Everything
+    drawn over the 3D scene lives here.
+</p>
+
+<pre><code><span class="hl-kw">local</span> GUI = <span class="hl-fn">import</span>(<span class="hl-str">"GUI"</span>)
+<span class="hl-kw">local</span> Dim = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Dim
+
+<span class="hl-kw">local</span> hp = GUI.Basic.Square()
+hp.Size     = Dim.new(<span class="hl-num">200</span>, <span class="hl-num">12</span>)
+hp.Position = Dim.new(<span class="hl-num">24</span>, <span class="hl-num">24</span>)
+hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
+
+<h2 id="primitives">GUI.Basic — primitive factories</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.Basic.Square()</span>
+            <span class="member-type">→ Primitive</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.Basic.Circle()</span>
+            <span class="member-type">→ Primitive</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.Basic.Triangle()</span>
+            <span class="member-type">→ Primitive</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.Basic.Image(asset)</span>
+            <span class="member-type">→ Primitive</span>
+        </div>
+        <p class="member-desc">
+            Textured rectangle. Pass an <code>ImageAsset</code>; the
+            asset's pixels become the surface.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.Basic.Font(asset)</span>
+            <span class="member-type">→ Primitive</span>
+        </div>
+        <p class="member-desc">
+            Text label. Pass a <code>FontAsset</code>; glyphs are
+            rasterised at runtime sized by <code>.TextSize</code>.
+        </p>
+    </div>
+</div>
+
+<h2 id="primitive">Primitive</h2>
+
+<p>
+    All five factories return a <code>Primitive</code>. Properties are
+    read/write; assignment fires <code>.Changed</code> with the property
+    name.
+</p>
+
+<h3>Properties</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Shape</span><span class="member-type">"Square" | "Circle" | "Triangle" | "Image" | "Text"</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Size</span><span class="member-type">Dim</span></div>
+        <p class="member-desc">Pixel-space size. For Text this is <code>(0, 0)</code> &mdash; size is driven by <code>.TextSize</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Position</span><span class="member-type">Dim</span></div>
+        <p class="member-desc">Top-left position. Origin at the top-left of the window.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Color</span><span class="member-type">Color3</span></div>
+        <p class="member-desc">Tint when texture-less; image tint when textured; box colour for Text.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Transparency</span><span class="member-type">number</span></div>
+        <p class="member-desc"><code>0</code> opaque, <code>1</code> fully transparent.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.ZIndex</span><span class="member-type">number</span></div>
+        <p class="member-desc">Higher = drawn on top.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Visible</span><span class="member-type">boolean</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Text</span><span class="member-type">string</span></div>
+        <p class="member-desc">Text content. No-op on non-Text primitives.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.TextSize</span><span class="member-type">number</span></div>
+        <p class="member-desc">Glyph height in pixels.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.TextColor</span><span class="member-type">Color3</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Changed</span><span class="member-type">Signal&lt;string&gt;</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+</div>
+
+<h3>Methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">prim:Destroy()</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">prim:AttachShader(asset)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Attach a 2D fragment shader to this primitive's draw call.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">prim:DetachShader(asset)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">prim:ClearShaders()</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">prim:SetData(asset, name, value)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">prim:GetData(asset, name)</span><span class="member-type">→ number?</span><span class="tag tag-method">method</span></div>
+    </div>
+</div>
+
+<h2 id="skybox">Skybox</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.SetSkybox(asset)</span>
+            <span class="member-type">→ SceneShader</span>
+        </div>
+        <p class="member-desc">
+            Run a fragment shader on a fullscreen quad before the 3D scene.
+            Replaces the flat clear colour with whatever the shader produces.
+            See <a href="shaders.html#skybox">Shaders &gt; Skybox</a>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">GUI.ClearSkybox()</span></div>
+    </div>
+</div>
+
+<h2 id="post">Post effects</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.SetPostEffect(asset)</span>
+            <span class="member-type">→ SceneShader</span>
+        </div>
+        <p class="member-desc">
+            Final-pass fragment shader. The rendered scene is bound as
+            <code>IMG</code>; sample it via
+            <code>textureSample(IMG, IMG_SAMP, in.uv)</code>. Used for
+            color grading, vignette, CRT, bloom, etc.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">GUI.ClearPostEffect()</span></div>
+    </div>
+</div>
+
+<h3>SceneShader</h3>
+
+<p>
+    Returned by <code>SetSkybox</code> and <code>SetPostEffect</code>.
+    Lifetime ties to the slot &mdash; let it drop or call
+    <code>:Destroy()</code> to remove the shader.
+</p>
+
+<table>
+    <tbody>
+        <tr><td><code>scene:SetData(name, value)</code></td><td>Set a <code>@ruzit param</code> slot.</td></tr>
+        <tr><td><code>scene:GetData(name)</code></td><td>Read it back.</td></tr>
+        <tr><td><code>scene:Destroy()</code></td><td>Clear the slot.</td></tr>
+    </tbody>
+</table>
+
+<h3>Worked example: damage flash</h3>
+
+<pre><code><span class="hl-kw">local</span> grade = GUI.SetPostEffect(Asset.GetAsset(<span class="hl-str">"Fragment"</span>, <span class="hl-str">"damage.frag"</span>))
+grade:SetData(<span class="hl-str">"strength"</span>, <span class="hl-num">0.0</span>)
+
+<span class="hl-kw">function</span> on_player_hit()
+    <span class="hl-kw">local</span> RunService = <span class="hl-fn">import</span>(<span class="hl-str">"RunService"</span>)
+    <span class="hl-kw">local</span> elapsed = <span class="hl-num">0</span>
+    <span class="hl-kw">local</span> conn
+    conn = RunService.Heartbeat:Connect(<span class="hl-kw">function</span>(dt)
+        elapsed += dt
+        <span class="hl-kw">local</span> t = elapsed / <span class="hl-num">0.4</span>
+        <span class="hl-kw">if</span> t &gt;= <span class="hl-num">1</span> <span class="hl-kw">then</span>
+            grade:SetData(<span class="hl-str">"strength"</span>, <span class="hl-num">0</span>)
+            conn:Disconnect()
+        <span class="hl-kw">else</span>
+            grade:SetData(<span class="hl-str">"strength"</span>, <span class="hl-num">1</span> - t)
+        <span class="hl-kw">end</span>
+    <span class="hl-kw">end</span>)
+<span class="hl-kw">end</span></code></pre>
+
+</main>
+
+</body>
+</html>

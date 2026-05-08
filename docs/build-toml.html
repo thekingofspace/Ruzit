@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>build.toml — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>build.toml</h1>
+<p class="lede">
+    Project metadata and build settings. Lives at the root of every project
+    next to <code>Main.luau</code>. Read by <code>Ruzit Test</code> and
+    <code>Ruzit Build</code>; ignored at runtime in packaged games.
+</p>
+
+<h2>Example</h2>
+
+<pre><code>name      = <span class="hl-str">"My Game"</span>
+version   = <span class="hl-str">"0.1.0"</span>
+creator   = <span class="hl-str">"Studio Name"</span>
+
+exe-name  = <span class="hl-str">"MyGame"</span>
+exe-icon  = <span class="hl-str">"logo.ico"</span>
+exe-windowed = <span class="hl-kw">true</span>
+
+<span class="hl-str">"File Type"</span> = <span class="hl-str">"Relative"</span>
+compress-scripts = <span class="hl-kw">true</span>
+compress-assets  = <span class="hl-kw">true</span>
+shard-assets     = <span class="hl-kw">false</span>
+
+steam-app-id = <span class="hl-num">480</span></code></pre>
+
+<h2>Fields</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">name</span>
+            <span class="member-type">string</span>
+        </div>
+        <p class="member-desc">
+            Display name shown in the engine banner and in the launcher's
+            metadata. Defaults to the project folder name.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">version</span>
+            <span class="member-type">string</span>
+        </div>
+        <p class="member-desc">
+            Free-form version string (use semver if it suits you).
+            Surfaced via Steam rich presence and crash logs.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">creator</span>
+            <span class="member-type">string</span>
+        </div>
+        <p class="member-desc">
+            Studio / author name. Shown in the launcher banner alongside
+            version.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">exe-name</span>
+            <span class="member-type">string</span>
+        </div>
+        <p class="member-desc">
+            Filename for the launcher executable. <code>"MyGame"</code>
+            yields <code>MyGame.exe</code> on Windows and <code>MyGame</code>
+            on Linux/macOS. Defaults to the entry-script stem.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">exe-icon</span>
+            <span class="member-type">string</span>
+        </div>
+        <p class="member-desc">
+            Path (relative to <code>build.toml</code>) of an
+            <code>.ico</code> file embedded in the Windows launcher. Ignored
+            on Linux/macOS &mdash; those platforms set the icon via .desktop
+            files / .app bundles, not by editing the binary.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">exe-windowed</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">
+            On Windows, sets the PE subsystem to GUI (no console window
+            spawns). Pass <code>--console</code> at the command line if
+            you ever need stdout from a windowed launcher. No effect on
+            other platforms.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">"File Type"</span>
+            <span class="member-type">"Relative" | "Global"</span>
+        </div>
+        <p class="member-desc">
+            Module-resolution mode for <code>require()</code>. In
+            <code>Relative</code> mode (the default) paths are resolved
+            against the calling script's directory; in <code>Global</code>
+            mode they're rooted at the project root regardless of where
+            <code>require</code> is called.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">compress-scripts</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">
+            Zstd-compress every script before bundling. Shrinks
+            <code>.scripts.managed</code> by ~3&times; on typical Lua.
+            Default <code>true</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">compress-assets</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">
+            Zstd-compress every asset before bundling. Skips already-
+            compressed formats (PNG, OGG, JPG) at runtime since the gain
+            is negligible. Default <code>true</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">shard-assets</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">
+            Split the asset bundle into ~64&nbsp;MB shards. Recommended
+            for large games where patches should re-download only the
+            shards that changed. Produces
+            <code>&lt;id&gt;.assets.shard0001.managed</code> files plus a
+            <code>&lt;id&gt;.assets.manifest.managed</code> index.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">steam-app-id</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Your Steamworks AppID. The launcher passes this into the
+            Steamworks SDK at startup so achievements / DLC / Workshop
+            calls map to the right game. Use Valve's spacewar AppID
+            (<code>480</code>) for testing.
+        </p>
+    </div>
+</div>
+
+<h2>Default values</h2>
+
+<p>
+    Every field is optional. The defaults a fresh <code>Ruzit Init</code>
+    project gets:
+</p>
+
+<table>
+    <tbody>
+        <tr><td>name</td><td>folder name</td></tr>
+        <tr><td>version</td><td><code>"0.1.0"</code></td></tr>
+        <tr><td>creator</td><td><code>""</code></td></tr>
+        <tr><td>exe-name</td><td>entry-script stem (<code>Main</code>)</td></tr>
+        <tr><td>exe-icon</td><td>none</td></tr>
+        <tr><td>exe-windowed</td><td><code>true</code> if a window opens, otherwise <code>false</code></td></tr>
+        <tr><td>"File Type"</td><td><code>"Relative"</code></td></tr>
+        <tr><td>compress-scripts</td><td><code>true</code></td></tr>
+        <tr><td>compress-assets</td><td><code>true</code></td></tr>
+        <tr><td>shard-assets</td><td><code>false</code></td></tr>
+        <tr><td>steam-app-id</td><td>none (Steam features error if accessed)</td></tr>
+    </tbody>
+</table>
+
+</main>
+
+</body>
+</html>

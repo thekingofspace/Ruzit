@@ -158,6 +158,14 @@ pub fn camera_snapshot() -> CameraState {
     })
 }
 
+/// Force-set the engine camera's CFrame from outside the renderable module.
+/// VR uses this every frame to compose `BodyCframe ∘ HeadCframe` over the
+/// engine camera so the existing 3D render path picks up the headset pose
+/// without needing to know VR exists.
+pub fn set_camera_cframe(cf: CFrame) {
+    CAMERA.with(|c| c.borrow_mut().cframe = cf);
+}
+
 pub struct PartRender {
     pub shape: PartShape,
     pub cframe: CFrame,

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asset — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Asset</h1>
+<p class="lede">
+    Load images, sounds, shaders, models, fonts, and arbitrary files. Three
+    entry points: <code>GetAsset</code> (project bundle),
+    <code>ImportAsset</code> (anywhere on disk), and
+    <code>FromString</code> / <code>FromPixels</code> (memory).
+</p>
+
+<pre><code><span class="hl-kw">local</span> Asset = <span class="hl-fn">import</span>(<span class="hl-str">"Asset"</span>)
+
+<span class="hl-kw">local</span> logo = Asset.GetAsset(<span class="hl-str">"Image"</span>, <span class="hl-str">"ui.logo"</span>)         <span class="hl-com">-- assets/ui/logo.png</span>
+<span class="hl-kw">local</span> mesh = Asset.GetAsset(<span class="hl-str">"Model"</span>, <span class="hl-str">"props.crate"</span>)     <span class="hl-com">-- assets/props/crate.fbx</span>
+<span class="hl-kw">local</span> snd  = Asset.GetAsset(<span class="hl-str">"Sound"</span>, <span class="hl-str">"sfx.explode"</span>)</code></pre>
+
+<h2 id="kinds">Asset kinds</h2>
+
+<table>
+    <thead><tr><th>Kind</th><th>Returns</th><th>Extensions probed</th></tr></thead>
+    <tbody>
+        <tr><td><code>"Image"</code></td><td>ImageAsset</td><td>.png .jpg .jpeg .bmp .gif .webp</td></tr>
+        <tr><td><code>"Sound"</code></td><td>SoundData</td><td>.ogg .mp3 .wav .flac</td></tr>
+        <tr><td><code>"Shader"</code></td><td>ShaderAsset</td><td>.shader .glsl .wgsl .hlsl .vert .metal</td></tr>
+        <tr><td><code>"Fragment"</code></td><td>FragmentAsset</td><td>.frag .fragment .fs .glslf</td></tr>
+        <tr><td><code>"Model"</code></td><td>ModelAsset</td><td>.obj .fbx</td></tr>
+        <tr><td><code>"Font"</code></td><td>FontAsset</td><td>.ttf .otf</td></tr>
+        <tr><td><code>"File"</code></td><td>string</td><td>any &mdash; raw UTF-8 contents</td></tr>
+    </tbody>
+</table>
+
+<h2 id="paths">Path forms</h2>
+
+<table>
+    <tbody>
+        <tr>
+            <td><code>"foo.bar.baz"</code></td>
+            <td>
+                Same package as the caller. Dots are folder separators
+                &mdash; resolves to <code>assets/foo/bar/baz</code>.
+            </td>
+        </tr>
+        <tr>
+            <td><code>"@PkgId/foo/bar"</code></td>
+            <td>Cross-package lookup. Reads from another loaded <code>.managed</code> package by id.</td>
+        </tr>
+        <tr>
+            <td><code>"foo/bar.png"</code></td>
+            <td>Literal extension. Loader uses it directly instead of probing the kind's extension list.</td>
+        </tr>
+    </tbody>
+</table>
+
+<h2 id="api">Asset API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Asset.GetAsset(kind, path)</span>
+            <span class="member-type">→ kind-specific</span>
+        </div>
+        <p class="member-desc">
+            Load from your project's <code>assets/</code> folder (during
+            <code>Ruzit Test</code>) or the bundled <code>.managed</code>
+            package (in a built game). Cached &mdash; the same path
+            returns the same instance on subsequent calls.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Asset.FromString(kind, data, label?)</span>
+            <span class="member-type">→ kind-specific</span>
+        </div>
+        <p class="member-desc">
+            Build an asset from a raw byte string. <code>label</code> is
+            cosmetic (shown by <code>:Source()</code>). Useful for assets
+            fetched over the network or assembled procedurally.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Asset.ImportAsset(kind, path)</span>
+            <span class="member-type">→ kind-specific</span>
+        </div>
+        <p class="member-desc">
+            Load from any disk path &mdash; mod folders, Workshop items,
+            user profile. Pass <code>"Auto"</code> or <code>""</code> as
+            the kind to infer it from the file extension.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Asset.FromPixels(width, height, rgba)</span>
+            <span class="member-type">→ ImageAsset</span>
+        </div>
+        <p class="member-desc">
+            Build an ImageAsset from raw RGBA8 pixels. <code>rgba</code>
+            must be exactly <code>width * height * 4</code> bytes.
+        </p>
+    </div>
+</div>
+
+<h2 id="image">ImageAsset</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Width()</span><span class="member-type">→ number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Height()</span><span class="member-type">→ number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Source()</span><span class="member-type">→ string</span></div>
+        <p class="member-desc">Origin string &mdash; file path or <code>"&lt;pixels:WxH&gt;"</code> for in-memory variants.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Pixels()</span><span class="member-type">→ string</span></div>
+        <p class="member-desc">
+            Raw RGBA8 buffer (<code>Width * Height * 4</code> bytes).
+            Useful for inspection or hand-rolled image processing.
+        </p>
+    </div>
+</div>
+
+<h2 id="model">ModelAsset</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">model:VertexCount()</span><span class="member-type">→ number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">model:TriangleCount()</span><span class="member-type">→ number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">model:Source()</span><span class="member-type">→ string</span></div>
+    </div>
+</div>
+
+<p>
+    FBX files additionally carry every animation clip (AnimationStack)
+    parsed out of the file. They surface on the resulting Part via
+    <code>part:GetTrackNames()</code> and <code>part:GetTrack(name)</code>.
+</p>
+
+<h2 id="sound">SoundData</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:Source()</span><span class="member-type">→ string</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:ByteCount()</span><span class="member-type">→ number</span></div>
+        <p class="member-desc">Encoded byte length (NOT decoded sample count). Decoding happens on <code>SFX.LoadSound</code>.</p>
+    </div>
+</div>
+
+<h2 id="font">FontAsset</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">font:Source()</span><span class="member-type">→ string</span></div>
+    </div>
+</div>
+
+<p>
+    Pass to <code>GUI.Basic.Font(font)</code> to create a Text primitive.
+    Glyphs are rasterised at runtime sized by the primitive's
+    <code>.TextSize</code>.
+</p>
+
+</main>
+
+</body>
+</html>

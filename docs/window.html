@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Window — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Window</h1>
+<p class="lede">
+    Open and control the application window. One per process. Built on
+    winit, so the same code drives Win32 / X11 / Wayland / AppKit.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Window = <span class="hl-fn">import</span>(<span class="hl-str">"Window"</span>)
+
+<span class="hl-kw">local</span> win = Window.Open({
+    title  = <span class="hl-str">"My Game"</span>,
+    width  = <span class="hl-num">1280</span>,
+    height = <span class="hl-num">720</span>,
+    resizable = <span class="hl-kw">true</span>,
+})
+
+win.OnFocus:Connect(<span class="hl-kw">function</span>() <span class="hl-fn">print</span>(<span class="hl-str">"focused"</span>) <span class="hl-kw">end</span>)
+win:BindToClose(<span class="hl-kw">function</span>() <span class="hl-fn">print</span>(<span class="hl-str">"saving..."</span>) <span class="hl-kw">end</span>)</code></pre>
+
+<h2 id="api">Window API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Window.Open(opts?)</span>
+            <span class="member-type">→ WindowHandle</span>
+        </div>
+        <p class="member-desc">
+            Open the application window. Only one is allowed at a time;
+            calling twice throws.
+        </p>
+    </div>
+</div>
+
+<h2 id="options">WindowOptions</h2>
+
+<p>
+    All fields are optional. Defaults: <code>800 × 600</code>, decorated,
+    resizable, visible, with the executable name as the title.
+</p>
+
+<table>
+    <tbody>
+        <tr><td><code>title</code></td><td>string &mdash; caption shown in the title bar / taskbar.</td></tr>
+        <tr><td><code>width / height</code></td><td>number &mdash; initial inner-area size in logical pixels.</td></tr>
+        <tr><td><code>min_width / min_height</code></td><td>Optional minimum-size constraint.</td></tr>
+        <tr><td><code>max_width / max_height</code></td><td>Optional maximum-size constraint.</td></tr>
+        <tr><td><code>fullscreen</code></td><td>Exclusive fullscreen. Most games should prefer <code>borderless</code>.</td></tr>
+        <tr><td><code>borderless</code></td><td>Borderless fullscreen &mdash; covers the OS taskbar; Alt+Tab works cleanly.</td></tr>
+        <tr><td><code>resizable</code></td><td>Default <code>true</code>.</td></tr>
+        <tr><td><code>maximized</code></td><td>Start maximized.</td></tr>
+        <tr><td><code>visible</code></td><td>Default <code>true</code>. Set false if you need to preload before showing.</td></tr>
+        <tr><td><code>transparent</code></td><td>Per-pixel alpha. Requires a compositor.</td></tr>
+        <tr><td><code>always_on_top</code></td><td>Pin above other windows. Ignored in fullscreen / borderless.</td></tr>
+        <tr><td><code>icon</code></td><td>ImageAsset for the title-bar / taskbar icon. PNG works best.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="handle">WindowHandle</h2>
+
+<h3>Signals</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Changed</span><span class="member-type">Signal&lt;string&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Fires with the changed property name: <code>"Title"</code>,
+            <code>"Size"</code>, <code>"Position"</code>,
+            <code>"Fullscreen"</code>, <code>"Maximized"</code>, etc.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnFocus</span><span class="member-type">Signal&lt;&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Fires when the window gains keyboard / mouse focus.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnUnfocus</span><span class="member-type">Signal&lt;&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Fires on focus loss. Useful for releasing mouse lock, pausing, etc.</p>
+    </div>
+</div>
+
+<h3>Methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:Close()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Programmatic close. Triggers <code>BindToClose</code>, then terminates the process.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:BindToClose(fn)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Run <code>fn</code> once just before exit. Use to flush save state, persist settings.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:Resize(width, height)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:SetTitle(title)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:SetBorderless(borderless)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:SetDecorations(decorated)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Strip title bar / min / close buttons without going fullscreen.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:SetFullscreen(fullscreen)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:SetResizable(resizable)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:SetMaximized(maximized)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:SetMinimized(minimized)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:SetVisible(visible)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:SetAlwaysOnTop(on_top)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:SetPosition(x, y)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:Focus()</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:RequestRedraw()</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:Width()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:Height()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:Title()</span><span class="member-type">→ string</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:IsFullscreen()</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:IsOpen()</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">win:GetViewport()</span><span class="member-type">→ Camera</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Same Camera object <code>Renderable.Camera</code> returns &mdash;
+            exposed so a module that only has a WindowHandle can still drive
+            the view.
+        </p>
+    </div>
+</div>
+
+</main>
+
+</body>
+</html>

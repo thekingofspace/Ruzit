@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SFX — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>SFX</h1>
+<p class="lede">
+    Stream and shape audio. Built on rodio + cpal: cross-platform output via
+    WASAPI / ALSA / PulseAudio / CoreAudio. Each Sound is independent &mdash;
+    play, layer, position in 3D, attach DSP shaders.
+</p>
+
+<pre><code><span class="hl-kw">local</span> SFX = <span class="hl-fn">import</span>(<span class="hl-str">"SFX"</span>)
+<span class="hl-kw">local</span> Asset = <span class="hl-fn">import</span>(<span class="hl-str">"Asset"</span>)
+
+<span class="hl-kw">local</span> data = Asset.GetAsset(<span class="hl-str">"Sound"</span>, <span class="hl-str">"sfx.explode"</span>)
+<span class="hl-kw">local</span> snd  = SFX.LoadSound(data)
+snd:Volume(<span class="hl-num">0.6</span>):Echo(<span class="hl-num">120</span>, <span class="hl-num">0.4</span>, <span class="hl-num">0.3</span>):Play()</code></pre>
+
+<h2 id="api">SFX API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">SFX.LoadSound(data)</span>
+            <span class="member-type">→ Sound</span>
+        </div>
+        <p class="member-desc">
+            Wrap a <code>SoundData</code> into a playable <code>Sound</code>.
+            The same data can back many independent Sounds &mdash; each
+            with its own shader chain and Play/Stop state.
+        </p>
+    </div>
+</div>
+
+<h3>Standalone shader factories</h3>
+
+<p>
+    Build a <code>SoundShader</code> userdata you can stack on any Sound
+    via <code>sound:ApplyShader(shader)</code>. Useful for shader presets
+    you reuse across many sounds.
+</p>
+
+<table>
+    <tbody>
+        <tr><td><code>SFX.Volume(factor)</code></td><td>Linear gain.</td></tr>
+        <tr><td><code>SFX.Speed(factor)</code></td><td>Time + pitch.</td></tr>
+        <tr><td><code>SFX.Pan(amount)</code></td><td>Stereo pan, -1 to +1.</td></tr>
+        <tr><td><code>SFX.FadeIn(seconds)</code></td><td>0→1 envelope from start.</td></tr>
+        <tr><td><code>SFX.FadeOut(seconds)</code></td><td>1→0 envelope at end.</td></tr>
+        <tr><td><code>SFX.LowPass(freq)</code></td><td>Biquad lowpass at the given Hz.</td></tr>
+        <tr><td><code>SFX.HighPass(freq)</code></td><td>Biquad highpass.</td></tr>
+        <tr><td><code>SFX.Delay(seconds)</code></td><td>Wait before producing audio.</td></tr>
+        <tr><td><code>SFX.Repeat()</code></td><td>Loop indefinitely.</td></tr>
+        <tr><td><code>SFX.Distortion(amount)</code></td><td>Soft saturation.</td></tr>
+        <tr><td><code>SFX.Echo(delay_ms, feedback?, mix?)</code></td><td>Single-tap echo.</td></tr>
+        <tr><td><code>SFX.Reverb(mix?, decay?)</code></td><td>Diffuse reverb.</td></tr>
+        <tr><td><code>SFX.Tremolo(rate?, depth?)</code></td><td>Periodic amplitude wobble.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="sound">Sound</h2>
+
+<h3>Properties &amp; signals</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Started</span><span class="member-type">Signal&lt;&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Fires when <code>:Play()</code> actually starts feeding audio.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Stopped</span><span class="member-type">Signal&lt;&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Fires on natural completion or <code>:Stop()</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Source</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+</div>
+
+<h3>Playback control</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:Play()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Begin playback. Re-applying shaders / volume before this changes
+            how this playback sounds &mdash; settings don't carry between
+            <code>:Play()</code> calls unless you re-apply them.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:Stop()</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:IsPlaying()</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:Reset()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Drop all fluent shaders and attachments &mdash; back to a clean state.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:LinkToUpdate(interval)</span><span class="member-type">→ Signal&lt;number&gt;</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Fires every <code>interval</code> seconds with elapsed playback
+            time. Useful for syncing animation / particles to audio.
+        </p>
+    </div>
+</div>
+
+<h3>Fluent shaders</h3>
+
+<p>
+    Each replaces any prior call to the same method (no stacking).
+    Apply before <code>:Play()</code>; settings reset between plays.
+</p>
+
+<table>
+    <tbody>
+        <tr><td><code>snd:Volume(factor)</code></td><td>1.0 unchanged, 0.0 silence, &gt;1 boosted.</td></tr>
+        <tr><td><code>snd:Speed(factor)</code></td><td>2.0 = 2&times; faster (also pitched up an octave).</td></tr>
+        <tr><td><code>snd:Pitch(factor)</code></td><td>Pitch shift via resampling. Doesn't change duration.</td></tr>
+        <tr><td><code>snd:Pan(amount)</code></td><td>-1 left / 0 center / +1 right.</td></tr>
+        <tr><td><code>snd:LowPass(freq)</code></td><td>Biquad lowpass.</td></tr>
+        <tr><td><code>snd:HighPass(freq)</code></td><td>Biquad highpass.</td></tr>
+        <tr><td><code>snd:FadeIn(seconds)</code></td><td>Linear envelope from start.</td></tr>
+        <tr><td><code>snd:FadeOut(seconds)</code></td><td>Linear envelope at end.</td></tr>
+        <tr><td><code>snd:Delay(seconds)</code></td><td>Wait before producing audio.</td></tr>
+        <tr><td><code>snd:Loop()</code></td><td>Each loop fires <code>Started</code>/<code>Stopped</code> fresh.</td></tr>
+        <tr><td><code>snd:Distortion(amount)</code></td><td>Soft saturation. &gt;1 hard-clips.</td></tr>
+        <tr><td><code>snd:Echo(delay_ms, feedback?, mix?)</code></td><td>Single-tap echo.</td></tr>
+        <tr><td><code>snd:Reverb(mix?, decay?)</code></td><td>Diffuse reverb.</td></tr>
+        <tr><td><code>snd:Tremolo(rate?, depth?)</code></td><td>Periodic amplitude wobble.</td></tr>
+    </tbody>
+</table>
+
+<h3 id="positional">3D positional audio</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:SetPosition(x, y, z, falloff?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Listener is the active <code>Renderable.Camera</code>. Distance
+            falloff defaults to 20 world units. Call
+            <code>:ClearPosition()</code> to revert to non-positional.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:ClearPosition()</span><span class="tag tag-method">method</span></div>
+    </div>
+</div>
+
+<h3 id="dsp">DSP shaders</h3>
+
+<p>
+    Same shader contract as the GPU side, but the body runs once per audio
+    sample. See <a href="shaders.html#audio">Shaders &gt; Sound shaders</a>.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:AttachShader(asset)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:DetachShader(asset)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:SetData(asset, name, value)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:GetData(asset, name)</span><span class="member-type">→ number?</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:ApplyShader(shader)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Stack a SoundShader built via <code>SFX.Volume(...)</code> /
+            etc. Stacks (unlike fluent calls).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:ClearShaders()</span><span class="tag tag-method">method</span></div>
+    </div>
+</div>
+
+<h2 id="sound-shader">SoundShader</h2>
+
+<p>
+    Returned by every standalone shader factory
+    (<code>SFX.Volume(0.6)</code>, <code>SFX.Echo(120, 0.4, 0.3)</code>,
+    etc.). It's an opaque handle &mdash; the only thing you do with it is
+    pass it to <code>sound:ApplyShader(shader)</code>. Multiple sounds can
+    share the same shader instance, and one sound can stack many shaders.
+</p>
+
+<pre><code><span class="hl-com">-- Build a "underwater" preset once and apply to many sounds.</span>
+<span class="hl-kw">local</span> underwater_lpf = SFX.LowPass(<span class="hl-num">800</span>)
+<span class="hl-kw">local</span> underwater_rev = SFX.Reverb(<span class="hl-num">0.4</span>, <span class="hl-num">3</span>)
+
+<span class="hl-kw">for</span> _, snd <span class="hl-kw">in</span> all_underwater_sounds <span class="hl-kw">do</span>
+    snd:ApplyShader(underwater_lpf)
+    snd:ApplyShader(underwater_rev)
+<span class="hl-kw">end</span></code></pre>
+
+</main>
+
+</body>
+</html>
