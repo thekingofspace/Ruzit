@@ -22,6 +22,20 @@ const CHANGED_KEY: &str = "ruzit_window_changed";
 const ON_FOCUS_KEY: &str = "ruzit_window_on_focus";
 const ON_UNFOCUS_KEY: &str = "ruzit_window_on_unfocus";
 
+const SIZE_CHANGED_KEY: &str = "ruzit_window_size_changed";
+const POSITION_CHANGED_KEY: &str = "ruzit_window_position_changed";
+const SCALE_FACTOR_CHANGED_KEY: &str = "ruzit_window_scale_factor_changed";
+const FOCUS_CHANGED_KEY: &str = "ruzit_window_focus_changed";
+const TITLE_CHANGED_KEY: &str = "ruzit_window_title_changed";
+const FULLSCREEN_CHANGED_KEY: &str = "ruzit_window_fullscreen_changed";
+const BORDERLESS_CHANGED_KEY: &str = "ruzit_window_borderless_changed";
+const DECORATIONS_CHANGED_KEY: &str = "ruzit_window_decorations_changed";
+const RESIZABLE_CHANGED_KEY: &str = "ruzit_window_resizable_changed";
+const MAXIMIZED_CHANGED_KEY: &str = "ruzit_window_maximized_changed";
+const MINIMIZED_CHANGED_KEY: &str = "ruzit_window_minimized_changed";
+const VISIBLE_CHANGED_KEY: &str = "ruzit_window_visible_changed";
+const ALWAYS_ON_TOP_CHANGED_KEY: &str = "ruzit_window_always_on_top_changed";
+
 #[derive(Debug)]
 enum WindowChange {
     Resized { width: u32, height: u32 },
@@ -102,11 +116,19 @@ fn fire_change(lua: &Lua, signal: &Table, change: WindowChange) -> mlua::Result<
             args.push_back(Value::String(lua.create_string("Resized")?));
             args.push_back(Value::Number(width as f64));
             args.push_back(Value::Number(height as f64));
+            let mut typed = MultiValue::new();
+            typed.push_back(Value::Number(width as f64));
+            typed.push_back(Value::Number(height as f64));
+            fire_named(lua, SIZE_CHANGED_KEY, typed);
         }
         WindowChange::Moved { x, y } => {
             args.push_back(Value::String(lua.create_string("Moved")?));
             args.push_back(Value::Number(x as f64));
             args.push_back(Value::Number(y as f64));
+            let mut typed = MultiValue::new();
+            typed.push_back(Value::Number(x as f64));
+            typed.push_back(Value::Number(y as f64));
+            fire_named(lua, POSITION_CHANGED_KEY, typed);
         }
         WindowChange::Focused(focused) => {
             args.push_back(Value::String(lua.create_string("Focused")?));
@@ -121,13 +143,33 @@ fn fire_change(lua: &Lua, signal: &Table, change: WindowChange) -> mlua::Result<
                     eprintln!("[Window] {key} fire error: {e}");
                 }
             }
+            let mut typed = MultiValue::new();
+            typed.push_back(Value::Boolean(focused));
+            fire_named(lua, FOCUS_CHANGED_KEY, typed);
         }
         WindowChange::ScaleFactor(scale) => {
             args.push_back(Value::String(lua.create_string("ScaleFactor")?));
             args.push_back(Value::Number(scale));
+            let mut typed = MultiValue::new();
+            typed.push_back(Value::Number(scale));
+            fire_named(lua, SCALE_FACTOR_CHANGED_KEY, typed);
         }
     }
     signal::fire(lua, signal, args)
+}
+
+fn fire_named(lua: &Lua, key: &str, args: MultiValue) {
+    if let Ok(sig) = lua.named_registry_value::<Table>(key) {
+        if let Err(e) = signal::fire(lua, &sig, args) {
+            eprintln!("[Window] {key} fire error: {e}");
+        }
+    }
+}
+
+fn fire_bool(lua: &Lua, key: &str, value: bool) {
+    let mut args = MultiValue::new();
+    args.push_back(Value::Boolean(value));
+    fire_named(lua, key, args);
 }
 
 #[derive(Default)]
@@ -211,6 +253,25 @@ fn open(lua: &Lua, opts_arg: Option<Table>) -> mlua::Result<WindowHandle> {
     lua.set_named_registry_value(ON_FOCUS_KEY, on_focus)?;
     let on_unfocus = signal::new_instance(lua)?;
     lua.set_named_registry_value(ON_UNFOCUS_KEY, on_unfocus)?;
+
+    for key in [
+        SIZE_CHANGED_KEY,
+        POSITION_CHANGED_KEY,
+        SCALE_FACTOR_CHANGED_KEY,
+        FOCUS_CHANGED_KEY,
+        TITLE_CHANGED_KEY,
+        FULLSCREEN_CHANGED_KEY,
+        BORDERLESS_CHANGED_KEY,
+        DECORATIONS_CHANGED_KEY,
+        RESIZABLE_CHANGED_KEY,
+        MAXIMIZED_CHANGED_KEY,
+        MINIMIZED_CHANGED_KEY,
+        VISIBLE_CHANGED_KEY,
+        ALWAYS_ON_TOP_CHANGED_KEY,
+    ] {
+        let sig = signal::new_instance(lua)?;
+        lua.set_named_registry_value(key, sig)?;
+    }
 
     Ok(WindowHandle)
 }
@@ -378,6 +439,26 @@ impl UserData for WindowHandle {
         f.add_field_method_get("OnUnfocus", |lua, _| -> mlua::Result<Table> {
             lua.named_registry_value(ON_UNFOCUS_KEY)
         });
+
+        for (name, key) in [
+            ("SizeChanged", SIZE_CHANGED_KEY),
+            ("PositionChanged", POSITION_CHANGED_KEY),
+            ("ScaleFactorChanged", SCALE_FACTOR_CHANGED_KEY),
+            ("FocusChanged", FOCUS_CHANGED_KEY),
+            ("TitleChanged", TITLE_CHANGED_KEY),
+            ("FullscreenChanged", FULLSCREEN_CHANGED_KEY),
+            ("BorderlessChanged", BORDERLESS_CHANGED_KEY),
+            ("DecorationsChanged", DECORATIONS_CHANGED_KEY),
+            ("ResizableChanged", RESIZABLE_CHANGED_KEY),
+            ("MaximizedChanged", MAXIMIZED_CHANGED_KEY),
+            ("MinimizedChanged", MINIMIZED_CHANGED_KEY),
+            ("VisibleChanged", VISIBLE_CHANGED_KEY),
+            ("AlwaysOnTopChanged", ALWAYS_ON_TOP_CHANGED_KEY),
+        ] {
+            f.add_field_method_get(name, move |lua, _| -> mlua::Result<Table> {
+                lua.named_registry_value(key)
+            });
+        }
     }
 
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
@@ -412,11 +493,14 @@ impl UserData for WindowHandle {
             });
             Ok(())
         });
-        m.add_method("SetTitle", |_, _, title: String| {
+        m.add_method("SetTitle", |lua, _, title: String| {
             with_window(|win| win.set_title(&title));
+            let mut args = MultiValue::new();
+            args.push_back(Value::String(lua.create_string(&title)?));
+            fire_named(lua, TITLE_CHANGED_KEY, args);
             Ok(())
         });
-        m.add_method("SetBorderless", |_, _, b: bool| {
+        m.add_method("SetBorderless", |lua, _, b: bool| {
             with_window(|win| {
                 win.set_decorations(!b);
                 win.set_fullscreen(if b {
@@ -428,13 +512,17 @@ impl UserData for WindowHandle {
                     win.set_window_level(WindowLevel::Normal);
                 }
             });
+            fire_bool(lua, BORDERLESS_CHANGED_KEY, b);
+            fire_bool(lua, DECORATIONS_CHANGED_KEY, !b);
+            fire_bool(lua, FULLSCREEN_CHANGED_KEY, b);
             Ok(())
         });
-        m.add_method("SetDecorations", |_, _, decorated: bool| {
+        m.add_method("SetDecorations", |lua, _, decorated: bool| {
             with_window(|win| win.set_decorations(decorated));
+            fire_bool(lua, DECORATIONS_CHANGED_KEY, decorated);
             Ok(())
         });
-        m.add_method("SetFullscreen", |_, _, b: bool| {
+        m.add_method("SetFullscreen", |lua, _, b: bool| {
             with_window(|win| {
                 win.set_fullscreen(if b {
                     Some(Fullscreen::Borderless(None))
@@ -445,25 +533,30 @@ impl UserData for WindowHandle {
                     win.set_window_level(WindowLevel::Normal);
                 }
             });
+            fire_bool(lua, FULLSCREEN_CHANGED_KEY, b);
             Ok(())
         });
-        m.add_method("SetResizable", |_, _, b: bool| {
+        m.add_method("SetResizable", |lua, _, b: bool| {
             with_window(|win| win.set_resizable(b));
+            fire_bool(lua, RESIZABLE_CHANGED_KEY, b);
             Ok(())
         });
-        m.add_method("SetMaximized", |_, _, b: bool| {
+        m.add_method("SetMaximized", |lua, _, b: bool| {
             with_window(|win| win.set_maximized(b));
+            fire_bool(lua, MAXIMIZED_CHANGED_KEY, b);
             Ok(())
         });
-        m.add_method("SetMinimized", |_, _, b: bool| {
+        m.add_method("SetMinimized", |lua, _, b: bool| {
             with_window(|win| win.set_minimized(b));
+            fire_bool(lua, MINIMIZED_CHANGED_KEY, b);
             Ok(())
         });
-        m.add_method("SetVisible", |_, _, b: bool| {
+        m.add_method("SetVisible", |lua, _, b: bool| {
             with_window(|win| win.set_visible(b));
+            fire_bool(lua, VISIBLE_CHANGED_KEY, b);
             Ok(())
         });
-        m.add_method("SetAlwaysOnTop", |_, _, b: bool| {
+        m.add_method("SetAlwaysOnTop", |lua, _, b: bool| {
             with_window(|win| {
                 win.set_window_level(if b {
                     WindowLevel::AlwaysOnTop
@@ -471,6 +564,7 @@ impl UserData for WindowHandle {
                     WindowLevel::Normal
                 });
             });
+            fire_bool(lua, ALWAYS_ON_TOP_CHANGED_KEY, b);
             Ok(())
         });
         m.add_method("SetPosition", |_, _, (x, y): (i32, i32)| {

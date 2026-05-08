@@ -210,7 +210,7 @@ export type Process_API = {
 	-- Per-frame signal carrying dt (seconds since last tick). Fires
 	-- before the render pump, use it for simulation logic that produces
 	-- the state the renderer reads this frame. (Merged from the old
-	-- RunService import as of v3.2.)
+	-- RunService import as of v3.3.)
 	Heartbeat: Signal<number>,
 	-- Same dt, but fires from inside the render pump (slightly later in
 	-- the frame than Heartbeat). Use it for camera updates that need to
@@ -658,15 +658,62 @@ export type Signal<T...> = {
 export type Signal_API = { new: <T...>() -> Signal<T...> }
 
 declare class WindowHandle
-	-- Property-change signal. Fires with the property name that changed:
-	-- "Title", "Size", "Position", "Fullscreen", "Maximized", etc. Use it
-	-- when you want one handler for many possible changes.
-	Changed: Signal<string>
+	-- DEPRECATED as of v3.3: a single fan-out "something changed" signal.
+	-- Fires (changeName, ...payload) for engine-side events the OS told us
+	-- about: "Resized" (w, h), "Moved" (x, y), "Focused" (boolean),
+	-- "ScaleFactor" (scale). Setter-side changes (SetTitle, SetFullscreen,
+	-- etc.) never fired this signal even when the docs claimed they did.
+	-- Use the per-property *Changed signals below. As of v3.4 this signal
+	-- is frozen, it keeps firing for the four OS events listed above but
+	-- won't gain new fire conditions for any future window state. Code
+	-- that connects keeps working; new behaviour goes through the typed
+	-- per-property signals.
+	Changed: Signal<string, ...any>
 	-- Fires when the window gains keyboard / mouse focus.
 	OnFocus: Signal<>
 	-- Fires when the window loses focus. Useful for releasing mouse lock,
 	-- pausing the game, etc.
 	OnUnfocus: Signal<>
+
+	-- Per-property change signals. Each fires only when its specific
+	-- property changes; replaces the generic Changed signal as of v3.3.
+
+	-- Inner-area size changed. Args: width, height (logical pixels).
+	-- Fires from the OS Resized event (user dragged the corner / window
+	-- manager forced it / Resize() actually applied).
+	SizeChanged: Signal<number, number>
+	-- Outer position changed. Args: x, y (screen coords of the top-left).
+	-- Fires from the OS Moved event.
+	PositionChanged: Signal<number, number>
+	-- DPI / HiDPI scale factor changed. Arg: new scale (e.g. 1.0, 1.5, 2.0).
+	-- Fires when the window moves between monitors of different DPI.
+	ScaleFactorChanged: Signal<number>
+	-- Window gained or lost keyboard focus. Arg: now-focused boolean.
+	-- Symmetrical pair of OnFocus / OnUnfocus rolled into one signal so a
+	-- single handler can branch on the value.
+	FocusChanged: Signal<boolean>
+	-- Title-bar caption changed via SetTitle. Arg: the new title.
+	TitleChanged: Signal<string>
+	-- Fullscreen state changed via SetFullscreen or SetBorderless. Arg:
+	-- now-fullscreen boolean.
+	FullscreenChanged: Signal<boolean>
+	-- Borderless-fullscreen state changed via SetBorderless. Arg:
+	-- now-borderless boolean. Note SetBorderless also fires
+	-- DecorationsChanged + FullscreenChanged because it toggles those too.
+	BorderlessChanged: Signal<boolean>
+	-- Decoration state changed via SetDecorations or SetBorderless. Arg:
+	-- now-decorated boolean.
+	DecorationsChanged: Signal<boolean>
+	-- Resize-via-edges enabled state changed via SetResizable.
+	ResizableChanged: Signal<boolean>
+	-- Maximized state changed via SetMaximized.
+	MaximizedChanged: Signal<boolean>
+	-- Minimized (in taskbar / dock) state changed via SetMinimized.
+	MinimizedChanged: Signal<boolean>
+	-- Visibility changed via SetVisible.
+	VisibleChanged: Signal<boolean>
+	-- Always-on-top pinning changed via SetAlwaysOnTop.
+	AlwaysOnTopChanged: Signal<boolean>
 	-- Programmatically close the window. Triggers BindToClose, then
 	-- terminates the process (the heart loop unwinds first).
 	function Close(self): ()
