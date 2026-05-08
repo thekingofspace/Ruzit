@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CLI — Ruzit Docs</title>
+    <title>CLI, Ruzit Docs</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -62,13 +62,13 @@ Ruzit Package     [folder] [-o] produce &lt;id&gt;.scripts.managed + &lt;id&gt;.
 <div class="sig">Ruzit InitPackage [path]</div>
 
 <p>
-    Scaffolds a Managed package folder &mdash; the unit of distribution for
+    Scaffolds a Managed package folder, the unit of distribution for
     DLC, mods, and shareable libraries. Writes:
 </p>
 
 <ul>
-    <li><code>ManagedInfo.toml</code> &mdash; package id, name, entry script, file mode.</li>
-    <li><code>init.luau</code> &mdash; the entry returned to <code>require("@PkgId/init")</code>.</li>
+    <li><code>ManagedInfo.toml</code>, package id, name, entry script, file mode.</li>
+    <li><code>init.luau</code>, the entry returned to <code>require("@PkgId/init")</code>.</li>
 </ul>
 
 <p>
@@ -82,7 +82,7 @@ Ruzit Package     [folder] [-o] produce &lt;id&gt;.scripts.managed + &lt;id&gt;.
 <div class="sig">Ruzit Test [path]</div>
 
 <p>
-    Runs a project from source. No packaging, no encryption &mdash; the
+    Runs a project from source. No packaging, no encryption, the
     engine reads your <code>.luau</code> files directly off disk and the next
     edit hits the next run.
 </p>
@@ -99,7 +99,7 @@ Ruzit Test ./MyGame/scenes/level1.luau</code></pre>
 
 <p>
     Any DLC folders adjacent to the project (folders containing
-    <code>ManagedInfo.toml</code>) are loaded too &mdash; same as in a
+    <code>ManagedInfo.toml</code>) are loaded too, same as in a
     packaged build.
 </p>
 
@@ -150,7 +150,7 @@ Ruzit Test ./MyGame/scenes/level1.luau</code></pre>
 <div class="callout warn">
     <strong>Per-platform launchers.</strong>
     <code>Ruzit Build</code> always produces a launcher for the OS Ruzit
-    is running on &mdash; it's a copy of the running binary plus a JSON
+    is running on, it's a copy of the running binary plus a JSON
     trailer. To ship Windows + Linux + macOS, build Ruzit on each OS (or
     use the GitHub Actions matrix), then run <code>Ruzit Build</code> on
     each.
@@ -162,7 +162,7 @@ Ruzit Test ./MyGame/scenes/level1.luau</code></pre>
 
 <p>
     Packages a single Managed folder into <code>.scripts.managed</code> +
-    <code>.assets.managed</code> files &mdash; the format used by DLC and
+    <code>.assets.managed</code> files, the format used by DLC and
     Workshop drops. The folder must contain a <code>ManagedInfo.toml</code>.
 </p>
 
@@ -185,7 +185,7 @@ Ruzit Package . -o ../release  <span class="hl-com"># custom output dir</span></
             <td><code>--console</code></td>
             <td>
                 Attach the parent console (or allocate a new one). Works on
-                packaged launchers too &mdash; useful when a windowed game
+                packaged launchers too, useful when a windowed game
                 needs an emergency stdout.
             </td>
         </tr>

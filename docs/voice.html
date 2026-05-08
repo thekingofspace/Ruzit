@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice — Ruzit Docs</title>
+    <title>Voice, Ruzit Docs</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -18,7 +18,7 @@
 <p class="lede">
     Microphone capture + per-peer playback. Opus-encoded 20 ms frames carry
     over your transport (Steam P2P, the Net library, anything). Ruzit
-    handles the audio plumbing &mdash; you decide how packets travel.
+    handles the audio plumbing, you decide how packets travel.
 </p>
 
 <pre><code><span class="hl-kw">local</span> Voice = <span class="hl-fn">import</span>(<span class="hl-str">"Voice"</span>)
@@ -76,7 +76,7 @@ on_peer_packet:Connect(<span class="hl-kw">function</span>(packet) chan:Push(pac
         </div>
         <p class="member-desc">
             Empty packet collector. Hook to <code>mic.OnPacket</code> OR to
-            packets you receive from a peer &mdash; the recorder doesn't
+            packets you receive from a peer, the recorder doesn't
             care where they came from.
         </p>
     </div>
@@ -194,7 +194,7 @@ on_peer_packet:Connect(<span class="hl-kw">function</span>(packet) chan:Push(pac
     <div class="member">
         <div class="member-header"><span class="member-name">chan:SetPosition(x?, y?, z?)</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
-            3D position is STATIC &mdash; set once and the channel stays
+            3D position is STATIC, set once and the channel stays
             anchored as the camera moves. Listener = active
             <code>Renderable.Camera</code>. Pass nil (or no args) to
             clear.
@@ -213,7 +213,7 @@ on_peer_packet:Connect(<span class="hl-kw">function</span>(packet) chan:Push(pac
 
 <p>
     Captures Opus packets into an in-memory buffer. Packets are opaque
-    &mdash; the recorder doesn't care if they came from your own mic or a
+, the recorder doesn't care if they came from your own mic or a
     peer.
 </p>
 
@@ -270,7 +270,7 @@ on_peer_packet:Connect(<span class="hl-kw">function</span>(packet) chan:Push(pac
         </div>
         <p class="member-desc">
             Stream packets into <code>channel</code> at the original
-            ~50 packets/second pacing. Returns immediately &mdash; playback
+            ~50 packets/second pacing. Returns immediately, playback
             is dripped by the heart pump. <code>opts</code>:
             <code>{ loop?: boolean, speed?: 0.25..4.0 }</code>.
         </p>
@@ -281,7 +281,7 @@ on_peer_packet:Connect(<span class="hl-kw">function</span>(packet) chan:Push(pac
 
 <p>
     Returned by every <code>Voice.Volume / Speed / Spatial / ...</code>
-    factory. Opaque handle &mdash; pass it to
+    factory. Opaque handle, pass it to
     <code>chan:ApplyShader(shader)</code>. Multiple channels can share
     the same shader instance, and one channel can stack many shaders.
 </p>

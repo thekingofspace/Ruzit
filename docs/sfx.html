@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SFX — Ruzit Docs</title>
+    <title>SFX, Ruzit Docs</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -17,7 +17,7 @@
 <h1>SFX</h1>
 <p class="lede">
     Stream and shape audio. Built on rodio + cpal: cross-platform output via
-    WASAPI / ALSA / PulseAudio / CoreAudio. Each Sound is independent &mdash;
+    WASAPI / ALSA / PulseAudio / CoreAudio. Each Sound is independent ,
     play, layer, position in 3D, attach DSP shaders.
 </p>
 
@@ -38,7 +38,7 @@ snd:Volume(<span class="hl-num">0.6</span>):Echo(<span class="hl-num">120</span>
         </div>
         <p class="member-desc">
             Wrap a <code>SoundData</code> into a playable <code>Sound</code>.
-            The same data can back many independent Sounds &mdash; each
+            The same data can back many independent Sounds, each
             with its own shader chain and Play/Stop state.
         </p>
     </div>
@@ -95,7 +95,7 @@ snd:Volume(<span class="hl-num">0.6</span>):Echo(<span class="hl-num">120</span>
         <div class="member-header"><span class="member-name">snd:Play()</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Begin playback. Re-applying shaders / volume before this changes
-            how this playback sounds &mdash; settings don't carry between
+            how this playback sounds, settings don't carry between
             <code>:Play()</code> calls unless you re-apply them.
         </p>
     </div>
@@ -107,7 +107,7 @@ snd:Volume(<span class="hl-num">0.6</span>):Echo(<span class="hl-num">120</span>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">snd:Reset()</span><span class="tag tag-method">method</span></div>
-        <p class="member-desc">Drop all fluent shaders and attachments &mdash; back to a clean state.</p>
+        <p class="member-desc">Drop all fluent shaders and attachments, back to a clean state.</p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">snd:LinkToUpdate(interval)</span><span class="member-type">→ Signal&lt;number&gt;</span><span class="tag tag-method">method</span></div>
@@ -197,7 +197,7 @@ snd:Volume(<span class="hl-num">0.6</span>):Echo(<span class="hl-num">120</span>
 <p>
     Returned by every standalone shader factory
     (<code>SFX.Volume(0.6)</code>, <code>SFX.Echo(120, 0.4, 0.3)</code>,
-    etc.). It's an opaque handle &mdash; the only thing you do with it is
+    etc.). It's an opaque handle, the only thing you do with it is
     pass it to <code>sound:ApplyShader(shader)</code>. Multiple sounds can
     share the same shader instance, and one sound can stack many shaders.
 </p>

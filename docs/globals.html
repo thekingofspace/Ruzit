@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Globals — Ruzit Docs</title>
+    <title>Globals, Ruzit Docs</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -19,7 +19,7 @@
     Every Luau script in a Ruzit project starts with a small set of
     runtime-injected globals on top of the standard Lua library.
     <code>import</code>, <code>require</code>, <code>__dirname</code>,
-    <code>load</code>, and <code>print</code> &mdash; covered below.
+    <code>load</code>, and <code>print</code>, covered below.
 </p>
 
 <div class="callout note">
@@ -28,7 +28,7 @@
     inherits from <code>_G</code> via a metatable. The globals listed
     here are installed on that env per-script, which is why
     <code>__dirname</code> reports the directory of the script that
-    references it &mdash; not some single global value.
+    references it, not some single global value.
 </div>
 
 <!-- ─────────────────────────────────────────────────────────────────── -->
@@ -42,9 +42,9 @@
         </div>
         <p class="member-desc">
             Library accessor. Pass any name from
-            <a href="index.html">the API Reference</a> &mdash;
+            <a href="index.html">the API Reference</a> ,
             <code>"Renderable"</code>, <code>"Window"</code>,
-            <code>"Steam"</code>, etc. &mdash; and you get a typed handle
+            <code>"Steam"</code>, etc., and you get a typed handle
             to that subsystem.
         </p>
     </div>
@@ -127,7 +127,7 @@
 
 <p>
     The <code>.luau</code> / <code>.lua</code> extension is appended
-    automatically &mdash; pass the bare module name. Folder-style modules
+    automatically, pass the bare module name. Folder-style modules
     with an <code>init.luau</code> resolve when you require the folder
     name.
 </p>
@@ -148,7 +148,7 @@
         </div>
         <p class="member-desc">
             Absolute path of the calling script's directory. Each script
-            sees its own value &mdash; not a single global &mdash; so
+            sees its own value, not a single global, so
             relative paths can be built without coordinating with
             the rest of the project.
         </p>
@@ -160,7 +160,7 @@
 
 <p>
     Inside a packaged <code>.managed</code> bundle, <code>__dirname</code>
-    is the script's vfs key &mdash; still works with <code>require</code>
+    is the script's vfs key, still works with <code>require</code>
     but isn't a real disk path. For raw filesystem access from inside a
     bundled script use <code>Asset.ImportAsset</code> instead of
     <code>IO.read</code>.
@@ -218,9 +218,9 @@
 <h3>Loaded modules' environment</h3>
 
 <p>
-    Every loaded module gets the full runtime env &mdash;
+    Every loaded module gets the full runtime env ,
     <code>require</code>, <code>import</code>, <code>__dirname</code>,
-    <code>load</code>, <code>print</code> &mdash; with file resolution
+    <code>load</code>, <code>print</code>, with file resolution
     rooted at <strong>the loaded file's own directory</strong>. So a
     script loaded from <code>C:/mods/foo.luau</code> can do
     <code>require("./bar")</code> and get <code>C:/mods/bar.luau</code>;
@@ -240,7 +240,7 @@ mod.run()
     <strong>Don't confuse with Lua's built-in load.</strong>
     Standard Lua has a <code>load(string)</code> function for evaluating
     source strings. Ruzit shadows it on the script env with this
-    file-loading version &mdash; <code>load("print('hi')")</code> won't
+    file-loading version, <code>load("print('hi')")</code> won't
     work, you'd need to write the source to a file first or use
     <code>Asset.FromString("File", ...)</code> for in-memory text.
 </div>

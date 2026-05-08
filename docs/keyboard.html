@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Keyboard — Ruzit Docs</title>
+    <title>Keyboard, Ruzit Docs</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -82,7 +82,7 @@ Keyboard.InputChanged:Connect(<span class="hl-kw">function</span>(id, name, stat
 
 <p>
     Older versions fired <code>InputChanged</code> with the legacy
-    <code>(id, name, pressed, state)</code> signature &mdash; a boolean
+    <code>(id, name, pressed, state)</code> signature, a boolean
     duplicating the <code>state</code> string. <strong>As of Ruzit 3.2 the
     boolean is gone.</strong> Any version 3.2 or newer fires
     <code>(id, name, state)</code> only.

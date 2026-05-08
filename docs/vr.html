@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VR — Ruzit Docs</title>
+    <title>VR, Ruzit Docs</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -46,7 +46,7 @@ pads.Right.OnInput:Connect(<span class="hl-kw">function</span>(name, value, stat
         <p class="member-desc">
             True if a VR runtime is installed on this host. Detects
             SteamVR / Oculus / OpenXR via env vars + Windows registry.
-            Doesn't require a headset to be currently plugged in &mdash;
+            Doesn't require a headset to be currently plugged in ,
             it's the "should we offer VR in the menu" check.
         </p>
     </div>
@@ -65,7 +65,7 @@ pads.Right.OnInput:Connect(<span class="hl-kw">function</span>(name, value, stat
 
 <div class="callout note">
     <strong>Coordinate space.</strong>
-    <code>BodyCframe</code> is world-relative &mdash; where the player's VR
+    <code>BodyCframe</code> is world-relative, where the player's VR
     rig sits. <code>HeadCframe</code> is the headset pose; the engine
     composes <code>Body &compose; Head</code> onto the active 3D camera each
     frame, so existing BasePart / Renderable code keeps working without any
@@ -79,7 +79,7 @@ pads.Right.OnInput:Connect(<span class="hl-kw">function</span>(name, value, stat
 <div class="member-list">
     <div class="member">
         <div class="member-header"><span class="member-name">.BodyCframe</span><span class="member-type">CFrame</span></div>
-        <p class="member-desc">Player body pose. Writable &mdash; set this to teleport, snap-turn, or move the rig.</p>
+        <p class="member-desc">Player body pose. Writable, set this to teleport, snap-turn, or move the rig.</p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">.HeadCframe</span><span class="member-type">CFrame</span><span class="tag tag-readonly">read-only</span></div>
@@ -164,7 +164,7 @@ pads.Right.OnInput:Connect(<span class="hl-kw">function</span>(name, value, stat
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">.Velocity</span><span class="member-type">Vector</span><span class="tag tag-readonly">read-only</span></div>
-        <p class="member-desc">Linear velocity in metres/second. Useful for throwing physics &mdash; multiply by mass at release.</p>
+        <p class="member-desc">Linear velocity in metres/second. Useful for throwing physics, multiply by mass at release.</p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">.AngularVelocity</span><span class="member-type">Vector</span><span class="tag tag-readonly">read-only</span></div>

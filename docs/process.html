@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Process — Ruzit Docs</title>
+    <title>Process, Ruzit Docs</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -66,7 +66,7 @@
     <div class="member">
         <div class="member-header"><span class="member-name">.InTest</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
         <p class="member-desc">
-            Inverse of <code>IsBuilt</code> &mdash; true while running
+            Inverse of <code>IsBuilt</code>, true while running
             via <code>Ruzit Test</code>. Reads naturally for guards like
             <code>if Process.InTest then ... end</code>.
         </p>
@@ -93,7 +93,7 @@ Process.RenderStepped:Connect(<span class="hl-kw">function</span>(dt)
     <div class="member">
         <div class="member-header"><span class="member-name">.Heartbeat</span><span class="member-type">Signal&lt;number&gt;</span><span class="tag tag-readonly">read-only</span></div>
         <p class="member-desc">
-            Gameplay tick. Fires before the render pump &mdash; use it
+            Gameplay tick. Fires before the render pump, use it
             for simulation logic that produces the state the renderer
             reads this frame. Payload is dt in seconds.
         </p>
@@ -115,9 +115,9 @@ Process.RenderStepped:Connect(<span class="hl-kw">function</span>(dt)
 
 <ol>
     <li>Window / input / SFX / Steam / VR / Gamepad event pumps.</li>
-    <li><strong>Heartbeat</strong> &mdash; gameplay scripts.</li>
+    <li><strong>Heartbeat</strong>, gameplay scripts.</li>
     <li>Animation track tick.</li>
-    <li><strong>RenderStepped</strong> &mdash; camera, post-effects, UI binds.</li>
+    <li><strong>RenderStepped</strong>, camera, post-effects, UI binds.</li>
     <li>GPU submit + present.</li>
     <li>Sleep until the next ~16.7 ms tick.</li>
 </ol>
@@ -188,7 +188,7 @@ Process.Env(<span class="hl-str">"NOPE"</span>)   <span class="hl-com">-- nil</s
         </div>
         <p class="member-desc">
             Hard-exit. <code>code</code> defaults to 0. Doesn't run
-            <code>BindToClose</code> callbacks &mdash; use
+            <code>BindToClose</code> callbacks, use
             <code>Window:Close</code> for graceful shutdown when you have
             a window open.
         </p>
@@ -206,7 +206,7 @@ Process.Env(<span class="hl-str">"NOPE"</span>)   <span class="hl-com">-- nil</s
 
 <p>
     For most per-frame logic prefer <code>Process.Heartbeat</code>
-    &mdash; it's typed and connected to the same tick.
+, it's typed and connected to the same tick.
     <code>BindToHeart</code> is for background tasks that need to run
     even when no window is open (headless tools, Net.Serve event loops,
     etc.).
@@ -219,7 +219,7 @@ Process.Env(<span class="hl-str">"NOPE"</span>)   <span class="hl-com">-- nil</s
         </div>
         <p class="member-desc">
             Subscribe a function to the engine heart tick.
-            <code>id</code> is your own string label &mdash; used as the
+            <code>id</code> is your own string label, used as the
             de-dup key (registering the same id twice replaces the old
             fn) and later for unbinding. The callback gets dt (seconds
             since the previous tick).

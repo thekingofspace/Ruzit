@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPU — Ruzit Docs</title>
+    <title>GPU, Ruzit Docs</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -32,7 +32,7 @@
             <span class="member-type">→ GPUInfo</span>
         </div>
         <p class="member-desc">
-            Static adapter info. Cached &mdash; calling repeatedly is
+            Static adapter info. Cached, calling repeatedly is
             free. Useful for logging, settings menus, and gating high-cost
             features behind <code>DeviceType == "DiscreteGpu"</code>.
         </p>
@@ -44,7 +44,7 @@
         </div>
         <p class="member-desc">
             Hard limits the active GPU device reports. wgpu doesn't
-            expose total VRAM portably across DX12 / Vulkan / Metal &mdash;
+            expose total VRAM portably across DX12 / Vulkan / Metal ,
             <code>MaxBufferSize</code> is the closest single number for
             "biggest thing I can allocate".
         </p>
@@ -83,8 +83,8 @@
 
 <table>
     <tbody>
-        <tr><td><code>origin</code></td><td>Vector &mdash; world-space ray start.</td></tr>
-        <tr><td><code>direction</code></td><td>Vector &mdash; world-space ray direction. Length doesn't matter; Ruzit normalizes it. Zero-length errors.</td></tr>
+        <tr><td><code>origin</code></td><td>Vector, world-space ray start.</td></tr>
+        <tr><td><code>direction</code></td><td>Vector, world-space ray direction. Length doesn't matter; Ruzit normalizes it. Zero-length errors.</td></tr>
         <tr><td><code>filter</code></td><td>Optional <code>(part: BasePart) -&gt; boolean</code>. Hits visited nearest-first; return true to accept, false / nil to skip past. If omitted, the first hit is always accepted.</td></tr>
         <tr><td><code>maxDistance</code></td><td>Optional cap in world units. Hits past this distance are ignored. Defaults to ~1e6.</td></tr>
     </tbody>
@@ -111,7 +111,7 @@
         </div>
         <p class="member-desc">
             Convert a screen pixel (Mouse.Position style) to a world-space
-            ray. Returns <code>(origin, direction)</code> &mdash; feed
+            ray. Returns <code>(origin, direction)</code>, feed
             straight into <code>GPU.Raycast</code>. Uses the active
             <code>Renderable.Camera</code> as the eye + projection.
         </p>
@@ -157,7 +157,7 @@
         </div>
         <p class="member-desc">
             Bind a GPUBuffer as the active SDATA storage. Cheap to swap
-            between frames &mdash; bind groups are rebuilt only when the
+            between frames, bind groups are rebuilt only when the
             binding identity changes.
         </p>
     </div>
@@ -197,7 +197,7 @@
         <p class="member-desc">
             Write a list of f32 values into the buffer at
             <code>offset</code> (in floats, not bytes). Bounds-checked
-            &mdash; writing past the end errors instead of corrupting
+, writing past the end errors instead of corrupting
             adjacent GPU memory. Cheap; one queue-write under the hood.
         </p>
     </div>
@@ -219,10 +219,10 @@
 
 <table>
     <tbody>
-        <tr><td><code>Part</code></td><td>BasePart &mdash; the part the ray hit.</td></tr>
-        <tr><td><code>Position</code></td><td>Vector &mdash; world-space hit point.</td></tr>
-        <tr><td><code>Distance</code></td><td>number &mdash; world-space length from the ray's origin.</td></tr>
-        <tr><td><code>Normal</code></td><td>Vector &mdash; surface normal at the hit, world-space.</td></tr>
+        <tr><td><code>Part</code></td><td>BasePart, the part the ray hit.</td></tr>
+        <tr><td><code>Position</code></td><td>Vector, world-space hit point.</td></tr>
+        <tr><td><code>Distance</code></td><td>number, world-space length from the ray's origin.</td></tr>
+        <tr><td><code>Normal</code></td><td>Vector, surface normal at the hit, world-space.</td></tr>
     </tbody>
 </table>
 
@@ -235,14 +235,14 @@
 
 <table>
     <tbody>
-        <tr><td><code>Name</code></td><td>string &mdash; driver-reported display name (<code>"NVIDIA GeForce RTX 4070"</code>).</td></tr>
-        <tr><td><code>Vendor</code></td><td>string &mdash; friendly label: <code>"NVIDIA" | "AMD" | "Intel" | "Apple" | "ARM" | "Qualcomm" | "Imagination" | "Microsoft" | "Other" | "Unknown"</code>.</td></tr>
-        <tr><td><code>VendorID</code></td><td>number &mdash; raw PCI vendor id.</td></tr>
-        <tr><td><code>DeviceID</code></td><td>number &mdash; raw PCI device id.</td></tr>
-        <tr><td><code>Backend</code></td><td>string &mdash; <code>"Dx12" | "Vulkan" | "Metal" | "Gl" | "BrowserWebGpu"</code>.</td></tr>
-        <tr><td><code>Driver</code></td><td>string &mdash; driver version, free-form.</td></tr>
-        <tr><td><code>DriverInfo</code></td><td>string &mdash; extra driver detail (build, date). May be empty.</td></tr>
-        <tr><td><code>DeviceType</code></td><td>string &mdash; <code>"DiscreteGpu" | "IntegratedGpu" | "VirtualGpu" | "Cpu" | "Other"</code>. Useful for quality presets at startup.</td></tr>
+        <tr><td><code>Name</code></td><td>string, driver-reported display name (<code>"NVIDIA GeForce RTX 4070"</code>).</td></tr>
+        <tr><td><code>Vendor</code></td><td>string, friendly label: <code>"NVIDIA" | "AMD" | "Intel" | "Apple" | "ARM" | "Qualcomm" | "Imagination" | "Microsoft" | "Other" | "Unknown"</code>.</td></tr>
+        <tr><td><code>VendorID</code></td><td>number, raw PCI vendor id.</td></tr>
+        <tr><td><code>DeviceID</code></td><td>number, raw PCI device id.</td></tr>
+        <tr><td><code>Backend</code></td><td>string, <code>"Dx12" | "Vulkan" | "Metal" | "Gl" | "BrowserWebGpu"</code>.</td></tr>
+        <tr><td><code>Driver</code></td><td>string, driver version, free-form.</td></tr>
+        <tr><td><code>DriverInfo</code></td><td>string, extra driver detail (build, date). May be empty.</td></tr>
+        <tr><td><code>DeviceType</code></td><td>string, <code>"DiscreteGpu" | "IntegratedGpu" | "VirtualGpu" | "Cpu" | "Other"</code>. Useful for quality presets at startup.</td></tr>
     </tbody>
 </table>
 
@@ -252,11 +252,11 @@
 
 <table>
     <tbody>
-        <tr><td><code>MaxTextureSize</code></td><td>number &mdash; largest 2D texture dimension (e.g. 16384 on most GPUs).</td></tr>
-        <tr><td><code>MaxBufferSize</code></td><td>number &mdash; largest single buffer allocation in bytes.</td></tr>
-        <tr><td><code>MaxBindGroups</code></td><td>number &mdash; max simultaneously bound bind groups in one pipeline.</td></tr>
-        <tr><td><code>MaxVertexBuffers</code></td><td>number &mdash; max vertex buffers attached to one pipeline.</td></tr>
-        <tr><td><code>MaxComputeWorkgroup</code></td><td><code>{ X: number, Y: number, Z: number }</code> &mdash; max compute workgroup size per axis.</td></tr>
+        <tr><td><code>MaxTextureSize</code></td><td>number, largest 2D texture dimension (e.g. 16384 on most GPUs).</td></tr>
+        <tr><td><code>MaxBufferSize</code></td><td>number, largest single buffer allocation in bytes.</td></tr>
+        <tr><td><code>MaxBindGroups</code></td><td>number, max simultaneously bound bind groups in one pipeline.</td></tr>
+        <tr><td><code>MaxVertexBuffers</code></td><td>number, max vertex buffers attached to one pipeline.</td></tr>
+        <tr><td><code>MaxComputeWorkgroup</code></td><td><code>{ X: number, Y: number, Z: number }</code>, max compute workgroup size per axis.</td></tr>
     </tbody>
 </table>
 
@@ -269,11 +269,11 @@
 
 <table>
     <tbody>
-        <tr><td><code>FPS</code></td><td>number &mdash; smoothed frames-per-second.</td></tr>
-        <tr><td><code>FrameTime</code></td><td>number &mdash; smoothed frame time in seconds.</td></tr>
-        <tr><td><code>FrameCount</code></td><td>number &mdash; total frames drawn since process start.</td></tr>
-        <tr><td><code>Uptime</code></td><td>number &mdash; wall-clock seconds since GPU tracking started.</td></tr>
-        <tr><td><code>PartCount</code></td><td>number &mdash; live count of renderable parts in the scene.</td></tr>
+        <tr><td><code>FPS</code></td><td>number, smoothed frames-per-second.</td></tr>
+        <tr><td><code>FrameTime</code></td><td>number, smoothed frame time in seconds.</td></tr>
+        <tr><td><code>FrameCount</code></td><td>number, total frames drawn since process start.</td></tr>
+        <tr><td><code>Uptime</code></td><td>number, wall-clock seconds since GPU tracking started.</td></tr>
+        <tr><td><code>PartCount</code></td><td>number, live count of renderable parts in the scene.</td></tr>
     </tbody>
 </table>
 

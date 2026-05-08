@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ruzit — Luau-scripted 2D + 3D game engine</title>
+    <title>Ruzit, Luau-scripted 2D + 3D game engine</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -19,7 +19,7 @@
         <div class="eyebrow">2D + 3D Game Engine</div>
         <h1>Ruzit</h1>
         <p>
-            A Luau-scripted 2D and 3D game engine written in Rust &mdash;
+            A Luau-scripted 2D and 3D game engine written in Rust ,
             similar in spirit to LÖVE / love2d, but with Luau, a Roblox
             style API, real wgpu rendering, and a single
             <code>Ruzit Build</code> command that bundles your project
@@ -42,15 +42,15 @@
 <p>
     Ruzit is a single-file game engine you script in <a href="https://luau.org/" target="_blank" rel="noopener">Luau</a>.
     The engine itself is a Rust binary that ships every system a game
-    needs &mdash; 3D renderer, 2D overlay primitives, audio, networking,
-    asset loading, packaging &mdash; behind a Lua API designed to feel
+    needs, 3D renderer, 2D overlay primitives, audio, networking,
+    asset loading, packaging, behind a Lua API designed to feel
     familiar if you've used Roblox Studio.
 </p>
 
 <p>
     Both ends of the spectrum are first-class: build a flat 2D platformer
     with <code>GUI.Basic</code> primitives, a fully-3D scene with
-    <code>Renderable</code> parts and models, or any mix &mdash;
+    <code>Renderable</code> parts and models, or any mix ,
     <a href="gui.html">2D primitives</a> always render on top of the
     <a href="renderable.html">3D scene</a>. Same idea as LÖVE / love2d in
     that the engine stays out of your way; same idea as Roblox in that
@@ -109,7 +109,7 @@
         <h3>Steam built in</h3>
         <p>
             Achievements, leaderboards, Workshop, lobby, rich presence,
-            launch parameters &mdash; all via <code>import("Steam")</code>.
+            launch parameters, all via <code>import("Steam")</code>.
         </p>
     </div>
     <div class="feature">
@@ -136,7 +136,7 @@ Ruzit Test</code></pre>
     (<code>build.toml</code>, <code>Main.luau</code>,
     <code>types.d.luau</code>, an empty <code>assets/</code>). The
     scaffolded <code>Main.luau</code> opens a window, draws a cube, and
-    exits when you close the window &mdash; you replace it with your game.
+    exits when you close the window, you replace it with your game.
 </p>
 
 <h3>The five commands</h3>
@@ -168,7 +168,7 @@ Ruzit Test</code></pre>
             <span class="member-name">Ruzit Test [path]</span>
         </div>
         <p class="member-desc">
-            Run a project from source. No packaging, no encryption &mdash;
+            Run a project from source. No packaging, no encryption ,
             edits hit the next <code>Test</code> immediately. The default
             entry is <code>Main.luau</code>; pass a path for a different
             file.
@@ -215,7 +215,7 @@ Ruzit Test</code></pre>
 cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</span>, <span class="hl-num">2</span>)</code></pre>
 
 <p>
-    <code>import</code> is the global library accessor &mdash; it returns a
+    <code>import</code> is the global library accessor, it returns a
     typed handle to one of the engine subsystems. The Luau LSP follows the
     return type through every <code>import("X")</code> call, so hover docs
     and autocomplete work everywhere.
@@ -252,7 +252,7 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
             <td>Rust engine</td>
             <td>
                 wgpu, winit, cpal/rodio, mlua, fbxcel-dom,
-                steamworks, gilrs &mdash; wired up so the Luau side
+                steamworks, gilrs, wired up so the Luau side
                 only sees the abstractions.
             </td>
         </tr>
@@ -269,7 +269,7 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
 
 <div class="callout note">
     <strong>Where to next?</strong>
-    Start with <a href="primitives.html">Primitives</a> &mdash; the math
+    Start with <a href="primitives.html">Primitives</a>, the math
     types every other API is built on. Then work your way through the
     sidebar.
 </div>

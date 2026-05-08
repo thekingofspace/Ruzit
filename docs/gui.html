@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GUI — Ruzit Docs</title>
+    <title>GUI, Ruzit Docs</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -28,7 +28,7 @@ hp.Size     = Dim.new(<span class="hl-num">200</span>, <span class="hl-num">12</
 hp.Position = Dim.new(<span class="hl-num">24</span>, <span class="hl-num">24</span>)
 hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
 
-<h2 id="primitives">GUI.Basic — primitive factories</h2>
+<h2 id="primitives">GUI.Basic, primitive factories</h2>
 
 <div class="member-list">
     <div class="member">
@@ -49,7 +49,7 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
         <p class="member-desc">
             Solid-coloured circle inscribed in <code>.Size</code>. The
             major axis follows the longer of <code>.Size.X</code> and
-            <code>.Size.Y</code> &mdash; pass equal width / height for a
+            <code>.Size.Y</code>, pass equal width / height for a
             true circle.
         </p>
     </div>
@@ -61,7 +61,7 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
         <p class="member-desc">
             Solid-coloured triangle inscribed in <code>.Size</code>: apex at
             top-center, base on the bottom edge. Useful for arrows /
-            indicators &mdash; rotate via a custom shader if you need
+            indicators, rotate via a custom shader if you need
             arbitrary orientations.
         </p>
     </div>
@@ -103,7 +103,7 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">.Size</span><span class="member-type">Dim</span></div>
-        <p class="member-desc">Pixel-space size. For Text this is <code>(0, 0)</code> &mdash; size is driven by <code>.TextSize</code>.</p>
+        <p class="member-desc">Pixel-space size. For Text this is <code>(0, 0)</code>, size is driven by <code>.TextSize</code>.</p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">.Position</span><span class="member-type">Dim</span></div>
@@ -207,7 +207,7 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
 
 <p>
     Returned by <code>SetSkybox</code> and <code>SetPostEffect</code>.
-    Lifetime ties to the slot &mdash; let it drop or call
+    Lifetime ties to the slot, let it drop or call
     <code>:Destroy()</code> to remove the shader.
 </p>
 

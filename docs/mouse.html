@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mouse — Ruzit Docs</title>
+    <title>Mouse, Ruzit Docs</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -67,7 +67,7 @@ Mouse.InputReceived:Connect(<span class="hl-kw">function</span>(button, state)
     <div class="member">
         <div class="member-header"><span class="member-name">.Moved</span><span class="member-type">Signal&lt;Dim, Dim&gt;</span><span class="tag tag-readonly">read-only</span></div>
         <p class="member-desc">
-            Fires with <code>(position, delta)</code> &mdash; both
+            Fires with <code>(position, delta)</code>, both
             <code>Dim</code>. Delta is the per-frame movement; position is
             absolute window-local coords.
         </p>
@@ -138,7 +138,7 @@ Mouse.InputReceived:Connect(<span class="hl-kw">function</span>(button, state)
 
 <p>
     Older versions fired <code>InputReceived</code> with the legacy
-    <code>(button, pressed, state)</code> signature &mdash; a boolean
+    <code>(button, pressed, state)</code> signature, a boolean
     duplicating the <code>state</code> string. <strong>As of Ruzit 3.2 the
     boolean is gone.</strong> Any version 3.2 or newer fires
     <code>(button, state)</code> only.

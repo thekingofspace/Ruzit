@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Packages &amp; DLC — Ruzit Docs</title>
+    <title>Packages &amp; DLC, Ruzit Docs</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -29,12 +29,12 @@
 
 <ul>
     <li>
-        <code>&lt;id&gt;.scripts.managed</code> &mdash; encrypted JSON of every
+        <code>&lt;id&gt;.scripts.managed</code>, encrypted JSON of every
         <code>.luau</code> file in the package, plus metadata (id, name,
         version, creator, entry script, file mode).
     </li>
     <li>
-        <code>&lt;id&gt;.assets.managed</code> &mdash; encrypted JSON of every
+        <code>&lt;id&gt;.assets.managed</code>, encrypted JSON of every
         file under <code>assets/</code>, base64-encoded. With
         <code>shard-assets</code> on, splits into
         <code>&lt;id&gt;.assets.shard&lt;N&gt;.managed</code> files plus a
@@ -44,7 +44,7 @@
 
 <p>
     Both are AES-256-GCM encrypted with a key baked into the engine binary.
-    The encryption is intentional but not cryptographic protection &mdash;
+    The encryption is intentional but not cryptographic protection ,
     it's there to keep casual asset rippers out, not to defeat a determined
     extractor.
 </p>
@@ -57,7 +57,7 @@
     declared id (<code>"id"</code> in <code>ManagedInfo.toml</code> or the
     project's <code>exe-name</code>) becomes a require namespace. The
     package whose id matches the launcher's
-    <code>default_id</code> trailer field is the entry &mdash; it's what
+    <code>default_id</code> trailer field is the entry, it's what
     runs when the launcher boots.
 </p>
 
@@ -84,7 +84,7 @@
 
 <p>
     <code>@self</code> is an alias for the calling script's own package id
-    &mdash; useful in DLC code that doesn't know the project name.
+, useful in DLC code that doesn't know the project name.
 </p>
 
 <h2 id="dlc">DLC: built-in side packages</h2>
@@ -125,7 +125,7 @@ entry   = <span class="hl-str">"init.luau"</span>
     <code>Packages/</code> folder, either in the project root (during
     <code>Ruzit Test</code>) or next to the launcher (after
     <code>Ruzit Build</code>). They're loaded the same way DLC is, but
-    aren't bundled into the project's launcher &mdash; they're drop-ins.
+    aren't bundled into the project's launcher, they're drop-ins.
 </p>
 
 <pre><code>MyGame/
@@ -137,14 +137,14 @@ entry   = <span class="hl-str">"init.luau"</span>
 
 <p>
     Producers ship their package by running <code>Ruzit Package</code>
-    against a folder with a <code>ManagedInfo.toml</code> &mdash; same shape
+    against a folder with a <code>ManagedInfo.toml</code>, same shape
     as a DLC folder, just packaged independently of any project.
 </p>
 
 <div class="callout note">
     <strong>Conflict resolution.</strong>
     If a third-party package's id matches a DLC or the project itself,
-    the launcher prefers the project &mdash; the third-party file is
+    the launcher prefers the project, the third-party file is
     skipped with a warning. This stops malicious mods from shadowing
     your scripts.
 </div>
@@ -161,7 +161,7 @@ entry   = <span class="hl-str">"init.luau"</span>
 
 <p>
     Scripts always ship as a single <code>.scripts.managed</code> per
-    package &mdash; sharding compiled bytecode rarely pays off.
+    package, sharding compiled bytecode rarely pays off.
 </p>
 
 </main>

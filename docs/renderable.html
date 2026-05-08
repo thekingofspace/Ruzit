@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Renderable — Ruzit Docs</title>
+    <title>Renderable, Ruzit Docs</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -118,7 +118,7 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
 <p>
     The world-space drawable. Created via <code>Renderable.BasePart</code>
     or <code>BaseModel</code>. All transforms are immutable assignments
-    &mdash; setting <code>part.CFrame = ...</code> swaps the whole pose
+, setting <code>part.CFrame = ...</code> swaps the whole pose
     atomically.
 </p>
 
@@ -325,7 +325,7 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
-            Every track currently attached to this part &mdash; both
+            Every track currently attached to this part, both
             FBX-derived clips that have been instantiated by
             <code>:GetTrack</code> and user-authored ones.
         </p>
@@ -351,13 +351,13 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
 
 <ul>
     <li>
-        <code>part:GetTrack("clipName")</code> on an FBX-backed Part &mdash;
+        <code>part:GetTrack("clipName")</code> on an FBX-backed Part ,
         the track is pre-loaded with translation/rotation keyframes from
         the matching AnimationStack.
     </li>
     <li>
         <code>part:GetTrack("custom")</code> followed by
-        <code>track:AddKeyframe(...)</code> &mdash; fully scripted keyframes.
+        <code>track:AddKeyframe(...)</code>, fully scripted keyframes.
     </li>
 </ul>
 
@@ -371,7 +371,7 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
         <div class="member-header"><span class="member-name">.FadeTime</span><span class="member-type">number</span></div>
         <p class="member-desc">
             Cross-fade duration in seconds when blending into / out of
-            this track. Currently informational &mdash; full blending is
+            this track. Currently informational, full blending is
             future work.
         </p>
     </div>
@@ -420,7 +420,7 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
         <div class="member-header"><span class="member-name">track:Stop()</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Like Pause, but rewinds to time 0. The visible pose is left in
-            place &mdash; call Reset to snap back to baseline.
+            place, call Reset to snap back to baseline.
         </p>
     </div>
     <div class="member">

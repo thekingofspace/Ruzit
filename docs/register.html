@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Register — Ruzit Docs</title>
+    <title>Register, Ruzit Docs</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -17,7 +17,7 @@
 <h1>Register</h1>
 <p class="lede">
     Named shared tables. Two scripts that have never seen each other can
-    coordinate by agreeing on a name &mdash;
+    coordinate by agreeing on a name ,
     <code>Register.new("foo")</code> always returns the <strong>same</strong>
     table for the same name across the entire Lua state.
 </p>
@@ -46,7 +46,7 @@ world.players = {}
             Get (or create) the named register. First call with a given
             name creates a fresh empty table; every subsequent call with
             the same name returns the same instance, regardless of which
-            script asks. Mutate the table normally &mdash; every other
+            script asks. Mutate the table normally, every other
             script holding a handle sees the additions and deletions.
         </p>
     </div>
@@ -113,7 +113,7 @@ bus.player_died:Connect(<span class="hl-kw">function</span>(name) <span class="h
 
 <div class="callout note">
     <strong>Scope.</strong>
-    Registers are scoped to a single Lua state &mdash; the main runtime.
+    Registers are scoped to a single Lua state, the main runtime.
     They aren't shared with <a href="actor.html">Actor</a> workers (those
     have isolated states) and they don't persist across runs. For
     cross-process state use Steam Cloud or <code>IO</code>; for

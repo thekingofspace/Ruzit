@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Primitives — Ruzit Docs</title>
+    <title>Primitives, Ruzit Docs</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -18,7 +18,7 @@
 <p class="lede">
     Math types every other API is built on: <code>Vector</code>,
     <code>Color3</code>, <code>CFrame</code>, and <code>Dim</code>. All
-    immutable &mdash; arithmetic returns new instances, never mutates in
+    immutable, arithmetic returns new instances, never mutates in
     place.
 </p>
 
@@ -308,7 +308,7 @@ Process.Heartbeat:Connect(<span class="hl-kw">function</span>(_dt)
 <h2 id="cframe">CFrame</h2>
 
 <p>
-    A "Coordinate Frame" &mdash; the engine's standard transform: a 3D
+    A "Coordinate Frame", the engine's standard transform: a 3D
     position plus an orientation. Anything that lives in the world (parts,
     cameras, controllers, attachments) carries a CFrame.
 </p>
@@ -385,7 +385,7 @@ CFrame.new(Vector.new(), Vector.new(<span class="hl-num">0</span>, math.pi, <spa
         </div>
         <p class="member-desc">
             Position lerps linearly; rotation lerps component-wise.
-            Adequate for short-arc animations &mdash; use spherical
+            Adequate for short-arc animations, use spherical
             interpolation if you need a full half-turn between keyframes.
         </p>
     </div>
@@ -523,8 +523,8 @@ hp.Position = centre - hp.Size / <span class="hl-num">2</span></code></pre>
 <div class="callout note">
     <strong>Next up:</strong>
     <a href="index.html#architecture">Architecture overview</a> covers
-    where these types fit. The other API tabs &mdash; Renderable, GUI,
-    and friends &mdash; are coming soon.
+    where these types fit. The other API tabs, Renderable, GUI,
+    and friends, are coming soon.
 </div>
 
 </main>

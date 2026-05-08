@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Steam — Ruzit Docs</title>
+    <title>Steam, Ruzit Docs</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -246,7 +246,7 @@ Steam.Achievements.Store()</code></pre>
         <tr><td><code>AppId</code></td><td>number</td></tr>
         <tr><td><code>BuildId / OwnerID / BetaBranch / InstallDir / Language</code></td><td>optional metadata.</td></tr>
         <tr><td><code>ProcessArgs</code></td><td><code>{ string }</code></td></tr>
-        <tr><td><code>Env</code></td><td><code>{ [string]: string }</code> &mdash; selected Steam-related env vars.</td></tr>
+        <tr><td><code>Env</code></td><td><code>{ [string]: string }</code>, selected Steam-related env vars.</td></tr>
     </tbody>
 </table>
 
@@ -272,7 +272,7 @@ Steam.Achievements.Store()</code></pre>
 
 <p>
     Every type returned by Steam methods, in one place. The string-literal
-    types up top are pure aliases &mdash; <code>"Public"</code>,
+    types up top are pure aliases, <code>"Public"</code>,
     <code>"Online"</code>, etc.
 </p>
 
@@ -353,7 +353,7 @@ Steam.Achievements.Store()</code></pre>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">srv:LogOnAnonymous()</span><span class="tag tag-method">method</span></div>
-        <p class="member-desc">Anonymous logon &mdash; no game-server-account credentials required.</p>
+        <p class="member-desc">Anonymous logon, no game-server-account credentials required.</p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">srv:Stop()</span><span class="tag tag-method">method</span></div>
@@ -367,12 +367,12 @@ Steam.Achievements.Store()</code></pre>
 
 <table>
     <tbody>
-        <tr><td><code>port</code></td><td>number? &mdash; game-server port. Default 27015.</td></tr>
-        <tr><td><code>queryPort</code></td><td>number? &mdash; server-query (master-server) port. Default 27016.</td></tr>
-        <tr><td><code>mode</code></td><td><code>SteamServerMode?</code> &mdash; <code>"NoAuthentication"</code>, <code>"Authentication"</code>, or <code>"AuthenticationAndSecure"</code>.</td></tr>
-        <tr><td><code>version</code></td><td>string? &mdash; free-form version Steam uses for compatibility filtering.</td></tr>
-        <tr><td><code>name / map</code></td><td>string? &mdash; display name and map tag for server browsers.</td></tr>
-        <tr><td><code>max</code></td><td>number? &mdash; slot count.</td></tr>
+        <tr><td><code>port</code></td><td>number?, game-server port. Default 27015.</td></tr>
+        <tr><td><code>queryPort</code></td><td>number?, server-query (master-server) port. Default 27016.</td></tr>
+        <tr><td><code>mode</code></td><td><code>SteamServerMode?</code>, <code>"NoAuthentication"</code>, <code>"Authentication"</code>, or <code>"AuthenticationAndSecure"</code>.</td></tr>
+        <tr><td><code>version</code></td><td>string?, free-form version Steam uses for compatibility filtering.</td></tr>
+        <tr><td><code>name / map</code></td><td>string?, display name and map tag for server browsers.</td></tr>
+        <tr><td><code>max</code></td><td>number?, slot count.</td></tr>
     </tbody>
 </table>
 
@@ -383,7 +383,7 @@ Steam.Achievements.Store()</code></pre>
 <table>
     <tbody>
         <tr><td><code>ID</code></td><td>string</td></tr>
-        <tr><td><code>Name</code></td><td>string &mdash; persona name.</td></tr>
+        <tr><td><code>Name</code></td><td>string, persona name.</td></tr>
         <tr><td><code>State</code></td><td><code>SteamPersonaState</code></td></tr>
     </tbody>
 </table>
@@ -396,21 +396,21 @@ Steam.Achievements.Store()</code></pre>
     <tbody>
         <tr><td><code>ID</code></td><td>string</td></tr>
         <tr><td><code>Name</code></td><td>string</td></tr>
-        <tr><td><code>Nickname</code></td><td>string? &mdash; the local user's nickname for this friend.</td></tr>
+        <tr><td><code>Nickname</code></td><td>string?, the local user's nickname for this friend.</td></tr>
         <tr><td><code>State</code></td><td><code>SteamPersonaState</code></td></tr>
-        <tr><td><code>Game</code></td><td><code>{ AppID: number }?</code> &mdash; populated when the friend is in a game.</td></tr>
+        <tr><td><code>Game</code></td><td><code>{ AppID: number }?</code>, populated when the friend is in a game.</td></tr>
     </tbody>
 </table>
 
 <h3 id="lobby-info">SteamLobbyInfo</h3>
 
-<p>Returned by <code>Steam.Lobby.List</code> &mdash; lighter-weight than a live <code>SteamLobby</code>.</p>
+<p>Returned by <code>Steam.Lobby.List</code>, lighter-weight than a live <code>SteamLobby</code>.</p>
 
 <table>
     <tbody>
         <tr><td><code>ID</code></td><td>string</td></tr>
         <tr><td><code>MemberCount</code></td><td>number?</td></tr>
-        <tr><td><code>Name</code></td><td>string? &mdash; whatever the host set as <code>"name"</code> in lobby data.</td></tr>
+        <tr><td><code>Name</code></td><td>string?, whatever the host set as <code>"name"</code> in lobby data.</td></tr>
     </tbody>
 </table>
 
@@ -421,7 +421,7 @@ Steam.Achievements.Store()</code></pre>
 <table>
     <tbody>
         <tr><td><code>Name</code></td><td>string</td></tr>
-        <tr><td><code>Size</code></td><td>number &mdash; bytes.</td></tr>
+        <tr><td><code>Size</code></td><td>number, bytes.</td></tr>
     </tbody>
 </table>
 
@@ -431,11 +431,11 @@ Steam.Achievements.Store()</code></pre>
 
 <table>
     <tbody>
-        <tr><td><code>Subscribed</code></td><td>boolean &mdash; user is subscribed to the item.</td></tr>
-        <tr><td><code>Installed</code></td><td>boolean &mdash; install is on disk.</td></tr>
-        <tr><td><code>NeedsUpdate</code></td><td>boolean &mdash; an update is available but not yet downloaded.</td></tr>
+        <tr><td><code>Subscribed</code></td><td>boolean, user is subscribed to the item.</td></tr>
+        <tr><td><code>Installed</code></td><td>boolean, install is on disk.</td></tr>
+        <tr><td><code>NeedsUpdate</code></td><td>boolean, an update is available but not yet downloaded.</td></tr>
         <tr><td><code>Downloading</code></td><td>boolean</td></tr>
-        <tr><td><code>DownloadPending</code></td><td>boolean &mdash; queued behind other Steam downloads.</td></tr>
+        <tr><td><code>DownloadPending</code></td><td>boolean, queued behind other Steam downloads.</td></tr>
     </tbody>
 </table>
 
@@ -445,16 +445,16 @@ Steam.Achievements.Store()</code></pre>
 
 <table>
     <tbody>
-        <tr><td><code>Folder</code></td><td>string &mdash; absolute path to the install directory.</td></tr>
-        <tr><td><code>SizeOnDisk</code></td><td>number &mdash; bytes.</td></tr>
-        <tr><td><code>Timestamp</code></td><td>number &mdash; Unix epoch seconds of last update.</td></tr>
+        <tr><td><code>Folder</code></td><td>string, absolute path to the install directory.</td></tr>
+        <tr><td><code>SizeOnDisk</code></td><td>number, bytes.</td></tr>
+        <tr><td><code>Timestamp</code></td><td>number, Unix epoch seconds of last update.</td></tr>
     </tbody>
 </table>
 
 <h3 id="workshop-item">WorkshopItem</h3>
 
 <p>
-    Combined snapshot from <code>Steam.Workshop.GetItem(id)</code> &mdash;
+    Combined snapshot from <code>Steam.Workshop.GetItem(id)</code> ,
     union of <code>WorkshopItemState</code> + <code>WorkshopInstallInfo</code>
     + a file lister.
 </p>
@@ -462,12 +462,12 @@ Steam.Achievements.Store()</code></pre>
 <table>
     <tbody>
         <tr><td><code>ID</code></td><td>string</td></tr>
-        <tr><td><code>Subscribed / Installed / NeedsUpdate / Downloading / DownloadPending</code></td><td>boolean &mdash; state flags.</td></tr>
-        <tr><td><code>Folder</code></td><td>string? &mdash; absolute path to the install dir, when installed.</td></tr>
-        <tr><td><code>SizeOnDisk</code></td><td>number? &mdash; bytes.</td></tr>
-        <tr><td><code>Timestamp</code></td><td>number? &mdash; last-update Unix seconds.</td></tr>
+        <tr><td><code>Subscribed / Installed / NeedsUpdate / Downloading / DownloadPending</code></td><td>boolean, state flags.</td></tr>
+        <tr><td><code>Folder</code></td><td>string?, absolute path to the install dir, when installed.</td></tr>
+        <tr><td><code>SizeOnDisk</code></td><td>number?, bytes.</td></tr>
+        <tr><td><code>Timestamp</code></td><td>number?, last-update Unix seconds.</td></tr>
         <tr><td><code>DownloadProgress</code></td><td><code>{ Downloaded: number, Total: number }?</code></td></tr>
-        <tr><td><code>Files()</code></td><td><code>(() -&gt; { string })?</code> &mdash; lists every file in the install folder. Absolute paths &mdash; pass straight to <code>Asset.ImportAsset</code>.</td></tr>
+        <tr><td><code>Files()</code></td><td><code>(() -&gt; { string })?</code>, lists every file in the install folder. Absolute paths, pass straight to <code>Asset.ImportAsset</code>.</td></tr>
     </tbody>
 </table>
 
@@ -477,9 +477,9 @@ Steam.Achievements.Store()</code></pre>
 
 <table>
     <tbody>
-        <tr><td><code>UserID</code></td><td>string &mdash; remote user's Steam id.</td></tr>
-        <tr><td><code>ClientName</code></td><td>string? &mdash; client device name.</td></tr>
-        <tr><td><code>Width</code> / <code>Height</code></td><td>number? &mdash; stream resolution.</td></tr>
+        <tr><td><code>UserID</code></td><td>string, remote user's Steam id.</td></tr>
+        <tr><td><code>ClientName</code></td><td>string?, client device name.</td></tr>
+        <tr><td><code>Width</code> / <code>Height</code></td><td>number?, stream resolution.</td></tr>
     </tbody>
 </table>
 
@@ -491,15 +491,15 @@ Steam.Achievements.Store()</code></pre>
     <tbody>
         <tr><td><code>Source</code></td><td><code>"steam-url" | "steam" | "direct"</code></td></tr>
         <tr><td><code>WasLaunchedFromSteam</code></td><td>boolean</td></tr>
-        <tr><td><code>CommandLine</code></td><td>string &mdash; Steam URL launch params.</td></tr>
+        <tr><td><code>CommandLine</code></td><td>string, Steam URL launch params.</td></tr>
         <tr><td><code>AppId</code></td><td>number</td></tr>
         <tr><td><code>BuildId</code></td><td>number?</td></tr>
         <tr><td><code>OwnerID</code></td><td>string?</td></tr>
         <tr><td><code>BetaBranch</code></td><td>string?</td></tr>
         <tr><td><code>InstallDir</code></td><td>string?</td></tr>
         <tr><td><code>Language</code></td><td>string?</td></tr>
-        <tr><td><code>ProcessArgs</code></td><td><code>{ string }</code> &mdash; argv past the executable.</td></tr>
-        <tr><td><code>Env</code></td><td><code>{ [string]: string }</code> &mdash; selected Steam-related env vars.</td></tr>
+        <tr><td><code>ProcessArgs</code></td><td><code>{ string }</code>, argv past the executable.</td></tr>
+        <tr><td><code>Env</code></td><td><code>{ [string]: string }</code>, selected Steam-related env vars.</td></tr>
     </tbody>
 </table>
 
