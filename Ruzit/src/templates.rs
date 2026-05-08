@@ -8,7 +8,7 @@ Creator = ""
 [exe]
 # name = "{name}"     # output exe name when running `Ruzit Build` (defaults to entry stem)
 # icon = "logo"       # looks for <icon>.ico next to build.toml and embeds it as the exe icon
-# windowed = true     # default. Launcher is windows-subsystem — no console
+# windowed = true     # default. Launcher is windows-subsystem, no console
                       # window unless --console is passed. Set to false to
                       # ship a console-subsystem launcher whose stdout is
                       # always visible.
@@ -24,7 +24,7 @@ Creator = ""
                             # plus a small `.assets.manifest.managed` index. Shard
                             # size is auto-tuned (~ceil(sqrt(asset_count)) shards,
                             # 4-256 MB each) so patches only re-download the shards
-                            # that actually changed — huge win for content updates
+                            # that actually changed, huge win for content updates
                             # over Steam Pipe / CDNs without drowning the OS in
                             # thousands of tiny files.
 
@@ -62,7 +62,7 @@ pub const MANAGED_INIT_LUAU: &str = r#"--!strict
 --     local pkg = Managed.GetPackage("{id}")
 --     local mod = (require :: any)(pkg.Origin)
 --
--- The require runs this file once and caches the returned table — every
+-- The require runs this file once and caches the returned table, every
 -- caller (including other packages) sees the same instance, so any state
 -- you put on `M` is shared across the whole program.
 
@@ -94,7 +94,7 @@ pub const TYPES_DLUAU: &str = r##"
 -- =============================================================================
 -- This file is consumed by luau-lsp to give you hover docs, autocomplete, and
 -- type checking against every API a Ruzit script can touch. It is NOT loaded
--- by the runtime — the actual implementations live in Rust. Don't edit the
+-- by the runtime, the actual implementations live in Rust. Don't edit the
 -- type shapes unless you also patch Ruzit/src/templates.rs (which holds the
 -- bundled copy that `Ruzit Init` writes into new projects).
 --
@@ -103,13 +103,13 @@ pub const TYPES_DLUAU: &str = r##"
 --   local IO     = import("IO")         -- ...
 --   local _      = require(__dirname .. "/Helpers")
 --
--- `import(name)` is the only way to access engine subsystems — there are no
+-- `import(name)` is the only way to access engine subsystems, there are no
 -- Lua globals for any of them. Every name listed in `Imports` at the bottom
 -- of this file is valid; anything else throws.
 -- =============================================================================
 
 -- =============================================================================
--- IO — file system access (read, write, list, mkdir, persistent handles).
+-- IO, file system access (read, write, list, mkdir, persistent handles).
 -- Disk paths are resolved relative to the project root in `Ruzit Test` and
 -- relative to the launcher exe in a built game; pass an absolute path if you
 -- need to escape that root (e.g. user profile, mod folders).
@@ -158,7 +158,7 @@ export type IO_API = {
 }
 
 -- =============================================================================
--- Net — TCP, UDP, IPC, WebSocket, and HTTP. Everything is blocking from the
+-- Net, TCP, UDP, IPC, WebSocket, and HTTP. Everything is blocking from the
 -- script's perspective; for true async work pass jobs through Actor.
 -- =============================================================================
 
@@ -227,7 +227,7 @@ export type HttpResponse = { status: number, headers: { [string]: string }, body
 
 export type Net_API = {
 	-- Run a blocking HTTP server on `addr` (e.g. "127.0.0.1:8080"). Calls
-	-- `handler` for each request — return either an HttpResponse table or
+	-- `handler` for each request, return either an HttpResponse table or
 	-- a plain string. Single-threaded by default; if you need concurrency,
 	-- spawn handlers through Actor.
 	Serve: (addr: string, handler: (HttpRequest) -> (HttpResponse | string)) -> (),
@@ -237,19 +237,19 @@ export type Net_API = {
 	Request: (method: string, url: string, body: string?, headers: { [string]: string }?) -> HttpResponse,
 	-- TCP primitives. Connect dials, Host binds + listens.
 	TCP: { Connect: (addr: string) -> TcpConnection, Host: (addr: string) -> TcpListener },
-	-- UDP — Bind opens a socket on the given local "host:port".
+	-- UDP, Bind opens a socket on the given local "host:port".
 	UDP: { Bind: (addr: string) -> UdpHandle },
-	-- IPC — same-machine stream. Pass a pipe/socket NAME, not a path; the
+	-- IPC, same-machine stream. Pass a pipe/socket NAME, not a path; the
 	-- OS-specific prefix is added for you.
 	IPC: { Connect: (name: string) -> IpcConnection, Host: (name: string) -> IpcListener },
 	-- WebSocket. Pass a `ws://` or `wss://` URL to Connect; pass an
-	-- "addr:port" to Host (TLS isn't auto-enabled on Host — terminate it
+	-- "addr:port" to Host (TLS isn't auto-enabled on Host, terminate it
 	-- in front of Ruzit).
 	Socket: { Connect: (url: string) -> WebSocketConn, Host: (addr: string) -> WebSocketListener },
 }
 
 -- =============================================================================
--- Serde — Encoding (JSON/TOML/YAML), hashing, and compression.
+-- Serde, Encoding (JSON/TOML/YAML), hashing, and compression.
 -- =============================================================================
 
 export type HashAlgo = "md5" | "sha1" | "sha224" | "sha256" | "sha384" | "sha512" | "sha3-256" | "sha3-512" | "keccak256" | "blake3"
@@ -274,7 +274,7 @@ export type Serde_API = {
 }
 
 -- =============================================================================
--- Process — info about and control over the running process.
+-- Process, info about and control over the running process.
 -- =============================================================================
 
 export type Process_API = {
@@ -294,11 +294,11 @@ export type Process_API = {
 	-- false under `Ruzit Test`. Gate dev-only debug overlays etc. behind
 	-- this (or behind InTest, which is exactly the inverse).
 	IsBuilt: boolean,
-	-- Inverse of IsBuilt — true when running via `Ruzit Test`. Reads
+	-- Inverse of IsBuilt, true when running via `Ruzit Test`. Reads
 	-- naturally for guards like `if Process.InTest then ... end`.
 	InTest: boolean,
 	-- Per-frame signal carrying dt (seconds since last tick). Fires
-	-- before the render pump — use it for simulation logic that produces
+	-- before the render pump, use it for simulation logic that produces
 	-- the state the renderer reads this frame. (Merged from the old
 	-- RunService import as of v3.2.)
 	Heartbeat: Signal<number>,
@@ -313,7 +313,7 @@ export type Process_API = {
 	-- Set an env var on the running process (and inherited children).
 	SetEnv: (name: string, value: string) -> (),
 	-- Hard-exit the process. `code` defaults to 0. Doesn't run BindToClose
-	-- callbacks — use Window:Close for graceful shutdown when you have
+	-- callbacks, use Window:Close for graceful shutdown when you have
 	-- a window open.
 	Close: (code: number?) -> never,
 	-- The argv passed to Ruzit (or the launcher), with element [1] being
@@ -324,17 +324,17 @@ export type Process_API = {
 	-- unallocated" number (typically much smaller).
 	Memory: () -> { total: number, free: number, used: number, available: number, total_swap: number, used_swap: number },
 	-- Subscribe a function to the engine heart-tick. `id` is your own
-	-- string label — use it later with UnbindFromHeart, and also as the
+	-- string label, use it later with UnbindFromHeart, and also as the
 	-- de-dup key (registering the same id twice replaces the old fn).
 	-- The callback gets dt (seconds since the previous tick). For most
-	-- per-frame logic prefer Process.Heartbeat — BindToHeart is for
+	-- per-frame logic prefer Process.Heartbeat, BindToHeart is for
 	-- background tasks that need to run even when no window is open.
 	BindToHeart: (id: string, fn: (dt: number) -> ()) -> (),
 	UnbindFromHeart: (id: string) -> (),
 }
 
 -- =============================================================================
--- Asset — typed loaders for images, sounds, shaders, fonts, models, files.
+-- Asset, typed loaders for images, sounds, shaders, fonts, models, files.
 -- =============================================================================
 
 declare class ImageAsset
@@ -346,7 +346,7 @@ declare class ImageAsset
 	-- in-memory variants). Useful for logging.
 	function Source(self): string
 	-- Raw RGBA8 pixel buffer (Width * Height * 4 bytes). Access only when
-	-- you need to inspect or mutate pixels — most uses just hand the asset
+	-- you need to inspect or mutate pixels, most uses just hand the asset
 	-- to a GUI / Renderable.
 	function Pixels(self): string
 end
@@ -361,27 +361,27 @@ end
 -- =============================================================================
 -- Shaders
 -- =============================================================================
--- Ruzit shaders are written in WGSL — wgpu's native shader language.
+-- Ruzit shaders are written in WGSL, wgpu's native shader language.
 -- (If you've used GLSL/HLSL, WGSL reads similarly: typed structs, explicit
 -- uniform buffers, attribute-declared entry points.) The runtime is wgpu 22
 -- on top of DX12 (Windows) / Vulkan / Metal / GL.
 --
 -- There are two stages, each loaded as its own asset kind:
---   * ShaderAsset    — VERTEX stage (.shader / .glsl / .wgsl / .hlsl /
+--   * ShaderAsset, VERTEX stage (.shader / .glsl / .wgsl / .hlsl /
 --                      .vert / .metal extensions). Most projects never
 --                      override this; the engine's default vertex stage
 --                      handles transform / projection / interpolation.
---   * FragmentAsset  — FRAGMENT (pixel) stage (.frag / .fragment / .fs /
+--   * FragmentAsset, FRAGMENT (pixel) stage (.frag / .fragment / .fs /
 --                      .glslf extensions). This is where ~all custom shader
---                      work lives — surface lighting, dissolve effects,
+--                      work lives, surface lighting, dissolve effects,
 --                      stylized lighting, scrolling textures, post effects.
 --
 -- Where shaders go (the four hook points):
---   * BasePart:AttachShader(asset)        — runs once per pixel of a 3D part.
---   * Primitive:AttachShader(asset)       — runs per pixel of a 2D GUI shape.
---   * Sound:AttachShader(asset)           — DSP "shader" for audio (separate
---                                           contract — see Sound docs).
---   * GUI.SetSkybox(asset) / .SetPostEffect(asset) — fullscreen scene passes.
+--   * BasePart:AttachShader(asset), runs once per pixel of a 3D part.
+--   * Primitive:AttachShader(asset), runs per pixel of a 2D GUI shape.
+--   * Sound:AttachShader(asset), DSP "shader" for audio (separate
+--                                           contract, see Sound docs).
+--   * GUI.SetSkybox(asset) / .SetPostEffect(asset), fullscreen scene passes.
 --
 -- Shaders written for one hook can't be reused on another; the available
 -- bindings differ. Each section below documents the contract.
@@ -404,27 +404,27 @@ end
 --     part:SetData(shader, "speed", 1.5)
 --     local v = part:GetData(shader, "speed")
 --
---   Setting a name that isn't declared throws — typo guard.
+--   Setting a name that isn't declared throws, typo guard.
 --
 -- ──────────────────────────────────────────────────────────────────────────
 -- 2D primitive fragment contract
 --   (FragmentAsset attached to Primitive, or fed to SetSkybox / SetPostEffect)
 --
--- Available WGSL globals (the engine prepends these as a prelude — DON'T
+-- Available WGSL globals (the engine prepends these as a prelude, DON'T
 -- redeclare them in your shader):
 --
 --   struct VsOut {
 --       @builtin(position) clip: vec4<f32>,
---       @location(0) uv: vec2<f32>,    // 0..1, top-left origin
+--       @location(0) uv: vec2<f32>, // 0..1, top-left origin
 --   };
 --   struct RuzitUni {
---       pos: vec2<f32>,                 // primitive top-left in pixels
---       size: vec2<f32>,                // primitive width/height
---       color: vec4<f32>,               // RGBA tint (alpha = 1 - Transparency)
---       resolution: vec2<f32>,          // window inner size in pixels
---       time: f32,                      // seconds since window opened
---       shape: u32,                     // 0=Square 1=Circle 2=Triangle 3=Image
---       params: array<vec4<f32>, 4>,    // your @ruzit params, packed
+--       pos: vec2<f32>, // primitive top-left in pixels
+--       size: vec2<f32>, // primitive width/height
+--       color: vec4<f32>, // RGBA tint (alpha = 1 - Transparency)
+--       resolution: vec2<f32>, // window inner size in pixels
+--       time: f32, // seconds since window opened
+--       shape: u32, // 0=Square 1=Circle 2=Triangle 3=Image
+--       params: array<vec4<f32>, 4>, // your @ruzit params, packed
 --   };
 --   @group(0) @binding(0) var<uniform> U: RuzitUni;
 --   @group(0) @binding(1) var IMG: texture_2d<f32>;        // bound asset, or
@@ -438,7 +438,7 @@ end
 --   @fragment
 --   fn fs_main(in: VsOut) -> @location(0) vec4<f32> { ... }
 --
--- Minimum useful shader (replicates the default — solid tint, shape-masked):
+-- Minimum useful shader (replicates the default, solid tint, shape-masked):
 --   @fragment
 --   fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 --       if (!ruzit_inside_shape(in.uv, U.shape)) { discard; }
@@ -450,54 +450,54 @@ end
 -- 3D part fragment contract
 --   (FragmentAsset attached to BasePart)
 --
--- Vertex inputs (already populated by the engine's vertex stage — read in
+-- Vertex inputs (already populated by the engine's vertex stage, read in
 -- the fragment as in.world_pos / in.world_normal / in.uv):
 --
 --   struct VsOut {
 --       @builtin(position) clip: vec4<f32>,
 --       @location(0) world_pos: vec3<f32>,
---       @location(1) world_normal: vec3<f32>,    // already normalized
+--       @location(1) world_normal: vec3<f32>, // already normalized
 --       @location(2) uv: vec2<f32>,
 --   };
 --
--- Per-frame uniform — same value for every part this frame:
+-- Per-frame uniform, same value for every part this frame:
 --
 --   struct Frame {
 --       view_proj: mat4x4<f32>,
---       light_dir: vec3<f32>,        // sun direction (engine or
+--       light_dir: vec3<f32>, // sun direction (engine or
 --                                    // Renderable.SetSun)
---       time: f32,                   // seconds since window opened
+--       time: f32, // seconds since window opened
 --       camera_pos: vec3<f32>,
---       frame_index: u32,            // increments every drawn frame —
+--       frame_index: u32, // increments every drawn frame,
 --                                    // useful for hash seeds, TAA jitter,
 --                                    // ping-pong patterns
---       sun_color: vec3<f32>,        // engine or Renderable.SetSunColor
---       ambient: vec3<f32>,          // engine or Renderable.SetAmbient
---       viewport: vec2<f32>,         // window inner pixel size
+--       sun_color: vec3<f32>, // engine or Renderable.SetSunColor
+--       ambient: vec3<f32>, // engine or Renderable.SetAmbient
+--       viewport: vec2<f32>, // window inner pixel size
 --   };
 --
--- Per-part uniform — different for every BasePart drawn:
+-- Per-part uniform, different for every BasePart drawn:
 --
 --   struct Instance {
---       model: mat4x4<f32>,                     // CFrame * Size
---       color: vec4<f32>,                       // BasePart.Color
---       params: array<vec4<f32>, 4>,            // your @ruzit param floats
---       // Render hints — 0 or 1 each, set per-part from Lua:
---       cast_shadow: u32,                       // BasePart.CastShadow
---       receive_shadow: u32,                    // BasePart.ReceiveShadow
---       _flag2: u32,                            // reserved
---       _flag3: u32,                            // reserved
+--       model: mat4x4<f32>, // CFrame * Size
+--       color: vec4<f32>, // BasePart.Color
+--       params: array<vec4<f32>, 4>, // your @ruzit param floats
+--       // Render hints, 0 or 1 each, set per-part from Lua:
+--       cast_shadow: u32, // BasePart.CastShadow
+--       receive_shadow: u32, // BasePart.ReceiveShadow
+--       _flag2: u32, // reserved
+--       _flag3: u32, // reserved
 --   };
 --
 -- Branching on flags inside a shader (manual shadows / stylized lighting):
 --   if (I.receive_shadow == 0u) {
---       // emissive / sky / debug — skip darkening, return albedo as-is
+--       // emissive / sky / debug, skip darkening, return albedo as-is
 --       return vec4<f32>(I.color.rgb, I.color.a);
 --   }
 --   if (I.cast_shadow == 0u) {
 --       // hint that this part shouldn't darken its neighbors. Useful if
 --       // you implement contact-shadow-style AO that samples nearby parts
---       // — bail early so this one contributes nothing.
+--       //, bail early so this one contributes nothing.
 --   }
 --
 -- Available bindings:
@@ -511,14 +511,14 @@ end
 --                            -- Optional read-only storage buffer.
 --                            -- Default is a 1-float stub. Populate from
 --                            -- Lua via GPU.NewBuffer + GPU.SetBuffer to
---                            -- pass arbitrary float data — LUTs, particle
+--                            -- pass arbitrary float data, LUTs, particle
 --                            -- positions, animation curves, custom mesh
 --                            -- attributes. Up to your GPU's
 --                            -- max_storage_buffer_binding_size (typically
 --                            -- ≥ 128 MB on desktop). Indexed as
 --                            -- `SDATA[idx]`.
 --
--- Engine-provided WGSL helpers (declared in the prelude — call directly):
+-- Engine-provided WGSL helpers (declared in the prelude, call directly):
 --   p(idx: u32) -> f32
 --     Read a `// @ruzit param` float by declaration index.
 --
@@ -545,7 +545,7 @@ end
 --   srgb_to_linear(c) -> vec3<f32>
 --   linear_to_srgb(c) -> vec3<f32>
 --     Standard gamma curves. The swap-chain is sRGB so you usually don't
---     need these — included for shaders that want to do their own grading
+--     need these, included for shaders that want to do their own grading
 --     in linear space.
 --
 --   hash3(p: vec3<f32>) -> vec3<f32>
@@ -556,7 +556,7 @@ end
 --   @fragment
 --   fn fs_main(in: VsOut) -> @location(0) vec4<f32> { ... }
 --
--- Minimum useful shader (replicates the engine default — sun + ambient
+-- Minimum useful shader (replicates the engine default, sun + ambient
 -- half-Lambert lighting, sun color tint):
 --   @fragment
 --   fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
@@ -568,7 +568,7 @@ end
 --       return vec4<f32>(I.color.rgb * tex.rgb * lit, I.color.a);
 --   }
 --
--- Storage-buffer example — color-grading LUT keyed by pixel luma:
+-- Storage-buffer example, color-grading LUT keyed by pixel luma:
 --   // @ruzit param size              // number of LUT entries
 --   @fragment
 --   fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
@@ -600,7 +600,7 @@ end
 --   * Real shadow maps: an automatic light-POV depth pass + shadow
 --     comparison sampler binding. The Frame uniform will gain a
 --     `shadow_view_proj`, and a new `texture_depth_2d` + `sampler_comparison`
---     binding will appear. Existing shaders won't break — those bindings
+--     binding will appear. Existing shaders won't break, those bindings
 --     just won't exist until the feature lands.
 --
 -- =============================================================================
@@ -624,22 +624,22 @@ export type Asset_API = {
 	--   Fragment .frag .fragment .fs .glslf
 	--   Model    .obj .fbx
 	--   Font     .ttf .otf
-	--   File     any file — returned as its raw UTF-8 string contents
+	--   File     any file, returned as its raw UTF-8 string contents
 	--
 	-- path forms:
-	--   "foo.bar.baz"     — same package as the caller. Dots are folder
+	--   "foo.bar.baz", same package as the caller. Dots are folder
 	--                       separators, so this maps to foo/bar/baz under the
 	--                       package's assets/ root.
-	--   "@PkgId/foo/bar"  — explicit cross-package lookup. Use this to read an
+	--   "@PkgId/foo/bar", explicit cross-package lookup. Use this to read an
 	--                       asset out of another loaded .managed package by id.
-	--   "foo/bar.png"     — a literal extension also works; the loader uses it
+	--   "foo/bar.png", a literal extension also works; the loader uses it
 	--                       directly instead of probing the kind's ext list.
 	--
 	-- examples:
 	--   Asset.GetAsset("Image", "ui.logo")              -- assets/ui/logo.png
 	--   Asset.GetAsset("Model", "props.crate")          -- assets/props/crate.fbx (or .obj)
 	--   Asset.GetAsset("Sound", "@SfxPack/explode")     -- from a sibling package
-	--   Asset.GetAsset("File",  "data/levels.json")     -- raw text contents
+	--   Asset.GetAsset("File", "data/levels.json")     -- raw text contents
 	GetAsset: ((kind: "Image", path: string) -> ImageAsset)
 		& ((kind: "Sound", path: string) -> SoundData)
 		& ((kind: "Shader", path: string) -> ShaderAsset)
@@ -676,7 +676,7 @@ export type Asset_API = {
 }
 
 -- =============================================================================
--- Window — open a window, listen for size/focus changes, toggle modes.
+-- Window, open a window, listen for size/focus changes, toggle modes.
 -- =============================================================================
 
 -- Options bag passed to Window.Open. All fields are optional with sensible
@@ -686,13 +686,13 @@ export type WindowOptions = {
 	title: string?,
 	-- Initial inner-area size in logical pixels (DPI-scaled by the OS).
 	width: number?, height: number?,
-	-- Inner-size constraints. Optional pairs — set both width and height
+	-- Inner-size constraints. Optional pairs, set both width and height
 	-- of a constraint or neither.
 	min_width: number?, min_height: number?, max_width: number?, max_height: number?,
 	-- Exclusive fullscreen. Covers the whole monitor and changes display
 	-- mode. Most games should prefer `borderless = true` instead.
 	fullscreen: boolean?,
-	-- Borderless fullscreen — strips decorations AND covers the OS taskbar
+	-- Borderless fullscreen, strips decorations AND covers the OS taskbar
 	-- via Fullscreen::Borderless. The window stays at normal z-level so
 	-- Alt+Tab works cleanly and Steam/Discord overlays render on top.
 	borderless: boolean?,
@@ -721,12 +721,12 @@ declare class Connection
 end
 
 -- Variadic generics on `declare class` aren't supported by the stable
--- luau-lsp parser yet, but generic type aliases ARE — so Signal lives as
+-- luau-lsp parser yet, but generic type aliases ARE, so Signal lives as
 -- a parameterized table type instead. Same call shape (signal:Connect(...))
 -- with full callback-arg type narrowing: `Signal<number, string>` makes
 -- `signal:Connect(function(a, b) ... end)` infer `a:number, b:string`.
 export type Signal<T...> = {
-	-- Subscribe a callback. Returns a Connection — keep it if you ever
+	-- Subscribe a callback. Returns a Connection, keep it if you ever
 	-- need to disconnect; otherwise let it live as long as the signal does.
 	Connect: (self: Signal<T...>, fn: (T...) -> ()) -> Connection,
 	-- Like Connect, but fires at most once and auto-disconnects.
@@ -767,7 +767,7 @@ declare class WindowHandle
 	function Resize(self, width: number, height: number): ()
 	-- Change the title-bar caption.
 	function SetTitle(self, title: string): ()
-	-- Toggles "borderless fullscreen" — strips decorations AND enters
+	-- Toggles "borderless fullscreen", strips decorations AND enters
 	-- Fullscreen::Borderless so the window covers the OS taskbar/dock.
 	-- The Open-time `borderless = true` option does the same thing.
 	function SetBorderless(self, borderless: boolean): ()
@@ -791,7 +791,7 @@ declare class WindowHandle
 	-- Bring the window to the front and give it keyboard focus.
 	function Focus(self): ()
 	-- Ask the OS to redraw the window on the next frame. You rarely need
-	-- this — the engine repaints automatically when the GUI/Renderable
+	-- this, the engine repaints automatically when the GUI/Renderable
 	-- scene changes.
 	function RequestRedraw(self): ()
 	-- Current inner-area dimensions in logical pixels.
@@ -804,7 +804,7 @@ declare class WindowHandle
 	-- True until Close has been called and the runtime has unwound.
 	function IsOpen(self): boolean
 	-- The active 3D viewport's camera. The same Camera object that
-	-- Renderable.Camera returns — exposed here so a Lua module that only
+	-- Renderable.Camera returns, exposed here so a Lua module that only
 	-- has a WindowHandle can still drive the view.
 	function GetViewport(self): Camera
 end
@@ -816,7 +816,7 @@ export type Window_API = {
 }
 
 -- =============================================================================
--- SFX — stream and shape audio. Built on rodio + cpal.
+-- SFX, stream and shape audio. Built on rodio + cpal.
 -- =============================================================================
 
 -- Built shader instance produced by SFX.Volume / SFX.Echo / etc. Stack via
@@ -831,7 +831,7 @@ declare class Sound
 	-- Source label inherited from the SoundData.
 	Source: string
 	-- Begin playback. Re-applying shaders or :Volume / :Speed first changes
-	-- how this playback sounds — settings don't carry between :Play calls
+	-- how this playback sounds, settings don't carry between :Play calls
 	-- unless you re-apply them.
 	function Play(self): ()
 	-- Halt the currently-playing instance. Fires Stopped.
@@ -839,7 +839,7 @@ declare class Sound
 	function IsPlaying(self): boolean
 	-- Fluent built-in shaders: each one replaces any prior call to the same
 	-- method on this Sound (so Volume(0.5) → Volume(0.8) ends at 0.8, no
-	-- stacking). Call before :Play() — they apply on the next playback.
+	-- stacking). Call before :Play(), they apply on the next playback.
 	-- Linear gain. 1.0 = unchanged, 0.0 = silence, >1 = boosted.
 	function Volume(self, factor: number): ()
 	-- Time scaling. 1.0 = real-time, 2.0 = 2x faster (also pitches up an octave).
@@ -869,7 +869,7 @@ declare class Sound
 	function Reverb(self, mix: number?, decay: number?): ()
 	-- Periodic amplitude wobble. `rate` Hz, `depth` 0..1.
 	function Tremolo(self, rate: number?, depth: number?): ()
-	-- Drop ALL fluent shaders and (custom) attachments — back to a clean state.
+	-- Drop ALL fluent shaders and (custom) attachments, back to a clean state.
 	function Reset(self): ()
 	-- 3D world position. Listener = the active Renderable.Camera (the
 	-- viewport). Distance falloff defaults to 20 world units; pass an
@@ -880,7 +880,7 @@ declare class Sound
 	-- Legacy / advanced: build shader instances yourself.
 	function ApplyShader(self, shader: SoundShader): ()
 	function ClearShaders(self): ()
-	-- Custom shader assets — write your own DSP in WGSL/GLSL-like text and
+	-- Custom shader assets, write your own DSP in WGSL/GLSL-like text and
 	-- attach it. SetData / GetData expose `uniform`-style numeric inputs.
 	function AttachShader(self, asset: ShaderAsset | FragmentAsset): ()
 	function DetachShader(self, asset: ShaderAsset | FragmentAsset): ()
@@ -892,7 +892,7 @@ end
 
 export type SFX_API = {
 	-- Wrap a SoundData into a playable Sound. Same SoundData can back
-	-- many independent Sounds — each has its own shader chain and
+	-- many independent Sounds, each has its own shader chain and
 	-- Play/Stop state.
 	LoadSound: (data: SoundData) -> Sound,
 	-- Shader factories: same set as Sound's fluent methods, but as standalone
@@ -914,14 +914,14 @@ export type SFX_API = {
 }
 
 -- =============================================================================
--- Managed — runtime info about loaded .managed packages (the project itself,
+-- Managed, runtime info about loaded .managed packages (the project itself,
 -- DLCs, and anything dropped into the Packages/ folder).
 -- =============================================================================
 
 declare class Package
 	-- The package id (used in @PkgId/... cross-package references).
 	ID: string
-	-- Display name — set in build.toml's Name or the package's ManagedInfo.
+	-- Display name, set in build.toml's Name or the package's ManagedInfo.
 	Name: string
 	-- Semantic version string from build.toml / ManagedInfo.toml.
 	Version: string
@@ -931,7 +931,7 @@ declare class Package
 	Entry: string
 	-- A vfs prefix you can pass to `require` to load this package's modules
 	-- (e.g. "@OtherPkg/sub/module"). For the calling package, this is the
-	-- empty string — use `require(__dirname .. "/...")` for self.
+	-- empty string, use `require(__dirname .. "/...")` for self.
 	Origin: string
 	-- True if the script with this vfs key exists in the package.
 	function HasFile(self, key: string): boolean
@@ -948,7 +948,7 @@ export type Managed_API = {
 	IsPackage: (id: string) -> boolean,
 	-- Look up a package by id. Returns nil if unknown.
 	GetPackage: (id: string) -> Package?,
-	-- All loaded package ids — your own, every DLC, every Packages/ import.
+	-- All loaded package ids, your own, every DLC, every Packages/ import.
 	List: () -> { string },
 	-- The default (entry-point) package. In a built game this is the
 	-- launcher's primary package; under `Ruzit Test` it's the project at
@@ -957,7 +957,7 @@ export type Managed_API = {
 }
 
 -- =============================================================================
--- Primitives — math types: Dim (2D), Color3, Vector (3D), CFrame (rigid pose).
+-- Primitives, math types: Dim (2D), Color3, Vector (3D), CFrame (rigid pose).
 -- All immutable: arithmetic returns new instances, never mutates in place.
 -- =============================================================================
 
@@ -1030,14 +1030,14 @@ declare class CFrame
 end
 
 export type Dim_API = {
-	-- Dim.new(x, y) — typed 2D component.
+	-- Dim.new(x, y), typed 2D component.
 	new: (x: number, y: number) -> Dim,
 }
 export type Color3_API = {
 	-- Linear 0..1 channels. Out-of-range values are clamped.
 	-- Example: Color3.new(0.18, 0.55, 0.28) = a forest green.
 	new: (r: number, g: number, b: number) -> Color3,
-	-- 8-bit (0..255) channels — convenient for colors copied from a paint
+	-- 8-bit (0..255) channels, convenient for colors copied from a paint
 	-- program or design tool. Internally divided by 255 to the 0..1 range.
 	-- Example: Color3.FromRGB(46, 140, 71).
 	FromRGB: (r: number, g: number, b: number) -> Color3,
@@ -1052,7 +1052,7 @@ export type Color3_API = {
 	fromHex: (hex: string) -> Color3,
 }
 export type Vector_API = {
-	-- Vector.new(x, y, z) — any axis defaults to 0.
+	-- Vector.new(x, y, z), any axis defaults to 0.
 	new: ((x: number?, y: number?, z: number?) -> Vector),
 	-- (0, 0, 0) shorthand.
 	zero: () -> Vector,
@@ -1074,7 +1074,7 @@ export type Primitives_API = {
 }
 
 -- =============================================================================
--- Renderable — 3D scene. Parts, models, the camera.
+-- Renderable, 3D scene. Parts, models, the camera.
 -- =============================================================================
 
 declare class BasePart
@@ -1093,7 +1093,7 @@ declare class BasePart
 	-- Optional surface texture. Uses the part's Color as a tint.
 	Texture: ImageAsset?
 	-- Render-hint flags. None of these change the engine's default
-	-- lighting yet — they're plumbed straight through to every 3D
+	-- lighting yet, they're plumbed straight through to every 3D
 	-- fragment shader as `I.cast_shadow` / `I.receive_shadow` (u32 0/1)
 	-- so user shaders (and eventually the engine's automatic shadow
 	-- pass) can branch on them. Defaults: both true.
@@ -1106,7 +1106,7 @@ declare class BasePart
 	-- When true, GPU.Raycast skips this part entirely. Default false.
 	-- Use it for "ghost" parts (debug overlays, UI anchors, fx-only
 	-- meshes) that shouldn't catch mouse picks. Unrelated to shadows
-	-- mechanically — grouped here because it's the third in the family
+	-- mechanically, grouped here because it's the third in the family
 	-- of render-hint toggles.
 	IgnoreInRaycast: boolean
 	-- Property-change signal. Fires with one of: "CFrame", "Size",
@@ -1116,7 +1116,7 @@ declare class BasePart
 	-- Remove the part from the scene. Connections to Changed still receive
 	-- one final "Destroyed" fire.
 	function Destroy(self): ()
-	-- Custom shader hooks — same shape as Sound's, but for the GPU stage
+	-- Custom shader hooks, same shape as Sound's, but for the GPU stage
 	-- that draws this part.
 	function AttachShader(self, asset: ShaderAsset | FragmentAsset): ()
 	function DetachShader(self, asset: ShaderAsset | FragmentAsset): ()
@@ -1127,12 +1127,12 @@ declare class BasePart
 	-- ── Mesh deformation ──────────────────────────────────────────────────
 	-- Push every vertex within `envelope` units of `target.Position` by
 	-- `displacement * smoothstep(distance / envelope)`. Smooth radial
-	-- falloff, per-Part copy of the mesh — deforming one Part doesn't
+	-- falloff, per-Part copy of the mesh, deforming one Part doesn't
 	-- affect other Parts that share the same source ModelAsset.
 	-- Returns the number of vertices touched.
 	function Deform(self, target: CFrame, envelope: number, displacement: Vector): number
 	-- Drop the per-Part vertex override and snap back to the source mesh.
-	-- Animations on this part still tick — call track:Reset() to clear
+	-- Animations on this part still tick, call track:Reset() to clear
 	-- those.
 	function ResetDeformation(self): ()
 
@@ -1150,13 +1150,13 @@ declare class BasePart
 end
 
 -- =============================================================================
--- AnimationTrack — playable animation clip for a single BasePart.
+-- AnimationTrack, playable animation clip for a single BasePart.
 -- =============================================================================
 -- Tracks come from one of two places:
---   * `part:GetTrack("clipName")` on an FBX-backed Part — the track is
+--   * `part:GetTrack("clipName")` on an FBX-backed Part, the track is
 --     pre-loaded with translation/rotation keyframes parsed from the FBX
 --     AnimationStack matching that name.
---   * `part:GetTrack("custom")` followed by `track:AddKeyframe(...)` —
+--   * `part:GetTrack("custom")` followed by `track:AddKeyframe(...)`,
 --     fully scripted keyframes you author at runtime.
 --
 -- Tracks tick in the engine heart loop at ~60 Hz. While a track is playing
@@ -1195,7 +1195,7 @@ end
 
 export type Renderable_API = {
 	-- Spawn a primitive cube/sphere. Defaults to "Cube" if shape isn't given.
-	-- Returns the part — keep the reference to mutate or destroy it later.
+	-- Returns the part, keep the reference to mutate or destroy it later.
 	BasePart: (shape: ("Cube" | "Sphere")?) -> BasePart,
 	-- Spawn a part backed by an arbitrary mesh (.obj / .fbx ModelAsset).
 	BaseModel: (asset: ModelAsset) -> BasePart,
@@ -1204,7 +1204,7 @@ export type Renderable_API = {
 	Camera: Camera,
 	-- Set the directional sun. `direction` points FROM the sun toward the
 	-- scene (the engine's default is roughly Vector.new(-0.4, -1.0, -0.3),
-	-- a top-down-front angle). `color` is optional — if omitted the
+	-- a top-down-front angle). `color` is optional, if omitted the
 	-- existing sun color is preserved. Reflects in every 3D shader's
 	-- F.light_dir / F.sun_color.
 	SetSun: (direction: Vector, color: Color3?) -> (),
@@ -1228,14 +1228,14 @@ export type Renderable_API = {
 }
 
 -- =============================================================================
--- GUI — 2D overlay primitives, post-effects, skybox.
+-- GUI, 2D overlay primitives, post-effects, skybox.
 -- =============================================================================
 
 declare class Primitive
 	-- Geometry / kind. The set is fixed at creation; switch by destroying
 	-- and rebuilding via the appropriate GUI.Basic factory.
 	Shape: "Square" | "Circle" | "Triangle" | "Image" | "Text"
-	-- Pixel-space size. For Text this is (0,0) — text size is .TextSize.
+	-- Pixel-space size. For Text this is (0,0), text size is .TextSize.
 	Size: Dim
 	-- Top-left position in screen coords (origin at the top-left of the window).
 	Position: Dim
@@ -1291,18 +1291,18 @@ export type GUI_API = {
 	-- ── Skybox ────────────────────────────────────────────────────────
 	-- Install a fragment shader that runs across the whole window before
 	-- the 3D scene draws. Replaces the flat clear color with whatever the
-	-- shader produces — gradient sky, procedural stars, animated clouds,
+	-- shader produces, gradient sky, procedural stars, animated clouds,
 	-- a screenspace ray-march, anything. The 3D scene draws on top of
 	-- it normally, so opaque parts naturally occlude it.
 	--
 	-- Contract: same FragmentAsset shape as a 2D primitive shader (uses
 	-- the RuzitUni / IMG / p(idx) prelude). The shader is run on a
 	-- fullscreen quad; in.uv is 0..1 over the window. The texture
-	-- binding (IMG) is a 1×1 white default — there's no scene texture to
+	-- binding (IMG) is a 1×1 white default, there's no scene texture to
 	-- sample in the skybox pass. Useful uniforms:
-	--   U.resolution  — window pixel size for aspect-correct math.
-	--   U.time        — seconds since window opened, for animation.
-	--   p(0u)..p(15u) — your `@ruzit param` floats, controllable from Lua.
+	--   U.resolution, window pixel size for aspect-correct math.
+	--   U.time, seconds since window opened, for animation.
+	--   p(0u)..p(15u), your `@ruzit param` floats, controllable from Lua.
 	--
 	-- Returns a SceneShader handle. Keep it around to call :SetData /
 	-- :GetData / :Destroy. Letting it drop AND calling ClearSkybox both
@@ -1324,7 +1324,7 @@ export type GUI_API = {
 	ClearSkybox: () -> (),
 	-- ── Post-processing ──────────────────────────────────────────────
 	-- Install a fragment shader that runs ONCE per frame as the final
-	-- pass — every cube, model, GUI primitive, skybox, and shader is
+	-- pass, every cube, model, GUI primitive, skybox, and shader is
 	-- composited into a single 2D image first, then your post shader
 	-- transforms that image and writes the result to the swapchain.
 	-- This is the right hook for:
@@ -1336,7 +1336,7 @@ export type GUI_API = {
 	--   * Distortion / heat haze (offset the uv before sampling)
 	--
 	-- Contract: same FragmentAsset shape as a 2D primitive shader, with
-	-- ONE crucial difference — IMG is bound to the offscreen scene
+	-- ONE crucial difference, IMG is bound to the offscreen scene
 	-- texture (the rendered frame BEFORE this pass). textureSample(IMG,
 	-- IMG_SAMP, in.uv) returns the pixel that would have ended up on
 	-- screen, so a no-op shader is literally:
@@ -1370,7 +1370,7 @@ export type GUI_API = {
 }
 
 -- =============================================================================
--- Mouse — cursor position, button state, scroll, lock/visibility.
+-- Mouse, cursor position, button state, scroll, lock/visibility.
 -- =============================================================================
 
 export type MouseButton = "MouseButton1" | "MouseButton2" | "MouseButton3" | "MouseButton4" | "MouseButton5"
@@ -1384,7 +1384,7 @@ export type CursorName = "default" | "pointer" | "text" | "crosshair" | "wait" |
 	| "vertical_text" | "cell"
 
 export type Mouse_API = {
-	-- Cursor position in window-local pixels (read-only — write does nothing).
+	-- Cursor position in window-local pixels (read-only, write does nothing).
 	Position: Dim,
 	-- Whether the cursor is shown. Read or assign directly.
 	Visible: boolean,
@@ -1396,7 +1396,7 @@ export type Mouse_API = {
 	Moved: Signal<Dim, Dim>,
 	-- Fires with (button: MouseButton, pressed: boolean).
 	-- Fires (button, state) where state is "Begin" on press and "End" on
-	-- release. As of Ruzit 3.2 the legacy `pressed` boolean was dropped —
+	-- release. As of Ruzit 3.2 the legacy `pressed` boolean was dropped,
 	-- the State string is now the single source of truth. See the
 	-- "Deprecated" section in the Mouse docs for a one-line migration.
 	InputReceived: Signal<MouseButton, "Begin" | "End">,
@@ -1417,7 +1417,7 @@ export type Mouse_API = {
 }
 
 -- =============================================================================
--- Keyboard — InputChanged signal + IsKeyDown query.
+-- Keyboard, InputChanged signal + IsKeyDown query.
 -- =============================================================================
 
 export type Keyboard_API = {
@@ -1425,7 +1425,7 @@ export type Keyboard_API = {
 	-- key name like "w", "Escape", "Space", "F1", "ArrowUp", etc.
 	-- Fires (id, name, state) where state is "Begin" on press and "End"
 	-- on release. As of Ruzit 3.2 the legacy `pressed` boolean was
-	-- dropped — the State string is now the single source of truth. See
+	-- dropped, the State string is now the single source of truth. See
 	-- the "Deprecated" section in the Keyboard docs for migration.
 	InputChanged: Signal<number, string, "Begin" | "End">,
 	-- Snapshot whether a key is currently held. Pass either the name string
@@ -1437,7 +1437,7 @@ export type Keyboard_API = {
 }
 
 -- =============================================================================
--- Voice — microphone capture + per-peer playback (Opus over your transport).
+-- Voice, microphone capture + per-peer playback (Opus over your transport).
 -- =============================================================================
 
 declare class VoiceShader end
@@ -1481,7 +1481,7 @@ declare class VoiceChannel
 	-- / Voice.Spatial to alter playback. Stack multiple for compound effects.
 	function ApplyShader(self, shader: VoiceShader): ()
 	function ClearShaders(self): ()
-	-- 3D position is STATIC — set it once and the channel stays anchored to
+	-- 3D position is STATIC, set it once and the channel stays anchored to
 	-- that world point as the camera moves around (just like Renderable parts).
 	-- Listener = the active Renderable.Camera, so turning the camera also
 	-- rotates where the voice comes from. Pass nil (or no args) to clear.
@@ -1511,7 +1511,7 @@ declare class VoiceRecording
 	function PacketCount(self): number
 	function Duration(self): number
 	-- Streams the recording's packets into `channel` at the original
-	-- ~50 packets/sec pacing. Returns immediately — playback is dripped
+	-- ~50 packets/sec pacing. Returns immediately, playback is dripped
 	-- by the heart pump. Options: { loop = true, speed = 0.25..4.0 }.
 	function PlayInto(self, channel: VoiceChannel, opts: { loop: boolean?, speed: number? }?): ()
 end
@@ -1527,7 +1527,7 @@ export type Voice_API = {
 	-- received messages. For ongoing peer voice prefer CreateChannel().
 	PlayPacket: (packet: string, opts: { x: number?, y: number?, z: number?, falloff: number? }?) -> VoiceChannel,
 	-- Empty packet collector. Hook to mic.OnPacket OR to received-from-peer
-	-- packets — each :Push(bytes) appends to the recorded stream. Save it
+	-- packets, each :Push(bytes) appends to the recorded stream. Save it
 	-- with :Serialize() when done.
 	NewRecorder: () -> VoiceRecorder,
 	-- Inverse of Recorder:Serialize(). Returns a replayable Recording.
@@ -1545,7 +1545,7 @@ export type Voice_API = {
 }
 
 -- =============================================================================
--- Steam — Steamworks integration. User, Friends, Achievements, Stats, Lobby,
+-- Steam, Steamworks integration. User, Friends, Achievements, Stats, Lobby,
 -- Server, Overlay, App/Utils, Rich Presence, Cloud, Workshop, Remote Play.
 -- All requires the Steam runtime to be present and the right app id to be
 -- set in build.toml's [steam] table (or RUZIT_STEAM_APPID env var).
@@ -1583,7 +1583,7 @@ declare class SteamServer
 	function SetServerName(self, name: string): ()
 	function SetMapName(self, map: string): ()
 	function SetMaxPlayers(self, max: number): ()
-	-- Anonymous logon — no game-server-account credentials required.
+	-- Anonymous logon, no game-server-account credentials required.
 	function LogOnAnonymous(self): ()
 	-- Stop and clean up the server. Idempotent.
 	function Stop(self): ()
@@ -1644,14 +1644,14 @@ export type Steam_API = {
 		-- Local user's avatar at the given size (default "medium").
 		GetAvatar: (size: SteamAvatarSize?) -> ImageAsset?,
 		-- A friend's avatar. Only works for users on your friend list /
-		-- in the same lobby — otherwise returns nil. For arbitrary Steam
+		-- in the same lobby, otherwise returns nil. For arbitrary Steam
 		-- IDs use GetAvatarAsync.
 		GetFriendAvatar: (id: string, size: SteamAvatarSize?) -> ImageAsset?,
 		-- Async lookup that works for ANY Steam ID, not just friends. Hits
 		-- cache instantly when the avatar is already known; otherwise asks
 		-- Steam for the user's profile data and fires the signal when it
 		-- arrives (a frame or two later). Signal fires once with
-		-- (ImageAsset?) — nil if Steam couldn't load the user.
+		-- (ImageAsset?), nil if Steam couldn't load the user.
 		GetAvatarAsync: (id: string, size: SteamAvatarSize?) -> Signal<ImageAsset?>,
 		-- Persona state, nickname, current game, etc.
 		GetFriendInfo: (id: string) -> SteamFriendInfo,
@@ -1779,15 +1779,15 @@ export type Steam_API = {
 			Subscribed: boolean, Installed: boolean, NeedsUpdate: boolean,
 			Downloading: boolean, DownloadPending: boolean,
 		},
-		-- Local install info — nil while not installed.
+		-- Local install info, nil while not installed.
 		InstallInfo: (id: string) -> { Folder: string, SizeOnDisk: number, Timestamp: number }?,
-		-- Live download progress — nil if not downloading.
+		-- Live download progress, nil if not downloading.
 		DownloadProgress: (id: string) -> { Downloaded: number, Total: number }?,
 		-- Force-trigger a download. `highPriority` jumps the Steam queue.
 		DownloadItem: (id: string, highPriority: boolean?) -> boolean,
 		-- Combined fetch: returns a table with state flags AND install info if
 		-- the item is on disk, plus a Files() helper that lists every file
-		-- in the install folder (absolute paths — pass them straight to
+		-- in the install folder (absolute paths, pass them straight to
 		-- Asset.ImportAsset).
 		GetItem: (id: string) -> {
 			ID: string,
@@ -1838,7 +1838,7 @@ export type Steam_API = {
 }
 
 -- =============================================================================
--- Gamepad — XInput / DirectInput / udev / IOKit / SDL2 wrapped via gilrs.
+-- Gamepad, XInput / DirectInput / udev / IOKit / SDL2 wrapped via gilrs.
 -- =============================================================================
 -- Pads are identified by an integer Id. Layout names are normalised across
 -- platforms: face buttons are South / East / North / West (Xbox A/B/Y/X,
@@ -1857,9 +1857,9 @@ export type GamepadInfo = {
 
 export type GamepadInputEvent = {
 	Pad: number,
-	-- "Button"  — digital press / release (Value is 0 or 1)
-	-- "Analog"  — partial trigger pull (Value 0..1)
-	-- "Axis"    — stick / dpad axis (Value -1..1 for sticks, 0..1 for triggers)
+	-- "Button", digital press / release (Value is 0 or 1)
+	-- "Analog", partial trigger pull (Value 0..1)
+	-- "Axis", stick / dpad axis (Value -1..1 for sticks, 0..1 for triggers)
 	Kind: "Button" | "Analog" | "Axis",
 	Name: string,
 	Value: number,
@@ -1871,7 +1871,7 @@ export type GamepadInputEvent = {
 }
 
 export type Gamepad_API = {
-	-- Enumerate every connected pad. Cheap (cached state) — safe to call
+	-- Enumerate every connected pad. Cheap (cached state), safe to call
 	-- every frame from a settings UI.
 	GetGamepads: () -> { GamepadInfo },
 	IsButtonDown: (pad: number, name: string) -> boolean,
@@ -1880,7 +1880,7 @@ export type Gamepad_API = {
 	-- Force-feedback. low and high are 0..1 motor intensities (low =
 	-- strong / low-frequency rumble, high = weak / high-frequency buzz);
 	-- duration is in seconds. Returns true when the rumble was actually
-	-- scheduled — XInput pads on Windows always support FF; Bluetooth-
+	-- scheduled, XInput pads on Windows always support FF; Bluetooth-
 	-- paired controllers and most pads outside Windows often don't, so
 	-- treat the bool as a "did the haptic actually fire" probe.
 	SetVibration: (pad: number, low: number, high: number, duration: number) -> boolean,
@@ -1888,19 +1888,19 @@ export type Gamepad_API = {
 	-- `gamepad.Vibrate(padId, 0.5, 0.1)` is a 100ms half-strength buzz.
 	Vibrate: (pad: number, intensity: number, duration: number) -> boolean,
 	-- Cancel any pending rumble effects. The `pad` argument is accepted
-	-- for symmetry but is ignored — gilrs only tracks effects globally.
+	-- for symmetry but is ignored, gilrs only tracks effects globally.
 	StopVibration: (pad: number?) -> (),
 	-- Battery charge level for the given pad (0..1) or nil if the
 	-- driver doesn't report it (wired pads, generic HID gamepads).
 	GetBatteryLevel: (pad: number) -> number?,
 
-	Connected: Signal<number>,         -- pad id
+	Connected: Signal<number>, -- pad id
 	Disconnected: Signal<number>,
 	InputChanged: Signal<GamepadInputEvent>,
 }
 
 -- =============================================================================
--- VR — head-mounted display + motion controllers.
+-- VR, head-mounted display + motion controllers.
 -- =============================================================================
 -- Two-step lifecycle: detect, then link.
 --
@@ -1916,19 +1916,19 @@ export type Gamepad_API = {
 --   ...
 --   cam:Unlink()
 --
--- Coordinate space: BodyCframe is world-relative — it's where the player's
+-- Coordinate space: BodyCframe is world-relative, it's where the player's
 -- VR rig sits in the scene. HeadCframe is the headset pose; the engine
 -- composes Body ∘ Head onto the active 3D camera each frame so existing
 -- BasePart / Renderable code keeps working without any VR-aware changes.
 --
 -- GUI: 2D primitives created via the GUI library stay screen-locked in VR
--- mode — they render at the same monitor positions they would on a normal
+-- mode, they render at the same monitor positions they would on a normal
 -- window, which is the right default for HUDs and menus.
 
 export type VRController = {
-	-- "Left" or "Right" — which hand this controller represents.
+	-- "Left" or "Right", which hand this controller represents.
 	Side: "Left" | "Right",
-	-- Current world-space pose of the controller. Read-only — driven by
+	-- Current world-space pose of the controller. Read-only, driven by
 	-- the runtime each frame.
 	CFrame: CFrame,
 	-- World-space linear velocity in metres per second. Useful for
@@ -1945,10 +1945,10 @@ export type VRController = {
 	-- (wired devices, hand tracking, etc.).
 	BatteryLevel: number?,
 	-- Cached input axes from the most recent OnInput event. Reading these
-	-- is the polling-style alternative to subscribing to OnInput — useful
+	-- is the polling-style alternative to subscribing to OnInput, useful
 	-- for "while held" loops driven from RunService.
-	Trigger: number,    -- 0..1
-	Grip: number,       -- 0..1
+	Trigger: number, -- 0..1
+	Grip: number, -- 0..1
 	Thumbstick: Vector, -- x = -1..1 horizontal, y = -1..1 vertical, z = 0
 	-- Fires when the runtime reports a pose update. Signal payload is the
 	-- new CFrame.
@@ -1987,18 +1987,18 @@ export type VRPlayArea = {
 }
 
 export type VRCamera = {
-	-- Player body pose in the world. Writable — set this to teleport,
+	-- Player body pose in the world. Writable, set this to teleport,
 	-- snap-turn, or otherwise move the VR rig around. The engine adds
 	-- HeadCframe on top each frame so the user's actual head movement is
 	-- preserved on top of whatever you script.
 	BodyCframe: CFrame,
-	-- Headset pose. Read-only — writing this would let your code lie to
+	-- Headset pose. Read-only, writing this would let your code lie to
 	-- itself about where the headset really is.
 	HeadCframe: CFrame,
 	-- True while LinkVRView() is active. Becomes false after Unlink().
 	IsLinked: boolean,
 	-- Detected VR runtime: "SteamVR" / "Oculus" / "OpenXR" / "Unknown".
-	-- Read-only — set at link time.
+	-- Read-only, set at link time.
 	RuntimeName: string,
 	-- Headset refresh rate in Hz (90 by default; the runtime usually
 	-- reports 72/90/120/144 depending on device + user settings).
@@ -2019,7 +2019,7 @@ export type VRCamera = {
 	Connected: Signal<string>,
 
 	-- Release the engine camera back to user-driven control and tear
-	-- down the VR session. Idempotent — calling on an already-unlinked
+	-- down the VR session. Idempotent, calling on an already-unlinked
 	-- camera is a no-op.
 	Unlink: (self: VRCamera) -> (),
 	-- Re-anchor the play space so the user's current head pose becomes
@@ -2028,7 +2028,7 @@ export type VRCamera = {
 	Recenter: (self: VRCamera) -> (),
 	-- World-space pose of either eye, derived from HeadCframe + IPD.
 	-- Useful for stereo-aware effects (depth-of-field, lens distortion
-	-- previews) — the engine handles eye-buffer rendering itself.
+	-- previews), the engine handles eye-buffer rendering itself.
 	GetEyePose: (self: VRCamera, side: "Left" | "Right") -> CFrame,
 	-- Chaperone / guardian play-space dimensions in metres. (0, 0) when
 	-- the runtime hasn't reported a play area.
@@ -2050,7 +2050,7 @@ export type VRCamera = {
 
 export type VR_API = {
 	-- True if a VR runtime (SteamVR, OpenXR, etc.) is installed on this
-	-- host. Does NOT require a headset to be currently plugged in —
+	-- host. Does NOT require a headset to be currently plugged in,
 	-- it's the "should we even offer the VR option in the menu" check.
 	IsVrPresent: () -> boolean,
 	-- Hand the engine camera over to the VR pipeline and return a
@@ -2060,7 +2060,7 @@ export type VR_API = {
 }
 
 -- =============================================================================
--- GPU — info about the active graphics adapter, frame stats, and a CPU-side
+-- GPU, info about the active graphics adapter, frame stats, and a CPU-side
 -- raycast against the 3D scene. Useful for click-to-select, line-of-sight
 -- gameplay checks, and surfacing hardware capabilities to settings menus.
 -- =============================================================================
@@ -2090,7 +2090,7 @@ export type GPUInfo = {
 	Backend: string,
 	-- Driver version string, free-form.
 	Driver: string,
-	-- Extra driver detail (build, date, etc.) — may be empty.
+	-- Extra driver detail (build, date, etc.), may be empty.
 	DriverInfo: string,
 	-- "DiscreteGpu" / "IntegratedGpu" / "VirtualGpu" / "Cpu" / "Other".
 	-- Useful for picking quality presets at startup.
@@ -2104,7 +2104,7 @@ export type GPULimits = {
 	-- Largest 2D texture dimension you can create (e.g. 16384 on most GPUs).
 	MaxTextureSize: number,
 	-- Largest single buffer allocation in bytes. Closest stand-in for "VRAM
-	-- per allocation" — actual VRAM is usually larger but split across many
+	-- per allocation", actual VRAM is usually larger but split across many
 	-- allocations.
 	MaxBufferSize: number,
 	-- Max simultaneously bound bind groups in one pipeline.
@@ -2131,11 +2131,11 @@ export type GPUFrameStats = {
 
 export type GPU_API = {
 	-- Static adapter info (name, vendor, backend, driver, device type). Cached
-	-- — calling repeatedly is free. Useful for logging, settings menus, and
+	--, calling repeatedly is free. Useful for logging, settings menus, and
 	-- gating high-cost features behind DeviceType == "DiscreteGpu".
 	Info: () -> GPUInfo,
 	-- Hard limits the active GPU device reported. wgpu doesn't expose total
-	-- VRAM portably across DX12/Vulkan/Metal — MaxBufferSize is the closest
+	-- VRAM portably across DX12/Vulkan/Metal, MaxBufferSize is the closest
 	-- single number you can rely on for "biggest thing I can allocate".
 	Limits: () -> GPULimits,
 	-- FPS / frame time / scene part count. Updated once per heart tick.
@@ -2145,7 +2145,7 @@ export type GPU_API = {
 	--
 	--   origin      : world-space ray start (Vector).
 	--   direction   : world-space ray direction (Vector). Length doesn't
-	--                 matter — Ruzit normalizes it. Zero-length errors.
+	--                 matter, Ruzit normalizes it. Zero-length errors.
 	--   filter      : optional callback. Hits are visited in nearest-first
 	--                 order. For each hit, `filter(part)` is invoked; return
 	--                 true to accept it as the result, return false (or nil)
@@ -2161,7 +2161,7 @@ export type GPU_API = {
 	-- from the part's CFrame + Size. Spheres are tested as ellipsoids with
 	-- the same CFrame + Size. Parts with Render = false are skipped.
 	--
-	-- Example — pick a part under the mouse, ignoring red ones:
+	-- Example, pick a part under the mouse, ignoring red ones:
 	--   local Mouse = import("Mouse")
 	--   local origin, dir = GPU.ScreenToRay(Mouse.Position)
 	--   local hit = GPU.Raycast(origin, dir, function(part)
@@ -2177,12 +2177,12 @@ export type GPU_API = {
 		maxDistance: number?
 	) -> RaycastHit?,
 	-- Convert a screen pixel (Mouse.Position style) to a world-space ray.
-	-- Returns (origin, direction) — feed straight into GPU.Raycast.
+	-- Returns (origin, direction), feed straight into GPU.Raycast.
 	-- Uses the active Renderable.Camera as the eye + projection.
 	ScreenToRay: (point: Dim) -> (Vector, Vector),
 	-- Project a world-space point onto the screen. Returns:
-	--   (Dim, false) — point is in front of the camera; Dim is the pixel.
-	--   (nil, true)  — point is at or behind the near plane; no projection.
+	--   (Dim, false), point is in front of the camera; Dim is the pixel.
+	--   (nil, true), point is at or behind the near plane; no projection.
 	-- Useful for billboards, world-anchored UI, off-screen indicators.
 	WorldToScreen: (world: Vector) -> (Dim?, boolean),
 	-- Allocate a GPU storage buffer of `size` floats. Memory lives on the
@@ -2200,7 +2200,7 @@ export type GPU_API = {
 	--   GPU.SetBuffer(lut)
 	NewBuffer: (size: number) -> GPUBuffer,
 	-- Bind a GPUBuffer as the active SDATA storage. Cheap to swap between
-	-- frames — bind groups are rebuilt only when the binding identity
+	-- frames, bind groups are rebuilt only when the binding identity
 	-- changes. Until cleared, every 3D shader sees this buffer's data.
 	SetBuffer: (buffer: GPUBuffer) -> (),
 	-- Unbind the active storage buffer. SDATA reverts to a 1-float stub
@@ -2213,7 +2213,7 @@ declare class GPUBuffer
 	-- GPU.NewBuffer; doesn't change after construction.
 	function Size(self): number
 	-- Write a list of f32 values into the buffer at `offset` (in floats,
-	-- not bytes). Bounds-checked — writing past the end errors instead of
+	-- not bytes). Bounds-checked, writing past the end errors instead of
 	-- corrupting adjacent GPU memory. Cheap; just one queue.write_buffer
 	-- under the hood, no submit/wait.
 	function Write(self, offset: number, values: { number }): ()
@@ -2223,7 +2223,7 @@ declare class GPUBuffer
 end
 
 -- =============================================================================
--- Actor — parallel CPU work. Spin up a worker pool; Push args to run a
+-- Actor, parallel CPU work. Spin up a worker pool; Push args to run a
 -- function on another core; Pop the results back on the main thread.
 -- =============================================================================
 
@@ -2232,19 +2232,19 @@ declare class Actor
 	-- thread boundary, so mutating them after Push has no effect on the worker.
 	-- Allowed types: nil, boolean, number, string, table (recursively, with
 	-- only those types as keys/values). Functions, userdata, threads, etc.
-	-- are rejected — workers can't share Luau state with the main thread.
+	-- are rejected, workers can't share Luau state with the main thread.
 	function Push(self, ...: any): ()
 	-- Pop the next ready result.
-	--   Pop()  / Pop(false) — non-blocking. Returns no values if nothing
+	--   Pop()  / Pop(false), non-blocking. Returns no values if nothing
 	--                          is ready. Use this from a heart tick or
 	--                          render loop you can't afford to stall.
-	--   Pop(true)            — blocking. Sleeps until a worker finishes
+	--   Pop(true), blocking. Sleeps until a worker finishes
 	--                          (or every worker has exited, in which case
 	--                          it returns no values). The main thread
 	--                          stops pumping while it waits, so only use
 	--                          this from a script that's intentionally
 	--                          waiting (e.g. a startup loader).
-	-- Order is "first to finish, first out" (NOT Push order — work runs
+	-- Order is "first to finish, first out" (NOT Push order, work runs
 	-- in parallel). Re-raises any error a worker hit while running.
 	function Pop(self, yield_for_result: boolean?): ...any
 	-- Number of jobs currently in flight + ready results not yet popped.
@@ -2265,11 +2265,11 @@ end
 export type Actor_API = {
 	-- Spawn a worker pool that runs the given Luau source in parallel on
 	-- other CPU cores. The source must be a string whose chunk evaluates
-	-- to a function — the function returned is what each worker invokes
+	-- to a function, the function returned is what each worker invokes
 	-- per Push.
 	--
 	-- Workers run in completely isolated Luau states: they get math, table,
-	-- string, bit32, buffer, utf8, coroutine, and the basic library — but
+	-- string, bit32, buffer, utf8, coroutine, and the basic library, but
 	-- NO `import`, `require`, `print`, `loadstring`, `dofile`, or
 	-- `__dirname`. Workers cannot touch the main thread's globals, GUI,
 	-- assets, sockets, or anything else import-shaped.
@@ -2280,7 +2280,7 @@ export type Actor_API = {
 	-- Note: passing a Luau function directly is no longer supported. Use
 	-- `Actor.FromFile` to load a worker from a sibling .luau file, or pass
 	-- the function body as a string. Earlier versions of the engine
-	-- introspected the caller's chunk to recover the function source —
+	-- introspected the caller's chunk to recover the function source,
 	-- that path was fragile (closures over locals couldn't be carried) and
 	-- has been removed.
 	--
@@ -2296,21 +2296,21 @@ export type Actor_API = {
 	--       end
 	--   ]])
 	new: (source: string, threads: number?) -> Actor,
-	-- Actor.FromFile(path, threads?) — load worker code from a separate
+	-- Actor.FromFile(path, threads?), load worker code from a separate
 	-- .luau file. Path resolution is identical to `require`, including
 	-- the project-wide file-mode setting from build.toml ("File Type"):
 	--
 	-- Relative mode (the default; matching most projects):
-	--   "./worker"          — relative to the calling script's directory.
-	--   "../shared/work"    — parent-relative.
-	--   "subdir/helper"     — relative-without-./ also works.
-	--   "@PkgId/jobs/heavy" — explicit cross-package lookup.
-	--   "@self/jobs/heavy"  — same package as the caller, root-relative.
+	--   "./worker", relative to the calling script's directory.
+	--   "../shared/work", parent-relative.
+	--   "subdir/helper", relative-without-./ also works.
+	--   "@PkgId/jobs/heavy", explicit cross-package lookup.
+	--   "@self/jobs/heavy", same package as the caller, root-relative.
 	--
 	-- Global mode (when build.toml sets `"File Type" = "Global"`):
-	--   "workers/fib"       — resolved from the project root, NOT the
+	--   "workers/fib", resolved from the project root, NOT the
 	--                          caller's directory.
-	--   "@PkgId/..."        — same as in Relative mode.
+	--   "@PkgId/...", same as in Relative mode.
 	--
 	-- The .luau / .lua extension is appended automatically; pass the
 	-- bare module name. `init.luau` is honored for folder-style modules.
@@ -2320,11 +2320,11 @@ export type Actor_API = {
 	-- host project.
 	--
 	-- The file's raw text is read and used verbatim as the actor's
-	-- source — same rules as the string form of Actor.new (the chunk
+	-- source, same rules as the string form of Actor.new (the chunk
 	-- must evaluate to a function, and the function must not reference
 	-- any upvalue from the surrounding script).
 	--
-	-- Useful when worker code grows past a one-liner — keep it in its
+	-- Useful when worker code grows past a one-liner, keep it in its
 	-- own file with full LSP support and full Luau syntax instead of
 	-- buried inside a `[[...]]` literal.
 	--
@@ -2353,7 +2353,7 @@ export type Actor_API = {
 -- =============================================================================
 
 -- =============================================================================
--- Register — named shared tables. Two scripts that have never seen each
+-- Register, named shared tables. Two scripts that have never seen each
 -- other can coordinate by agreeing on a name: Register.new("foo") always
 -- returns the SAME table for the same name across the entire Lua state.
 -- =============================================================================
@@ -2362,7 +2362,7 @@ export type Register_API = {
 	-- Get (or create) the named register. First call with a given name
 	-- creates a fresh empty table; every subsequent call with the same
 	-- name returns the same instance, regardless of which script asks.
-	-- Mutate the table normally — additions / deletions are visible to
+	-- Mutate the table normally, additions / deletions are visible to
 	-- every other script holding a handle to it.
 	new: (name: string) -> { [any]: any },
 	-- True if a register with this name already exists. Useful for
@@ -2408,7 +2408,7 @@ declare import: <K>(name: keyof<Imports> & K) -> index<Imports, K>
 -- `require(__dirname .. "/...")` to load sibling Luau modules.
 declare __dirname: string
 
--- The global `load(path)` — sibling to `require` that takes a raw
+-- The global `load(path)`, sibling to `require` that takes a raw
 -- filesystem path instead of a vfs key. Useful for loading mods, user-
 -- content scripts, or anything outside the project bundle. Loaded
 -- modules get the full runtime env (require / import / __dirname / load
