@@ -1,13 +1,15 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use base64::Engine;
 use image::ImageReader;
-use mlua::{Lua, Table, UserData, UserDataMethods, Value};
+use mlua::{Lua, MultiValue, RegistryKey, Table, UserData, UserDataMethods, Value};
 
 use crate::libs::sfx::{self, SoundData};
+use crate::libs::signal;
 use crate::vfs::{self, Fs, split_owner};
 
 static SHADER_ID: AtomicU64 = AtomicU64::new(1);
@@ -17,6 +19,22 @@ pub(crate) fn next_shader_id() -> u64 {
 }
 
 const ASSET_CACHE_KEY: &str = "ruzit_asset_cache";
+const ASSET_STRONG_KEY: &str = "ruzit_asset_strong";
+
+static NEXT_BATCH_ID: AtomicU64 = AtomicU64::new(1);
+static IO_INBOX: Mutex<Vec<(u64, Vec<PendingItem>)>> = Mutex::new(Vec::new());
+
+thread_local! {
+    static ACTIVE_BATCHES: RefCell<HashMap<u64, Arc<RegistryKey>>> = RefCell::new(HashMap::new());
+}
+
+struct PendingItem {
+    user_key: String,
+    owner: String,
+    kind: String,
+    path: String,
+    bytes_result: Result<(Vec<u8>, String), String>,
+}
 
 fn ensure_asset_cache(lua: &Lua) -> mlua::Result<Table> {
     if let Ok(t) = lua.named_registry_value::<Table>(ASSET_CACHE_KEY) {
@@ -28,6 +46,94 @@ fn ensure_asset_cache(lua: &Lua) -> mlua::Result<Table> {
     t.set_metatable(Some(meta));
     lua.set_named_registry_value(ASSET_CACHE_KEY, t.clone())?;
     Ok(t)
+}
+
+fn ensure_strong_cache(lua: &Lua) -> mlua::Result<Table> {
+    if let Ok(t) = lua.named_registry_value::<Table>(ASSET_STRONG_KEY) {
+        return Ok(t);
+    }
+    let t = lua.create_table()?;
+    lua.set_named_registry_value(ASSET_STRONG_KEY, t.clone())?;
+    Ok(t)
+}
+
+fn parse_entry(entry: &str) -> mlua::Result<(String, String)> {
+    let mut parts = entry.splitn(2, ':');
+    let kind = parts.next().unwrap_or("").to_string();
+    let path = parts
+        .next()
+        .ok_or_else(|| {
+            mlua::Error::RuntimeError(format!(
+                "Asset preload: '{entry}' must be 'Kind:path' (e.g. 'Image:ui.logo')"
+            ))
+        })?
+        .to_string();
+    if kind.is_empty() || path.is_empty() {
+        return Err(mlua::Error::RuntimeError(format!(
+            "Asset preload: '{entry}' has empty kind or path"
+        )));
+    }
+    Ok((kind, path))
+}
+
+fn extract_asset_id(value: &Value, kind: &str) -> Option<u64> {
+    let ud = match value {
+        Value::UserData(u) => u,
+        _ => return None,
+    };
+    match kind {
+        "Image" => ud.borrow::<ImageAsset>().ok().map(|a| a.id),
+        "Sound" => ud.borrow::<SoundData>().ok().map(|a| a.id),
+        "Shader" => ud.borrow::<ShaderAsset>().ok().map(|a| a.id),
+        "Fragment" => ud.borrow::<FragmentAsset>().ok().map(|a| a.id),
+        "Model" => ud.borrow::<ModelAsset>().ok().map(|a| a.id),
+        "Font" => ud.borrow::<FontAsset>().ok().map(|a| a.id),
+        _ => None,
+    }
+}
+
+fn purge_asset_uses(lua: &Lua, kind: &str, asset_id: u64) {
+    match kind {
+        "Image" => {
+            crate::libs::renderable::purge_texture(lua, asset_id);
+            crate::libs::gui::purge_image(lua, asset_id);
+        }
+        "Sound" => sfx::purge_sound_data(asset_id),
+        "Model" => crate::libs::renderable::purge_model(lua, asset_id),
+        "Font" => crate::libs::gui::purge_font(lua, asset_id),
+        "Shader" | "Fragment" => {
+            crate::libs::renderable::purge_shader(lua, asset_id);
+            crate::libs::gui::purge_shader(lua, asset_id);
+        }
+        _ => {}
+    }
+}
+
+fn read_for_kind(
+    fs: &Fs,
+    owner: &str,
+    kind: &str,
+    path: &str,
+) -> Result<(Vec<u8>, String), String> {
+    let exts: &[&str] = match kind {
+        "Image" => IMAGE_EXTS,
+        "Sound" => sfx::SOUND_EXTS,
+        "Shader" => SHADER_EXTS,
+        "Fragment" => FRAGMENT_EXTS,
+        "Model" => MODEL_EXTS,
+        "Font" => FONT_EXTS,
+        "File" => {
+            return read_file_bytes(fs, owner, path)
+                .map(|b| (b, path.to_string()))
+                .map_err(|e| e.to_string());
+        }
+        other => {
+            return Err(format!(
+                "unknown kind '{other}' (try 'Image', 'Sound', 'Shader', 'Fragment', 'Model', 'Font', 'File')"
+            ));
+        }
+    };
+    read_bytes(fs, owner, path, exts, kind).map_err(|e| e.to_string())
 }
 
 fn cache_get(lua: &Lua, key: &str) -> Option<Value> {
@@ -106,6 +212,109 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
             },
         )?,
     )?;
+    let fs_preload = fs.clone();
+    let owner_preload = owner.clone();
+    t.set(
+        "PreloadAsync",
+        lua.create_function(
+            move |lua, entries: Vec<String>| -> mlua::Result<Table> {
+                let parsed: Vec<(String, String, String)> = entries
+                    .iter()
+                    .map(|e| {
+                        let (k, p) = parse_entry(e)?;
+                        Ok((e.clone(), k, p))
+                    })
+                    .collect::<mlua::Result<Vec<_>>>()?;
+
+                let signal = signal::new_instance(lua)?;
+                if parsed.is_empty() {
+                    signal::fire(lua, &signal, MultiValue::new())?;
+                    return Ok(signal);
+                }
+
+                let signal_key = Arc::new(lua.create_registry_value(signal.clone())?);
+                let batch_id = NEXT_BATCH_ID.fetch_add(1, Ordering::Relaxed);
+                ACTIVE_BATCHES.with(|m| {
+                    m.borrow_mut().insert(batch_id, signal_key);
+                });
+
+                let fs_thread = fs_preload.clone();
+                let owner_thread = owner_preload.clone();
+                std::thread::spawn(move || {
+                    let mut items = Vec::with_capacity(parsed.len());
+                    for (user_key, kind, path) in parsed {
+                        let bytes_result =
+                            read_for_kind(&fs_thread, &owner_thread, &kind, &path);
+                        items.push(PendingItem {
+                            user_key,
+                            owner: owner_thread.clone(),
+                            kind,
+                            path,
+                            bytes_result,
+                        });
+                    }
+                    IO_INBOX.lock().unwrap().push((batch_id, items));
+                });
+                Ok(signal)
+            },
+        )?,
+    )?;
+
+    let fs_bulk = fs.clone();
+    let owner_bulk = owner.clone();
+    t.set(
+        "BulkLoad",
+        lua.create_function(
+            move |lua, entries: Vec<String>| -> mlua::Result<Table> {
+                let result = lua.create_table()?;
+                let strong = ensure_strong_cache(lua)?;
+                for entry in entries {
+                    let (kind, path) = parse_entry(&entry)?;
+                    let cache_key = format!("vfs:{owner_bulk}:{kind}:{path}");
+                    let value = if let Some(hit) = cache_get(lua, &cache_key) {
+                        hit
+                    } else {
+                        let v = get_asset(lua, &fs_bulk, &owner_bulk, &kind, &path)?;
+                        cache_set(lua, &cache_key, &v);
+                        v
+                    };
+                    strong.set(entry.clone(), value.clone())?;
+                    result.set(entry, value)?;
+                }
+                Ok(result)
+            },
+        )?,
+    )?;
+
+    let owner_drop = owner.clone();
+    t.set(
+        "Drop",
+        lua.create_function(move |lua, entry: String| -> mlua::Result<()> {
+            let (kind, path) = parse_entry(&entry)?;
+            let cache_key = format!("vfs:{owner_drop}:{kind}:{path}");
+
+            let cached = cache_get(lua, &cache_key).or_else(|| {
+                ensure_strong_cache(lua)
+                    .ok()
+                    .and_then(|t| t.get::<Value>(entry.clone()).ok())
+                    .filter(|v| !matches!(v, Value::Nil))
+            });
+            if let Some(v) = cached {
+                if let Some(id) = extract_asset_id(&v, &kind) {
+                    purge_asset_uses(lua, &kind, id);
+                }
+            }
+
+            if let Ok(cache) = ensure_asset_cache(lua) {
+                cache.set(cache_key, Value::Nil)?;
+            }
+            if let Ok(strong) = ensure_strong_cache(lua) {
+                strong.set(entry, Value::Nil)?;
+            }
+            Ok(())
+        })?,
+    )?;
+
     t.set(
         "FromPixels",
         lua.create_function(
@@ -136,6 +345,7 @@ pub fn from_bytes(lua: &Lua, kind: &str, bytes: Vec<u8>, source: String) -> mlua
     match kind {
         "Image" => parse_image(lua, bytes, source),
         "Sound" => Ok(Value::UserData(lua.create_userdata(SoundData {
+            id: next_shader_id(),
             bytes: Arc::new(bytes),
             source,
         })?)),
@@ -333,6 +543,7 @@ fn parse_model(lua: &Lua, bytes: Vec<u8>, source: String) -> mlua::Result<Value>
 fn load_sound(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value> {
     let (bytes, source) = read_bytes(fs, owner, path, sfx::SOUND_EXTS, "Sound")?;
     let data = SoundData {
+        id: next_shader_id(),
         bytes: Arc::new(bytes),
         source,
     };
@@ -593,5 +804,53 @@ pub struct FontAsset {
 impl UserData for FontAsset {
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
         m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
+    }
+}
+
+pub fn pump(lua: &Lua) {
+    let drained: Vec<(u64, Vec<PendingItem>)> = {
+        let mut inbox = IO_INBOX.lock().unwrap();
+        std::mem::take(&mut *inbox)
+    };
+    for (batch_id, items) in drained {
+        let strong = match ensure_strong_cache(lua) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("[Asset] preload strong cache: {e}");
+                continue;
+            }
+        };
+        for item in items {
+            match item.bytes_result {
+                Ok((bytes, source)) => match from_bytes(lua, &item.kind, bytes, source) {
+                    Ok(value) => {
+                        let cache_key =
+                            format!("vfs:{}:{}:{}", item.owner, item.kind, item.path);
+                        cache_set(lua, &cache_key, &value);
+                        let _ = strong.set(item.user_key, value);
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[Asset] PreloadAsync parse '{}': {e}",
+                            item.user_key
+                        );
+                    }
+                },
+                Err(msg) => {
+                    eprintln!("[Asset] PreloadAsync read '{}': {msg}", item.user_key);
+                }
+            }
+        }
+        let signal_key = ACTIVE_BATCHES.with(|m| m.borrow_mut().remove(&batch_id));
+        if let Some(key) = signal_key {
+            match lua.registry_value::<Table>(&key) {
+                Ok(signal) => {
+                    if let Err(e) = signal::fire(lua, &signal, MultiValue::new()) {
+                        eprintln!("[Asset] PreloadAsync signal fire: {e}");
+                    }
+                }
+                Err(e) => eprintln!("[Asset] PreloadAsync signal lookup: {e}"),
+            }
+        }
     }
 }

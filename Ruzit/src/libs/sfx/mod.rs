@@ -19,6 +19,14 @@ thread_local! {
 
     static OUTPUT: RefCell<Option<OutputStreamHandle>> = const { RefCell::new(None) };
     static ACTIVE: RefCell<Vec<ActivePlayback>> = const { RefCell::new(Vec::new()) };
+    static SOUND_REGISTRY: RefCell<Vec<SoundHandle>> = const { RefCell::new(Vec::new()) };
+}
+
+#[derive(Clone)]
+struct SoundHandle {
+    source_id: u64,
+    alive: Arc<AtomicBool>,
+    current_id: Arc<Mutex<Option<u64>>>,
 }
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -109,6 +117,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
 }
 
 pub struct SoundData {
+    pub id: u64,
     pub bytes: Arc<Vec<u8>>,
     pub source: String,
 }
@@ -170,6 +179,9 @@ impl Shader {
 impl UserData for Shader {}
 
 pub struct Sound {
+    #[allow(dead_code)]
+    source_id: u64,
+    alive: Arc<AtomicBool>,
     bytes: Arc<Vec<u8>>,
     source_path: String,
     started_key: Arc<RegistryKey>,
@@ -181,7 +193,7 @@ pub struct Sound {
     shaders: Mutex<Vec<Shader>>,
     attached: Mutex<Vec<AttachedShader>>,
     update_links: Mutex<Vec<UpdateLink>>,
-    current_id: Mutex<Option<u64>>,
+    current_id: Arc<Mutex<Option<u64>>>,
     position: Arc<Mutex<Option<SpatialPos>>>,
     looped: Arc<AtomicBool>,
     loop_count: Arc<AtomicU64>,
@@ -263,7 +275,21 @@ fn load_from_data(lua: &Lua, data: &SoundData) -> mlua::Result<AnyUserData> {
     let stopped_key = Arc::new(lua.create_registry_value(stopped.clone())?);
     let did_loop_key = Arc::new(lua.create_registry_value(did_loop.clone())?);
 
+    let alive = Arc::new(AtomicBool::new(true));
+    let current_id = Arc::new(Mutex::new(None));
+    SOUND_REGISTRY.with(|r| {
+        let mut reg = r.borrow_mut();
+        reg.retain(|h| h.alive.load(Ordering::Relaxed));
+        reg.push(SoundHandle {
+            source_id: data.id,
+            alive: alive.clone(),
+            current_id: current_id.clone(),
+        });
+    });
+
     lua.create_userdata(Sound {
+        source_id: data.id,
+        alive,
         bytes: data.bytes.clone(),
         source_path: data.source.clone(),
         started_key,
@@ -275,7 +301,7 @@ fn load_from_data(lua: &Lua, data: &SoundData) -> mlua::Result<AnyUserData> {
         shaders: Mutex::new(Vec::new()),
         attached: Mutex::new(Vec::new()),
         update_links: Mutex::new(Vec::new()),
-        current_id: Mutex::new(None),
+        current_id,
         position: Arc::new(Mutex::new(None)),
         looped: Arc::new(AtomicBool::new(false)),
         loop_count: Arc::new(AtomicU64::new(0)),
@@ -891,6 +917,12 @@ fn play_sound(this: &Sound) -> mlua::Result<()> {
 }
 
 fn play_sound_at(this: &Sound, offset: Duration) -> mlua::Result<()> {
+    if !this.alive.load(Ordering::Relaxed) {
+        return Err(mlua::Error::RuntimeError(
+            "Sound: source SoundData has been dropped (Asset.Drop), this Sound is no longer playable"
+                .into(),
+        ));
+    }
     let prev_id = this.current_id.lock().unwrap().take();
     if let Some(id) = prev_id {
         ACTIVE.with(|c| {
@@ -1020,6 +1052,34 @@ pub fn pump(lua: &Lua) {
 
 pub fn is_active() -> bool {
     ACTIVE.with(|c| !c.borrow().is_empty())
+}
+
+pub fn purge_sound_data(source_id: u64) {
+    let dead_playback_ids: Vec<u64> = SOUND_REGISTRY.with(|r| {
+        let mut reg = r.borrow_mut();
+        reg.retain(|h| h.alive.load(Ordering::Relaxed));
+        reg.iter()
+            .filter(|h| h.source_id == source_id)
+            .filter_map(|h| {
+                h.alive.store(false, Ordering::Relaxed);
+                h.current_id.lock().unwrap().take()
+            })
+            .collect()
+    });
+    if dead_playback_ids.is_empty() {
+        return;
+    }
+    ACTIVE.with(|c| {
+        let mut active = c.borrow_mut();
+        active.retain(|p| {
+            if dead_playback_ids.contains(&p.id) {
+                p.sink.stop();
+                false
+            } else {
+                true
+            }
+        });
+    });
 }
 
 fn fire_signal(lua: &Lua, key: &RegistryKey, args: MultiValue) -> mlua::Result<()> {

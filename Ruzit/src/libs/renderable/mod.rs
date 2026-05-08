@@ -136,6 +136,53 @@ pub fn list_part_states() -> Vec<Arc<Mutex<PartState>>> {
     })
 }
 
+pub fn purge_texture(lua: &Lua, asset_id: u64) {
+    purge_parts_matching(lua, |s| {
+        s.texture
+            .as_ref()
+            .map(|t| t.id == asset_id)
+            .unwrap_or(false)
+    });
+}
+
+pub fn purge_model(lua: &Lua, asset_id: u64) {
+    purge_parts_matching(lua, |s| {
+        s.model.as_ref().map(|m| m.id == asset_id).unwrap_or(false)
+    });
+}
+
+pub fn purge_shader(lua: &Lua, asset_id: u64) {
+    let states = list_part_states();
+    for state in states {
+        let mut s = state.lock().unwrap();
+        if !s.alive {
+            continue;
+        }
+        s.attached.retain(|e| e.id != asset_id);
+        let _ = lua;
+    }
+}
+
+fn purge_parts_matching(lua: &Lua, mut pred: impl FnMut(&PartState) -> bool) {
+    let states = list_part_states();
+    for state in states {
+        let sig = {
+            let mut s = state.lock().unwrap();
+            if !s.alive || !pred(&s) {
+                continue;
+            }
+            s.alive = false;
+            s.render = false;
+            s.attached.clear();
+            s.texture = None;
+            s.model = None;
+            s.deformed = None;
+            s.changed_signal.clone()
+        };
+        let _ = fire_changed(lua, sig, "Destroyed");
+    }
+}
+
 pub fn camera_snapshot() -> CameraState {
     CAMERA.with(|c| {
         let s = c.borrow();

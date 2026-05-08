@@ -114,6 +114,115 @@
     </div>
 </div>
 
+<h2 id="bulk">Bulk loading and unloading</h2>
+
+<p>
+    Three companion APIs for managing groups of assets together: warm a
+    cache before a level, block-load a manifest at a checkpoint, and
+    forcefully unload everything when leaving the level. All three
+    accept entries in <code>"Kind:path"</code> form (e.g.
+    <code>"Image:ui.logo"</code>, <code>"Sound:sfx.boom"</code>,
+    <code>"Model:props.crate"</code>) so a single list can mix kinds.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Asset.PreloadAsync(entries)</span>
+            <span class="member-type">→ Signal&lt;&gt;</span>
+        </div>
+        <p class="member-desc">
+            Kick off background reads (and zstd decompression for
+            bundled packages) on a worker thread. Final parsing into the
+            typed userdata happens on the next heart tick on the main
+            thread, the returned signal fires once when every entry is
+            ready. Cached after that, future
+            <code>Asset.GetAsset</code> calls hit the cache without
+            disk / package access.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Asset.BulkLoad(entries)</span>
+            <span class="member-type">→ { [string]: any }</span>
+        </div>
+        <p class="member-desc">
+            Synchronous version. Blocks the caller until every asset
+            is decoded, then returns a dictionary keyed by the original
+            <code>"Kind:path"</code> string. Same cache-population
+            effect as <code>PreloadAsync</code>, you also get the
+            values directly without a follow-up <code>GetAsset</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Asset.Drop(entry)</span>
+        </div>
+        <p class="member-desc">
+            Forcefully unload a previously-loaded asset and destroy
+            every live consumer of it. Pass the same
+            <code>"Kind:path"</code> string used to load it. After
+            <code>Drop</code> the next <code>GetAsset</code> for that
+            path genuinely re-decrypts and re-decompresses from disk.
+        </p>
+    </div>
+</div>
+
+<pre><code><span class="hl-com">-- Background-warm a level's assets while the loading screen plays.</span>
+<span class="hl-kw">local</span> ready = Asset.PreloadAsync({
+    <span class="hl-str">"Image:levels.forest.skybox"</span>,
+    <span class="hl-str">"Image:levels.forest.terrain"</span>,
+    <span class="hl-str">"Sound:music.forest_theme"</span>,
+    <span class="hl-str">"Model:levels.forest.cabin"</span>,
+})
+ready:Connect(<span class="hl-kw">function</span>() loading_screen:Hide() <span class="hl-kw">end</span>)
+
+<span class="hl-com">-- Or block-load at a checkpoint.</span>
+<span class="hl-kw">local</span> bag = Asset.BulkLoad({
+    <span class="hl-str">"Image:ui.menu_bg"</span>,
+    <span class="hl-str">"Font:ui.title"</span>,
+})
+local title = GUI.Basic.Font(bag[<span class="hl-str">"Font:ui.title"</span>])
+
+<span class="hl-com">-- Leaving the forest level: free everything.</span>
+Asset.Drop(<span class="hl-str">"Image:levels.forest.skybox"</span>)
+Asset.Drop(<span class="hl-str">"Image:levels.forest.terrain"</span>)
+Asset.Drop(<span class="hl-str">"Sound:music.forest_theme"</span>)
+Asset.Drop(<span class="hl-str">"Model:levels.forest.cabin"</span>)</code></pre>
+
+<div class="callout warn">
+    <strong>Drop is destructive for content assets, detach-only for
+    shaders.</strong>
+    Content assets (Image, Sound, Model, Font) take their consumers
+    with them. Shader assets only get detached, the parts and
+    primitives that had them attached keep rendering with the engine
+    default.
+    <ul>
+        <li><code>Image</code>, every BasePart whose
+            <code>.Texture</code> is this image and every GUI
+            Primitive backed by it is destroyed (their
+            <code>Changed</code> / <code>Destroyed</code> signals
+            fire).</li>
+        <li><code>Sound</code>, every Sound loaded from this
+            SoundData is stopped, marked dead, and any
+            <code>:Play()</code> afterward errors.</li>
+        <li><code>Model</code>, every BasePart backed by this
+            ModelAsset is destroyed.</li>
+        <li><code>Font</code>, every Text Primitive using this font
+            is destroyed.</li>
+        <li><code>Shader</code> / <code>Fragment</code>,
+            <em>nothing is destroyed</em>. The shader is removed
+            from every BasePart / Primitive's attach list (those
+            objects keep rendering, just without this shader's
+            contribution), and the skybox / post-effect slot is
+            cleared if it was bound there. Useful for hot-swapping
+            post effects between scenes without destroying the
+            scene geometry.</li>
+    </ul>
+    For content assets, hold onto Lua references at your own risk,
+    the underlying GPU / audio resources have already been released.
+</div>
+
 <h2 id="image">ImageAsset</h2>
 
 <div class="member-list">

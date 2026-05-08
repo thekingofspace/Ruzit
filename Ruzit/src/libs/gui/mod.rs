@@ -113,6 +113,70 @@ pub struct RenderItem {
     pub image: Option<Arc<ImageRef>>,
 }
 
+pub fn purge_image(lua: &Lua, asset_id: u64) {
+    purge_primitives_matching(lua, |s| {
+        s.image
+            .as_ref()
+            .map(|i| i.id == asset_id)
+            .unwrap_or(false)
+    });
+}
+
+pub fn purge_font(lua: &Lua, asset_id: u64) {
+    purge_primitives_matching(lua, |s| {
+        s.text
+            .as_ref()
+            .map(|t| t.font_id == asset_id)
+            .unwrap_or(false)
+    });
+}
+
+pub fn purge_shader(lua: &Lua, asset_id: u64) {
+    REGISTRY.with(|cell| {
+        let reg = cell.borrow();
+        for p in reg.iter() {
+            let mut s = p.lock().unwrap();
+            if !s.alive {
+                continue;
+            }
+            s.attached.retain(|e| e.id != asset_id);
+        }
+    });
+    SKYBOX.with(|c| {
+        if c.borrow().as_ref().map(|s| s.id) == Some(asset_id) {
+            *c.borrow_mut() = None;
+        }
+    });
+    POST_EFFECT.with(|c| {
+        if c.borrow().as_ref().map(|s| s.id) == Some(asset_id) {
+            *c.borrow_mut() = None;
+        }
+    });
+    let _ = lua;
+}
+
+fn purge_primitives_matching(lua: &Lua, mut pred: impl FnMut(&PrimitiveState) -> bool) {
+    let states: Vec<Arc<Mutex<PrimitiveState>>> = REGISTRY.with(|cell| {
+        let reg = cell.borrow();
+        reg.iter().cloned().collect()
+    });
+    for state in states {
+        let sig = {
+            let mut s = state.lock().unwrap();
+            if !s.alive || !pred(&s) {
+                continue;
+            }
+            s.alive = false;
+            s.visible = false;
+            s.attached.clear();
+            s.image = None;
+            s.text = None;
+            s.changed_signal.clone()
+        };
+        let _ = fire_changed(lua, sig, "Destroyed");
+    }
+}
+
 pub fn snapshot() -> Vec<RenderItem> {
     REGISTRY.with(|cell| {
         let mut reg = cell.borrow_mut();

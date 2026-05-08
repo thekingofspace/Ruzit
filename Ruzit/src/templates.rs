@@ -673,6 +673,42 @@ export type Asset_API = {
 	-- width * height * 4 bytes. Useful for procedural textures or pixel
 	-- buffers handed back from another system (Steam avatars, etc.).
 	FromPixels: (width: number, height: number, rgba: string) -> ImageAsset,
+
+	-- ── Bulk loading / unloading ──────────────────────────────────────────
+	-- Preload a list of assets in the background and fire the returned
+	-- signal when every entry has finished decoding. Each entry is a
+	-- "Kind:path" string, e.g. {"Image:ui.logo", "Sound:sfx.boom",
+	-- "Model:props.crate"}. Reads (and zstd-decompression for bundled
+	-- packages) happen on a worker thread; final parsing into the typed
+	-- userdata happens on the main thread on the next heart tick. Once
+	-- preloaded, subsequent Asset.GetAsset calls return the cached asset
+	-- without touching the disk / package. The signal fires once with no
+	-- arguments.
+	PreloadAsync: (entries: { string }) -> Signal<>,
+
+	-- Synchronous bulk load. Blocks the caller until every asset is
+	-- decoded, then returns a dictionary keyed by the original "Kind:path"
+	-- string. Same caching effect as PreloadAsync (subsequent
+	-- GetAsset hits the cache), but you also get the values directly.
+	BulkLoad: (entries: { string }) -> { [string]: any },
+
+	-- Forcefully unload a previously-loaded asset by its "Kind:path"
+	-- string. The cache slot is cleared and the strong-ref is released.
+	-- Behaviour for live consumers depends on the asset kind:
+	--   Content assets (Image, Sound, Model, Font), every consumer is
+	--   destroyed. BaseParts whose .Texture or .Model match the dropped
+	--   asset are destroyed and fire "Destroyed". GUI Primitives backed
+	--   by a dropped Image / Font are destroyed. Sounds loaded from a
+	--   dropped SoundData stop and become unplayable (subsequent :Play()
+	--   errors).
+	--   Shader / Fragment, NOTHING is destroyed. The shader is detached
+	--   from every BasePart / Primitive it was attached to (those keep
+	--   rendering with the engine default) and cleared from the skybox /
+	--   post-effect slot if it was bound there. Useful for hot-swapping
+	--   post effects without disturbing scene geometry.
+	-- Use this to free a level's content between scenes when you want
+	-- the next GetAsset to genuinely re-decrypt + re-decompress from disk.
+	Drop: (entry: string) -> (),
 }
 
 -- =============================================================================
