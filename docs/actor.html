@@ -125,10 +125,6 @@
 
 <pre><code><span class="hl-kw">local</span> fetch = Actor.new([[
     <span class="hl-kw">return</span> <span class="hl-kw">function</span>(url)
-        <span class="hl-com">-- Workers can't import("Net"), but they CAN open sockets via</span>
-        <span class="hl-com">-- the standard `socket` library if you load it. Or use a tiny</span>
-        <span class="hl-com">-- HTTP client written in pure Lua. The point is: independent</span>
-        <span class="hl-com">-- threads of execution.</span>
         <span class="hl-kw">return</span> url, <span class="hl-fn">tostring</span>(<span class="hl-fn">os</span>.time())
     <span class="hl-kw">end</span>
 ]], <span class="hl-num">8</span>)
