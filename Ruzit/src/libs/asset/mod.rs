@@ -567,10 +567,7 @@ pub struct ModelAsset {
     pub id: u64,
     pub vertices: Arc<Vec<crate::libs::renderable::mesh::Vertex3D>>,
     pub indices: Arc<Vec<u32>>,
-    /// Animation clips parsed out of the source FBX (empty for OBJ or for
-    /// FBX files that contain no AnimationStack nodes). Shared via Arc so
-    /// every Part instantiated from this asset can build AnimationTracks
-    /// from the same source data without re-parsing the FBX bytes.
+
     pub animations: Arc<Vec<crate::libs::renderable::mesh::FbxAnimClip>>,
     pub source: String,
 }

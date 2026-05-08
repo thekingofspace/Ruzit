@@ -59,10 +59,7 @@ pub struct PartState {
     pub changed_signal: Table,
 
     pub model: Option<ModelRef>,
-    /// Per-part deformed vertex data; takes precedence over `model.vertices`
-    /// at render time. Lazily initialised on the first `Deform` call so parts
-    /// that never deform pay nothing extra. Bumping `deform_version` is what
-    /// tells the renderer's bind-group cache to re-upload.
+
     pub deformed: Option<ModelRef>,
     pub deform_version: u64,
 
@@ -72,15 +69,8 @@ pub struct PartState {
     pub receive_shadow: bool,
     pub ignore_raycast: bool,
 
-    /// Tracks owned by this part. Indexed by name from the Lua side so the
-    /// same track is returned for repeated `:GetTrack("walk")` calls — the
-    /// AnimationTrack userdata carries the Arc<Mutex<...>>.
     pub tracks: Vec<TrackRef>,
 
-    /// FBX-parsed animation clips inherited from the source ModelAsset.
-    /// `:GetTrack(name)` consults this when materialising a new track so
-    /// the keyframes are pre-populated from the FBX file. None for
-    /// non-FBX models or for synthesised meshes (Cube/Sphere).
     pub source_animations: Option<Arc<Vec<mesh::FbxAnimClip>>>,
 }
 
@@ -158,10 +148,6 @@ pub fn camera_snapshot() -> CameraState {
     })
 }
 
-/// Force-set the engine camera's CFrame from outside the renderable module.
-/// VR uses this every frame to compose `BodyCframe ∘ HeadCframe` over the
-/// engine camera so the existing 3D render path picks up the headset pose
-/// without needing to know VR exists.
 pub fn set_camera_cframe(cf: CFrame) {
     CAMERA.with(|c| c.borrow_mut().cframe = cf);
 }
@@ -685,9 +671,6 @@ impl UserData for PartHandle {
     }
 }
 
-/// Userdata wrapper around `Arc<Mutex<AnimationTrack>>` plus the part it's
-/// attached to (needed so Play()/Reset() can read the part's CFrame and
-/// model as a baseline).
 #[derive(Clone)]
 pub struct AnimationTrackHandle {
     pub track: TrackRef,
@@ -897,12 +880,6 @@ impl UserData for AnimationTrackHandle {
     }
 }
 
-/// Translate an FBX-extracted animation clip into AnimationTrack keyframes.
-/// Each FBX sample becomes one CFrame keyframe whose position is the FBX
-/// translation channel and whose rotation is the FBX Euler-degree channel
-/// (we store rotation in the same XYZ-degree convention `CFrame.new` already
-/// uses, so no extra conversion is needed). Looped is left to the user —
-/// the FBX file format has no "should this clip loop" flag.
 fn populate_track_from_fbx(track: &mut AnimationTrack, clip: &mesh::FbxAnimClip) {
     track.duration = clip.duration;
     for (t, trans, rot) in &clip.samples {
@@ -924,10 +901,6 @@ fn populate_track_from_fbx(track: &mut AnimationTrack, clip: &mesh::FbxAnimClip)
     });
 }
 
-/// Tick every track attached to every alive part by `dt` seconds. Called
-/// once per frame from the heart loop. Multi-track parts are evaluated in
-/// insertion order and later tracks overwrite earlier ones — the simplest
-/// behavior that's still useful, with proper blending left for later.
 pub fn tick_animations(dt: f32) {
     if dt <= 0.0 {
         return;

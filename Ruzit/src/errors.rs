@@ -2,9 +2,6 @@ use mlua::Lua;
 
 use crate::vfs::{Fs, split_owner};
 
-/// Hardcoded list of names accepted by the `import()` global. Kept in sync
-/// with the dispatch table in `runtime::install_import` — used for "did you
-/// mean?" suggestions when a user passes an unrecognised library name.
 pub const IMPORT_LIBS: &[&str] = &[
     "Actor",
     "Asset",
@@ -20,7 +17,6 @@ pub const IMPORT_LIBS: &[&str] = &[
     "Process",
     "Register",
     "Renderable",
-    "RunService",
     "Serde",
     "SFX",
     "Signal",
@@ -30,9 +26,6 @@ pub const IMPORT_LIBS: &[&str] = &[
     "Window",
 ];
 
-/// Standard Levenshtein edit distance. Used for "did you mean?" suggestions —
-/// kept simple (O(n*m) DP) since the candidate sets are small (a few dozen
-/// names tops).
 pub fn levenshtein(a: &str, b: &str) -> usize {
     let a: Vec<char> = a.chars().collect();
     let b: Vec<char> = b.chars().collect();
@@ -56,10 +49,6 @@ pub fn levenshtein(a: &str, b: &str) -> usize {
     prev[m]
 }
 
-/// Returns the candidate closest to `needle` if and only if the distance is
-/// within a tolerance scaled to the needle's length — a 3-letter typo gets a
-/// stricter threshold than a 12-letter one. Case-insensitive comparison so
-/// "vector3" still suggests "Vector3".
 pub fn closest_match<'a, I>(needle: &str, candidates: I) -> Option<String>
 where
     I: IntoIterator<Item = &'a str>,
@@ -80,10 +69,6 @@ where
     best.map(|(_, s)| s.to_string())
 }
 
-/// Human-readable "where did this script live" label. The launcher needs to
-/// tell the user not just which file blew up, but which deliverable owns it —
-/// the project, a DLC folder, or a third-party `.managed` package — so they
-/// know whose code to inspect.
 pub fn package_label(fs: &Fs, key: &str) -> String {
     match fs {
         Fs::Disk { .. } => "project".to_string(),
@@ -112,8 +97,6 @@ pub fn package_label(fs: &Fs, key: &str) -> String {
     }
 }
 
-/// Strip the leading '@<pkg_id>/' from a chunk key so the script path shown
-/// to the user is the in-package path, not the bundle key.
 fn script_display(key: &str) -> String {
     if let Some(rest) = key.strip_prefix('@') {
         if let Some((_, inner)) = rest.split_once('/') {
@@ -123,10 +106,6 @@ fn script_display(key: &str) -> String {
     key.to_string()
 }
 
-/// Walk the source string for "<chunk>:<line>:" or "[string "<chunk>"]:<line>:"
-/// fragments produced by Luau and rewrite them into a single
-/// "<script>:<line> (in <package>)" annotation. We only annotate the first
-/// occurrence — the rest are stack frames the user can read with `traceback`.
 fn annotate_first_location(fs: &Fs, msg: &str) -> Option<(String, String)> {
     if let Some(start) = msg.find("[string \"") {
         let rest = &msg[start + "[string \"".len()..];
@@ -186,9 +165,6 @@ fn format_location(fs: &Fs, key: &str, line: &str) -> String {
     format!("{script}:{line} (in {pkg}):")
 }
 
-/// Append a "did you mean?" hint when an mlua error message names a missing
-/// global / module / import library that has a near-neighbour in the known
-/// set. Returns the message unchanged if no hint applies.
 fn append_suggestions(lua: &Lua, fs: &Fs, owner: &str, msg: &str) -> String {
     if let Some(rest) = msg.split("import: unknown library '").nth(1) {
         if let Some(end) = rest.find('\'') {
@@ -270,11 +246,6 @@ fn require_suggestion(fs: &Fs, owner: &str, needle: &str) -> Option<String> {
     }
 }
 
-/// Single entry-point for turning an mlua error into a user-facing string.
-/// `owner` is the chunk key the call originated from (used for require-path
-/// suggestions); `top_key` is the script that started the error chain (used
-/// for the "in <package>" attribution if the message itself has no embedded
-/// location).
 pub fn pretty_format(lua: &Lua, fs: &Fs, owner: &str, top_key: &str, err: &mlua::Error) -> String {
     let raw = err.to_string();
     pretty_format_msg(lua, fs, owner, top_key, &raw)
@@ -305,8 +276,6 @@ pub fn pretty_format_msg(lua: &Lua, fs: &Fs, owner: &str, top_key: &str, raw: &s
     out
 }
 
-/// Stash an Fs handle in the Lua registry so error sites that don't already
-/// have one (heart loop, async callbacks) can pull it out for attribution.
 pub const FS_REGISTRY_KEY: &str = "ruzit_fs";
 
 pub struct FsHandle(pub Fs);
@@ -324,10 +293,6 @@ pub fn fs_from_registry(lua: &Lua) -> Option<Fs> {
     Some(handle.0.clone())
 }
 
-/// Convenience: format an arbitrary error for a registered Lua state when we
-/// only know it came from a heart handler / coroutine and can't supply a
-/// specific owner key. Falls back to the entry-script attribution if the Fs
-/// registry is missing.
 pub fn pretty_format_loose(lua: &Lua, owner_hint: &str, err: &mlua::Error) -> String {
     match fs_from_registry(lua) {
         Some(fs) => pretty_format(lua, &fs, owner_hint, owner_hint, err),

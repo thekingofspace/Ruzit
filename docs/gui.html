@@ -225,10 +225,10 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
 grade:SetData(<span class="hl-str">"strength"</span>, <span class="hl-num">0.0</span>)
 
 <span class="hl-kw">function</span> on_player_hit()
-    <span class="hl-kw">local</span> RunService = <span class="hl-fn">import</span>(<span class="hl-str">"RunService"</span>)
+    <span class="hl-kw">local</span> Process = <span class="hl-fn">import</span>(<span class="hl-str">"Process"</span>)
     <span class="hl-kw">local</span> elapsed = <span class="hl-num">0</span>
     <span class="hl-kw">local</span> conn
-    conn = RunService.Heartbeat:Connect(<span class="hl-kw">function</span>(dt)
+    conn = Process.Heartbeat:Connect(<span class="hl-kw">function</span>(dt)
         elapsed += dt
         <span class="hl-kw">local</span> t = elapsed / <span class="hl-num">0.4</span>
         <span class="hl-kw">if</span> t &gt;= <span class="hl-num">1</span> <span class="hl-kw">then</span>

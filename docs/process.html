@@ -59,9 +59,81 @@
             True when running from a built game launcher
             (<code>.exe</code> + <code>Managed/</code>); false under
             <code>Ruzit Test</code>. Gate dev-only debug overlays etc.
-            behind this.
+            behind this (or behind <code>InTest</code>, which is exactly
+            the inverse).
         </p>
     </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.InTest</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Inverse of <code>IsBuilt</code> &mdash; true while running
+            via <code>Ruzit Test</code>. Reads naturally for guards like
+            <code>if Process.InTest then ... end</code>.
+        </p>
+    </div>
+</div>
+
+<h2 id="run-signals">Heartbeat signals</h2>
+
+<p>
+    Per-frame signals merged in from the old <code>RunService</code>
+    import as of v3.2. Both fire once per heart tick (~60 Hz) with the
+    elapsed dt in seconds.
+</p>
+
+<pre><code>Process.Heartbeat:Connect(<span class="hl-kw">function</span>(dt)
+    player:Update(dt)
+<span class="hl-kw">end</span>)
+
+Process.RenderStepped:Connect(<span class="hl-kw">function</span>(dt)
+    camera:FollowPlayer(player.Position, dt)
+<span class="hl-kw">end</span>)</code></pre>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Heartbeat</span><span class="member-type">Signal&lt;number&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Gameplay tick. Fires before the render pump &mdash; use it
+            for simulation logic that produces the state the renderer
+            reads this frame. Payload is dt in seconds.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.RenderStepped</span><span class="member-type">Signal&lt;number&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Same dt, but fires inside the render pump (slightly later in
+            the frame than <code>Heartbeat</code>). Use it for camera
+            updates and visual smoothing that need to land after gameplay
+            state has finalised.
+        </p>
+    </div>
+</div>
+
+<h3>Frame ordering</h3>
+
+<p>Each frame the engine runs:</p>
+
+<ol>
+    <li>Window / input / SFX / Steam / VR / Gamepad event pumps.</li>
+    <li><strong>Heartbeat</strong> &mdash; gameplay scripts.</li>
+    <li>Animation track tick.</li>
+    <li><strong>RenderStepped</strong> &mdash; camera, post-effects, UI binds.</li>
+    <li>GPU submit + present.</li>
+    <li>Sleep until the next ~16.7 ms tick.</li>
+</ol>
+
+<p>
+    Putting camera follow in <code>RenderStepped</code> means it sees
+    the player's <em>final</em> position for this frame, not last
+    frame's. Doing it in <code>Heartbeat</code> would give you a one-
+    frame lag.
+</p>
+
+<div class="callout note">
+    <strong>Headless ticks.</strong>
+    These signals only fire while a window is open. For background
+    tasks that need to keep running with no window, use
+    <a href="#bind-heart"><code>BindToHeart</code></a>.
 </div>
 
 <h2 id="env">Environment</h2>
@@ -133,10 +205,11 @@ Process.Env(<span class="hl-str">"NOPE"</span>)   <span class="hl-com">-- nil</s
 <h2 id="bind-heart">Heart-tick binding</h2>
 
 <p>
-    For most per-frame logic prefer <code>RunService.Heartbeat</code>
-    &mdash; it's typed and connected to the same tick. <code>BindToHeart</code>
-    is for background tasks that need to run even when no window is open
-    (headless tools, Net.Serve event loops, etc.).
+    For most per-frame logic prefer <code>Process.Heartbeat</code>
+    &mdash; it's typed and connected to the same tick.
+    <code>BindToHeart</code> is for background tasks that need to run
+    even when no window is open (headless tools, Net.Serve event loops,
+    etc.).
 </p>
 
 <div class="member-list">

@@ -147,7 +147,6 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             "Process" => Ok(Value::Table(libs::process::create(lua)?)),
             "Register" => Ok(Value::Table(libs::register::create(lua)?)),
             "Renderable" => Ok(Value::Table(libs::renderable::create(lua)?)),
-            "RunService" => Ok(Value::Table(libs::runservice::create(lua)?)),
             "Serde" => Ok(Value::Table(libs::serde::create(lua)?)),
             "SFX" => Ok(Value::Table(libs::sfx::create(lua)?)),
             "Signal" => Ok(Value::Table(libs::signal::class(lua)?)),
@@ -164,22 +163,6 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
     env.set("import", import)
 }
 
-/// `load(path)` — sibling to `require` that takes a raw filesystem path
-/// instead of a vfs key. Useful for loading mods, user-content scripts,
-/// or anything that lives outside the project's bundled tree. Loaded
-/// modules get the full runtime env (`require` / `import` / `__dirname`
-/// / `print` / `load`) with file-resolution rooted at the loaded file's
-/// own directory — so a script loaded from `C:/mods/foo.luau` can
-/// `require("./bar")` and get `C:/mods/bar.luau`.
-///
-/// Path forms:
-///   * absolute: used as-is.
-///   * relative: joined against the calling script's directory
-///     (`vfs::caller_dir`).
-///
-/// The loaded chunk evaluates immediately and its return value is the
-/// return value of `load()`. If the chunk returns nothing, `true` comes
-/// back (matching how `require` handles bare side-effect modules).
 fn install_load(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<()> {
     let caller_fs = fs.clone();
     let caller_owner = owner.to_string();
@@ -246,8 +229,6 @@ fn load_disk_file(lua: &Lua, abs: &Path) -> mlua::Result<Value> {
     })
 }
 
-/// Compact "<script> in <package>" descriptor for error messages emitted from
-/// Rust callbacks (require / import) where we don't get a Luau line number.
 fn describe_owner(fs: &Fs, owner: &str) -> String {
     let pkg = errors::package_label(fs, owner);
     let inner = match fs {

@@ -1,14 +1,3 @@
-//! Register — named shared tables. `Register.new("foo")` always returns the
-//! same table for the same name across the entire Lua state, so two
-//! scripts that have never seen each other can coordinate by agreeing on
-//! a name.
-//!
-//! Implementation: a single Lua table held in the named registry, keyed
-//! by the string name. We deliberately store the *Lua-side* table (not a
-//! Rust HashMap) so the registers themselves participate in normal Luau
-//! semantics — metatables, weak references, equality — and so we don't
-//! have to round-trip values through Rust on every read/write.
-
 use mlua::{Lua, Table, Value};
 
 const REGISTRY_KEY: &str = "ruzit_register_store";

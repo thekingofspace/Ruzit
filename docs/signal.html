@@ -154,7 +154,7 @@ win:BindToClose(<span class="hl-kw">function</span>() conn:Disconnect() <span cl
 
 <h3>Wait inside a coroutine</h3>
 
-<pre><code><span class="hl-kw">local</span> Heart = <span class="hl-fn">import</span>(<span class="hl-str">"RunService"</span>).Heartbeat
+<pre><code><span class="hl-kw">local</span> Heart = <span class="hl-fn">import</span>(<span class="hl-str">"Process"</span>).Heartbeat
 <span class="hl-kw">for</span> _ = <span class="hl-num">1</span>, <span class="hl-num">60</span> <span class="hl-kw">do</span>
     <span class="hl-kw">local</span> dt = Heart:Wait()    <span class="hl-com">-- one frame</span>
     accumulated = accumulated + dt

@@ -1,18 +1,3 @@
-//! `Gamepad` Lua library — wraps `gilrs` for cross-platform controller
-//! support (XInput / DirectInput / udev / IOKit / SDL2). The library
-//! exposes:
-//!
-//!   * `Gamepad.GetGamepads()` — list of currently-connected pads
-//!   * `Gamepad.IsButtonDown(id, name)` / `Gamepad.GetAxis(id, name)`
-//!   * `Gamepad.SetVibration(id, low, high, durationSec)`
-//!   * Signals: `Gamepad.Connected`, `Gamepad.Disconnected`,
-//!     `Gamepad.InputChanged`
-//!
-//! Internally we keep a single `Gilrs` instance behind a `Mutex<Option<...>>`
-//! that's lazily initialised on first import — the `Gilrs::new` call enumerates
-//! HID devices and we don't want that running for projects that never touch
-//! a controller.
-
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
@@ -26,22 +11,14 @@ use crate::libs::signal;
 const SIGNALS_KEY: &str = "ruzit_gamepad_signals";
 
 struct PadState {
-    /// Last-known axis values, keyed by canonical axis name. Cached so
-    /// `Gamepad.GetAxis(id, "LeftStickX")` is O(1) and so the
-    /// InputChanged signal can include the previous value if needed
-    /// later.
     axes: HashMap<&'static str, f32>,
-    /// Currently-pressed button names. Set on `ButtonPressed` events,
-    /// cleared on `ButtonReleased`. Source of truth for `IsButtonDown`.
+
     buttons_down: std::collections::HashSet<String>,
 }
 
 static GILRS: OnceLock<Mutex<Option<Gilrs>>> = OnceLock::new();
 static PADS: OnceLock<Mutex<HashMap<u32, PadState>>> = OnceLock::new();
-/// Active force-feedback effects with the deadline at which we can drop
-/// them. We have to keep `Effect` handles alive for the duration of the
-/// rumble — dropping them stops playback immediately. The pump prunes
-/// expired entries each frame so the list doesn't grow unbounded.
+
 static FF_ACTIVE: OnceLock<Mutex<Vec<(Effect, Instant)>>> = OnceLock::new();
 
 fn gilrs_lock() -> &'static Mutex<Option<Gilrs>> {
@@ -56,19 +33,11 @@ fn ff_active_lock() -> &'static Mutex<Vec<(Effect, Instant)>> {
     FF_ACTIVE.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-/// Convert a gilrs `GamepadId` into a stable u32 we can hand out to Lua.
-/// `GamepadId` doesn't expose its internal index, but its `Display` impl
-/// prints it, so we round-trip through that. (The number is just an index;
-/// the OS may renumber pads when devices come and go, which is the same
-/// behaviour as raw XInput.)
 fn pad_index(id: GamepadId) -> u32 {
     let s = format!("{id}");
     s.parse().unwrap_or(0)
 }
 
-/// Stringify a `gilrs::Button` into something readable from Lua. The crate
-/// uses two-letter constants from XInput's API; we use full names so user
-/// code reads as `"South" | "East" | "LeftBumper"` etc.
 fn button_name(b: Button) -> Option<&'static str> {
     Some(match b {
         Button::South => "South",
@@ -94,7 +63,6 @@ fn button_name(b: Button) -> Option<&'static str> {
     })
 }
 
-/// Inverse of `button_name` for `IsButtonDown` lookups.
 fn button_from_name(name: &str) -> Option<Button> {
     Some(match name {
         "South" | "A" => Button::South,
@@ -132,10 +100,6 @@ fn axis_name(a: Axis) -> Option<&'static str> {
     })
 }
 
-/// Drain gilrs events. Called from the heart loop once per frame so
-/// signals fire on the same cadence as keyboard/mouse input. Idempotent
-/// when no Gilrs has been initialised (the library import is what brings
-/// it up, lazily).
 pub fn pump(lua: &Lua) {
     {
         let now = Instant::now();
@@ -405,11 +369,6 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     Ok(api)
 }
 
-/// Build and schedule a force-feedback effect that plays for `duration`
-/// seconds with the given strong/weak motor intensities (each in 0..1).
-/// We hold onto the `Effect` handle in a static list because dropping it
-/// stops the rumble immediately — the pump prunes the list once each
-/// effect's deadline passes.
 fn start_rumble(pad: i64, low: f32, high: f32, duration: f32) -> bool {
     let cell = gilrs_lock();
     let mut guard = cell.lock().unwrap();

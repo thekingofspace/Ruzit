@@ -163,11 +163,6 @@ fn apply_steam_app_id(config: &BuildConfig) {
     }
 }
 
-/// Copy the Steamworks redistributable DLL into the build's Generated/ folder
-/// so the launcher exe can load it at runtime. The DLL itself is dropped next
-/// to the current Ruzit.exe by build.rs (it's pulled out of the
-/// steamworks-sys cargo build cache). Silent best-effort — if it isn't there
-/// we don't fail the build, since the user may not need Steam at runtime.
 fn copy_steam_redist(generated_dir: &Path) {
     let Ok(self_exe) = env::current_exe() else {
         return;

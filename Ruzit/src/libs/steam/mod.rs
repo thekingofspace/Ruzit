@@ -458,12 +458,6 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     Ok(t)
 }
 
-/// `Steam.Launch.*` exposes everything we know about *how* the current
-/// process started up — Steam URL parameters, OS-level argv, env vars,
-/// active beta branch — so user code can adapt to "the player clicked a
-/// 'steam://run/<appid>//+connect 1.2.3.4' link" or "we were started
-/// directly from a desktop shortcut" without each subsystem having to
-/// re-derive that.
 fn build_launch(lua: &Lua) -> mlua::Result<Table> {
     let t = lua.create_table()?;
 
@@ -576,11 +570,6 @@ fn build_launch(lua: &Lua) -> mlua::Result<Table> {
     Ok(t)
 }
 
-/// Pull a `+key value` style argument out of a Steam launch command line.
-/// Steam delivers them as a single flat string (e.g. `+connect 1.2.3.4 +map dust`),
-/// so we tokenize by whitespace and scan for `+<key>` pairs. Returns the
-/// raw value token, with no quote-stripping — the caller is in a better
-/// position to know whether quotes are meaningful.
 fn parse_query_param(line: &str, key: &str) -> Option<String> {
     let needle = format!("+{key}");
     let mut iter = line.split_whitespace();

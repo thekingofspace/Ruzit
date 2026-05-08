@@ -297,8 +297,8 @@ Color3.FromHex(<span class="hl-str">"ff0"</span>)        <span class="hl-com">--
 <pre><code><span class="hl-kw">local</span> day   = Color3.FromHex(<span class="hl-str">"#fdf6e3"</span>)
 <span class="hl-kw">local</span> night = Color3.new(<span class="hl-num">0.05</span>, <span class="hl-num">0.07</span>, <span class="hl-num">0.13</span>)
 
-<span class="hl-kw">local</span> RunService = <span class="hl-fn">import</span>(<span class="hl-str">"RunService"</span>)
-RunService.Heartbeat:Connect(<span class="hl-kw">function</span>(_dt)
+<span class="hl-kw">local</span> Process = <span class="hl-fn">import</span>(<span class="hl-str">"Process"</span>)
+Process.Heartbeat:Connect(<span class="hl-kw">function</span>(_dt)
     <span class="hl-kw">local</span> t   = (os.clock() % <span class="hl-num">60</span>) / <span class="hl-num">60</span>
     <span class="hl-kw">local</span> sky = day:Lerp(night, t)
     <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>).SetAmbient(sky)

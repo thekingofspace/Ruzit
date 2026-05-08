@@ -200,9 +200,22 @@ export type Process_API = {
 	-- Logical CPU count (hyperthreads included). Useful for sizing Actor
 	-- pools or work batches.
 	CpuCount: number,
-	-- True when running from a built game launcher (.exe + Managed/), false
-	-- under `Ruzit Test`. Gate dev-only debug overlays etc. behind this.
+	-- True when running from a built game launcher (.exe + Managed/),
+	-- false under `Ruzit Test`. Gate dev-only debug overlays etc. behind
+	-- this (or behind InTest, which is exactly the inverse).
 	IsBuilt: boolean,
+	-- Inverse of IsBuilt — true when running via `Ruzit Test`. Reads
+	-- naturally for guards like `if Process.InTest then ... end`.
+	InTest: boolean,
+	-- Per-frame signal carrying dt (seconds since last tick). Fires
+	-- before the render pump — use it for simulation logic that produces
+	-- the state the renderer reads this frame. (Merged from the old
+	-- RunService import as of v3.2.)
+	Heartbeat: Signal<number>,
+	-- Same dt, but fires from inside the render pump (slightly later in
+	-- the frame than Heartbeat). Use it for camera updates that need to
+	-- land after gameplay state has finalised.
+	RenderStepped: Signal<number>,
 	-- Read environment variables. Two forms:
 	--   Process.Env("PATH") → "..."  (or nil if unset)
 	--   Process.Env()       → { ["PATH"] = "...", ... }  (whole map)
@@ -224,7 +237,7 @@ export type Process_API = {
 	-- string label — use it later with UnbindFromHeart, and also as the
 	-- de-dup key (registering the same id twice replaces the old fn).
 	-- The callback gets dt (seconds since the previous tick). For most
-	-- per-frame logic prefer RunService.Heartbeat — BindToHeart is for
+	-- per-frame logic prefer Process.Heartbeat — BindToHeart is for
 	-- background tasks that need to run even when no window is open.
 	BindToHeart: (id: string, fn: (dt: number) -> ()) -> (),
 	UnbindFromHeart: (id: string) -> (),
@@ -1334,19 +1347,6 @@ export type Keyboard_API = {
 }
 
 -- =============================================================================
--- RunService — engine-loop signals.
--- =============================================================================
-
-export type RunService_API = {
-	-- Per-frame signal carrying the dt (seconds since last tick).
-	Heartbeat: Signal<number>,
-	-- Same dt, but fires from inside the render pump (slightly later in the
-	-- frame than Heartbeat). Use it for camera updates that need to land
-	-- after gameplay state has finalized.
-	RenderStepped: Signal<number>,
-}
-
--- =============================================================================
 -- Voice — microphone capture + per-peer playback (Opus over your transport).
 -- =============================================================================
 
@@ -2301,7 +2301,6 @@ export type Imports = {
 	Process: Process_API,
 	Register: Register_API,
 	Renderable: Renderable_API,
-	RunService: RunService_API,
 	Serde: Serde_API,
 	SFX: SFX_API,
 	Signal: Signal_API,

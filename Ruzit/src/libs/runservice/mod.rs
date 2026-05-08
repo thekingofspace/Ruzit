@@ -56,13 +56,8 @@ pub fn fire_heartbeat(lua: &Lua, dt: f64) {
     }
 }
 
-pub fn create(lua: &Lua) -> mlua::Result<Table> {
-    let t = lua.create_table()?;
-
+pub fn signal_tables(lua: &Lua) -> mlua::Result<(Table, Table)> {
     let heartbeat: Table = lua.named_registry_value(HEARTBEAT_KEY)?;
     let render_stepped: Table = lua.named_registry_value(RENDERSTEPPED_KEY)?;
-    t.set("Heartbeat", heartbeat)?;
-    t.set("RenderStepped", render_stepped)?;
-
-    Ok(t)
+    Ok((heartbeat, render_stepped))
 }

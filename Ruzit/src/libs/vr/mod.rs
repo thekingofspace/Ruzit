@@ -1,22 +1,3 @@
-//! VR — head-mounted display + motion-controller integration.
-//!
-//! Scope and honesty:
-//!   * `IsVrPresent` does a real runtime sniff (env vars + Windows registry)
-//!     to detect SteamVR / OpenXR runtimes; it does NOT require an OpenXR
-//!     session to be live, and it returns true on machines where a runtime
-//!     is *installed* even if no headset is currently plugged in.
-//!   * `LinkVRView` returns a fully wired VRCamera object with working
-//!     signals and a working `Unlink()` lifecycle. It hooks the engine's
-//!     camera so the VR-side `BodyCframe + HeadCframe` composition drives
-//!     the existing 3D render path. Stereo rendering to a headset is NOT
-//!     wired this session — actual eye-buffer submission requires plumbing
-//!     wgpu_hal's underlying Vulkan/D3D handles into an OpenXR session,
-//!     which is several days of work and intentionally deferred.
-//!   * Until real OpenXR pose data flows in, the head/controller CFrames
-//!     remain at their initial values. User code can still write
-//!     BodyCframe, observe HeadCframe (identity-relative-to-body), and
-//!     call into the rest of the API end-to-end.
-
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -58,21 +39,15 @@ struct VrState {
     right_moved: Option<Table>,
     left_input: Option<Table>,
     right_input: Option<Table>,
-    /// Fires when the headset is detected as worn or removed (proximity
-    /// sensor) and on connect/disconnect.
+
     connected_signal: Option<Table>,
-    /// Cached headset-runtime metadata: name + advertised refresh rate.
-    /// Populated by the future OpenXR pump; for now we read whichever
-    /// runtime sniff identified the install during IsVrPresent.
+
     runtime_name: String,
     refresh_rate: f32,
     is_headset_worn: bool,
-    /// Interpupillary distance (in metres). The runtime usually reports
-    /// 0.062–0.068; we default to the human average.
+
     ipd: f32,
-    /// Play-area bounds in metres (width along X, depth along Z). 0.0
-    /// when the runtime hasn't reported a play area (seated or
-    /// pre-calibration).
+
     play_area_size: [f32; 2],
 }
 
@@ -127,31 +102,14 @@ impl Default for VrState {
     }
 }
 
-/// Run a closure with read-only access to VR state.
 fn with_state<R>(f: impl FnOnce(&VrState) -> R) -> R {
     STATE.with(|s| f(&s.borrow()))
 }
 
-/// Run a closure with mutable access to VR state.
 fn with_state_mut<R>(f: impl FnOnce(&mut VrState) -> R) -> R {
     STATE.with(|s| f(&mut s.borrow_mut()))
 }
 
-/// Best-effort VR runtime detection. Returns true if a usable VR runtime
-/// is installed on the host — does NOT require a headset to be currently
-/// connected. We layer three checks:
-///
-///   1. `XR_RUNTIME_JSON` env var — set by Khronos OpenXR loader when an
-///      OpenXR runtime is registered.
-///   2. `OPENVR_RUNTIME` / `VR_OVERRIDE` — set by SteamVR.
-///   3. Windows registry: `HKLM\SOFTWARE\Khronos\OpenXR\1\ActiveRuntime`
-///      points at the active OpenXR runtime JSON; presence here is the
-///      most reliable signal on stock Windows installs.
-///
-/// We deliberately don't try to instantiate an XR session as a probe —
-/// that's expensive (can take seconds on cold start) and unreliable when
-/// the headset is unplugged. Users who need a live-headset check should
-/// plumb a separate "is the runtime running" call later.
 pub fn is_vr_present() -> bool {
     if std::env::var_os("XR_RUNTIME_JSON").is_some() {
         return true;
@@ -191,17 +149,10 @@ fn windows_registry_has_openxr_runtime() -> bool {
     false
 }
 
-/// True while a VRCamera handle is alive. Other subsystems (the camera
-/// input controller, in particular) consult this to know whether to yield
-/// the 3D camera to the VR pump.
 pub fn is_vr_linked() -> bool {
     VR_LINKED.load(Ordering::Relaxed)
 }
 
-/// Best-effort guess at which VR runtime is providing services. Same
-/// detection layers as `is_vr_present`, but reports the source as a
-/// string so user code can show "Connected via Oculus" / "SteamVR"-style
-/// hints in their menus.
 fn detected_runtime_name() -> &'static str {
     if std::env::var_os("OPENVR_RUNTIME").is_some() || std::env::var_os("VR_OVERRIDE").is_some() {
         return "SteamVR";
@@ -221,11 +172,6 @@ fn detected_runtime_name() -> &'static str {
     "Unknown"
 }
 
-/// Drain any pending pose / input events from the live VR runtime and
-/// fire signals. Called from the heart loop. While stereo rendering is
-/// disabled, this is mostly a no-op — it composes BodyCframe ∘ HeadCframe
-/// onto the engine camera so the 3D scene tracks any user-driven body
-/// movement.
 pub fn pump(_lua: &Lua) {
     if !is_vr_linked() {
         return;
@@ -234,10 +180,6 @@ pub fn pump(_lua: &Lua) {
     set_camera_cframe(composed);
 }
 
-/// Add the VR head pose to the body pose to get the engine-camera CFrame.
-/// We treat both pieces as world-relative for now; once real head poses
-/// flow in from OpenXR we'll re-anchor head as body-relative and compose
-/// here.
 fn compose_camera(body: CFrame, head: CFrame) -> CFrame {
     CFrame::new(
         Vector::new(
@@ -476,10 +418,6 @@ impl UserData for ControllerHandle {
     }
 }
 
-/// Test helper / future OpenXR plumbing: programmatically push a
-/// controller pose change. Called by the eventual XR pump; right now
-/// it's wired to a Lua-side method the user can call manually for
-/// testing UI integrations.
 #[allow(dead_code)]
 pub fn push_controller_pose(side_left: bool, cframe: CFrame, lua: &Lua) {
     let signal_table = with_state_mut(|st| {

@@ -4,6 +4,7 @@ use std::process;
 use mlua::{Function, Lua, Table, Value};
 
 use crate::heart;
+use crate::libs::runservice;
 
 pub fn create(lua: &Lua) -> mlua::Result<Table> {
     let t = lua.create_table()?;
@@ -14,6 +15,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     install_memory(lua, &t)?;
     install_heart(lua, &t)?;
     install_args(lua, &t)?;
+    install_run_signals(lua, &t)?;
 
     Ok(t)
 }
@@ -28,7 +30,16 @@ fn install_constants(t: &Table) -> mlua::Result<()> {
         .unwrap_or(1);
     t.set("CpuCount", cpu_count as i64)?;
 
-    t.set("IsBuilt", is_built())?;
+    let built = is_built();
+    t.set("IsBuilt", built)?;
+    t.set("InTest", !built)?;
+    Ok(())
+}
+
+fn install_run_signals(lua: &Lua, t: &Table) -> mlua::Result<()> {
+    let (heartbeat, render_stepped) = runservice::signal_tables(lua)?;
+    t.set("Heartbeat", heartbeat)?;
+    t.set("RenderStepped", render_stepped)?;
     Ok(())
 }
 

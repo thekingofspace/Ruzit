@@ -1,17 +1,3 @@
-//! Per-part animation tracks. A track is a timeline of *keyframes* — each
-//! keyframe is either a target CFrame (used to animate the part's transform)
-//! or a "deform" instruction (applied to the part's mesh at the moment the
-//! playhead crosses it). The runtime tick walks every alive part once per
-//! frame, advances any playing tracks, lerps the CFrame keyframes around the
-//! current time, and replays the deform keyframes cumulatively from the
-//! start of the loop.
-//!
-//! Reset semantics: capturing the part's CFrame and a snapshot of its mesh
-//! at `track:Play()` time means `track:Reset()` can put both back exactly
-//! the way they were, without the user having to remember pre-animation
-//! state themselves. Pause keeps the current visible pose; Resume picks up
-//! where Pause left it.
-
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -29,13 +15,8 @@ pub enum TrackState {
 
 #[derive(Clone)]
 pub enum KeyframeAction {
-    /// Lerp the part's CFrame toward this target. The lerp basis is the
-    /// previous CFrame keyframe (or the captured baseline if this is the
-    /// first one).
     Cframe(CFrame),
-    /// One-shot deformation applied when the playhead crosses this time.
-    /// During a loop iteration we replay every deform from the start so the
-    /// visible state at any `t` is "baseline + every deform with time ≤ t".
+
     Deform {
         center: [f32; 3],
         envelope: f32,
@@ -49,9 +30,6 @@ pub struct Keyframe {
     pub action: KeyframeAction,
 }
 
-/// Snapshot of the part's state at the moment `Play()` was last called.
-/// Restored on `Reset()` and at every loop wrap so deform keyframes don't
-/// accumulate forever.
 #[derive(Clone, Default)]
 pub struct TrackBaseline {
     pub cframe: Option<CFrame>,
@@ -108,11 +86,6 @@ impl AnimationTrack {
 
 pub type TrackRef = Arc<Mutex<AnimationTrack>>;
 
-/// Linearly interpolate two CFrames by their position and Euler-angle
-/// representations. CFrame stores rotation as a forward-direction Vector,
-/// so we lerp those directly — fine for animations that rotate by less
-/// than a half-turn between keyframes (slerp would be needed for bigger
-/// arcs but isn't worth the complexity at this stage).
 fn lerp_cframe(a: CFrame, b: CFrame, t: f32) -> CFrame {
     let pa = a.position;
     let pb = b.position;
@@ -132,10 +105,6 @@ fn lerp_cframe(a: CFrame, b: CFrame, t: f32) -> CFrame {
     )
 }
 
-/// Output of one tick — what the renderer/Part should apply this frame.
-/// Pulled out as a struct so the renderable layer can decide how to merge
-/// multiple tracks' contributions if more than one is playing on the same
-/// part (last-writer-wins for now; full blending is future work).
 pub struct TrackEval {
     pub cframe_override: Option<CFrame>,
     pub vertices_override: Option<Arc<Vec<Vertex3D>>>,
@@ -143,10 +112,6 @@ pub struct TrackEval {
     pub finished: bool,
 }
 
-/// Advance one track by `dt` seconds against the supplied baseline (the
-/// part's CFrame and current/base mesh at this moment) and return what
-/// pose+mesh should be visible. The caller is responsible for actually
-/// setting those values on the Part.
 pub fn tick_track(
     track: &mut AnimationTrack,
     dt: f32,

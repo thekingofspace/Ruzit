@@ -15,11 +15,6 @@ pub struct Mesh {
     pub indices: Vec<u32>,
 }
 
-/// Smooth radial-falloff "blob" deform: every vertex within `envelope` of
-/// `center` gets pushed by `displacement * weight`, where weight is a
-/// smoothstep that's 1.0 at the center and 0.0 at the envelope edge. This
-/// matches what artists expect from a soft-selection sculpt: a noticeable
-/// dent right under the cursor and a gentle taper out to the envelope.
 pub fn deform_blob(
     vertices: &mut [Vertex3D],
     center: [f32; 3],
@@ -50,8 +45,6 @@ pub fn deform_blob(
     touched
 }
 
-/// Recompute per-vertex normals from triangle face normals. Used after a
-/// deformation so lighting follows the new surface.
 pub fn recompute_normals(vertices: &mut [Vertex3D], indices: &[u32]) {
     let mut accum = vec![[0.0_f32; 3]; vertices.len()];
     for tri in indices.chunks(3) {
@@ -88,17 +81,6 @@ pub fn recompute_normals(vertices: &mut [Vertex3D], indices: &[u32]) {
     }
 }
 
-/// Polygon reduction by quantization clustering. Cheap, deterministic, and
-/// works with arbitrary topology — we snap each vertex to a 3D grid, merge
-/// vertices that land in the same cell, and rebuild the index list with the
-/// cluster centroids. Triangles that collapse to fewer than three distinct
-/// vertices after merging are dropped.
-///
-/// `target_ratio` is a 0..1 hint: 1.0 returns the original mesh (after
-/// deduplication), 0.5 aims for ~50% of the vertices, 0.1 for ~10%. The
-/// result tends to be coarser than `target_ratio` suggests on small meshes,
-/// since the grid is uniform — meant for LODs of moderately dense meshes,
-/// not for sphere-of-32-vertices style assets.
 pub fn simplify(mesh: &Mesh, target_ratio: f32) -> Mesh {
     let ratio = target_ratio.clamp(0.01, 1.0);
     if mesh.vertices.is_empty() || mesh.indices.is_empty() {
@@ -528,17 +510,11 @@ pub fn load_obj(text: &str) -> Result<Mesh, String> {
     Ok(Mesh { vertices, indices })
 }
 
-/// Animation clip pulled out of an FBX `AnimationStack`. Each clip is a
-/// flat list of TRS samples in seconds — the consumer turns these into
-/// `KeyframeAction::Cframe` entries on an AnimationTrack. Rotation is in
-/// FBX-native Euler degrees; we convert at evaluation time.
 #[derive(Clone, Debug, Default)]
 pub struct FbxAnimClip {
     pub name: String,
     pub duration: f32,
-    /// (time, translation_xyz, rotation_xyz_degrees). Either component may
-    /// be `None` if the FBX clip doesn't animate that channel — the track
-    /// builder substitutes the part's baseline in that case.
+
     pub samples: Vec<(f32, Option<[f32; 3]>, Option<[f32; 3]>)>,
 }
 
@@ -656,17 +632,6 @@ fn load_fbx_binary_full(bytes: &[u8]) -> Result<LoadedFbx, String> {
     })
 }
 
-/// Walk every AnimationStack in the FBX document and collect samples for
-/// any AnimationCurveNodes connected through it. We follow the standard
-/// FBX connection chain (Stack → Layer → CurveNode → Curve) and pick out
-/// translation (`T`) and rotation (`R`) channels — scale is intentionally
-/// ignored to keep the resulting tracks suitable for `Part.CFrame` driving.
-///
-/// The fbxcel-dom 0.0.10 crate doesn't have typed handles for animation
-/// nodes, so we fall back to raw node walking via `obj.node()` and
-/// `node.children_by_name(...)`. That's why this code is a bit verbose
-/// compared to the geometry path — the typed wrappers carry their weight
-/// for meshes but don't exist here.
 fn parse_fbx_animations(doc: &fbxcel_dom::v7400::Document) -> Vec<FbxAnimClip> {
     use fbxcel_dom::fbxcel::low::v7400::AttributeValue;
 
