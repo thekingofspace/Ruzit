@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::io::Cursor;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -174,13 +174,19 @@ pub struct Sound {
     source_path: String,
     started_key: Arc<RegistryKey>,
     stopped_key: Arc<RegistryKey>,
+    did_loop_key: Arc<RegistryKey>,
     started_table: Table,
     stopped_table: Table,
+    did_loop_table: Table,
     shaders: Mutex<Vec<Shader>>,
     attached: Mutex<Vec<AttachedShader>>,
     update_links: Mutex<Vec<UpdateLink>>,
     current_id: Mutex<Option<u64>>,
     position: Arc<Mutex<Option<SpatialPos>>>,
+    looped: Arc<AtomicBool>,
+    loop_count: Arc<AtomicU64>,
+    total_duration: Mutex<Option<Duration>>,
+    pending_offset: Mutex<Duration>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -200,9 +206,13 @@ struct ActivePlayback {
     id: u64,
     sink: Sink,
     start: Instant,
+    base_offset: Duration,
     started_fired: bool,
     started_key: Arc<RegistryKey>,
     stopped_key: Arc<RegistryKey>,
+    did_loop_key: Arc<RegistryKey>,
+    loop_count: Arc<AtomicU64>,
+    last_loop_count: u64,
     updates: Vec<UpdateState>,
 }
 
@@ -240,27 +250,37 @@ fn output_handle() -> mlua::Result<OutputStreamHandle> {
 }
 
 fn load_from_data(lua: &Lua, data: &SoundData) -> mlua::Result<AnyUserData> {
-    Decoder::new(Cursor::new((*data.bytes).clone())).map_err(|e| {
+    let probe = Decoder::new(Cursor::new((*data.bytes).clone())).map_err(|e| {
         mlua::Error::RuntimeError(format!("SFX.LoadSound: decode '{}': {e}", data.source))
     })?;
+    let total = probe.total_duration();
+    drop(probe);
 
     let started = signal::new_instance(lua)?;
     let stopped = signal::new_instance(lua)?;
+    let did_loop = signal::new_instance(lua)?;
     let started_key = Arc::new(lua.create_registry_value(started.clone())?);
     let stopped_key = Arc::new(lua.create_registry_value(stopped.clone())?);
+    let did_loop_key = Arc::new(lua.create_registry_value(did_loop.clone())?);
 
     lua.create_userdata(Sound {
         bytes: data.bytes.clone(),
         source_path: data.source.clone(),
         started_key,
         stopped_key,
+        did_loop_key,
         started_table: started,
         stopped_table: stopped,
+        did_loop_table: did_loop,
         shaders: Mutex::new(Vec::new()),
         attached: Mutex::new(Vec::new()),
         update_links: Mutex::new(Vec::new()),
         current_id: Mutex::new(None),
         position: Arc::new(Mutex::new(None)),
+        looped: Arc::new(AtomicBool::new(false)),
+        loop_count: Arc::new(AtomicU64::new(0)),
+        total_duration: Mutex::new(total),
+        pending_offset: Mutex::new(Duration::ZERO),
     })
 }
 
@@ -268,7 +288,54 @@ impl UserData for Sound {
     fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
         f.add_field_method_get("Started", |_, this| Ok(this.started_table.clone()));
         f.add_field_method_get("Stopped", |_, this| Ok(this.stopped_table.clone()));
+        f.add_field_method_get("DidLoop", |_, this| Ok(this.did_loop_table.clone()));
         f.add_field_method_get("Source", |_, this| Ok(this.source_path.clone()));
+
+        f.add_field_method_get("Looped", |_, this| Ok(this.looped.load(Ordering::Relaxed)));
+        f.add_field_method_set("Looped", |_, this, value: bool| {
+            this.looped.store(value, Ordering::Relaxed);
+            Ok(())
+        });
+
+        f.add_field_method_get("TimePosition", |_, this| {
+            let cur_id = *this.current_id.lock().unwrap();
+            if let Some(id) = cur_id {
+                let total = *this.total_duration.lock().unwrap();
+                let looped = this.looped.load(Ordering::Relaxed);
+                let secs = ACTIVE.with(|c| {
+                    c.borrow()
+                        .iter()
+                        .find(|p| p.id == id)
+                        .map(|p| {
+                            let elapsed = p.sink.get_pos() + p.base_offset;
+                            let mut s = elapsed.as_secs_f64();
+                            if looped {
+                                if let Some(t) = total {
+                                    let total_secs = t.as_secs_f64();
+                                    if total_secs > 0.0 {
+                                        s %= total_secs;
+                                    }
+                                }
+                            }
+                            s
+                        })
+                        .unwrap_or(0.0)
+                });
+                Ok(secs)
+            } else {
+                Ok(this.pending_offset.lock().unwrap().as_secs_f64())
+            }
+        });
+        f.add_field_method_set("TimePosition", |_, this, secs: f64| {
+            let target = Duration::from_secs_f64(secs.max(0.0));
+            let cur_id = *this.current_id.lock().unwrap();
+            if cur_id.is_some() {
+                play_sound_at(this, target)?;
+            } else {
+                *this.pending_offset.lock().unwrap() = target;
+            }
+            Ok(())
+        });
     }
 
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
@@ -819,6 +886,11 @@ impl<I: Source<Item = f32>> Source for Spatial<I> {
 }
 
 fn play_sound(this: &Sound) -> mlua::Result<()> {
+    let offset = *this.pending_offset.lock().unwrap();
+    play_sound_at(this, offset)
+}
+
+fn play_sound_at(this: &Sound, offset: Duration) -> mlua::Result<()> {
     let prev_id = this.current_id.lock().unwrap().take();
     if let Some(id) = prev_id {
         ACTIVE.with(|c| {
@@ -835,10 +907,19 @@ fn play_sound(this: &Sound) -> mlua::Result<()> {
         Sink::try_new(&handle).map_err(|e| mlua::Error::RuntimeError(format!("SFX sink: {e}")))?;
     let shaders = this.shaders.lock().unwrap().clone();
     let attached = this.attached.lock().unwrap().clone();
-    let source = build_source(&this.bytes, &shaders, &attached)?;
+    let looper = Looper::build(
+        this.bytes.clone(),
+        shaders,
+        attached,
+        this.looped.clone(),
+        this.loop_count.clone(),
+    )?;
     let pos_handle = this.position.clone();
-    let final_source: Box<dyn Source<Item = f32> + Send> =
-        Box::new(CameraSpatial::new(source, pos_handle));
+    let mut final_source: Box<dyn Source<Item = f32> + Send> =
+        Box::new(CameraSpatial::new(Box::new(looper), pos_handle));
+    if !offset.is_zero() {
+        final_source = Box::new(final_source.skip_duration(offset));
+    }
     sink.append(final_source);
 
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
@@ -853,15 +934,20 @@ fn play_sound(this: &Sound) -> mlua::Result<()> {
             signal_key: link.key.clone(),
         })
         .collect();
+    let last_loop_count = this.loop_count.load(Ordering::Relaxed);
 
     ACTIVE.with(|c| {
         c.borrow_mut().push(ActivePlayback {
             id,
             sink,
             start: Instant::now(),
+            base_offset: offset,
             started_fired: false,
             started_key: this.started_key.clone(),
             stopped_key: this.stopped_key.clone(),
+            did_loop_key: this.did_loop_key.clone(),
+            loop_count: this.loop_count.clone(),
+            last_loop_count,
             updates,
         });
     });
@@ -904,6 +990,14 @@ pub fn pump(lua: &Lua) {
                 }
                 u.next_fire += u.interval;
             }
+        }
+
+        let cur_loops = p.loop_count.load(Ordering::Relaxed);
+        while p.last_loop_count < cur_loops {
+            if let Err(e) = fire_signal(lua, &p.did_loop_key, MultiValue::new()) {
+                eprintln!("[SFX] DidLoop fire error: {e}");
+            }
+            p.last_loop_count += 1;
         }
 
         if p.sink.empty() {
@@ -1275,6 +1369,72 @@ impl<I: Source<Item = f32>> Source for StaticTremolo<I> {
     }
     fn total_duration(&self) -> Option<Duration> {
         self.inner.total_duration()
+    }
+}
+
+struct Looper {
+    inner: Box<dyn Source<Item = f32> + Send>,
+    bytes: Arc<Vec<u8>>,
+    shaders: Vec<Shader>,
+    attached: Vec<AttachedShader>,
+    looped: Arc<AtomicBool>,
+    loop_count: Arc<AtomicU64>,
+    sample_rate: u32,
+    channels: u16,
+}
+
+impl Looper {
+    fn build(
+        bytes: Arc<Vec<u8>>,
+        shaders: Vec<Shader>,
+        attached: Vec<AttachedShader>,
+        looped: Arc<AtomicBool>,
+        loop_count: Arc<AtomicU64>,
+    ) -> mlua::Result<Self> {
+        let inner = build_source(&bytes, &shaders, &attached)?;
+        let sample_rate = inner.sample_rate();
+        let channels = inner.channels();
+        Ok(Self {
+            inner,
+            bytes,
+            shaders,
+            attached,
+            looped,
+            loop_count,
+            sample_rate,
+            channels,
+        })
+    }
+}
+
+impl Iterator for Looper {
+    type Item = f32;
+    fn next(&mut self) -> Option<f32> {
+        if let Some(s) = self.inner.next() {
+            return Some(s);
+        }
+        if !self.looped.load(Ordering::Relaxed) {
+            return None;
+        }
+        let new_source = build_source(&self.bytes, &self.shaders, &self.attached).ok()?;
+        self.inner = new_source;
+        self.loop_count.fetch_add(1, Ordering::Relaxed);
+        self.inner.next()
+    }
+}
+
+impl Source for Looper {
+    fn current_frame_len(&self) -> Option<usize> {
+        None
+    }
+    fn channels(&self) -> u16 {
+        self.channels
+    }
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        None
     }
 }
 

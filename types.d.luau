@@ -785,8 +785,23 @@ declare class Sound
 	Started: Signal<>
 	-- Fires when playback ends (natural completion or :Stop).
 	Stopped: Signal<>
+	-- Fires every time a looped sound wraps back to the start (only fires when
+	-- Looped = true). The first :Play() does NOT fire this; subsequent loop
+	-- restarts do. If the SFX.Repeat shader is used instead of Looped, this
+	-- signal won't fire (the source repeats internally with no boundary the
+	-- engine can observe).
+	DidLoop: Signal<>
 	-- Source label inherited from the SoundData.
 	Source: string
+	-- When true, playback restarts at the beginning each time the source
+	-- ends, and DidLoop fires on each wrap. Toggle live: setting to false
+	-- mid-play lets the current iteration finish naturally and then stops.
+	Looped: boolean
+	-- Current playback position in seconds. Reads track real-time progress
+	-- (modulo total duration when Looped is true). Writing while playing
+	-- seeks immediately; writing while stopped sets the start offset for
+	-- the next :Play() call.
+	TimePosition: number
 	-- Begin playback. Re-applying shaders or :Volume / :Speed first changes
 	-- how this playback sounds, settings don't carry between :Play calls
 	-- unless you re-apply them.

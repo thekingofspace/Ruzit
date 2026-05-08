@@ -84,9 +84,53 @@ snd:Volume(<span class="hl-num">0.6</span>):Echo(<span class="hl-num">120</span>
         <p class="member-desc">Fires on natural completion or <code>:Stop()</code>.</p>
     </div>
     <div class="member">
+        <div class="member-header"><span class="member-name">.DidLoop</span><span class="member-type">Signal&lt;&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Fires every time a looped sound wraps back to the start.
+            Only fires while <code>Looped = true</code>; the first
+            <code>:Play()</code> doesn't fire it, only subsequent loop
+            restarts. If you used the legacy <code>SFX.Repeat</code>
+            shader (or <code>snd:Loop()</code>) instead of the
+            <code>Looped</code> property, this signal stays silent, the
+            source repeats internally with no boundary the engine can
+            observe.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Looped</span><span class="member-type">boolean</span></div>
+        <p class="member-desc">
+            When true, playback restarts at the beginning each time the
+            source ends, and <code>DidLoop</code> fires on each wrap.
+            Toggle live, setting to false mid-play lets the current
+            iteration finish naturally and then stops.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.TimePosition</span><span class="member-type">number</span></div>
+        <p class="member-desc">
+            Current playback position in seconds. Reads track real-time
+            progress (modulo the source duration when
+            <code>Looped</code> is true). Writing while playing seeks
+            immediately; writing while stopped sets the start offset for
+            the next <code>:Play()</code> call.
+        </p>
+    </div>
+    <div class="member">
         <div class="member-header"><span class="member-name">.Source</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
     </div>
 </div>
+
+<pre><code><span class="hl-com">-- Background music with seek + loop counter.</span>
+<span class="hl-kw">local</span> music = SFX.LoadSound(Asset.GetAsset(<span class="hl-str">"Sound"</span>, <span class="hl-str">"music.theme"</span>))
+music.Looped = <span class="hl-kw">true</span>
+music.TimePosition = <span class="hl-num">12.5</span>   <span class="hl-com">-- start at 12.5 s on next Play</span>
+music:Play()
+
+<span class="hl-kw">local</span> loops = <span class="hl-num">0</span>
+music.DidLoop:Connect(<span class="hl-kw">function</span>()
+    loops += <span class="hl-num">1</span>
+    <span class="hl-fn">print</span>(<span class="hl-str">"theme has restarted "</span> .. loops .. <span class="hl-str">" times"</span>)
+<span class="hl-kw">end</span>)</code></pre>
 
 <h3>Playback control</h3>
 
