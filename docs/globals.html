@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Globals — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css?v=3.2">
+    <script src="theme.js?v=3.2"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=3.2" defer></script>
+
+<main>
+
+<h1>Globals</h1>
+<p class="lede">
+    Every Luau script in a Ruzit project starts with a small set of
+    runtime-injected globals on top of the standard Lua library.
+    <code>import</code>, <code>require</code>, <code>__dirname</code>,
+    <code>load</code>, and <code>print</code> &mdash; covered below.
+</p>
+
+<div class="callout note">
+    <strong>Per-script env.</strong>
+    Each loaded module runs inside its own environment table that
+    inherits from <code>_G</code> via a metatable. The globals listed
+    here are installed on that env per-script, which is why
+    <code>__dirname</code> reports the directory of the script that
+    references it &mdash; not some single global value.
+</div>
+
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<h2 id="import">import</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">import(name)</span>
+            <span class="member-type">→ &lt;library API&gt;</span>
+        </div>
+        <p class="member-desc">
+            Library accessor. Pass any name from
+            <a href="index.html">the API Reference</a> &mdash;
+            <code>"Renderable"</code>, <code>"Window"</code>,
+            <code>"Steam"</code>, etc. &mdash; and you get a typed handle
+            to that subsystem.
+        </p>
+    </div>
+</div>
+
+<pre><code><span class="hl-kw">local</span> Window = <span class="hl-fn">import</span>(<span class="hl-str">"Window"</span>)
+<span class="hl-kw">local</span> Renderable = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
+<span class="hl-kw">local</span> Vector = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Vector</code></pre>
+
+<p>
+    Unknown names throw a <code>"unknown library 'X'"</code> error at
+    runtime, with a "did you mean?" hint that scans for the closest
+    valid name. The Luau LSP follows the return type through every
+    <code>import(...)</code> call, so hover docs and autocomplete work
+    automatically once <code>types.d.luau</code> is in your project.
+</p>
+
+<h3>Available libraries</h3>
+
+<p>
+    Twenty-two as of v3.2: Actor, Asset, Gamepad, GPU, GUI, IO, Keyboard,
+    Managed, Mouse, Net, Primitives, Process, Register, Renderable,
+    RunService, Serde, SFX, Signal, Steam, Voice, VR, Window. Each has
+    its own page in the API Reference sidebar.
+</p>
+
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<h2 id="require">require</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">require(name)</span>
+            <span class="member-type">→ any</span>
+        </div>
+        <p class="member-desc">
+            Load a sibling Luau module from inside the project bundle.
+            The first call evaluates the module; subsequent calls return
+            the cached return value, so a module is initialised at most
+            once.
+        </p>
+    </div>
+</div>
+
+<h3>Path forms</h3>
+
+<table>
+    <tbody>
+        <tr>
+            <td><code>"./helper"</code></td>
+            <td>Caller-relative. Resolves to a sibling file.</td>
+        </tr>
+        <tr>
+            <td><code>"../shared/util"</code></td>
+            <td>Parent-relative.</td>
+        </tr>
+        <tr>
+            <td><code>"subdir/file"</code></td>
+            <td>Relative-without-./ also works.</td>
+        </tr>
+        <tr>
+            <td><code>"@PkgId/path/inner"</code></td>
+            <td>Cross-package. Reads from another loaded <code>.managed</code> package.</td>
+        </tr>
+        <tr>
+            <td><code>"@self/lib/util"</code></td>
+            <td>Same package as the caller, root-relative regardless of the caller's depth.</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>
+    Resolution mode is controlled by <code>"File Type"</code> in
+    <a href="build-toml.html">build.toml</a>: in <code>"Relative"</code>
+    mode (the default) every path is caller-relative; in
+    <code>"Global"</code> mode bare paths are resolved from the project
+    root, but <code>./</code>-prefixed and <code>@PkgId/</code> paths
+    keep their explicit semantics.
+</p>
+
+<p>
+    The <code>.luau</code> / <code>.lua</code> extension is appended
+    automatically &mdash; pass the bare module name. Folder-style modules
+    with an <code>init.luau</code> resolve when you require the folder
+    name.
+</p>
+
+<pre><code><span class="hl-kw">local</span> util = <span class="hl-fn">require</span>(<span class="hl-str">"./util"</span>)
+<span class="hl-kw">local</span> phys = <span class="hl-fn">require</span>(<span class="hl-str">"@PhysicsDLC/init"</span>)
+<span class="hl-kw">local</span> root = <span class="hl-fn">require</span>(<span class="hl-str">"@self/lib/Math"</span>)</code></pre>
+
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<h2 id="dirname">__dirname</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">__dirname</span>
+            <span class="member-type">string</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            Absolute path of the calling script's directory. Each script
+            sees its own value &mdash; not a single global &mdash; so
+            relative paths can be built without coordinating with
+            the rest of the project.
+        </p>
+    </div>
+</div>
+
+<pre><code><span class="hl-kw">local</span> data = <span class="hl-fn">require</span>(__dirname .. <span class="hl-str">"/data/levels"</span>)
+<span class="hl-kw">local</span> img  = Asset.ImportAsset(<span class="hl-str">"Image"</span>, __dirname .. <span class="hl-str">"/portrait.png"</span>)</code></pre>
+
+<p>
+    Inside a packaged <code>.managed</code> bundle, <code>__dirname</code>
+    is the script's vfs key &mdash; still works with <code>require</code>
+    but isn't a real disk path. For raw filesystem access from inside a
+    bundled script use <code>Asset.ImportAsset</code> instead of
+    <code>IO.read</code>.
+</p>
+
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<h2 id="load">load</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">load(path)</span>
+            <span class="member-type">→ any</span>
+        </div>
+        <p class="member-desc">
+            Sibling to <code>require</code> that takes a raw filesystem
+            path instead of a vfs key. Useful for loading mods,
+            user-content scripts, or anything that lives outside the
+            project's bundled tree. Returns whatever the loaded chunk
+            returns, or <code>true</code> for bare side-effect modules
+            (matching <code>require</code>'s convention).
+        </p>
+    </div>
+</div>
+
+<h3>Path forms</h3>
+
+<table>
+    <tbody>
+        <tr>
+            <td><code>"C:/mods/init.luau"</code></td>
+            <td>Absolute Windows path.</td>
+        </tr>
+        <tr>
+            <td><code>"/usr/local/share/ruzit/x.luau"</code></td>
+            <td>Absolute Unix path.</td>
+        </tr>
+        <tr>
+            <td><code>"./helper"</code></td>
+            <td>Relative to the calling script's <code>__dirname</code>.</td>
+        </tr>
+        <tr>
+            <td><code>"./helper.luau"</code></td>
+            <td>Same with explicit extension.</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>
+    If no extension is provided the loader probes <code>.luau</code>
+    then <code>.lua</code>. Errors are explicit:
+    <code>"load: file not found 'X' (resolved to '/abs/X')"</code>.
+</p>
+
+<h3>Loaded modules' environment</h3>
+
+<p>
+    Every loaded module gets the full runtime env &mdash;
+    <code>require</code>, <code>import</code>, <code>__dirname</code>,
+    <code>load</code>, <code>print</code> &mdash; with file resolution
+    rooted at <strong>the loaded file's own directory</strong>. So a
+    script loaded from <code>C:/mods/foo.luau</code> can do
+    <code>require("./bar")</code> and get <code>C:/mods/bar.luau</code>;
+    nested <code>load</code> calls work the same way.
+</p>
+
+<pre><code><span class="hl-com">-- main.luau</span>
+<span class="hl-kw">local</span> mod = <span class="hl-fn">load</span>(<span class="hl-str">"C:/mods/init.luau"</span>)
+mod.run()
+
+<span class="hl-com">-- C:/mods/init.luau</span>
+<span class="hl-kw">local</span> util = <span class="hl-fn">require</span>(<span class="hl-str">"./util"</span>)        <span class="hl-com">-- C:/mods/util.luau</span>
+<span class="hl-kw">local</span> Window = <span class="hl-fn">import</span>(<span class="hl-str">"Window"</span>)       <span class="hl-com">-- engine library</span>
+<span class="hl-kw">return</span> { run = <span class="hl-kw">function</span>() Window.Open() <span class="hl-kw">end</span> }</code></pre>
+
+<div class="callout warn">
+    <strong>Don't confuse with Lua's built-in load.</strong>
+    Standard Lua has a <code>load(string)</code> function for evaluating
+    source strings. Ruzit shadows it on the script env with this
+    file-loading version &mdash; <code>load("print('hi')")</code> won't
+    work, you'd need to write the source to a file first or use
+    <code>Asset.FromString("File", ...)</code> for in-memory text.
+</div>
+
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<h2 id="print">print</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">print(...)</span>
+        </div>
+        <p class="member-desc">
+            Tab-separated, newline-terminated stdout. Coerces every
+            argument to a string via Lua's standard tostring rules,
+            falling back to <code>{...}</code>-style debug formatting
+            for non-coercible values (function references, etc.).
+        </p>
+    </div>
+</div>
+
+<pre><code><span class="hl-fn">print</span>(<span class="hl-str">"player"</span>, player.name, <span class="hl-str">"hp"</span>, player.hp)</code></pre>
+
+<div class="callout note">
+    <strong>Console attach.</strong>
+    A windowed launcher built with <code>exe-windowed = true</code> in
+    <code>build.toml</code> has no console by default, so
+    <code>print</code> output goes nowhere. Pass <code>--console</code>
+    on the command line to attach (or allocate) a console window for
+    debugging. See <a href="cli.html">CLI</a>.
+</div>
+
+</main>
+
+</body>
+</html>

@@ -120,26 +120,10 @@ bus.player_died:Connect(<span class="hl-kw">function</span>(name) <span class="h
     cross-actor state pass values explicitly via <code>actor:Push</code>.
 </div>
 
-<h2 id="globals">Related: the global <code>load</code></h2>
-
 <p>
-    Sibling concept &mdash; if you need to load a Luau script from an
-    arbitrary disk path (mods, user-content, hot-loaded plugins), use the
-    global <code>load(path)</code> rather than <code>require</code>:
-</p>
-
-<pre><code><span class="hl-com">-- Load a mod from outside the project bundle.</span>
-<span class="hl-kw">local</span> mod = <span class="hl-fn">load</span>(<span class="hl-str">"C:/mods/init.luau"</span>)
-
-<span class="hl-com">-- Inside the loaded module, require / load resolve relative to itself —</span>
-<span class="hl-com">-- so C:/mods/init.luau can do `require("./util")` and get C:/mods/util.luau.</span></code></pre>
-
-<p>
-    The loaded chunk evaluates immediately and its return value is the
-    return value of <code>load()</code>. Loaded modules get the full
-    runtime env (<code>require</code> / <code>import</code> /
-    <code>__dirname</code> / <code>load</code> / <code>print</code>) with
-    file resolution rooted at the loaded file's own directory.
+    For loading scripts from arbitrary disk paths (mods, user-content,
+    hot-loaded plugins) see the global <a href="globals.html#load">load</a>
+    function under <strong>Tooling &gt; Globals</strong>.
 </p>
 
 </main>
