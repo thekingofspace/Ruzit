@@ -30,10 +30,28 @@ thread_local! {
 
 struct PendingItem {
     user_key: String,
-    owner: String,
+    cache_key: String,
     kind: String,
-    path: String,
     bytes_result: Result<(Vec<u8>, String), String>,
+}
+
+fn global_cache_key(fs: &Fs, owner: &str, kind: &str, path: &str) -> String {
+    match fs {
+        Fs::Disk { .. } => format!("asset:disk:{kind}:{path}"),
+        Fs::Bundle { default_id, .. } => {
+            let (target_pkg, rest) = if let Some(rest) = path.strip_prefix('@') {
+                if let Some((id, inner)) = rest.split_once('/') {
+                    (id.to_string(), inner.to_string())
+                } else {
+                    (default_id.clone(), path.to_string())
+                }
+            } else {
+                let (caller_pkg, _) = split_owner(owner, default_id);
+                (caller_pkg.to_string(), path.to_string())
+            };
+            format!("asset:pkg:{target_pkg}:{kind}:{rest}")
+        }
+    }
 }
 
 fn ensure_asset_cache(lua: &Lua) -> mlua::Result<Table> {
@@ -158,7 +176,7 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
         "GetAsset",
         lua.create_function(
             move |lua, (kind, path): (String, String)| -> mlua::Result<Value> {
-                let cache_key = format!("vfs:{owner_clone}:{kind}:{path}");
+                let cache_key = global_cache_key(&fs_clone, &owner_clone, &kind, &path);
                 if let Some(hit) = cache_get(lua, &cache_key) {
                     return Ok(hit);
                 }
@@ -240,16 +258,23 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
 
                 let fs_thread = fs_preload.clone();
                 let owner_thread = owner_preload.clone();
+                let resolved: Vec<(String, String, String, String)> = parsed
+                    .into_iter()
+                    .map(|(user_key, kind, path)| {
+                        let cache_key =
+                            global_cache_key(&fs_thread, &owner_thread, &kind, &path);
+                        (user_key, cache_key, kind, path)
+                    })
+                    .collect();
                 std::thread::spawn(move || {
-                    let mut items = Vec::with_capacity(parsed.len());
-                    for (user_key, kind, path) in parsed {
+                    let mut items = Vec::with_capacity(resolved.len());
+                    for (user_key, cache_key, kind, path) in resolved {
                         let bytes_result =
                             read_for_kind(&fs_thread, &owner_thread, &kind, &path);
                         items.push(PendingItem {
                             user_key,
-                            owner: owner_thread.clone(),
+                            cache_key,
                             kind,
-                            path,
                             bytes_result,
                         });
                     }
@@ -270,7 +295,7 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
                 let strong = ensure_strong_cache(lua)?;
                 for entry in entries {
                     let (kind, path) = parse_entry(&entry)?;
-                    let cache_key = format!("vfs:{owner_bulk}:{kind}:{path}");
+                    let cache_key = global_cache_key(&fs_bulk, &owner_bulk, &kind, &path);
                     let value = if let Some(hit) = cache_get(lua, &cache_key) {
                         hit
                     } else {
@@ -278,7 +303,7 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
                         cache_set(lua, &cache_key, &v);
                         v
                     };
-                    strong.set(entry.clone(), value.clone())?;
+                    strong.set(cache_key, value.clone())?;
                     result.set(entry, value)?;
                 }
                 Ok(result)
@@ -286,17 +311,18 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
         )?,
     )?;
 
+    let fs_drop = fs.clone();
     let owner_drop = owner.clone();
     t.set(
         "Drop",
         lua.create_function(move |lua, entry: String| -> mlua::Result<()> {
             let (kind, path) = parse_entry(&entry)?;
-            let cache_key = format!("vfs:{owner_drop}:{kind}:{path}");
+            let cache_key = global_cache_key(&fs_drop, &owner_drop, &kind, &path);
 
             let cached = cache_get(lua, &cache_key).or_else(|| {
                 ensure_strong_cache(lua)
                     .ok()
-                    .and_then(|t| t.get::<Value>(entry.clone()).ok())
+                    .and_then(|t| t.get::<Value>(cache_key.clone()).ok())
                     .filter(|v| !matches!(v, Value::Nil))
             });
             if let Some(v) = cached {
@@ -306,10 +332,10 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
             }
 
             if let Ok(cache) = ensure_asset_cache(lua) {
-                cache.set(cache_key, Value::Nil)?;
+                cache.set(cache_key.clone(), Value::Nil)?;
             }
             if let Ok(strong) = ensure_strong_cache(lua) {
-                strong.set(entry, Value::Nil)?;
+                strong.set(cache_key, Value::Nil)?;
             }
             Ok(())
         })?,
@@ -824,10 +850,8 @@ pub fn pump(lua: &Lua) {
             match item.bytes_result {
                 Ok((bytes, source)) => match from_bytes(lua, &item.kind, bytes, source) {
                     Ok(value) => {
-                        let cache_key =
-                            format!("vfs:{}:{}:{}", item.owner, item.kind, item.path);
-                        cache_set(lua, &cache_key, &value);
-                        let _ = strong.set(item.user_key, value);
+                        cache_set(lua, &item.cache_key, &value);
+                        let _ = strong.set(item.cache_key, value);
                     }
                     Err(e) => {
                         eprintln!(

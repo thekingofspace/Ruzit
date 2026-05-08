@@ -125,6 +125,16 @@
     <code>"Model:props.crate"</code>) so a single list can mix kinds.
 </p>
 
+<p>
+    The cache is <strong>process-wide</strong>: keyed by resolved
+    target package + kind + path, not by which script made the call.
+    Any script can preload, look up, or drop any asset, and the same
+    userdata instance is shared across the whole game. Same-named bare
+    paths in different packages stay separate (the resolved package id
+    is part of the key), and <code>"@PkgId/..."</code> paths always
+    name the explicit package.
+</p>
+
 <div class="member-list">
     <div class="member">
         <div class="member-header">

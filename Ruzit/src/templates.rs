@@ -675,6 +675,15 @@ export type Asset_API = {
 	FromPixels: (width: number, height: number, rgba: string) -> ImageAsset,
 
 	-- ── Bulk loading / unloading ──────────────────────────────────────────
+	-- The Preload / BulkLoad / Drop trio shares a SINGLE process-wide
+	-- asset cache, keyed by resolved (target package, kind, path), not
+	-- by which script called the loader. Any script can preload, look
+	-- up, or drop any asset, and the same Image / Sound / Model
+	-- userdata is shared across the whole game. Same-named bare paths
+	-- in different packages naturally stay separate (the cache key
+	-- includes the resolved package id), and "@PkgId/..." paths always
+	-- resolve to the explicit package they name.
+	--
 	-- Preload a list of assets in the background and fire the returned
 	-- signal when every entry has finished decoding. Each entry is a
 	-- "Kind:path" string, e.g. {"Image:ui.logo", "Sound:sfx.boom",
@@ -693,8 +702,11 @@ export type Asset_API = {
 	BulkLoad: (entries: { string }) -> { [string]: any },
 
 	-- Forcefully unload a previously-loaded asset by its "Kind:path"
-	-- string. The cache slot is cleared and the strong-ref is released.
-	-- Behaviour for live consumers depends on the asset kind:
+	-- string. The cache slot is cleared and the strong-ref is released
+	-- globally, any script that loaded the same asset loses access to
+	-- the cached entry on its next GetAsset, which will then re-decrypt
+	-- and re-decompress from disk. Behaviour for live consumers depends
+	-- on the asset kind:
 	--   Content assets (Image, Sound, Model, Font), every consumer is
 	--   destroyed. BaseParts whose .Texture or .Model match the dropped
 	--   asset are destroyed and fire "Destroyed". GUI Primitives backed
