@@ -181,6 +181,41 @@
     <code>.TextSize</code>.
 </p>
 
+<h2 id="shader">ShaderAsset</h2>
+
+<p>
+    Opaque handle wrapping a vertex-stage WGSL program. No methods of its
+    own &mdash; you load it with
+    <code>Asset.GetAsset("Shader", path)</code> and pass it to a shader-
+    accepting method like
+    <code>part:AttachShader(shader)</code> or
+    <code>GUI.SetSkybox(shader)</code>.
+</p>
+
+<p>
+    Most projects never override the vertex stage; the engine's default
+    handles transform / projection / interpolation. See
+    <a href="shaders.html">Shaders</a> for the WGSL contract.
+</p>
+
+<h2 id="fragment">FragmentAsset</h2>
+
+<p>
+    Opaque handle wrapping a fragment-stage WGSL program. Loaded via
+    <code>Asset.GetAsset("Fragment", path)</code> and passed to
+    <code>part:AttachShader(asset)</code>,
+    <code>primitive:AttachShader(asset)</code>,
+    <code>GUI.SetSkybox(asset)</code>, or
+    <code>GUI.SetPostEffect(asset)</code>.
+</p>
+
+<p>
+    This is where ~all custom shader work lives &mdash; surface lighting,
+    dissolve effects, stylised lighting, scrolling textures, post effects.
+    See <a href="shaders.html">Shaders</a> for the prelude, parameter
+    declarations, and helpers.
+</p>
+
 </main>
 
 </body>

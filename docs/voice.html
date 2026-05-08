@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Voice</h1>
+<p class="lede">
+    Microphone capture + per-peer playback. Opus-encoded 20 ms frames carry
+    over your transport (Steam P2P, the Net library, anything). Ruzit
+    handles the audio plumbing &mdash; you decide how packets travel.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Voice = <span class="hl-fn">import</span>(<span class="hl-str">"Voice"</span>)
+
+<span class="hl-kw">local</span> mic = Voice.StartCapture()
+mic.OnPacket:Connect(<span class="hl-kw">function</span>(packet)
+    send_to_peers(packet)
+<span class="hl-kw">end</span>)
+
+<span class="hl-kw">local</span> chan = Voice.CreateChannel()
+chan:Play()
+on_peer_packet:Connect(<span class="hl-kw">function</span>(packet) chan:Push(packet) <span class="hl-kw">end</span>)</code></pre>
+
+<h2 id="api">Voice API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Voice.StartCapture()</span>
+            <span class="member-type">→ VoiceCapture</span>
+        </div>
+        <p class="member-desc">
+            Open the default microphone. Encodes 20 ms Opus frames; fires
+            <code>OnPacket</code> for each one. Stop with
+            <code>:Stop()</code> when done.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Voice.CreateChannel()</span>
+            <span class="member-type">→ VoiceChannel</span>
+        </div>
+        <p class="member-desc">
+            Per-peer playback channel. Each remote speaker gets one. Push
+            received Opus packets in; Ruzit decodes and plays them.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Voice.PlayPacket(packet, opts?)</span>
+            <span class="member-type">→ VoiceChannel</span>
+        </div>
+        <p class="member-desc">
+            Fire-and-forget: spin up a transient channel, decode + play the
+            packet, optionally pinned to a world position. Best for one-off
+            received messages. <code>opts</code>:
+            <code>{ x?, y?, z?, falloff? }</code>.
+            For ongoing peer voice prefer <code>CreateChannel</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Voice.NewRecorder()</span>
+            <span class="member-type">→ VoiceRecorder</span>
+        </div>
+        <p class="member-desc">
+            Empty packet collector. Hook to <code>mic.OnPacket</code> OR to
+            packets you receive from a peer &mdash; the recorder doesn't
+            care where they came from.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Voice.LoadRecording(serialized)</span>
+            <span class="member-type">→ VoiceRecording</span>
+        </div>
+        <p class="member-desc">Inverse of <code>recorder:Serialize()</code>.</p>
+    </div>
+</div>
+
+<h3>Shader factories</h3>
+
+<table>
+    <tbody>
+        <tr><td><code>Voice.Volume(factor)</code></td><td>Linear gain. 1.0 unchanged, 0 silence, &gt;1 boost.</td></tr>
+        <tr><td><code>Voice.Speed(factor)</code></td><td>Time + pitch.</td></tr>
+        <tr><td><code>Voice.Spatial(x, y, z, falloff?)</code></td><td>Anchor to a world point with distance falloff. Listener = active <code>Renderable.Camera</code>.</td></tr>
+        <tr><td><code>Voice.LowPass(freq)</code></td><td>Biquad lowpass at the given Hz. Useful for "muffled radio" presets.</td></tr>
+        <tr><td><code>Voice.HighPass(freq)</code></td><td>Biquad highpass.</td></tr>
+        <tr><td><code>Voice.Distortion(amount)</code></td><td>Soft saturation. &gt;1 hard-clips.</td></tr>
+        <tr><td><code>Voice.Echo(delay_ms, feedback?, mix?)</code></td><td>Single-tap echo.</td></tr>
+        <tr><td><code>Voice.Reverb(mix?, decay?)</code></td><td>Diffuse reverb.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="capture">VoiceCapture</h2>
+
+<p>Returned by <code>Voice.StartCapture()</code>.</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnPacket</span><span class="member-type">Signal&lt;string&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Fires with each Opus-encoded packet (~20 ms = 50/sec). Pass
+            <code>packet</code> to peers via Steam P2P / Net /
+            whatever transport.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">cap:Stop()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Stop and release the mic. After Stop, every other method is a no-op.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">cap:IsActive()</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">True between StartCapture and Stop.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">cap:Pause()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Push-to-talk: stop emitting packets without closing the mic.
+            Toggling is cheap (one atomic).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">cap:Resume()</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">cap:SetActive(on)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Alias for Pause/Resume that reads naturally with a state variable.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">cap:IsPaused()</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">cap:SetThreshold(amplitude)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Voice activation: peak amplitude (0..1). 0 = always send
+            (default). Typical: 0.02&ndash;0.05 just above ambient noise.
+            Frames whose peak amplitude is below the threshold are
+            dropped before they hit the Opus encoder.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">cap:GetThreshold()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
+    </div>
+</div>
+
+<h2 id="channel">VoiceChannel</h2>
+
+<p>
+    Returned by <code>Voice.CreateChannel()</code> /
+    <code>Voice.PlayPacket(...)</code>. One per remote speaker.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.IsPlaying</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">True while at least one packet is queued for playback.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">chan:Push(packet)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Feed an Opus packet (received from a peer). Decoded and queued
+            for playback. Auto-clamps backlog to ~1 second to prevent
+            runaway latency.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">chan:Play()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Begin the audio mixer for this channel.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">chan:Stop()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">After Stop, new packets queue silently until you Play again.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">chan:ApplyShader(shader)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Stack a <code>VoiceShader</code> built via the factories above.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">chan:ClearShaders()</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">chan:SetPosition(x?, y?, z?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            3D position is STATIC &mdash; set once and the channel stays
+            anchored as the camera moves. Listener = active
+            <code>Renderable.Camera</code>. Pass nil (or no args) to
+            clear.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">chan:SetSpatial(x?, y?, z?, falloff?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Same as <code>SetPosition</code> but also installs / replaces
+            the Spatial shader with this distance falloff in one call.
+        </p>
+    </div>
+</div>
+
+<h2 id="recorder">VoiceRecorder</h2>
+
+<p>
+    Captures Opus packets into an in-memory buffer. Packets are opaque
+    &mdash; the recorder doesn't care if they came from your own mic or a
+    peer.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">rec:Push(packet)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Append one Opus packet.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">rec:Clear()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Drop everything captured so far.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">rec:Length()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Total packet count.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">rec:Duration()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Total recorded duration in seconds.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">rec:Serialize()</span><span class="member-type">→ string</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Length-prefixed binary serialization. Save with
+            <code>IO.write</code> or to Steam Cloud, send over the
+            network, etc. Reload with <code>Voice.LoadRecording</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">rec:ToRecording()</span><span class="member-type">→ VoiceRecording</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Snapshot the current packet list as an immutable <code>VoiceRecording</code>.</p>
+    </div>
+</div>
+
+<h2 id="recording">VoiceRecording</h2>
+
+<p>
+    Immutable snapshot. Built from
+    <code>recorder:ToRecording()</code> or loaded via
+    <code>Voice.LoadRecording(bytes)</code>.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">rec:PacketCount()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">rec:Duration()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">rec:PlayInto(channel, opts?)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Stream packets into <code>channel</code> at the original
+            ~50 packets/second pacing. Returns immediately &mdash; playback
+            is dripped by the heart pump. <code>opts</code>:
+            <code>{ loop?: boolean, speed?: 0.25..4.0 }</code>.
+        </p>
+    </div>
+</div>
+
+<h2 id="shader">VoiceShader</h2>
+
+<p>
+    Returned by every <code>Voice.Volume / Speed / Spatial / ...</code>
+    factory. Opaque handle &mdash; pass it to
+    <code>chan:ApplyShader(shader)</code>. Multiple channels can share
+    the same shader instance, and one channel can stack many shaders.
+</p>
+
+</main>
+
+</body>
+</html>

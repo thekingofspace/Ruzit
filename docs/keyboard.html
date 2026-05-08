@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keyboard — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Keyboard</h1>
+<p class="lede">
+    Key events and snapshot queries. <code>InputChanged</code> fires for
+    every press / release; <code>IsKeyDown</code> is a free poll.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Keyboard = <span class="hl-fn">import</span>(<span class="hl-str">"Keyboard"</span>)
+
+<span class="hl-kw">local</span> jump_id = Keyboard:GetKeyId(<span class="hl-str">"Space"</span>)
+
+Keyboard.InputChanged:Connect(<span class="hl-kw">function</span>(id, name, pressed, state)
+    <span class="hl-kw">if</span> id == jump_id <span class="hl-kw">and</span> state == <span class="hl-str">"Begin"</span> <span class="hl-kw">then</span>
+        player:Jump()
+    <span class="hl-kw">end</span>
+<span class="hl-kw">end</span>)
+
+<span class="hl-kw">if</span> Keyboard:IsKeyDown(<span class="hl-str">"w"</span>) <span class="hl-kw">then</span> ... <span class="hl-kw">end</span></code></pre>
+
+<h2 id="api">Keyboard API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.InputChanged</span><span class="member-type">Signal&lt;number, string, boolean, "Begin" | "End"&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Fires with <code>(id, name, pressed, state)</code>. The
+            boolean stays as the third argument for backward compat;
+            <code>state</code> is the explicit Begin/End indicator.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Keyboard:IsKeyDown(key)</span>
+            <span class="member-type">→ boolean</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Pass either the name string (<code>"w"</code>,
+            <code>"Space"</code>) or the numeric id from
+            <code>InputChanged</code> / <code>GetKeyId</code>. Numeric ids
+            are stable across runs and faster to compare.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Keyboard:GetKeyId(name)</span>
+            <span class="member-type">→ number</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Resolve a name string to its stable numeric id. Internally
+            FNV-1a-32 of the name; cache the result if you compare keys
+            in a hot loop.
+        </p>
+    </div>
+</div>
+
+<h2 id="names">Key names</h2>
+
+<p>
+    Names follow winit conventions, mostly the literal character for
+    printables and CamelCase for named keys.
+</p>
+
+<table>
+    <thead><tr><th>Group</th><th>Examples</th></tr></thead>
+    <tbody>
+        <tr><td>Letters</td><td><code>"a"</code> through <code>"z"</code> (lowercase)</td></tr>
+        <tr><td>Digits</td><td><code>"0"</code> through <code>"9"</code></td></tr>
+        <tr><td>Punctuation</td><td><code>"."</code>, <code>","</code>, <code>";"</code>, <code>"'"</code>, etc. (literal characters)</td></tr>
+        <tr><td>Whitespace</td><td><code>"Space"</code>, <code>"Tab"</code>, <code>"Enter"</code>, <code>"Backspace"</code></td></tr>
+        <tr><td>Modifiers</td><td><code>"ShiftLeft"</code>, <code>"ShiftRight"</code>, <code>"ControlLeft"</code>, <code>"ControlRight"</code>, <code>"AltLeft"</code>, <code>"AltRight"</code>, <code>"SuperLeft"</code>, <code>"SuperRight"</code></td></tr>
+        <tr><td>Function keys</td><td><code>"F1"</code> through <code>"F24"</code></td></tr>
+        <tr><td>Arrows</td><td><code>"ArrowUp"</code>, <code>"ArrowDown"</code>, <code>"ArrowLeft"</code>, <code>"ArrowRight"</code></td></tr>
+        <tr><td>Navigation</td><td><code>"Home"</code>, <code>"End"</code>, <code>"PageUp"</code>, <code>"PageDown"</code>, <code>"Insert"</code>, <code>"Delete"</code></td></tr>
+        <tr><td>Special</td><td><code>"Escape"</code>, <code>"PrintScreen"</code>, <code>"ScrollLock"</code>, <code>"Pause"</code>, <code>"CapsLock"</code>, <code>"NumLock"</code></td></tr>
+        <tr><td>Numpad</td><td><code>"Numpad0"</code> through <code>"Numpad9"</code>, <code>"NumpadAdd"</code>, <code>"NumpadSubtract"</code>, <code>"NumpadMultiply"</code>, <code>"NumpadDivide"</code>, <code>"NumpadDecimal"</code>, <code>"NumpadEnter"</code></td></tr>
+    </tbody>
+</table>
+
+<div class="callout note">
+    <strong>Layout-independent.</strong>
+    Names refer to <em>physical</em> keys. <code>"w"</code> is the key in
+    the W position on a US QWERTY layout, regardless of what character a
+    French AZERTY user types when pressing the same key. Use this for
+    movement bindings; for text input, the engine surfaces typed
+    characters separately.
+</div>
+
+</main>
+
+</body>
+</html>

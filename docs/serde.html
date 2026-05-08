@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Serde — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Serde</h1>
+<p class="lede">
+    Serialization, hashing, and compression. JSON / TOML / YAML for textual
+    formats; ten hash algorithms; four compression codecs.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Serde = <span class="hl-fn">import</span>(<span class="hl-str">"Serde"</span>)
+
+<span class="hl-kw">local</span> json = Serde.Encode(<span class="hl-str">"json"</span>, { health = <span class="hl-num">100</span>, name = <span class="hl-str">"Eve"</span> }, <span class="hl-kw">true</span>)
+<span class="hl-kw">local</span> data = Serde.Decode(<span class="hl-str">"json"</span>, json)
+<span class="hl-fn">print</span>(Serde.Hash(<span class="hl-str">"sha256"</span>, json))</code></pre>
+
+<h2 id="encoding">Encoding</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Serde.Encode(format, data, pretty?)</span>
+            <span class="member-type">→ string</span>
+        </div>
+        <p class="member-desc">
+            Serialise Lua data to a textual format. <code>pretty</code>
+            adds whitespace (default <code>false</code>). Tables with
+            sequential 1-based integer keys become arrays; otherwise they
+            become objects with stringified keys.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Serde.Decode(format, text)</span>
+            <span class="member-type">→ any</span>
+        </div>
+        <p class="member-desc">
+            Inverse of <code>Encode</code>. Returns nested tables /
+            numbers / strings / booleans / nils. Throws on malformed
+            input.
+        </p>
+    </div>
+</div>
+
+<p>Supported formats: <code>"json"</code>, <code>"toml"</code>, <code>"yaml"</code>.</p>
+
+<h2 id="hash">Hashing</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Serde.Hash(algo, data, encoding?)</span>
+            <span class="member-type">→ string</span>
+        </div>
+        <p class="member-desc">
+            Cryptographic hash. <code>encoding</code> controls the return
+            form: <code>"hex"</code> (default), <code>"base64"</code>, or
+            <code>"bytes"</code> (raw binary string).
+        </p>
+    </div>
+</div>
+
+<h3 id="hash-algo">HashAlgo (string)</h3>
+
+<table>
+    <thead><tr><th>Value</th><th>Notes</th></tr></thead>
+    <tbody>
+        <tr><td><code>"md5"</code></td><td>128-bit. Broken for cryptographic use; fine for non-security checksums.</td></tr>
+        <tr><td><code>"sha1"</code></td><td>160-bit. Also broken; use sha256 unless you need legacy compatibility.</td></tr>
+        <tr><td><code>"sha224"</code></td><td>SHA-2, 224-bit.</td></tr>
+        <tr><td><code>"sha256"</code></td><td>SHA-2, 256-bit. The safe default.</td></tr>
+        <tr><td><code>"sha384"</code></td><td>SHA-2, 384-bit.</td></tr>
+        <tr><td><code>"sha512"</code></td><td>SHA-2, 512-bit.</td></tr>
+        <tr><td><code>"sha3-256"</code></td><td>SHA-3, 256-bit. Different design family from SHA-2.</td></tr>
+        <tr><td><code>"sha3-512"</code></td><td>SHA-3, 512-bit.</td></tr>
+        <tr><td><code>"keccak256"</code></td><td>Keccak (pre-NIST SHA-3 finalist). Used in Ethereum.</td></tr>
+        <tr><td><code>"blake3"</code></td><td>Modern fast hash. Excellent throughput for asset checksums.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="compress">Compression</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Serde.Compress(algo, data, level?)</span>
+            <span class="member-type">→ string</span>
+        </div>
+        <p class="member-desc">
+            <code>level</code> is 0&ndash;9 for gzip / zlib / deflate,
+            1&ndash;22 for zstd. Default is each codec's mid-level.
+            Output is a binary string.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Serde.Decompress(algo, data)</span>
+            <span class="member-type">→ string</span>
+        </div>
+        <p class="member-desc">Inverse. Throws on truncated / bad-magic data.</p>
+    </div>
+</div>
+
+<h3 id="compress-algo">CompressAlgo (string)</h3>
+
+<table>
+    <thead><tr><th>Value</th><th>Notes</th></tr></thead>
+    <tbody>
+        <tr><td><code>"gzip"</code></td><td>Standard gzip wrapper around DEFLATE.</td></tr>
+        <tr><td><code>"zlib"</code></td><td>zlib wrapper around DEFLATE (smaller header than gzip).</td></tr>
+        <tr><td><code>"deflate"</code></td><td>Raw DEFLATE, no wrapper.</td></tr>
+        <tr><td><code>"zstd"</code></td><td>Modern Facebook codec. Faster + smaller than gzip at most levels; use level 3 for runtime, level 19+ for ship-it bundling.</td></tr>
+    </tbody>
+</table>
+
+</main>
+
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mouse — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Mouse</h1>
+<p class="lede">
+    Cursor position, button state, scroll, lock + visibility, and the cursor
+    sprite. Reads are cheap snapshots; signals fire from the engine event
+    pump.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Mouse = <span class="hl-fn">import</span>(<span class="hl-str">"Mouse"</span>)
+
+Mouse.Moved:Connect(<span class="hl-kw">function</span>(pos, delta)
+    aim:RotateBy(delta.X * <span class="hl-num">0.1</span>, delta.Y * <span class="hl-num">0.1</span>)
+<span class="hl-kw">end</span>)
+Mouse.InputReceived:Connect(<span class="hl-kw">function</span>(button, pressed, state)
+    <span class="hl-kw">if</span> button == <span class="hl-str">"MouseButton1"</span> <span class="hl-kw">and</span> state == <span class="hl-str">"Begin"</span> <span class="hl-kw">then</span>
+        fire_weapon()
+    <span class="hl-kw">end</span>
+<span class="hl-kw">end</span>)</code></pre>
+
+<h2 id="api">Mouse API</h2>
+
+<h3>Properties</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Position</span><span class="member-type">Dim</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Cursor position in window-local pixels. Origin top-left, +Y
+            down.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Visible</span><span class="member-type">boolean</span></div>
+        <p class="member-desc">Whether the cursor sprite is shown.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Locked</span><span class="member-type">boolean</span></div>
+        <p class="member-desc">
+            When true, the cursor is recentered every frame. Combine with
+            <code>.Visible = false</code> for FPS-style mouselook.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Cursor</span><span class="member-type">CursorName</span></div>
+        <p class="member-desc">Active cursor sprite. See <a href="#cursor-name">CursorName</a> below.</p>
+    </div>
+</div>
+
+<h3>Signals</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Moved</span><span class="member-type">Signal&lt;Dim, Dim&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Fires with <code>(position, delta)</code> &mdash; both
+            <code>Dim</code>. Delta is the per-frame movement; position is
+            absolute window-local coords.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.InputReceived</span><span class="member-type">Signal&lt;MouseButton, boolean, "Begin" | "End"&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Fires with <code>(button, pressed, state)</code>. The legacy
+            boolean is kept for backward compat; new code can branch on
+            the explicit string.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Scrolled</span><span class="member-type">Signal&lt;number, number&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Fires with <code>(deltaX, deltaY)</code> in lines (one notch
+            of a standard wheel = &plusmn;1). +deltaY is scroll up / away
+            from the user; +deltaX is scroll right. Precise touchpads emit
+            fractional values.
+        </p>
+    </div>
+</div>
+
+<h3>Methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">Mouse:SetCursor(name)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Same as assigning <code>Mouse.Cursor</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">Mouse:Lock()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Lock the cursor to the window center every frame.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">Mouse:Unlock()</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">Mouse:IsButtonDown(button)</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Snapshot whether a button is currently held. Cheaper than
+            tracking <code>InputReceived</code> state yourself.
+        </p>
+    </div>
+</div>
+
+<h2 id="mouse-button">MouseButton (string)</h2>
+
+<table>
+    <tbody>
+        <tr><td><code>"MouseButton1"</code></td><td>Primary (left).</td></tr>
+        <tr><td><code>"MouseButton2"</code></td><td>Secondary (right).</td></tr>
+        <tr><td><code>"MouseButton3"</code></td><td>Middle / wheel click.</td></tr>
+        <tr><td><code>"MouseButton4"</code></td><td>Back (extra 1).</td></tr>
+        <tr><td><code>"MouseButton5"</code></td><td>Forward (extra 2).</td></tr>
+    </tbody>
+</table>
+
+<h2 id="cursor-name">CursorName (string)</h2>
+
+<p>Every cursor winit accepts. Group by purpose:</p>
+
+<table>
+    <thead><tr><th>Group</th><th>Values</th></tr></thead>
+    <tbody>
+        <tr><td>Standard</td><td><code>"default" | "pointer" | "text" | "crosshair" | "move"</code></td></tr>
+        <tr><td>Activity</td><td><code>"wait" | "progress" | "help"</code></td></tr>
+        <tr><td>Disabled</td><td><code>"not_allowed" | "no_drop"</code></td></tr>
+        <tr><td>Drag</td><td><code>"grab" | "grabbing" | "alias" | "copy" | "all_scroll"</code></td></tr>
+        <tr><td>Edge resize</td><td><code>"resize_n" | "resize_s" | "resize_e" | "resize_w"</code></td></tr>
+        <tr><td>Corner resize</td><td><code>"resize_ne" | "resize_nw" | "resize_se" | "resize_sw"</code></td></tr>
+        <tr><td>Bidirectional resize</td><td><code>"resize_ns" | "resize_ew" | "resize_nesw" | "resize_nwse"</code></td></tr>
+        <tr><td>Zoom / cell</td><td><code>"zoom_in" | "zoom_out" | "cell" | "vertical_text" | "context_menu"</code></td></tr>
+    </tbody>
+</table>
+
+</main>
+
+</body>
+</html>

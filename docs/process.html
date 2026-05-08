@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Process — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Process</h1>
+<p class="lede">
+    Info about the running process: OS / arch, PID, env vars, command-line
+    arguments, memory usage. Plus a heart-tick subscriber that runs even
+    without a window open.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Process = <span class="hl-fn">import</span>(<span class="hl-str">"Process"</span>)
+
+<span class="hl-fn">print</span>(Process.Os, Process.Arch, Process.CpuCount)
+<span class="hl-kw">if</span> <span class="hl-kw">not</span> Process.IsBuilt <span class="hl-kw">then</span> show_dev_overlay() <span class="hl-kw">end</span></code></pre>
+
+<h2 id="static">Static fields</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Os</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            <code>"windows"</code> / <code>"linux"</code> /
+            <code>"macos"</code> / <code>"freebsd"</code> / etc. Match
+            against this to gate platform-specific code paths.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Arch</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc"><code>"x86_64"</code> / <code>"aarch64"</code> / etc.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Family</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc"><code>"windows"</code> / <code>"unix"</code> / <code>"wasm"</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Pid</span><span class="member-type">number</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">OS-assigned process id.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.CpuCount</span><span class="member-type">number</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Logical CPU count (hyperthreads included). Useful for sizing Actor pools or work batches.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.IsBuilt</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            True when running from a built game launcher
+            (<code>.exe</code> + <code>Managed/</code>); false under
+            <code>Ruzit Test</code>. Gate dev-only debug overlays etc.
+            behind this.
+        </p>
+    </div>
+</div>
+
+<h2 id="env">Environment</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Process.Env(name)</span>
+            <span class="member-type">→ string?</span>
+        </div>
+        <p class="member-desc">
+            Read one variable. <code>nil</code> if unset.
+        </p>
+        <pre><code>Process.Env(<span class="hl-str">"PATH"</span>)   <span class="hl-com">-- "/usr/local/bin:/usr/bin:..."</span>
+Process.Env(<span class="hl-str">"NOPE"</span>)   <span class="hl-com">-- nil</span></code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Process.Env()</span>
+            <span class="member-type">→ { [string]: string }</span>
+        </div>
+        <p class="member-desc">Whole environment as a Lua table.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Process.SetEnv(name, value)</span>
+        </div>
+        <p class="member-desc">
+            Set on the running process and inherited children. Doesn't
+            persist beyond process lifetime.
+        </p>
+    </div>
+</div>
+
+<h2 id="lifecycle">Lifecycle</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Process.Args()</span>
+            <span class="member-type">→ { string }</span>
+        </div>
+        <p class="member-desc">
+            argv passed to Ruzit (or the launcher), with element [1] being
+            the executable name.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Process.Close(code?)</span>
+            <span class="member-type">→ never</span>
+        </div>
+        <p class="member-desc">
+            Hard-exit. <code>code</code> defaults to 0. Doesn't run
+            <code>BindToClose</code> callbacks &mdash; use
+            <code>Window:Close</code> for graceful shutdown when you have
+            a window open.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Process.Memory()</span>
+            <span class="member-type">→ MemorySnapshot</span>
+        </div>
+        <p class="member-desc">Snapshot of system memory. See <a href="#memory-obj">below</a>.</p>
+    </div>
+</div>
+
+<h2 id="bind-heart">Heart-tick binding</h2>
+
+<p>
+    For most per-frame logic prefer <code>RunService.Heartbeat</code>
+    &mdash; it's typed and connected to the same tick. <code>BindToHeart</code>
+    is for background tasks that need to run even when no window is open
+    (headless tools, Net.Serve event loops, etc.).
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Process.BindToHeart(id, fn)</span>
+        </div>
+        <p class="member-desc">
+            Subscribe a function to the engine heart tick.
+            <code>id</code> is your own string label &mdash; used as the
+            de-dup key (registering the same id twice replaces the old
+            fn) and later for unbinding. The callback gets dt (seconds
+            since the previous tick).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Process.UnbindFromHeart(id)</span>
+        </div>
+        <p class="member-desc">
+            Remove a previously-bound callback. <code>id</code> is the
+            same string label passed to <code>BindToHeart</code>. No-op
+            if no callback with that id is registered.
+        </p>
+    </div>
+</div>
+
+<h2 id="memory-obj">MemorySnapshot</h2>
+
+<p>Returned by <code>Process.Memory()</code>. All fields in bytes.</p>
+
+<table>
+    <tbody>
+        <tr><td><code>total</code></td><td>Total physical RAM.</td></tr>
+        <tr><td><code>free</code></td><td>Strictly currently-unallocated RAM. Typically much smaller than <code>available</code>.</td></tr>
+        <tr><td><code>used</code></td><td><code>total - free</code>.</td></tr>
+        <tr><td><code>available</code></td><td>What the OS is willing to give a new allocation (may include reclaimable cache).</td></tr>
+        <tr><td><code>total_swap</code></td><td>Total swap space.</td></tr>
+        <tr><td><code>used_swap</code></td><td>Swap currently in use.</td></tr>
+    </tbody>
+</table>
+
+</main>
+
+</body>
+</html>

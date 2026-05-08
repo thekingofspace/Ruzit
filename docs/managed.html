@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Managed — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Managed</h1>
+<p class="lede">
+    Runtime info about loaded <code>.managed</code> packages &mdash; the
+    project itself, every DLC, and anything dropped into the
+    <code>Packages/</code> folder. Useful for game-side mod menus,
+    "discovered DLC" overlays, and debug panels.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Managed = <span class="hl-fn">import</span>(<span class="hl-str">"Managed"</span>)
+
+<span class="hl-kw">for</span> _, id <span class="hl-kw">in</span> <span class="hl-fn">ipairs</span>(Managed.List()) <span class="hl-kw">do</span>
+    <span class="hl-kw">local</span> pkg = Managed.GetPackage(id)
+    <span class="hl-fn">print</span>(pkg.ID, pkg.Name, pkg.Version, <span class="hl-fn">tostring</span>(#pkg:Files()) .. <span class="hl-str">" files"</span>)
+<span class="hl-kw">end</span></code></pre>
+
+<h2 id="api">Managed API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Managed.IsPackage(id)</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+        <p class="member-desc">True if a package with this id is loaded.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Managed.GetPackage(id)</span>
+            <span class="member-type">→ Package?</span>
+        </div>
+        <p class="member-desc">Look up a package by id. Returns nil if unknown.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Managed.List()</span>
+            <span class="member-type">→ { string }</span>
+        </div>
+        <p class="member-desc">
+            All loaded package ids &mdash; your own, every DLC, every
+            <code>Packages/</code> import.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Managed.Default()</span>
+            <span class="member-type">→ Package?</span>
+        </div>
+        <p class="member-desc">
+            The default (entry-point) package. In a built game this is the
+            launcher's primary package; under <code>Ruzit Test</code> it's
+            the project at the working directory.
+        </p>
+    </div>
+</div>
+
+<h2 id="package">Package</h2>
+
+<p>Returned by <code>Managed.GetPackage</code> and <code>Managed.Default</code>.</p>
+
+<h3>Properties</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.ID</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Used in <code>@PkgId/...</code> cross-package references.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Name</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Display name &mdash; <code>build.toml</code>'s <code>name</code> or <code>ManagedInfo.toml</code>'s <code>name</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Version</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Free-form version string from the package's manifest.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Creator</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Entry</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">The entry script's vfs key (typically <code>"Main.luau"</code> or <code>"init.luau"</code>).</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Origin</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            A vfs prefix you can pass to <code>require</code>
+            (<code>"@OtherPkg/sub/module"</code>). For the calling package
+            this is the empty string &mdash; use
+            <code>require(__dirname .. "/...")</code> for self.
+        </p>
+    </div>
+</div>
+
+<h3>Methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">pkg:HasFile(key)</span>
+            <span class="member-type">→ boolean</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">True if the script with this vfs key exists in the package.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">pkg:HasAsset(key)</span>
+            <span class="member-type">→ boolean</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">True if the asset key exists in the package.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">pkg:Files()</span>
+            <span class="member-type">→ { string }</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            List every script's vfs key. Useful for editors / debug
+            overlays / build-step linters.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">pkg:Assets()</span>
+            <span class="member-type">→ { string }</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">List every asset key.</p>
+    </div>
+</div>
+
+</main>
+
+</body>
+</html>

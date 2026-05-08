@@ -78,12 +78,21 @@ Gamepad.InputChanged:Connect(<span class="hl-kw">function</span>(ev)
             <span class="member-name">Gamepad.IsButtonDown(pad, name)</span>
             <span class="member-type">→ boolean</span>
         </div>
+        <p class="member-desc">
+            Snapshot of whether <code>name</code> is currently held on the
+            given pad. Cheaper than tracking <code>InputChanged</code>
+            state yourself.
+        </p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">Gamepad.GetAxis(pad, name)</span>
             <span class="member-type">→ number</span>
         </div>
+        <p class="member-desc">
+            Current axis value: -1..1 for stick X/Y, 0..1 for triggers.
+            Returns 0 if the pad disconnected or the name is unknown.
+        </p>
     </div>
     <div class="member">
         <div class="member-header">

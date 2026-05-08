@@ -75,6 +75,10 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
         <div class="member-header">
             <span class="member-name">Renderable.SetSunColor(color)</span>
         </div>
+        <p class="member-desc">
+            Tint the sun without changing direction. Reflects in every 3D
+            shader's <code>F.sun_color</code>.
+        </p>
     </div>
     <div class="member">
         <div class="member-header">
@@ -88,8 +92,12 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
     <div class="member">
         <div class="member-header">
             <span class="member-name">Renderable.GetLighting()</span>
-            <span class="member-type">→ { SunDirection, SunColor, Ambient }</span>
+            <span class="member-type">→ { SunDirection: Vector, SunColor: Color3, Ambient: Color3 }</span>
         </div>
+        <p class="member-desc">
+            Snapshot the current lighting state. Useful for debug overlays
+            or saving to a level file.
+        </p>
     </div>
     <div class="member">
         <div class="member-header">
@@ -122,6 +130,11 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
             <span class="member-type">"Cube" | "Sphere" | "Model"</span>
             <span class="tag tag-readonly">read-only</span>
         </div>
+        <p class="member-desc">
+            Geometry kind. <code>"Cube"</code> / <code>"Sphere"</code>
+            use a built-in mesh; <code>"Model"</code> means the part was
+            created via <code>Renderable.BaseModel(asset)</code>.
+        </p>
     </div>
     <div class="member">
         <div class="member-header">
@@ -223,12 +236,17 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
             <span class="member-name">part:DetachShader(asset)</span>
             <span class="tag tag-method">method</span>
         </div>
+        <p class="member-desc">
+            Remove a previously-attached shader. Looks up by asset id; no-op
+            if the shader isn't attached.
+        </p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">part:ClearShaders()</span>
             <span class="tag tag-method">method</span>
         </div>
+        <p class="member-desc">Detach every shader on this part.</p>
     </div>
     <div class="member">
         <div class="member-header">
@@ -246,6 +264,10 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
             <span class="member-type">→ number?</span>
             <span class="tag tag-method">method</span>
         </div>
+        <p class="member-desc">
+            Read a <code>// @ruzit param</code> slot. Returns nil if the
+            shader isn't attached or the name isn't declared.
+        </p>
     </div>
 </div>
 
@@ -301,6 +323,11 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
             <span class="member-type">→ { AnimationTrack }</span>
             <span class="tag tag-method">method</span>
         </div>
+        <p class="member-desc">
+            Every track currently attached to this part &mdash; both
+            FBX-derived clips that have been instantiated by
+            <code>:GetTrack</code> and user-authored ones.
+        </p>
     </div>
     <div class="member">
         <div class="member-header">

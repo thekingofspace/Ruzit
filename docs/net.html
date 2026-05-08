@@ -111,6 +111,11 @@
             <span class="member-name">Net.UDP.Bind(addr)</span>
             <span class="member-type">→ UdpHandle</span>
         </div>
+        <p class="member-desc">
+            Open a UDP socket on the given local <code>"host:port"</code>.
+            Pass <code>:0</code> for an OS-assigned port; query it back
+            with <code>udp:Address()</code>.
+        </p>
     </div>
 </div>
 
@@ -137,12 +142,22 @@
             <span class="member-name">Net.IPC.Connect(name)</span>
             <span class="member-type">→ IpcConnection</span>
         </div>
+        <p class="member-desc">
+            Dial a same-machine IPC endpoint. <code>name</code> is a bare
+            pipe / socket name; the OS-specific prefix
+            (<code>\\.\pipe\</code> on Windows, <code>/tmp/</code>-style
+            socket path on Unix) is added for you.
+        </p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">Net.IPC.Host(name)</span>
             <span class="member-type">→ IpcListener</span>
         </div>
+        <p class="member-desc">
+            Create a same-machine IPC server with the given name. Same
+            prefix-handling rules as <code>Connect</code>.
+        </p>
     </div>
 </div>
 

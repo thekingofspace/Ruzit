@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signal — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>Signal</h1>
+<p class="lede">
+    Event objects with typed payloads. Engine-emitted signals fire on you;
+    you can also build your own via <code>Signal.new()</code>. Generic over
+    the callback's argument types &mdash; LSP infers what your handler
+    receives.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Signal = <span class="hl-fn">import</span>(<span class="hl-str">"Signal"</span>)
+
+<span class="hl-kw">local</span> hit = Signal.new()           <span class="hl-com">-- Signal&lt;...&gt;</span>
+<span class="hl-kw">local</span> conn = hit:Connect(<span class="hl-kw">function</span>(damage, source) <span class="hl-fn">print</span>(damage, source) <span class="hl-kw">end</span>)
+hit:Fire(<span class="hl-num">25</span>, <span class="hl-str">"fireball"</span>)
+conn:Disconnect()</code></pre>
+
+<h2 id="api">Signal API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Signal.new()</span>
+            <span class="member-type">→ Signal&lt;T...&gt;</span>
+        </div>
+        <p class="member-desc">
+            Construct a new user-emitable signal. The first
+            <code>:Fire(...)</code> pins the type parameter pack
+            <code>T...</code>; subsequent connects and fires are
+            type-checked against it.
+        </p>
+    </div>
+</div>
+
+<h2 id="signal-obj">Signal&lt;T...&gt;</h2>
+
+<p>
+    Generic-parameterized table type. Engine signals carry a fixed payload
+    shape (e.g. <code>Window.Changed</code> is <code>Signal&lt;string&gt;</code>);
+    user-created signals start unconstrained and pin on first fire.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">signal:Connect(fn)</span>
+            <span class="member-type">→ Connection</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Subscribe a callback. Returns a <code>Connection</code>
+            &mdash; keep it if you ever need to disconnect; otherwise let
+            it live as long as the signal does.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">signal:Once(fn)</span>
+            <span class="member-type">→ Connection</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Like <code>Connect</code>, but fires at most once and
+            auto-disconnects.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">signal:Wait()</span>
+            <span class="member-type">→ T...</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Block the current coroutine until the next fire, then return
+            its arguments.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">signal:Fire(...)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Manually fire. Most engine-provided signals are one-way (they
+            fire on you, not from you), but signals built with
+            <code>Signal.new()</code> let you fire freely.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">signal:DisconnectAll()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">Drop every connection at once.</p>
+    </div>
+</div>
+
+<h2 id="connection">Connection</h2>
+
+<p>
+    Returned by <code>:Connect()</code> and <code>:Once()</code>.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.Connected</span>
+            <span class="member-type">boolean</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            True until <code>:Disconnect()</code> is called or the signal
+            is garbage-collected.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">conn:Disconnect()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">Stop receiving fires. Idempotent.</p>
+    </div>
+</div>
+
+<h2 id="patterns">Patterns</h2>
+
+<h3>Subscribe-then-cleanup</h3>
+
+<pre><code><span class="hl-kw">local</span> conn = win.Changed:Connect(<span class="hl-kw">function</span>(prop)
+    <span class="hl-kw">if</span> prop == <span class="hl-str">"Size"</span> <span class="hl-kw">then</span> redraw_ui() <span class="hl-kw">end</span>
+<span class="hl-kw">end</span>)
+
+win:BindToClose(<span class="hl-kw">function</span>() conn:Disconnect() <span class="hl-kw">end</span>)</code></pre>
+
+<h3>Once for one-shot loaders</h3>
+
+<pre><code>asset_loaded:Once(<span class="hl-kw">function</span>(asset)
+    show_splash(asset)
+<span class="hl-kw">end</span>)</code></pre>
+
+<h3>Wait inside a coroutine</h3>
+
+<pre><code><span class="hl-kw">local</span> Heart = <span class="hl-fn">import</span>(<span class="hl-str">"RunService"</span>).Heartbeat
+<span class="hl-kw">for</span> _ = <span class="hl-num">1</span>, <span class="hl-num">60</span> <span class="hl-kw">do</span>
+    <span class="hl-kw">local</span> dt = Heart:Wait()    <span class="hl-com">-- one frame</span>
+    accumulated = accumulated + dt
+<span class="hl-kw">end</span></code></pre>
+
+</main>
+
+</body>
+</html>

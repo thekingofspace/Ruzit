@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IO — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>IO</h1>
+<p class="lede">
+    File system access. One-shot helpers for the common case
+    (<code>read</code>, <code>write</code>, <code>append</code>),
+    <code>open</code> for streaming. All paths are interpreted relative to
+    Ruzit's current root unless absolute.
+</p>
+
+<pre><code><span class="hl-kw">local</span> IO = <span class="hl-fn">import</span>(<span class="hl-str">"IO"</span>)
+
+<span class="hl-kw">local</span> save = IO.read(<span class="hl-str">"saves/slot1.json"</span>)
+IO.write(<span class="hl-str">"saves/slot1.json"</span>, <span class="hl-fn">tostring</span>(<span class="hl-fn">os</span>.time()))</code></pre>
+
+<h2 id="api">IO API</h2>
+
+<h3>One-shot helpers</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">IO.read(path)</span>
+            <span class="member-type">→ string</span>
+        </div>
+        <p class="member-desc">
+            Open, read everything, close. Throws if the file can't be
+            opened. Returns the raw bytes &mdash; UTF-8 decoding is up to
+            the caller.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">IO.write(path, content)</span>
+        </div>
+        <p class="member-desc">
+            Truncate-write. Creates the file if missing; replaces contents
+            entirely if it exists.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">IO.append(path, content)</span>
+        </div>
+        <p class="member-desc">Like <code>write</code>, but adds to the end without truncating.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">IO.exists(path)</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+        <p class="member-desc">True for files OR directories.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">IO.remove(path)</span>
+        </div>
+        <p class="member-desc">
+            Delete a file. No-op if the file doesn't exist; throws on
+            permission / "is a directory" errors.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">IO.mkdir(path)</span>
+        </div>
+        <p class="member-desc">
+            Recursively create the directory chain. No-op if it already
+            exists.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">IO.list(path)</span>
+            <span class="member-type">→ { string }</span>
+        </div>
+        <p class="member-desc">
+            List directory entries (names only, not full paths). Order is
+            OS-defined.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">IO.getpath(path)</span>
+            <span class="member-type">→ string</span>
+        </div>
+        <p class="member-desc">
+            Resolve a (possibly relative) path against Ruzit's current
+            root and return the absolute form.
+        </p>
+    </div>
+</div>
+
+<h3>Streaming open</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">IO.open(path, mode?)</span>
+            <span class="member-type">→ IOHandle</span>
+        </div>
+        <p class="member-desc">
+            Open a streaming handle. <code>mode</code> follows
+            <code>fopen</code> conventions:
+        </p>
+    </div>
+</div>
+
+<table>
+    <thead><tr><th>Mode</th><th>Behavior</th></tr></thead>
+    <tbody>
+        <tr><td><code>"r"</code> (default)</td><td>Read-only. Throws if missing.</td></tr>
+        <tr><td><code>"w"</code></td><td>Truncate + write. Creates the file if missing.</td></tr>
+        <tr><td><code>"a"</code></td><td>Append. Creates the file if missing.</td></tr>
+        <tr><td><code>"r+"</code></td><td>Read + write, no truncate.</td></tr>
+        <tr><td><code>"w+"</code></td><td>Read + write, truncate.</td></tr>
+        <tr><td><code>"a+"</code></td><td>Read + append.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="iohandle">IOHandle</h2>
+
+<p>Returned by <code>IO.open</code>. Wraps an OS file descriptor.</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">handle:read(format?)</span>
+            <span class="member-type">→ string</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Read from the current position. <code>format</code> defaults
+            to <code>"*a"</code>.
+        </p>
+    </div>
+</div>
+
+<table>
+    <thead><tr><th>format</th><th>Effect</th></tr></thead>
+    <tbody>
+        <tr><td><code>"*a"</code> (default)</td><td>Read everything remaining.</td></tr>
+        <tr><td><code>"*l"</code></td><td>One line, newline stripped.</td></tr>
+        <tr><td><code>"*L"</code></td><td>One line, including the newline.</td></tr>
+        <tr><td><code>"*n"</code></td><td>Read a Lua-formatted number.</td></tr>
+        <tr><td><code>N</code> (number)</td><td>Read up to N bytes.</td></tr>
+    </tbody>
+</table>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">handle:write(content)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Append <code>content</code> at the file's current position.
+            Use <code>IO.write</code> for one-shot writes; only reach for
+            an IOHandle when you need streaming.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">handle:close()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Flush + release the OS handle. Idempotent &mdash; calling
+            twice is a no-op.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">handle:path()</span>
+            <span class="member-type">→ string</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            The path that was passed to <code>IO.open</code>, normalised
+            to absolute form.
+        </p>
+    </div>
+</div>
+
+</main>
+
+</body>
+</html>

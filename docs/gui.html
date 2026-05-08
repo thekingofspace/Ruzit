@@ -35,18 +35,34 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
             <span class="member-name">GUI.Basic.Square()</span>
             <span class="member-type">→ Primitive</span>
         </div>
+        <p class="member-desc">
+            Solid-coloured rectangle. Tinted by <code>.Color</code>;
+            sized by <code>.Size</code>.
+        </p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">GUI.Basic.Circle()</span>
             <span class="member-type">→ Primitive</span>
         </div>
+        <p class="member-desc">
+            Solid-coloured circle inscribed in <code>.Size</code>. The
+            major axis follows the longer of <code>.Size.X</code> and
+            <code>.Size.Y</code> &mdash; pass equal width / height for a
+            true circle.
+        </p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">GUI.Basic.Triangle()</span>
             <span class="member-type">→ Primitive</span>
         </div>
+        <p class="member-desc">
+            Solid-coloured triangle inscribed in <code>.Size</code>: apex at
+            top-center, base on the bottom edge. Useful for arrows /
+            indicators &mdash; rotate via a custom shader if you need
+            arbitrary orientations.
+        </p>
     </div>
     <div class="member">
         <div class="member-header">

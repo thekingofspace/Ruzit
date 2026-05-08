@@ -138,9 +138,15 @@ pads.Right.OnInput:Connect(<span class="hl-kw">function</span>(name, value, stat
     <div class="member">
         <div class="member-header">
             <span class="member-name">cam:GetControllers()</span>
-            <span class="member-type">→ { Left, Right }</span>
+            <span class="member-type">→ { Left: VRController, Right: VRController }</span>
             <span class="tag tag-method">method</span>
         </div>
+        <p class="member-desc">
+            Returns the same logical controllers on every call (the
+            userdata is freshly allocated but the underlying state is
+            shared) so signals connected on one handle still fire when
+            the runtime reports input.
+        </p>
     </div>
 </div>
 

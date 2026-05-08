@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPU — Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js" defer></script>
+
+<main>
+
+<h1>GPU</h1>
+<p class="lede">
+    Adapter info, frame stats, raycasting against the 3D scene,
+    screen-to-world projection, and storage buffer plumbing for shaders.
+</p>
+
+<pre><code><span class="hl-kw">local</span> GPU = <span class="hl-fn">import</span>(<span class="hl-str">"GPU"</span>)
+<span class="hl-fn">print</span>(GPU.Info().Name, GPU.FrameStats().FPS)</code></pre>
+
+<h2 id="info">Adapter / frame info</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.Info()</span>
+            <span class="member-type">→ GPUInfo</span>
+        </div>
+        <p class="member-desc">
+            Static adapter info. Cached &mdash; calling repeatedly is
+            free. Useful for logging, settings menus, and gating high-cost
+            features behind <code>DeviceType == "DiscreteGpu"</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.Limits()</span>
+            <span class="member-type">→ GPULimits</span>
+        </div>
+        <p class="member-desc">
+            Hard limits the active GPU device reports. wgpu doesn't
+            expose total VRAM portably across DX12 / Vulkan / Metal &mdash;
+            <code>MaxBufferSize</code> is the closest single number for
+            "biggest thing I can allocate".
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.FrameStats()</span>
+            <span class="member-type">→ GPUFrameStats</span>
+        </div>
+        <p class="member-desc">
+            FPS / frame time / scene part count. Updated once per heart
+            tick. Cheap; safe to poll every frame for a debug overlay.
+        </p>
+    </div>
+</div>
+
+<h2 id="raycast">Raycasting</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.Raycast(origin, direction, filter?, maxDistance?)</span>
+            <span class="member-type">→ RaycastHit?</span>
+        </div>
+        <p class="member-desc">
+            CPU-side ray test against every renderable BasePart. Cubes
+            and models test as oriented bounding boxes derived from
+            CFrame + Size; spheres as ellipsoids with the same. Parts
+            with <code>Render = false</code> or
+            <code>IgnoreInRaycast = true</code> are skipped.
+        </p>
+    </div>
+</div>
+
+<h3>Parameters</h3>
+
+<table>
+    <tbody>
+        <tr><td><code>origin</code></td><td>Vector &mdash; world-space ray start.</td></tr>
+        <tr><td><code>direction</code></td><td>Vector &mdash; world-space ray direction. Length doesn't matter; Ruzit normalizes it. Zero-length errors.</td></tr>
+        <tr><td><code>filter</code></td><td>Optional <code>(part: BasePart) -&gt; boolean</code>. Hits visited nearest-first; return true to accept, false / nil to skip past. If omitted, the first hit is always accepted.</td></tr>
+        <tr><td><code>maxDistance</code></td><td>Optional cap in world units. Hits past this distance are ignored. Defaults to ~1e6.</td></tr>
+    </tbody>
+</table>
+
+<h3>Example: pick a part under the mouse, ignoring red ones</h3>
+
+<pre><code><span class="hl-kw">local</span> Mouse = <span class="hl-fn">import</span>(<span class="hl-str">"Mouse"</span>)
+<span class="hl-kw">local</span> origin, dir = GPU.ScreenToRay(Mouse.Position)
+<span class="hl-kw">local</span> hit = GPU.Raycast(origin, dir, <span class="hl-kw">function</span>(part)
+    <span class="hl-kw">return</span> part.Color ~= Color3.new(<span class="hl-num">1</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>)
+<span class="hl-kw">end</span>)
+<span class="hl-kw">if</span> hit <span class="hl-kw">then</span>
+    <span class="hl-fn">print</span>(<span class="hl-str">"clicked"</span>, hit.Part, <span class="hl-str">"at"</span>, hit.Position, <span class="hl-str">"distance"</span>, hit.Distance)
+<span class="hl-kw">end</span></code></pre>
+
+<h2 id="projection">Projection</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.ScreenToRay(point)</span>
+            <span class="member-type">→ (Vector, Vector)</span>
+        </div>
+        <p class="member-desc">
+            Convert a screen pixel (Mouse.Position style) to a world-space
+            ray. Returns <code>(origin, direction)</code> &mdash; feed
+            straight into <code>GPU.Raycast</code>. Uses the active
+            <code>Renderable.Camera</code> as the eye + projection.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.WorldToScreen(world)</span>
+            <span class="member-type">→ (Dim?, boolean)</span>
+        </div>
+        <p class="member-desc">
+            Project a world-space point onto the screen.
+            <code>(Dim, false)</code> when the point is in front of the
+            camera; <code>(nil, true)</code> when at or behind the near
+            plane. Useful for billboards, world-anchored UI, off-screen
+            indicators.
+        </p>
+    </div>
+</div>
+
+<h2 id="storage">Storage buffers</h2>
+
+<p>
+    Read-only data accessible from any 3D fragment shader. Bound at
+    <code>@group(0) @binding(4)</code> as
+    <code>SDATA: array&lt;f32&gt;</code>.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.NewBuffer(size)</span>
+            <span class="member-type">→ GPUBuffer</span>
+        </div>
+        <p class="member-desc">
+            Allocate a GPU storage buffer of <code>size</code> floats.
+            Memory lives on the GPU. Freed when the GPUBuffer userdata is
+            garbage-collected.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.SetBuffer(buffer)</span>
+        </div>
+        <p class="member-desc">
+            Bind a GPUBuffer as the active SDATA storage. Cheap to swap
+            between frames &mdash; bind groups are rebuilt only when the
+            binding identity changes.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.ClearBuffer()</span>
+        </div>
+        <p class="member-desc">
+            Unbind the active storage buffer. SDATA reverts to a 1-float
+            stub so shaders that don't reference it keep working.
+        </p>
+    </div>
+</div>
+
+<h2 id="gpu-buffer">GPUBuffer</h2>
+
+<p>Returned by <code>GPU.NewBuffer</code>.</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">buf:Size()</span>
+            <span class="member-type">→ number</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Number of f32 slots. Same value as the <code>size</code> arg
+            passed to <code>GPU.NewBuffer</code>; doesn't change after
+            construction.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">buf:Write(offset, values)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Write a list of f32 values into the buffer at
+            <code>offset</code> (in floats, not bytes). Bounds-checked
+            &mdash; writing past the end errors instead of corrupting
+            adjacent GPU memory. Cheap; one queue-write under the hood.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">buf:Fill(value)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Fill the entire buffer with one number. Convenience for
+            clearing (<code>:Fill(0)</code>) or initialising to a sentinel.
+        </p>
+    </div>
+</div>
+
+<h2 id="raycasthit">RaycastHit</h2>
+
+<p>Returned by <code>GPU.Raycast</code>. All vectors world-space.</p>
+
+<table>
+    <tbody>
+        <tr><td><code>Part</code></td><td>BasePart &mdash; the part the ray hit.</td></tr>
+        <tr><td><code>Position</code></td><td>Vector &mdash; world-space hit point.</td></tr>
+        <tr><td><code>Distance</code></td><td>number &mdash; world-space length from the ray's origin.</td></tr>
+        <tr><td><code>Normal</code></td><td>Vector &mdash; surface normal at the hit, world-space.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="gpuinfo">GPUInfo</h2>
+
+<p>
+    Static adapter info, filled once at window-open time. Returned by
+    <code>GPU.Info()</code>.
+</p>
+
+<table>
+    <tbody>
+        <tr><td><code>Name</code></td><td>string &mdash; driver-reported display name (<code>"NVIDIA GeForce RTX 4070"</code>).</td></tr>
+        <tr><td><code>Vendor</code></td><td>string &mdash; friendly label: <code>"NVIDIA" | "AMD" | "Intel" | "Apple" | "ARM" | "Qualcomm" | "Imagination" | "Microsoft" | "Other" | "Unknown"</code>.</td></tr>
+        <tr><td><code>VendorID</code></td><td>number &mdash; raw PCI vendor id.</td></tr>
+        <tr><td><code>DeviceID</code></td><td>number &mdash; raw PCI device id.</td></tr>
+        <tr><td><code>Backend</code></td><td>string &mdash; <code>"Dx12" | "Vulkan" | "Metal" | "Gl" | "BrowserWebGpu"</code>.</td></tr>
+        <tr><td><code>Driver</code></td><td>string &mdash; driver version, free-form.</td></tr>
+        <tr><td><code>DriverInfo</code></td><td>string &mdash; extra driver detail (build, date). May be empty.</td></tr>
+        <tr><td><code>DeviceType</code></td><td>string &mdash; <code>"DiscreteGpu" | "IntegratedGpu" | "VirtualGpu" | "Cpu" | "Other"</code>. Useful for quality presets at startup.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="gpulimits">GPULimits</h2>
+
+<p>Hard caps reported by the wgpu device. Returned by <code>GPU.Limits()</code>.</p>
+
+<table>
+    <tbody>
+        <tr><td><code>MaxTextureSize</code></td><td>number &mdash; largest 2D texture dimension (e.g. 16384 on most GPUs).</td></tr>
+        <tr><td><code>MaxBufferSize</code></td><td>number &mdash; largest single buffer allocation in bytes.</td></tr>
+        <tr><td><code>MaxBindGroups</code></td><td>number &mdash; max simultaneously bound bind groups in one pipeline.</td></tr>
+        <tr><td><code>MaxVertexBuffers</code></td><td>number &mdash; max vertex buffers attached to one pipeline.</td></tr>
+        <tr><td><code>MaxComputeWorkgroup</code></td><td><code>{ X: number, Y: number, Z: number }</code> &mdash; max compute workgroup size per axis.</td></tr>
+    </tbody>
+</table>
+
+<h2 id="gpuframestats">GPUFrameStats</h2>
+
+<p>
+    Live frame stats. Smoothed dt is an EMA so FPS doesn't strobe. Returned
+    by <code>GPU.FrameStats()</code>.
+</p>
+
+<table>
+    <tbody>
+        <tr><td><code>FPS</code></td><td>number &mdash; smoothed frames-per-second.</td></tr>
+        <tr><td><code>FrameTime</code></td><td>number &mdash; smoothed frame time in seconds.</td></tr>
+        <tr><td><code>FrameCount</code></td><td>number &mdash; total frames drawn since process start.</td></tr>
+        <tr><td><code>Uptime</code></td><td>number &mdash; wall-clock seconds since GPU tracking started.</td></tr>
+        <tr><td><code>PartCount</code></td><td>number &mdash; live count of renderable parts in the scene.</td></tr>
+    </tbody>
+</table>
+
+</main>
+
+</body>
+</html>
