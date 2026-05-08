@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ruzit — Luau-scripted game engine</title>
+    <title>Ruzit — Luau-scripted 2D + 3D game engine</title>
     <link rel="stylesheet" href="style.css?v=3.2">
     <script src="theme.js?v=3.2"></script>
 </head>
@@ -16,18 +16,20 @@
 
 <section class="hero">
     <div class="hero-text">
-        <div class="eyebrow">Game Engine</div>
+        <div class="eyebrow">2D + 3D Game Engine</div>
         <h1>Ruzit</h1>
         <p>
-            A Luau-scripted game engine written in Rust. Hot-reloadable
-            scripts, a Roblox-flavoured API, real 3D rendering through wgpu,
-            and a single <code>Ruzit Build</code> command that bundles your
-            project into a self-contained launcher.
+            A Luau-scripted 2D and 3D game engine written in Rust &mdash;
+            similar in spirit to LÖVE / love2d, but with Luau, a Roblox
+            style API, real wgpu rendering, and a single
+            <code>Ruzit Build</code> command that bundles your project
+            into a self-contained launcher.
         </p>
         <div class="cta-row">
             <a class="btn btn-primary" href="#quick-start">Quick Start</a>
             <a class="btn btn-ghost" href="primitives.html">API Reference</a>
-            <a class="btn btn-ghost" href="https://github.com/thekingofspace/Ruzit">GitHub</a>
+            <a class="btn btn-ghost" href="https://github.com/thekingofspace/Ruzit" target="_blank" rel="noopener">GitHub</a>
+            <a class="btn btn-ghost" href="https://luau.org/" target="_blank" rel="noopener">Luau</a>
         </div>
     </div>
     <div class="hero-icon">
@@ -38,24 +40,38 @@
 <h2>What is Ruzit?</h2>
 
 <p>
-    Ruzit is a single-file game engine you script in Luau. The engine itself
-    is a Rust binary that ships every system a game needs &mdash; renderer,
-    audio, networking, asset loading, packaging &mdash; behind a Lua API
-    designed to feel familiar if you've used Roblox Studio.
+    Ruzit is a single-file game engine you script in <a href="https://luau.org/" target="_blank" rel="noopener">Luau</a>.
+    The engine itself is a Rust binary that ships every system a game
+    needs &mdash; 3D renderer, 2D overlay primitives, audio, networking,
+    asset loading, packaging &mdash; behind a Lua API designed to feel
+    familiar if you've used Roblox Studio.
 </p>
 
 <p>
-    You write your game as <code>.luau</code> files in a folder. The engine
-    boots them as the entry point of a virtual scene graph; the same source
-    runs unchanged inside a packaged executable shipped to players.
+    Both ends of the spectrum are first-class: build a flat 2D platformer
+    with <code>GUI.Basic</code> primitives, a fully-3D scene with
+    <code>Renderable</code> parts and models, or any mix &mdash;
+    <a href="gui.html">2D primitives</a> always render on top of the
+    <a href="renderable.html">3D scene</a>. Same idea as LÖVE / love2d in
+    that the engine stays out of your way; same idea as Roblox in that
+    every API is typed and discoverable from one
+    <code>types.d.luau</code> file.
+</p>
+
+<p>
+    You write your game as <code>.luau</code> files in a folder. The
+    engine boots them as the entry point of a virtual scene graph; the
+    same source runs unchanged inside a packaged executable shipped to
+    players.
 </p>
 
 <div class="feature-grid">
     <div class="feature">
         <h3>Luau scripting</h3>
         <p>
-            Full Luau (Roblox-flavoured Lua) with autocomplete and
-            type-checking via <code>types.d.luau</code>.
+            Full <a href="https://luau.org/" target="_blank" rel="noopener">Luau</a>
+            Lua with autocomplete and type-checking
+            via <code>types.d.luau</code>.
         </p>
     </div>
     <div class="feature">
@@ -63,6 +79,14 @@
         <p>
             wgpu-backed renderer. Vulkan / Metal / DX12 transparently;
             user shaders authored in WGSL with engine preludes injected.
+        </p>
+    </div>
+    <div class="feature">
+        <h3>2D primitives</h3>
+        <p>
+            Squares / circles / triangles / images / text rendered as a
+            screen-space overlay. Same shader hook system as 3D parts, so
+            every primitive can pick up a custom fragment shader.
         </p>
     </div>
     <div class="feature">
