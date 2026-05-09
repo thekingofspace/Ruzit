@@ -81,10 +81,12 @@
             <span class="member-type">→ any</span>
         </div>
         <p class="member-desc">
-            Load a sibling Luau module from inside the project bundle.
-            The first call evaluates the module; subsequent calls return
-            the cached return value, so a module is initialised at most
-            once.
+            Load a Luau module from the project bundle (or a loaded DLC /
+            <code>.managed</code> package). The first call evaluates the
+            module; subsequent calls return the cached return value, so
+            a module is initialised at most once. The <code>.luau</code>
+            / <code>.lua</code> extension is appended automatically &mdash;
+            pass the bare module name.
         </p>
     </div>
 </div>
@@ -92,49 +94,182 @@
 <h3>Path forms</h3>
 
 <table>
+    <thead>
+        <tr><th>Form</th><th>Resolves to</th></tr>
+    </thead>
     <tbody>
         <tr>
             <td><code>"./helper"</code></td>
-            <td>Caller-relative. Resolves to a sibling file.</td>
+            <td>Sibling of the caller (when caller's package is in
+                <code>Relative</code> mode), or caller's package root
+                + <code>helper</code> (when caller's package is in
+                <code>Global</code> mode). See <a href="#filetype">File Type</a>.</td>
         </tr>
         <tr>
             <td><code>"../shared/util"</code></td>
-            <td>Parent-relative.</td>
+            <td>Parent-relative. Only meaningful in <code>Relative</code> mode.</td>
         </tr>
         <tr>
             <td><code>"subdir/file"</code></td>
-            <td>Relative-without-./ also works.</td>
-        </tr>
-        <tr>
-            <td><code>"@PkgId/path/inner"</code></td>
-            <td>Cross-package. Reads from another loaded <code>.managed</code> package.</td>
+            <td>Same as <code>./subdir/file</code>, the leading
+                <code>./</code> is optional.</td>
         </tr>
         <tr>
             <td><code>"@self/lib/util"</code></td>
-            <td>Same package as the caller, root-relative regardless of the caller's depth.</td>
+            <td>Caller's own package, root-relative (or init-anchored,
+                see <a href="#self">@self</a>).</td>
+        </tr>
+        <tr>
+            <td><code>"@Game/lib/util"</code></td>
+            <td>Always the base game package, regardless of where the
+                caller lives. The escape hatch a DLC uses to reach
+                back into the game.</td>
+        </tr>
+        <tr>
+            <td><code>"@PkgId/path/inner"</code></td>
+            <td>Specific named package. Use the package's
+                <code>ID</code> from its <code>ManagedInfo.toml</code>.
+                Equivalent to <code>require(Managed.GetPackage("PkgId").Origin)</code>
+                when pointing at the package entry.</td>
         </tr>
     </tbody>
 </table>
 
-<p>
-    Resolution mode is controlled by <code>"File Type"</code> in
-    <a href="build-toml.html">build.toml</a>: in <code>"Relative"</code>
-    mode (the default) every path is caller-relative; in
-    <code>"Global"</code> mode bare paths are resolved from the project
-    root, but <code>./</code>-prefixed and <code>@PkgId/</code> paths
-    keep their explicit semantics.
-</p>
+<h3 id="filetype"><code>File Type</code> &mdash; Relative vs Global</h3>
 
 <p>
-    The <code>.luau</code> / <code>.lua</code> extension is appended
-    automatically, pass the bare module name. Folder-style modules
-    with an <code>init.luau</code> resolve when you require the folder
-    name.
+    Each package picks a resolution mode in its
+    <a href="build-toml.html"><code>build.toml</code></a> /
+    <a href="packages.html"><code>ManagedInfo.toml</code></a>:
 </p>
 
-<pre><code><span class="hl-kw">local</span> util = <span class="hl-fn">require</span>(<span class="hl-str">"./util"</span>)
-<span class="hl-kw">local</span> phys = <span class="hl-fn">require</span>(<span class="hl-str">"@PhysicsDLC/init"</span>)
-<span class="hl-kw">local</span> root = <span class="hl-fn">require</span>(<span class="hl-str">"@self/lib/Math"</span>)</code></pre>
+<ul>
+    <li><strong><code>"File Type" = "Relative"</code></strong> (default):
+        bare and <code>./</code>-prefixed paths resolve relative to the
+        <em>calling file's directory</em>. So if
+        <code>test/re.luau</code> does <code>require("./fah")</code>,
+        you get <code>test/fah.luau</code>.</li>
+    <li><strong><code>"File Type" = "Global"</code></strong>: bare and
+        <code>./</code>-prefixed paths resolve from the
+        <em>caller's package root</em> &mdash; the game's root if the
+        caller lives in the game, the DLC's root if the caller lives
+        in a DLC. To reach the game from a Global-mode DLC, use
+        <code>@Game/...</code>.</li>
+</ul>
+
+<p>
+    The mode applies to <code>require</code>, <code>load</code>, and
+    <code>Asset.GetAsset</code> / <code>Asset.ImportAsset</code> path
+    resolution alike.
+</p>
+
+<h3>Folder-style modules &mdash; <code>init.luau</code></h3>
+
+<p>
+    Requiring a folder loads its <code>init.luau</code>:
+    <code>require("./ui")</code> works if either
+    <code>ui.luau</code> or <code>ui/init.luau</code> exists, with
+    the file taking priority. Useful for grouping a feature into a
+    folder while keeping a single import surface.
+</p>
+
+<h3 id="self"><code>@self</code> &mdash; init-aware</h3>
+
+<p>
+    <code>@self/X</code> normally anchors at the caller's package
+    root. But if the calling file is named
+    <code>init.luau</code>, <code>@self</code> instead anchors at
+    that init file's <em>own folder</em>. This makes
+    <code>init.luau</code> behave like a Python
+    <code>__init__.py</code>: feature folders become self-contained
+    modules whose internal files reference each other through
+    <code>@self/...</code> without caring about the rest of the
+    package layout.
+</p>
+
+<h3>Examples</h3>
+
+<p>Worked examples assume this layout:</p>
+
+<pre><code>MyGame/                   <span class="hl-com"># default package, "MyGame"</span>
+  Main.luau
+  utils.luau
+  ui/
+    init.luau             <span class="hl-com"># folder-style module: "@self/ui" or "./ui"</span>
+    button.luau
+    icon.png
+
+DLC/PhysicsDLC/           <span class="hl-com"># a DLC package, ID "PhysicsDLC"</span>
+  ManagedInfo.toml
+  init.luau
+  rigid.luau</code></pre>
+
+<table>
+    <thead>
+        <tr><th>From</th><th>Call</th><th>Loads</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code>Main.luau</code></td>
+            <td><code>require("./utils")</code></td>
+            <td><code>utils.luau</code></td>
+        </tr>
+        <tr>
+            <td><code>Main.luau</code></td>
+            <td><code>require("./ui")</code></td>
+            <td><code>ui/init.luau</code> (folder &rarr; init)</td>
+        </tr>
+        <tr>
+            <td><code>ui/init.luau</code></td>
+            <td><code>require("./button")</code></td>
+            <td><code>ui/button.luau</code></td>
+        </tr>
+        <tr>
+            <td><code>ui/button.luau</code></td>
+            <td><code>require("../utils")</code></td>
+            <td><code>utils.luau</code> (Relative mode)</td>
+        </tr>
+        <tr>
+            <td><code>ui/init.luau</code></td>
+            <td><code>require("@self/button")</code></td>
+            <td><code>ui/button.luau</code> (init-anchored)</td>
+        </tr>
+        <tr>
+            <td><code>ui/button.luau</code></td>
+            <td><code>require("@self/utils")</code></td>
+            <td><code>utils.luau</code> (button isn't init,
+                so <code>@self</code> = package root)</td>
+        </tr>
+        <tr>
+            <td><code>Main.luau</code></td>
+            <td><code>require("@PhysicsDLC/rigid")</code></td>
+            <td><code>DLC/PhysicsDLC/rigid.luau</code></td>
+        </tr>
+        <tr>
+            <td><code>PhysicsDLC/init.luau</code></td>
+            <td><code>require("@Game/utils")</code></td>
+            <td>game's <code>utils.luau</code></td>
+        </tr>
+        <tr>
+            <td>any</td>
+            <td><code>local p = Managed.GetPackage("PhysicsDLC")</code><br>
+                <code>require(p.Origin)</code></td>
+            <td><code>DLC/PhysicsDLC/init.luau</code></td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Asset paths</h3>
+
+<p>
+    The same <code>@self</code> / <code>@Game</code> /
+    <code>@PkgId</code> rules apply to asset paths:
+</p>
+
+<pre><code><span class="hl-com">-- from ui/init.luau:</span>
+<span class="hl-kw">local</span> icon = Asset.GetAsset(<span class="hl-str">"Image"</span>, <span class="hl-str">"@self/icon"</span>)        <span class="hl-com">-- ui/icon.png</span>
+<span class="hl-kw">local</span> hud  = Asset.GetAsset(<span class="hl-str">"Image"</span>, <span class="hl-str">"@Game/ui.hud"</span>)       <span class="hl-com">-- game's ui/hud.png</span>
+<span class="hl-kw">local</span> rig  = Asset.GetAsset(<span class="hl-str">"Model"</span>, <span class="hl-str">"@PhysicsDLC/rigid"</span>)  <span class="hl-com">-- DLC asset</span></code></pre>
 
 <!-- ─────────────────────────────────────────────────────────────────── -->
 <h2 id="dirname">__dirname</h2>
@@ -176,12 +311,13 @@
             <span class="member-type">→ any</span>
         </div>
         <p class="member-desc">
-            Sibling to <code>require</code> that takes a raw filesystem
-            path instead of a vfs key. Useful for loading mods,
-            user-content scripts, or anything that lives outside the
-            project's bundled tree. Returns whatever the loaded chunk
-            returns, or <code>true</code> for bare side-effect modules
-            (matching <code>require</code>'s convention).
+            Pull a Luau script in from <strong>the real filesystem</strong>
+            and run it once, returning whatever the chunk returns
+            (or <code>true</code> for bare side-effect scripts). Use
+            this for mods, user-content scripts, hot-reloaded dev
+            tools &mdash; anything that lives <em>outside</em> the
+            project's bundled tree. For in-bundle modules use
+            <code>require</code>.
         </p>
     </div>
 </div>
@@ -189,60 +325,91 @@
 <h3>Path forms</h3>
 
 <table>
+    <thead>
+        <tr><th>Form</th><th>Resolves to</th></tr>
+    </thead>
     <tbody>
         <tr>
             <td><code>"C:/mods/init.luau"</code></td>
             <td>Absolute Windows path.</td>
         </tr>
         <tr>
-            <td><code>"/usr/local/share/ruzit/x.luau"</code></td>
+            <td><code>"/usr/local/share/mod/x.luau"</code></td>
             <td>Absolute Unix path.</td>
         </tr>
         <tr>
             <td><code>"./helper"</code></td>
-            <td>Relative to the calling script's <code>__dirname</code>.</td>
+            <td>Relative to the calling script's directory on disk
+                (the caller's <code>__dirname</code>).</td>
         </tr>
         <tr>
             <td><code>"./helper.luau"</code></td>
-            <td>Same with explicit extension.</td>
+            <td>Same with explicit extension. If no extension is
+                given the loader probes <code>.luau</code> then
+                <code>.lua</code>.</td>
         </tr>
     </tbody>
 </table>
 
-<p>
-    If no extension is provided the loader probes <code>.luau</code>
-    then <code>.lua</code>. Errors are explicit:
-    <code>"load: file not found 'X' (resolved to '/abs/X')"</code>.
-</p>
-
-<h3>Loaded modules' environment</h3>
+<h3 id="load-env">What loaded scripts can do</h3>
 
 <p>
-    Every loaded module gets the full runtime env,
-    <code>require</code>, <code>import</code>, <code>__dirname</code>,
-    <code>load</code>, <code>print</code>, with file resolution
-    rooted at <strong>the loaded file's own directory</strong>. So a
-    script loaded from <code>C:/mods/foo.luau</code> can do
-    <code>require("./bar")</code> and get <code>C:/mods/bar.luau</code>;
-    nested <code>load</code> calls work the same way.
+    Loaded scripts get a full Ruzit env (<code>require</code>,
+    <code>import</code>, <code>load</code>, <code>__dirname</code>,
+    <code>print</code>) with these resolution rules:
 </p>
 
-<pre><code><span class="hl-com">-- main.luau</span>
+<ul>
+    <li><strong><code>./X</code> and bare paths</strong> resolve
+        relative to the loaded file's <em>own</em> directory on
+        disk. So a script at <code>C:/mods/foo.luau</code> doing
+        <code>require("./bar")</code> gets
+        <code>C:/mods/bar.luau</code> &mdash; nested mod files just
+        work without anyone hard-coding paths.</li>
+    <li><strong>Global-mode hosts</strong>: if the host game's
+        <code>"File Type" = "Global"</code>, bare and
+        <code>./</code>-prefixed paths resolve from the
+        <em>game</em> root instead of the loaded file's directory.
+        Loaded scripts inherit the host's mode, the same way a
+        DLC would.</li>
+    <li><strong><code>@Game/X</code></strong> always reaches into
+        the host game's bundle &mdash; the escape hatch a mod uses
+        to require something from the game it's modding.</li>
+    <li><strong><code>@PkgId/X</code></strong> reaches a specific
+        loaded DLC / external package, same as from regular
+        in-bundle scripts.</li>
+    <li><strong><code>@self/X</code></strong> behaves like
+        <code>./X</code>: anchored at the loaded file's own
+        directory, and at the loaded file's directory specifically
+        when the loaded file is named <code>init.luau</code>.</li>
+</ul>
+
+<pre><code><span class="hl-com">-- main.luau (in the game)</span>
 <span class="hl-kw">local</span> mod = <span class="hl-fn">load</span>(<span class="hl-str">"C:/mods/init.luau"</span>)
 mod.run()
 
 <span class="hl-com">-- C:/mods/init.luau</span>
-<span class="hl-kw">local</span> util = <span class="hl-fn">require</span>(<span class="hl-str">"./util"</span>)        <span class="hl-com">-- C:/mods/util.luau</span>
-<span class="hl-kw">local</span> Window = <span class="hl-fn">import</span>(<span class="hl-str">"Window"</span>)       <span class="hl-com">-- engine library</span>
+<span class="hl-kw">local</span> util   = <span class="hl-fn">require</span>(<span class="hl-str">"./util"</span>)        <span class="hl-com">-- C:/mods/util.luau (filesystem-relative)</span>
+<span class="hl-kw">local</span> hud    = <span class="hl-fn">require</span>(<span class="hl-str">"@Game/ui/hud"</span>)   <span class="hl-com">-- game's bundled ui/hud.luau</span>
+<span class="hl-kw">local</span> physics = <span class="hl-fn">require</span>(<span class="hl-str">"@PhysicsDLC/rigid"</span>) <span class="hl-com">-- a loaded DLC</span>
+<span class="hl-kw">local</span> Window = <span class="hl-fn">import</span>(<span class="hl-str">"Window"</span>)        <span class="hl-com">-- engine library</span>
 <span class="hl-kw">return</span> { run = <span class="hl-kw">function</span>() Window.Open() <span class="hl-kw">end</span> }</code></pre>
+
+<div class="callout note">
+    <strong>Loaded scripts run with full engine privileges.</strong>
+    They can open windows, read assets, talk to Steam &mdash;
+    everything the host script can. Treat <code>load</code>'d code
+    as part of your trust boundary; if you're loading user-supplied
+    files, validate the path source before reaching for it.
+</div>
 
 <div class="callout warn">
     <strong>Don't confuse with Lua's built-in load.</strong>
-    Standard Lua has a <code>load(string)</code> function for evaluating
-    source strings. Ruzit shadows it on the script env with this
-    file-loading version, <code>load("print('hi')")</code> won't
-    work, you'd need to write the source to a file first or use
-    <code>Asset.FromString("File", ...)</code> for in-memory text.
+    Standard Lua has a <code>load(string)</code> function for
+    evaluating source strings. Ruzit shadows it with the
+    file-loading version above, so <code>load("print('hi')")</code>
+    tries to read a file named <code>print('hi')</code> and fails.
+    For in-memory text use <code>Asset.FromString("File", ...)</code>.
 </div>
 
 <!-- ─────────────────────────────────────────────────────────────────── -->

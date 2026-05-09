@@ -29,6 +29,8 @@ pub enum Fs {
     Disk {
         root: PathBuf,
         file_type: FileType,
+        packages: Option<Arc<HashMap<String, Arc<Package>>>>,
+        default_id: Option<String>,
     },
     Bundle {
         packages: Arc<HashMap<String, Arc<Package>>>,
@@ -91,13 +93,18 @@ pub fn strip_anchors(name: &str) -> &str {
 pub fn resolve(fs: &Fs, caller: &str, name: &str) -> Option<String> {
     match fs {
         Fs::Disk {
-            file_type: FileType::Relative,
-            ..
-        } => disk_relative(caller, name),
-        Fs::Disk {
             root,
-            file_type: FileType::Global,
-        } => disk_global(root, name),
+            file_type,
+            packages,
+            default_id,
+        } => disk_resolve(
+            root,
+            caller,
+            name,
+            *file_type,
+            packages.as_ref(),
+            default_id.as_deref(),
+        ),
         Fs::Bundle {
             packages,
             default_id,
@@ -107,29 +114,61 @@ pub fn resolve(fs: &Fs, caller: &str, name: &str) -> Option<String> {
     }
 }
 
+pub fn init_anchor(inner_path: &str) -> String {
+    let p = Path::new(inner_path);
+    let basename = p
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    if basename == "init.luau" || basename == "init.lua" {
+        p.parent()
+            .map(|d| d.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    }
+}
+
 pub fn read_module(fs: &Fs, key: &str) -> Option<String> {
     match fs {
-        Fs::Disk { .. } => fs::read_to_string(key).ok().map(strip_bom),
-        Fs::Bundle {
+        Fs::Disk {
             packages,
             default_id,
             ..
         } => {
-            let (pkg_id, inner) = split_owner(key, default_id);
-            let pkg = packages.get(pkg_id)?;
-            let stored = pkg.files.get(inner)?;
-            if pkg.scripts_compressed {
-                use base64::Engine;
-                let compressed = base64::engine::general_purpose::STANDARD
-                    .decode(stored.as_bytes())
-                    .ok()?;
-                let bytes = zstd::stream::decode_all(compressed.as_slice()).ok()?;
-                let s = String::from_utf8(bytes).ok()?;
-                Some(strip_bom(s))
-            } else {
-                Some(stored.clone())
+            if key.starts_with('@') {
+                let pkgs = packages.as_ref()?;
+                let did = default_id.as_deref().unwrap_or("");
+                return read_from_packages(pkgs, did, key);
             }
+            fs::read_to_string(key).ok().map(strip_bom)
         }
+        Fs::Bundle {
+            packages,
+            default_id,
+            ..
+        } => read_from_packages(packages, default_id, key),
+    }
+}
+
+fn read_from_packages(
+    packages: &HashMap<String, Arc<Package>>,
+    default_id: &str,
+    key: &str,
+) -> Option<String> {
+    let (pkg_id, inner) = split_owner(key, default_id);
+    let pkg = packages.get(pkg_id)?;
+    let stored = pkg.files.get(inner)?;
+    if pkg.scripts_compressed {
+        use base64::Engine;
+        let compressed = base64::engine::general_purpose::STANDARD
+            .decode(stored.as_bytes())
+            .ok()?;
+        let bytes = zstd::stream::decode_all(compressed.as_slice()).ok()?;
+        let s = String::from_utf8(bytes).ok()?;
+        Some(strip_bom(s))
+    } else {
+        Some(stored.clone())
     }
 }
 
@@ -192,13 +231,64 @@ fn exe_dir() -> PathBuf {
         .unwrap_or_default()
 }
 
-fn disk_relative(caller: &str, name: &str) -> Option<String> {
-    let dir = Path::new(caller).parent()?;
-    disk_lookup(&dir.join(name))
-}
+fn disk_resolve(
+    root: &Path,
+    caller: &str,
+    name: &str,
+    file_type: FileType,
+    packages: Option<&Arc<HashMap<String, Arc<Package>>>>,
+    default_id: Option<&str>,
+) -> Option<String> {
+    if let Some(rest) = name.strip_prefix('@') {
+        let (alias, inner) = rest.split_once('/')?;
+        let inner_clean = strip_anchors(inner);
 
-fn disk_global(root: &Path, name: &str) -> Option<String> {
-    disk_lookup(&root.join(strip_anchors(name)))
+        if let (Some(packages), Some(default_id)) = (packages, default_id) {
+            let target_id = match alias {
+                "self" => None,
+                "Game" | "game" => Some(default_id.to_string()),
+                other => Some(other.to_string()),
+            };
+            if let Some(target_id) = target_id {
+                let pkg = packages.get(&target_id)?;
+                let key = bundle_lookup(&pkg.files, Path::new(inner_clean))?;
+                return Some(if target_id == default_id {
+                    format!("@{default_id}/{key}")
+                } else {
+                    format!("@{target_id}/{key}")
+                });
+            }
+        }
+
+        let base: PathBuf = match alias {
+            "self" => {
+                let caller_path = Path::new(caller);
+                let basename = caller_path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("");
+                if basename == "init.luau" || basename == "init.lua" {
+                    caller_path
+                        .parent()
+                        .map(Path::to_path_buf)
+                        .unwrap_or_else(|| root.to_path_buf())
+                        .join(inner_clean)
+                } else {
+                    root.join(inner_clean)
+                }
+            }
+            "Game" | "game" => root.join(inner_clean),
+            _ => return None,
+        };
+        return disk_lookup(&base);
+    }
+    match file_type {
+        FileType::Relative => {
+            let dir = Path::new(caller).parent()?;
+            disk_lookup(&dir.join(name))
+        }
+        FileType::Global => disk_lookup(&root.join(strip_anchors(name))),
+    }
 }
 
 fn disk_lookup(base: &Path) -> Option<String> {
@@ -227,14 +317,25 @@ fn bundle_resolve(
 ) -> Option<String> {
     if let Some(rest) = name.strip_prefix('@') {
         let (alias, inner) = rest.split_once('/')?;
-        let (caller_pkg_id, _) = split_owner(caller, default_id);
-        let target_id: &str = if alias == "self" {
-            caller_pkg_id
-        } else {
-            alias
+        let (caller_pkg_id, caller_inner) = split_owner(caller, default_id);
+        let target_id: &str = match alias {
+            "self" => caller_pkg_id,
+            "Game" | "game" => default_id,
+            other => other,
         };
         let pkg = packages.get(target_id)?;
-        let key = bundle_lookup(&pkg.files, Path::new(strip_anchors(inner)))?;
+        let inner_clean = strip_anchors(inner);
+        let base = if alias == "self" {
+            let anchor = init_anchor(caller_inner);
+            if anchor.is_empty() {
+                Path::new(inner_clean).to_path_buf()
+            } else {
+                Path::new(&anchor).join(inner_clean)
+            }
+        } else {
+            Path::new(inner_clean).to_path_buf()
+        };
+        let key = bundle_lookup(&pkg.files, &base)?;
         return Some(if target_id == default_id {
             key
         } else {

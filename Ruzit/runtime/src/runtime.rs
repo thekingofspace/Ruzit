@@ -1,9 +1,7 @@
 use std::io::Write;
-use std::path::{Path, PathBuf};
 
 use mlua::{Lua, MultiValue, Table, Value};
 
-use crate::config::FileType;
 use crate::errors;
 use crate::heart;
 use crate::libs;
@@ -100,7 +98,8 @@ fn install_require(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result
     let fs = fs.clone();
     let owner = owner.to_string();
     let require = lua.create_function(move |lua, name: String| -> mlua::Result<Value> {
-        let resolved = resolve(&fs, &owner, &name).ok_or_else(|| {
+        let lookup = unrebase_name(&fs, &name);
+        let resolved = resolve(&fs, &owner, &lookup).ok_or_else(|| {
             let where_label = describe_owner(&fs, &owner);
             mlua::Error::RuntimeError(format!(
                 "module '{name}' not found (required from {where_label})"
@@ -109,6 +108,31 @@ fn install_require(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result
         load_module(lua, &fs, &resolved)
     })?;
     env.set("require", require)
+}
+
+fn unrebase_name(fs: &Fs, name: &str) -> String {
+    let normalized = name.replace('\\', "/");
+    let path = std::path::Path::new(&normalized);
+    if !path.is_absolute() {
+        return normalized;
+    }
+    let root = vfs::fs_root(fs);
+    let root_str = root.to_string_lossy().replace('\\', "/");
+    let mut root_trim = root_str.as_str();
+    while root_trim.ends_with('/') {
+        root_trim = &root_trim[..root_trim.len() - 1];
+    }
+    if let Some(rest) = normalized.strip_prefix(root_trim) {
+        let mut rest = rest;
+        while rest.starts_with('/') {
+            rest = &rest[1..];
+        }
+        if rest.is_empty() {
+            return normalized;
+        }
+        return format!("./{rest}");
+    }
+    normalized
 }
 
 fn install_dirname(env: &Table, fs: &Fs, owner: &str) -> mlua::Result<()> {
@@ -170,24 +194,57 @@ fn install_load(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<()
     let caller_owner = owner.to_string();
     let load = lua.create_function(move |lua, raw: String| -> mlua::Result<Value> {
         let abs = resolve_load_path(&caller_fs, &caller_owner, &raw)?;
-        load_disk_file(lua, &abs)
+        let source = std::fs::read_to_string(&abs).map_err(|e| {
+            mlua::Error::RuntimeError(format!("load: read {}: {e}", abs.display()))
+        })?;
+
+        let parent = abs
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from("/"));
+        let (host_packages, host_default_id) = host_package_view(&caller_fs);
+        let game_root = vfs::fs_root(&caller_fs);
+        let host_file_type = caller_fs.file_type();
+
+        let load_root = match host_file_type {
+            crate::config::FileType::Global => game_root,
+            crate::config::FileType::Relative => parent.clone(),
+        };
+
+        let load_fs = Fs::Disk {
+            root: load_root,
+            file_type: host_file_type,
+            packages: host_packages,
+            default_id: host_default_id,
+        };
+        let owner_str = abs.to_string_lossy().into_owned();
+        let env = build_env(lua, load_fs, owner_str.clone())?;
+        let chunk_name = format!("@{owner_str}");
+        let result: Value = lua
+            .load(&source)
+            .set_name(&chunk_name)
+            .set_environment(env)
+            .eval()?;
+        Ok(if matches!(result, Value::Nil) {
+            Value::Boolean(true)
+        } else {
+            result
+        })
     })?;
     env.set("load", load)
 }
 
-fn resolve_load_path(fs: &Fs, owner: &str, raw: &str) -> mlua::Result<PathBuf> {
-    let p = Path::new(raw);
+fn resolve_load_path(fs: &Fs, owner: &str, raw: &str) -> mlua::Result<std::path::PathBuf> {
+    let p = std::path::Path::new(raw);
     let mut candidate = if p.is_absolute() {
         p.to_path_buf()
     } else {
         vfs::caller_dir(fs, owner).join(raw)
     };
     candidate = vfs::normalize(&candidate);
-
     if candidate.is_file() {
         return Ok(candidate);
     }
-
     if candidate.extension().is_none() {
         for ext in ["luau", "lua"] {
             let mut probed = candidate.clone();
@@ -198,37 +255,29 @@ fn resolve_load_path(fs: &Fs, owner: &str, raw: &str) -> mlua::Result<PathBuf> {
         }
     }
     Err(mlua::Error::RuntimeError(format!(
-        "load: file not found '{}' (resolved to '{}')",
-        raw,
+        "load: file not found '{raw}' (resolved to '{}')",
         candidate.display()
     )))
 }
 
-fn load_disk_file(lua: &Lua, abs: &Path) -> mlua::Result<Value> {
-    let source = std::fs::read_to_string(abs)
-        .map_err(|e| mlua::Error::RuntimeError(format!("load: read {}: {e}", abs.display())))?;
-    let parent = abs
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("/"));
-
-    let load_fs = Fs::Disk {
-        root: parent,
-        file_type: FileType::Relative,
-    };
-    let owner = abs.to_string_lossy().to_string();
-    let env = build_env(lua, load_fs, owner.clone())?;
-    let chunk_name = format!("@{owner}");
-    let result: Value = lua
-        .load(&source)
-        .set_name(&chunk_name)
-        .set_environment(env)
-        .eval()?;
-    Ok(if matches!(result, Value::Nil) {
-        Value::Boolean(true)
-    } else {
-        result
-    })
+fn host_package_view(
+    fs: &Fs,
+) -> (
+    Option<std::sync::Arc<std::collections::HashMap<String, std::sync::Arc<crate::vfs::Package>>>>,
+    Option<String>,
+) {
+    match fs {
+        Fs::Bundle {
+            packages,
+            default_id,
+            ..
+        } => (Some(packages.clone()), Some(default_id.clone())),
+        Fs::Disk {
+            packages,
+            default_id,
+            ..
+        } => (packages.clone(), default_id.clone()),
+    }
 }
 
 fn describe_owner(fs: &Fs, owner: &str) -> String {

@@ -35,13 +35,37 @@ struct PendingItem {
     bytes_result: Result<(Vec<u8>, String), String>,
 }
 
+fn resolve_pkg_alias(alias: &str, caller_pkg_id: &str, default_id: &str) -> String {
+    match alias {
+        "self" => caller_pkg_id.to_string(),
+        "Game" | "game" => default_id.to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn rebase_self_inner(alias: &str, caller_inner: &str, inner: &str) -> String {
+    if alias != "self" {
+        return inner.to_string();
+    }
+    let anchor = vfs::init_anchor(caller_inner);
+    if anchor.is_empty() {
+        inner.to_string()
+    } else {
+        format!("{anchor}/{inner}")
+    }
+}
+
 fn global_cache_key(fs: &Fs, owner: &str, kind: &str, path: &str) -> String {
     match fs {
         Fs::Disk { .. } => format!("asset:disk:{kind}:{path}"),
         Fs::Bundle { default_id, .. } => {
             let (target_pkg, rest) = if let Some(rest) = path.strip_prefix('@') {
                 if let Some((id, inner)) = rest.split_once('/') {
-                    (id.to_string(), inner.to_string())
+                    let (caller_pkg, caller_inner) = split_owner(owner, default_id);
+                    (
+                        resolve_pkg_alias(id, caller_pkg, default_id),
+                        rebase_self_inner(id, caller_inner, inner),
+                    )
                 } else {
                     (default_id.clone(), path.to_string())
                 }
@@ -528,7 +552,11 @@ fn read_file_bytes(fs: &Fs, owner: &str, path: &str) -> mlua::Result<Vec<u8>> {
         } => {
             let (target_id, rest_path) = if let Some(rest) = path.strip_prefix('@') {
                 if let Some((id, inner)) = rest.split_once('/') {
-                    (id.to_string(), inner.to_string())
+                    let (caller_pkg, caller_inner) = split_owner(owner, default_id);
+                    (
+                        resolve_pkg_alias(id, caller_pkg, default_id),
+                        rebase_self_inner(id, caller_inner, inner),
+                    )
                 } else {
                     return Err(mlua::Error::RuntimeError(format!(
                         "Asset.GetAsset: bad package path '{path}'"
@@ -685,7 +713,11 @@ fn read_bytes(
         } => {
             let (target_id, rest_path) = if let Some(rest) = path.strip_prefix('@') {
                 if let Some((id, inner)) = rest.split_once('/') {
-                    (id.to_string(), inner.to_string())
+                    let (caller_pkg, caller_inner) = split_owner(owner, default_id);
+                    (
+                        resolve_pkg_alias(id, caller_pkg, default_id),
+                        rebase_self_inner(id, caller_inner, inner),
+                    )
                 } else {
                     return Err(mlua::Error::RuntimeError(format!(
                         "Asset.GetAsset: bad package path '{path}'"
