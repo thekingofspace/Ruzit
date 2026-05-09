@@ -45,6 +45,7 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         let voice_active = crate::libs::voice::is_active();
 
         if snapshot.is_empty() && !window_open && !sfx_active && !voice_active {
+            crate::libs::steam::shutdown_p2p();
             return Ok(());
         }
 

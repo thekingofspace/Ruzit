@@ -263,16 +263,43 @@ fn pump_p2p(lua: &Lua) -> mlua::Result<()> {
 
 fn close_orphan_connections() {
     let live = lobby_member_set();
-    CONNECTIONS.with(|c| {
-        let to_drop: Vec<u64> = c
-            .borrow()
+    let to_drop: Vec<u64> = CONNECTIONS.with(|c| {
+        c.borrow()
             .keys()
             .copied()
             .filter(|id| !live.contains(id))
-            .collect();
-        let mut map = c.borrow_mut();
-        for id in to_drop {
-            map.remove(&id);
+            .collect()
+    });
+    for id in to_drop {
+        let conn = CONNECTIONS.with(|c| c.borrow_mut().remove(&id));
+        if let Some(conn) = conn {
+            let _ = conn.close(NetConnectionEnd::AppGeneric, Some("lobby ended"), false);
+        }
+    }
+    if LOBBY_SIGNALS.with(|m| m.borrow().is_empty()) {
+        let socket = LISTEN_SOCKET.with(|cell| cell.borrow_mut().take());
+        drop(socket);
+        SINGLE.with(|c| {
+            if let Some(s) = c.borrow().as_ref() {
+                s.run_callbacks();
+            }
+        });
+    }
+}
+
+pub fn shutdown_p2p() {
+    let conns: Vec<u64> = CONNECTIONS.with(|c| c.borrow().keys().copied().collect());
+    for id in conns {
+        let conn = CONNECTIONS.with(|c| c.borrow_mut().remove(&id));
+        if let Some(conn) = conn {
+            let _ = conn.close(NetConnectionEnd::AppGeneric, Some("shutdown"), false);
+        }
+    }
+    let socket = LISTEN_SOCKET.with(|cell| cell.borrow_mut().take());
+    drop(socket);
+    SINGLE.with(|c| {
+        if let Some(s) = c.borrow().as_ref() {
+            s.run_callbacks();
         }
     });
 }
@@ -1157,6 +1184,13 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     t.set("OnDisconnected", on_disconnected)?;
     t.set("OnConnected", on_connected)?;
     t.set("OnConnectFailure", on_connect_failure)?;
+    t.set(
+        "Shutdown",
+        lua.create_function(|_, _: ()| -> mlua::Result<()> {
+            shutdown_p2p();
+            Ok(())
+        })?,
+    )?;
 
     t.set("SteamPresent", is_present())?;
     t.set("User", build_user(lua)?)?;

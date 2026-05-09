@@ -2127,6 +2127,13 @@ export type Steam_API = {
 	-- client fails to reach the backend. If stillRetrying is true, Steam
 	-- will keep attempting; otherwise it has given up.
 	OnConnectFailure: Signal<string, boolean>,
+	-- Force-close every P2P connection and the listen socket. Normally
+	-- you don't need this — connections clean up automatically on lobby
+	-- close/leave/disconnect, and the engine calls Shutdown for you when
+	-- the heart loop exits. Call manually if you're about to do an
+	-- abrupt exit (os.exit, panic, etc.) and want clean Steam teardown
+	-- with no "sockets still open" warnings.
+	Shutdown: () -> (),
 	-- Local user / friends.
 	User: {
 		-- Local user's steam id.
