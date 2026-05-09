@@ -317,6 +317,10 @@ pub struct GpuState {
     last_parts_version: u64,
     last_instance_count: usize,
 
+    cached_2d_bind_groups: Vec<wgpu::BindGroup>,
+    last_2d_item_count: usize,
+    last_2d_image_ids: Vec<u64>,
+
     fullscreen_vs: wgpu::ShaderModule,
 
     skybox_pipelines: HashMap<u64, wgpu::RenderPipeline>,
@@ -722,6 +726,9 @@ impl GpuState {
             live_textures: HashMap::new(),
             last_parts_version: 0,
             last_instance_count: 0,
+            cached_2d_bind_groups: Vec::new(),
+            last_2d_item_count: 0,
+            last_2d_image_ids: Vec::new(),
             fullscreen_vs,
             skybox_pipelines: HashMap::new(),
             post_pipelines: HashMap::new(),
@@ -1406,34 +1413,46 @@ impl GpuState {
         self.last_parts_version = parts_version;
         self.last_instance_count = parts.len();
 
-        let bind_groups_2d: Vec<wgpu::BindGroup> = items
+        let current_image_ids: Vec<u64> = items
             .iter()
-            .enumerate()
-            .map(|(i, item)| {
-                let texture_view = match &item.image {
-                    Some(img) => self.image_textures.get(&img.id).unwrap_or(&self.white_view),
-                    None => &self.white_view,
-                };
-                self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("Ruzit 2D bind"),
-                    layout: &self.bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: self.uniform_buffers[i].as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::TextureView(texture_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: wgpu::BindingResource::Sampler(&self.sampler),
-                        },
-                    ],
-                })
-            })
+            .map(|i| i.image.as_ref().map(|img| img.id).unwrap_or(0))
             .collect();
+        let bind_groups_dirty = items.len() != self.last_2d_item_count
+            || current_image_ids != self.last_2d_image_ids
+            || self.cached_2d_bind_groups.len() != items.len();
+        if bind_groups_dirty {
+            self.cached_2d_bind_groups = items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    let texture_view = match &item.image {
+                        Some(img) => self.image_textures.get(&img.id).unwrap_or(&self.white_view),
+                        None => &self.white_view,
+                    };
+                    self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("Ruzit 2D bind"),
+                        layout: &self.bind_group_layout,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: self.uniform_buffers[i].as_entire_binding(),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::TextureView(texture_view),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 2,
+                                resource: wgpu::BindingResource::Sampler(&self.sampler),
+                            },
+                        ],
+                    })
+                })
+                .collect();
+            self.last_2d_item_count = items.len();
+            self.last_2d_image_ids = current_image_ids;
+        }
+        let bind_groups_2d = &self.cached_2d_bind_groups;
 
         let storage_version = crate::libs::gpu::current_storage_version();
         if storage_version != self.seen_storage_version {
