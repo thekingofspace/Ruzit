@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=3.7">
-    <script src="theme.js?v=3.7"></script>
+    <link rel="stylesheet" href="style.css?v=3.8">
+    <script src="theme.js?v=3.8"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=3.7" defer></script>
+<script src="sidebar.js?v=3.8" defer></script>
 
 <main>
 
@@ -38,7 +38,8 @@ video:LinkPart(screen)
 video.Looped = <span class="hl-kw">true</span>
 video:Play()
 
-<span class="hl-com">-- Audio (only present for .ruzitvid sources).</span>
+<span class="hl-com">-- Audio is non-nil for any source that carries an audio track.</span>
+<span class="hl-com">-- GIF doesn't, MP4/MOV typically do.</span>
 <span class="hl-kw">if</span> audio <span class="hl-kw">then</span>
     <span class="hl-kw">local</span> snd = SFX.LoadSound(audio)
     snd.Looped = <span class="hl-kw">true</span>
@@ -48,19 +49,48 @@ video:Play()
 <h2 id="formats">Supported formats</h2>
 
 <table>
-    <thead><tr><th>Extension</th><th>Audio</th><th>Notes</th></tr></thead>
+    <thead><tr><th>Extension</th><th>Audio</th><th>Decoder</th></tr></thead>
     <tbody>
-        <tr><td><code>.gif</code></td><td>none</td><td>Animated GIF, decoded by the <code>image</code> crate. Companion <code>SoundData</code> is nil.</td></tr>
-        <tr><td><code>.ruzitvid</code></td><td>any SFX-supported codec</td><td>Custom Ruzit container, RGBA frames + uniform delay + inline audio bytes. Use offline tooling to author from a source video.</td></tr>
+        <tr>
+            <td><code>.gif</code></td>
+            <td>none</td>
+            <td>Pure-Rust via the <code>image</code> crate. Always available, no system deps.</td>
+        </tr>
+        <tr>
+            <td><code>.mp4</code></td>
+            <td>extracted as 16-bit PCM WAV → SoundData</td>
+            <td>Delegated to <code>ffmpeg</code> on PATH. Whatever codec ffmpeg reads (H.264, H.265, AV1, etc.).</td>
+        </tr>
+        <tr>
+            <td><code>.mov</code></td>
+            <td>same</td>
+            <td>Same ffmpeg path; QuickTime container.</td>
+        </tr>
     </tbody>
 </table>
 
-<p>
-    Real codec support (H.264 / H.265 / VP9 / AV1) is not bundled,
-    decoders pull large platform-specific dependencies. Convert
-    sources offline (ffmpeg, your favourite tool) into one of the
-    above formats.
-</p>
+<div class="callout warn">
+    <strong>MP4 / MOV require <code>ffmpeg</code> on PATH.</strong>
+    Real video codecs (H.264 / HEVC / AV1) are not bundled with the
+    runtime — adding them would balloon the binary by tens of MB and
+    introduces real licensing complications. Instead, the engine
+    shells out to a system-installed
+    <a href="https://ffmpeg.org/download.html" target="_blank" rel="noopener">ffmpeg</a>
+    at <code>Asset.GetVideo</code> time and reads back raw RGBA
+    frames + WAV audio.
+    Loading is therefore O(file length): a 30-second 720p clip can
+    take a couple of seconds the first time. Cache the resulting
+    <code>VideoAsset</code> in a Lua local if you need to play it
+    repeatedly.
+</div>
+
+<div class="callout note">
+    <strong>For shipped games:</strong> include <code>ffmpeg</code>
+    next to the launcher EXE (Windows) or document it as a runtime
+    dependency. If you can't ship ffmpeg with your game, pre-convert
+    the source MP4 / MOV to an animated GIF at build time — the
+    GIF path needs no system deps and works everywhere.
+</div>
 
 <h2 id="api">Video API</h2>
 

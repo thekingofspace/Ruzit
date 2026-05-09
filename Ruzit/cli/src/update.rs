@@ -154,17 +154,9 @@ pub fn cmd_self_update(arg: Option<&String>) -> Result<(), String> {
         Some(p) => PathBuf::from(p),
         None => exe_dir.clone(),
     };
-    let base = env::var("RUZIT_RELEASE_BASE").map_err(|_| {
-        String::from(
-            "self-update: set RUZIT_RELEASE_BASE to the URL prefix that hosts the release\n\
-             zips. The CLI fetches one platform-specific archive per call:\n  \
-             {base}/ruzit-{platform}.zip\n\
-             where {platform} is windows / linux / macos. Each zip contains plain\n\
-             ruzit{ext} and ruzitrun{ext} files (no nested folders).\n\
-             For GitHub Releases use:\n  \
-             RUZIT_RELEASE_BASE=https://github.com/<user>/<repo>/releases/download/latest",
-        )
-    })?;
+    let base = env::var("RUZIT_RELEASE_BASE").unwrap_or_else(|_| {
+        String::from("https://github.com/thekingofspace/Ruzit/releases/latest/download")
+    });
     let platform = if cfg!(target_os = "windows") {
         "windows"
     } else if cfg!(target_os = "linux") {

@@ -634,10 +634,15 @@ export type Asset_API = {
 
 	-- Load a video plus its companion audio in one call. Returns
 	-- (Video, SoundData?), the second value is nil for sources that
-	-- don't carry audio (animated GIFs). Pass the SoundData to
-	-- SFX.LoadSound if you want it to play. Supported formats:
-	--   .gif        animated GIF (no audio)
-	--   .ruzitvid   Ruzit's bundled-video format (frames + audio)
+	-- don't carry audio. Pass the SoundData to SFX.LoadSound if you
+	-- want it to play. Supported formats:
+	--   .gif        animated GIF, no audio. Pure-Rust decoder, always
+	--                available, no system deps.
+	--   .mp4 / .mov ISO Base Media. Decoded by shelling out to
+	--                `ffmpeg` on PATH at load time, video frames come
+	--                back as RGBA, audio as 16-bit PCM WAV that's
+	--                consumable by SFX.LoadSound. Requires ffmpeg
+	--                installed on the host system.
 	GetVideo: (path: string) -> (Video, SoundData?),
 }
 
@@ -2547,11 +2552,25 @@ declare class DynMesh
 	-- Welding the same target multiple times is allowed; the last
 	-- weld processed in a given tick wins for that target's pose.
 	function Weld(self, target: BasePart, opts: { kind: ("Static" | "Attach" | "Joint")?, point: Vector?, rotation: Vector?, vertex: number?, name: string? }?): number
-	-- Stretch a target part between two or more anchor points. Each
-	-- anchor is { point = Vector } or { vertex = number }. The target
-	-- part is repositioned at the midpoint and its X-axis Size is set
-	-- to the distance between the first and last anchor, so a thin
-	-- cube becomes a "string" or "tendon" between the anchors.
+	-- Stretch a target part along a polyline of two or more anchor
+	-- points. Each anchor is `{ point = Vector }` (offset in the base
+	-- part's local space) or `{ vertex = number }` (live-tracked
+	-- vertex on the base mesh, deform / animation aware).
+	-- Per tick the engine:
+	--   * Resolves every anchor to a world-space point.
+	--   * Sets the target's CFrame.Position to the centroid (average)
+	--     of all anchor points, so adding mid-path waypoints recenters
+	--     the part.
+	--   * Sets the target's CFrame.Rotation to face first → last
+	--     anchor (yaw + pitch). The part itself stays straight.
+	--   * Sets target.Size.x to the TOTAL polyline length (sum of
+	--     consecutive anchor-to-anchor distances), so a sequence of
+	--     non-collinear waypoints stretches the part further than the
+	--     straight first-to-last span.
+	-- Use this for shoulder-strap / sleeve / cape stretches between
+	-- live mesh vertices, electric arcs that bend through environment
+	-- contact points, or rope segments that thread through pulleys.
+	-- Detach restores the target's original X size.
 	function Stretch(self, target: BasePart, anchors: { { point: Vector?, vertex: number? } }): number
 	-- Remove a weld by id. The welded BasePart stays alive in the
 	-- scene at its last computed pose, it just stops being driven by
@@ -2616,10 +2635,14 @@ export type DynMesh_API = {
 -- it; the Video drives texture updates on welded BaseParts.
 --
 -- Supported formats:
---   .gif        Animated GIF, no audio (companion is nil).
---   .ruzitvid   Custom container, raw RGBA frames + uniform delay +
---                inline audio bytes. Use a tool to author this from a
---                source video; the engine doesn't ship with an encoder.
+--   .gif         Animated GIF, no audio (companion is nil). Pure-Rust
+--                 decode via the `image` crate. Always available.
+--   .mp4 / .mov  ISO Base Media containers. Decoded at load time by
+--                 shelling out to `ffmpeg` on PATH. Video frames are
+--                 read back as raw RGBA and the audio track is
+--                 extracted as 16-bit PCM WAV that you pass to
+--                 SFX.LoadSound. Requires ffmpeg installed on the
+--                 host system; install from https://ffmpeg.org/.
 -- =============================================================================
 
 declare class Video

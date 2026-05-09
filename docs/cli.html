@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CLI - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=3.7">
-    <script src="theme.js?v=3.7"></script>
+    <link rel="stylesheet" href="style.css?v=3.8">
+    <script src="theme.js?v=3.8"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=3.7" defer></script>
+<script src="sidebar.js?v=3.8" defer></script>
 
 <main>
 
@@ -245,11 +245,11 @@ ruzit fetch-deps .</code></pre>
 ruzit refresh-types
 
 <span class="hl-com"># pin to a tagged version of the types</span>
-RUZIT_TYPES_URL=https://raw.githubusercontent.com/thekingofspace/Ruzit/v3.7.0/types.d.luau \
+RUZIT_TYPES_URL=https://raw.githubusercontent.com/thekingofspace/Ruzit/v3.8.0/types.d.luau \
 ruzit refresh-types
 
 <span class="hl-com"># or point at your own fork / mirror</span>
-RUZIT_TYPES_URL=https://example.com/types/v3.7.0.luau \
+RUZIT_TYPES_URL=https://example.com/types/v3.8.0.luau \
 ruzit refresh-types</code></pre>
 
 <div class="callout note">
@@ -271,12 +271,16 @@ ruzit refresh-types</code></pre>
     a half-finished download doesn't replace your working binary.
 </p>
 
-<pre><code><span class="hl-com"># For GitHub Releases (matches the auto-release workflow):</span>
-RUZIT_RELEASE_BASE=https://github.com/&lt;user&gt;/&lt;repo&gt;/releases/download/latest
+<pre><code><span class="hl-com"># Default: pull the latest stable release straight from GitHub.</span>
+<span class="hl-com"># No env var needed, the CLI ships pointing at the official repo.</span>
 ruzit self-update
 
-<span class="hl-com"># Or pin to a tagged version:</span>
-RUZIT_RELEASE_BASE=https://github.com/&lt;user&gt;/&lt;repo&gt;/releases/download/v3.7
+<span class="hl-com"># Or pin to a specific tagged version:</span>
+RUZIT_RELEASE_BASE=https://github.com/thekingofspace/Ruzit/releases/download/v3.8.0
+ruzit self-update
+
+<span class="hl-com"># Or point at your own fork / mirror:</span>
+RUZIT_RELEASE_BASE=https://example.com/ruzit/v3.8.0
 ruzit self-update</code></pre>
 
 <p>
@@ -292,11 +296,12 @@ ruzit self-update</code></pre>
 {base}/ruzit-macos.zip     →  ruzit + ruzitrun       (when built)</code></pre>
 
 <p>
-    The bundled GitHub Actions workflow auto-publishes to
-    <code>https://github.com/&lt;user&gt;/&lt;repo&gt;/releases/download/latest</code>
-    on every push to <code>main</code>, and to
-    <code>https://github.com/&lt;user&gt;/&lt;repo&gt;/releases/download/v&lt;tag&gt;</code>
-    when you push a <code>v*</code> tag. See
+    The default base URL is
+    <code>https://github.com/thekingofspace/Ruzit/releases/latest/download</code>
+    — GitHub's own redirect that always points at the most recent
+    stable release. So a fresh install can run <code>ruzit
+    self-update</code> with no setup. The bundled GitHub Actions
+    workflow auto-publishes versioned releases on every push, see
     <a href="#release-flow">Release flow</a> below.
 </p>
 
@@ -326,27 +331,44 @@ ruzit self-update</code></pre>
         <tr>
             <td>Push to <code>main</code> / <code>master</code></td>
             <td>
-                Builds, then deletes the existing
-                <code>latest</code> release (if any), force-pushes
-                the <code>latest</code> tag at the new commit, and
-                creates a <em>prerelease</em> with the four binaries.
-                Users on a rolling installation point
-                <code>RUZIT_RELEASE_BASE</code> at
-                <code>.../releases/download/latest</code>.
+                Reads the version from
+                <code>runtime/Cargo.toml</code> (e.g.
+                <code>3.8.0</code>), builds the binaries, force-tags
+                the current commit as <code>v3.8.0</code>, and
+                publishes a normal release marked
+                <code>--latest</code> on GitHub. Both
+                <code>ruzit-windows.zip</code> and
+                <code>ruzit-linux.zip</code> are attached.
             </td>
         </tr>
         <tr>
-            <td>Push a <code>v*</code> tag (e.g. <code>v3.7.1</code>)</td>
+            <td>Push an explicit <code>v*</code> tag</td>
             <td>
-                Builds, then creates a normal (non-prerelease)
-                release at that tag with the four binaries. Users
-                pin to that version by setting
-                <code>RUZIT_RELEASE_BASE</code> to
-                <code>.../releases/download/v3.7.1</code>.
+                Builds at that exact tag and publishes the same way.
+                Useful for backfill releases or when you've already
+                bumped <code>Cargo.toml</code> and want to release
+                from a non-tip commit.
             </td>
         </tr>
     </tbody>
 </table>
+
+<p>
+    Releases are <strong>never</strong> marked as prereleases. The
+    workflow uses <code>gh release create --latest</code>, so
+    GitHub's <code>/releases/latest/</code> redirect resolves
+    automatically to whatever the most recent push produced — which
+    is what the CLI's default <code>RUZIT_RELEASE_BASE</code>
+    targets.
+</p>
+
+<p>
+    To cut a new version: bump <code>version = "3.8.0"</code> →
+    <code>"3.9.0"</code> in
+    <code>Ruzit/runtime/Cargo.toml</code> (and the matching
+    <code>core</code> + <code>cli</code> Cargo.tomls), commit, push.
+    The workflow tags + releases <code>v3.9.0</code> automatically.
+</p>
 
 <p>
     No secrets to configure, the workflow uses the built-in

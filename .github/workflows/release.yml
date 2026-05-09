@@ -123,6 +123,8 @@ jobs:
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download release zips
         uses: actions/download-artifact@v4
@@ -130,28 +132,41 @@ jobs:
           name: ruzit-all
           path: release
 
-      - name: Determine release tag and title
+      - name: Determine version + tag
         id: meta
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-            echo "title=Ruzit ${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-            echo "rolling=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=latest" >> "$GITHUB_OUTPUT"
-            echo "title=Ruzit (latest from $(echo $GITHUB_REF | sed 's|refs/heads/||'))" >> "$GITHUB_OUTPUT"
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-            echo "rolling=true" >> "$GITHUB_OUTPUT"
+          # Read version from runtime/Cargo.toml. The runtime crate is
+          # the one whose semver users will care about; CLI tracks it.
+          VERSION=$(grep -m1 '^version' Ruzit/runtime/Cargo.toml | sed -E 's/version *= *"([^"]+)"/\1/')
+          if [[ -z "$VERSION" ]]; then
+            echo "Could not extract version from Ruzit/runtime/Cargo.toml" >&2
+            exit 1
           fi
 
-      - name: Recreate rolling 'latest' tag (push only, no tag)
-        if: steps.meta.outputs.rolling == 'true'
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            # Tag-driven release: trust whatever the tag says.
+            TAG="${GITHUB_REF#refs/tags/}"
+            TITLE="Ruzit ${TAG}"
+          else
+            # Push-driven release: tag derived from the Cargo.toml version.
+            TAG="v${VERSION}"
+            TITLE="Ruzit ${TAG}"
+          fi
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}"        >> "$GITHUB_OUTPUT"
+          echo "title=${TITLE}"    >> "$GITHUB_OUTPUT"
+          echo "Building ${TITLE} (Cargo version ${VERSION})"
+
+      - name: Move tag to current commit
+        if: ${{ ! startsWith(github.ref, 'refs/tags/') }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f latest
-          git push -f origin latest
+          # Force tag at HEAD so re-runs land cleanly even if the tag
+          # already pointed somewhere else.
+          git tag -f "${{ steps.meta.outputs.tag }}"
+          git push -f origin "${{ steps.meta.outputs.tag }}"
 
       - name: Delete prior release at this tag (so we can recreate)
         env:
@@ -171,21 +186,21 @@ jobs:
           - \`ruzit-windows.zip\` → \`ruzit.exe\` + \`ruzitrun.exe\`
           - \`ruzit-linux.zip\`   → \`ruzit\` + \`ruzitrun\`
 
-          Self-update target:
+          Self-update target (default — \`/releases/latest/\` always points at the most recent stable release):
+          \`\`\`
+          ruzit self-update
+          \`\`\`
+
+          Or pin to this exact version:
           \`\`\`
           export RUZIT_RELEASE_BASE=https://github.com/$GITHUB_REPOSITORY/releases/download/${{ steps.meta.outputs.tag }}
           ruzit self-update
           \`\`\`"
 
-          PRERELEASE_FLAG=""
-          if [[ "${{ steps.meta.outputs.prerelease }}" == "true" ]]; then
-            PRERELEASE_FLAG="--prerelease"
-          fi
-
           gh release create "${{ steps.meta.outputs.tag }}" \
             --repo "$GITHUB_REPOSITORY" \
             --title "${{ steps.meta.outputs.title }}" \
             --notes "$NOTES" \
-            $PRERELEASE_FLAG \
+            --latest \
             release/ruzit-windows.zip \
             release/ruzit-linux.zip

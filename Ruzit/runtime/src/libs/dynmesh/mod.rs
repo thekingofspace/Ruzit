@@ -636,23 +636,39 @@ fn apply_stretch_weld(
     }
     let a = world_anchors[0];
     let b = world_anchors[world_anchors.len() - 1];
-    let mid = Vector::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, (a.z + b.z) * 0.5);
+
+    let n = world_anchors.len() as f32;
+    let centroid = Vector::new(
+        world_anchors.iter().map(|v| v.x).sum::<f32>() / n,
+        world_anchors.iter().map(|v| v.y).sum::<f32>() / n,
+        world_anchors.iter().map(|v| v.z).sum::<f32>() / n,
+    );
+
+    let mut path_len: f32 = 0.0;
+    for w in world_anchors.windows(2) {
+        let dx = w[1].x - w[0].x;
+        let dy = w[1].y - w[0].y;
+        let dz = w[1].z - w[0].z;
+        path_len += (dx * dx + dy * dy + dz * dz).sqrt();
+    }
+    path_len = path_len.max(1e-6);
+
     let dx = b.x - a.x;
     let dy = b.y - a.y;
     let dz = b.z - a.z;
-    let len = (dx * dx + dy * dy + dz * dz).sqrt().max(1e-6);
+    let span = (dx * dx + dy * dy + dz * dz).sqrt().max(1e-6);
     let yaw = dz.atan2(dx);
-    let pitch = (-dy / len).asin();
+    let pitch = (-dy / span).asin();
 
     let mut t = target.lock().unwrap();
     if !t.alive {
         return;
     }
-    t.cframe = CFrame::new(mid, Vector::new(0.0, yaw, pitch));
+    t.cframe = CFrame::new(centroid, Vector::new(0.0, yaw, pitch));
     let new_x = if original_size_x > 1e-4 {
-        len
+        path_len
     } else {
-        len.max(0.01)
+        path_len.max(0.01)
     };
     t.size = Vector::new(new_x, t.size.y, t.size.z);
 }

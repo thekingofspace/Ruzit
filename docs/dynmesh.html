@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DynMesh - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=3.7">
-    <script src="theme.js?v=3.7"></script>
+    <link rel="stylesheet" href="style.css?v=3.8">
+    <script src="theme.js?v=3.8"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=3.7" defer></script>
+<script src="sidebar.js?v=3.8" defer></script>
 
 <main>
 
@@ -131,13 +131,29 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
-            Stretch <code>target</code> between two or more anchor
+            Stretch <code>target</code> along a polyline of anchor
             points. Each anchor is
-            <code>{ point = Vector }</code> or
-            <code>{ vertex = number }</code>. The target part is
-            repositioned at the midpoint of the first and last
-            anchor and its X-axis Size is set to the distance
-            between them, so a thin cube becomes a tendon-like span.
+            <code>{ point = Vector }</code> (a fixed offset in the
+            base part's local space) or
+            <code>{ vertex = number }</code> (a vertex index on the
+            base mesh — live-tracked, deform- and animation-aware).
+            Per tick the engine:
+            <ul>
+                <li>Resolves every anchor to a world-space point.</li>
+                <li>Sets <code>target.CFrame.Position</code> to the
+                    <em>centroid</em> (average) of all anchors.</li>
+                <li>Sets <code>target.CFrame.Rotation</code> to face
+                    the first → last anchor (yaw + pitch).</li>
+                <li>Sets <code>target.Size.x</code> to the
+                    <em>total polyline length</em> (sum of consecutive
+                    anchor-to-anchor distances), so non-collinear
+                    waypoints stretch the part further than the
+                    straight span.</li>
+            </ul>
+            The part itself stays straight — see
+            <a href="#stretch-examples">examples</a> below for how to
+            chain multiple stretches into a bent rope / arc.
+            <code>:Detach</code> restores the target's original X size.
         </p>
     </div>
     <div class="member">
@@ -281,6 +297,302 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
     in range, out-of-range indices fall back to the base part's
     origin.
 </div>
+
+<h2 id="stretch-examples">Stretch examples</h2>
+
+<p>
+    A few patterns that come up in practice. Every example assumes
+    you've already created a <code>DynMesh</code> wrapping a base
+    part:
+</p>
+
+<pre><code><span class="hl-kw">local</span> DynMesh = <span class="hl-fn">import</span>(<span class="hl-str">"DynMesh"</span>)
+<span class="hl-kw">local</span> Renderable = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
+<span class="hl-kw">local</span> Vector = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Vector
+
+<span class="hl-kw">local</span> body = Renderable.BaseModel(Asset.GetAsset(<span class="hl-str">"Model"</span>, <span class="hl-str">"chars.hero"</span>))
+<span class="hl-kw">local</span> dm = DynMesh.new(body)</code></pre>
+
+<h3>Two-point stretch (sleeve, strap, simple tendon)</h3>
+
+<p>
+    The basic case: pin a thin part between two anchors. A cube with
+    Size <code>(1, 0.05, 0.05)</code> shows up as a 5cm-thin strap
+    spanning from anchor to anchor. The cube's X-axis becomes the
+    span direction, so its Y and Z faces are perpendicular to it.
+</p>
+
+<pre><code><span class="hl-kw">local</span> sleeve = Renderable.BasePart(<span class="hl-str">"Cube"</span>)
+sleeve.Size = Vector.new(<span class="hl-num">1</span>, <span class="hl-num">0.05</span>, <span class="hl-num">0.05</span>)
+sleeve.Color = Color3.FromRGB(<span class="hl-num">200</span>, <span class="hl-num">100</span>, <span class="hl-num">50</span>)
+
+<span class="hl-com">-- Connect shoulder vertex to wrist vertex on the body mesh.</span>
+<span class="hl-com">-- As the body's arm animation deforms those vertices, the sleeve</span>
+<span class="hl-com">-- follows in real time.</span>
+dm:Stretch(sleeve, {
+    { vertex = <span class="hl-num">88</span>  },  <span class="hl-com">-- shoulder</span>
+    { vertex = <span class="hl-num">312</span> },  <span class="hl-com">-- wrist</span>
+})</code></pre>
+
+<h3>Three-point stretch (around a corner / pulley)</h3>
+
+<p>
+    Add a mid-anchor that's <em>off</em> the straight line between
+    start and end. The total polyline length grows past the
+    straight-line distance, so the part stretches longer to match.
+    Useful for a rope-like piece that drapes over a hook or a strap
+    that wraps a shoulder before crossing the chest.
+</p>
+
+<pre><code><span class="hl-kw">local</span> strap = Renderable.BasePart(<span class="hl-str">"Cube"</span>)
+strap.Size = Vector.new(<span class="hl-num">1</span>, <span class="hl-num">0.04</span>, <span class="hl-num">0.04</span>)
+
+dm:Stretch(strap, {
+    { vertex = <span class="hl-num">88</span>  },                                <span class="hl-com">-- left shoulder</span>
+    { point  = Vector.new(<span class="hl-num">0</span>, <span class="hl-num">1.2</span>, <span class="hl-num">0.18</span>) },        <span class="hl-com">-- waypoint over the chest</span>
+    { vertex = <span class="hl-num">412</span> },                                <span class="hl-com">-- right hip</span>
+})
+
+<span class="hl-com">-- The strap's X-size = (88 → chest) + (chest → 412), so it's longer</span>
+<span class="hl-com">-- than the straight 88 → 412 distance. The strap is centered on the</span>
+<span class="hl-com">-- centroid of all three anchors and oriented from anchor[0] toward</span>
+<span class="hl-com">-- anchor[last].</span></code></pre>
+
+<h3>Repositioned stretch (anchors that move every frame)</h3>
+
+<p>
+    Vertex anchors track the live mesh. As the parent runs an
+    animation track, the welded vertices move and the stretch
+    reshapes itself automatically — no per-frame Lua code:
+</p>
+
+<pre><code><span class="hl-kw">local</span> arc = Renderable.BasePart(<span class="hl-str">"Cube"</span>)
+arc.Size = Vector.new(<span class="hl-num">1</span>, <span class="hl-num">0.08</span>, <span class="hl-num">0.08</span>)
+arc.Color = Color3.FromRGB(<span class="hl-num">120</span>, <span class="hl-num">220</span>, <span class="hl-num">255</span>)
+
+<span class="hl-com">-- Hand-to-hand electric arc that follows the live wrist vertices.</span>
+dm:Stretch(arc, {
+    { vertex = <span class="hl-num">312</span> },  <span class="hl-com">-- left wrist</span>
+    { vertex = <span class="hl-num">488</span> },  <span class="hl-com">-- right wrist</span>
+})
+
+body:GetTrack(<span class="hl-str">"cast_spell"</span>):Play()
+<span class="hl-com">-- The arc reshapes per tick to match where the wrists are right now,</span>
+<span class="hl-com">-- including any deformations the animation applies.</span></code></pre>
+
+<h3>Explicit reposition (changing anchors at runtime)</h3>
+
+<p>
+    Sometimes the path itself needs to change — a rope re-pinning
+    onto a different vertex when the player picks up a new tool, a
+    cable swinging to a new attachment point. Just detach the old
+    stretch and re-stretch with new anchors:
+</p>
+
+<pre><code><span class="hl-kw">local</span> cable = Renderable.BasePart(<span class="hl-str">"Cube"</span>)
+cable.Size = Vector.new(<span class="hl-num">1</span>, <span class="hl-num">0.06</span>, <span class="hl-num">0.06</span>)
+
+<span class="hl-kw">local</span> id = dm:Stretch(cable, {
+    { vertex = <span class="hl-num">88</span> },
+    { vertex = <span class="hl-num">312</span> },
+})
+
+<span class="hl-com">-- Later, swap the path. The cable BasePart is reused, no flicker.</span>
+dm:Detach(id)
+id = dm:Stretch(cable, {
+    { vertex = <span class="hl-num">88</span> },
+    { point  = Vector.new(<span class="hl-num">0.3</span>, <span class="hl-num">1.5</span>, <span class="hl-num">0</span>) },
+    { point  = Vector.new(<span class="hl-num">-0.3</span>, <span class="hl-num">1.5</span>, <span class="hl-num">0</span>) },
+    { vertex = <span class="hl-num">488</span> },
+})</code></pre>
+
+<h3>Multi-segment stretch (genuinely bent rope)</h3>
+
+<p>
+    A single <code>Stretch</code> always renders as a straight
+    part — the part itself doesn't bend. For a rope that actually
+    curves, chain multiple stretches with shared interior
+    waypoints. Each segment is its own BasePart welded with its
+    own <code>Stretch</code> call, and consecutive segments share
+    anchors so the joints stay seamless:
+</p>
+
+<pre><code><span class="hl-kw">local</span> waypoints = {
+    Vector.new(<span class="hl-num">0</span>,    <span class="hl-num">2.0</span>,  <span class="hl-num">0</span>),
+    Vector.new(<span class="hl-num">0.4</span>,  <span class="hl-num">1.7</span>,  <span class="hl-num">0.1</span>),
+    Vector.new(<span class="hl-num">0.7</span>,  <span class="hl-num">1.2</span>,  <span class="hl-num">0.3</span>),
+    Vector.new(<span class="hl-num">0.5</span>,  <span class="hl-num">0.7</span>,  <span class="hl-num">0.5</span>),
+    Vector.new(<span class="hl-num">0</span>,    <span class="hl-num">0.4</span>,  <span class="hl-num">0.5</span>),
+}
+
+<span class="hl-com">-- One straight cube per segment.</span>
+<span class="hl-kw">for</span> i = <span class="hl-num">1</span>, #waypoints - <span class="hl-num">1</span> <span class="hl-kw">do</span>
+    <span class="hl-kw">local</span> seg = Renderable.BasePart(<span class="hl-str">"Cube"</span>)
+    seg.Size = Vector.new(<span class="hl-num">1</span>, <span class="hl-num">0.05</span>, <span class="hl-num">0.05</span>)
+    dm:Stretch(seg, {
+        { point = waypoints[i]     },
+        { point = waypoints[i + <span class="hl-num">1</span>] },
+    })
+<span class="hl-kw">end</span>
+<span class="hl-com">-- 4 segments laid end-to-end. Each is straight, but the assembly</span>
+<span class="hl-com">-- traces the full polyline of waypoints. Mix in vertex anchors for</span>
+<span class="hl-com">-- sections that should follow the live mesh.</span></code></pre>
+
+<h3>Mixing point and vertex anchors</h3>
+
+<p>
+    Anchors can be any combination of fixed local-space points and
+    live mesh vertices. This is the typical pattern for cosmetics
+    that pin to character geometry but route through cosmetic
+    waypoints (a sash that exits at a vertex, drapes through an
+    accessory clip, then anchors back at another vertex):
+</p>
+
+<pre><code>dm:Stretch(sash, {
+    { vertex = <span class="hl-num">88</span>                     },  <span class="hl-com">-- left shoulder vertex</span>
+    { point  = Vector.new(<span class="hl-num">-0.4</span>, <span class="hl-num">1.4</span>, <span class="hl-num">0.2</span>) },  <span class="hl-com">-- clip A (fixed)</span>
+    { point  = Vector.new(<span class="hl-num">-0.2</span>, <span class="hl-num">0.9</span>, <span class="hl-num">0.4</span>) },  <span class="hl-com">-- clip B (fixed)</span>
+    { vertex = <span class="hl-num">412</span>                    },  <span class="hl-com">-- right hip vertex</span>
+})</code></pre>
+
+<div class="callout note">
+    <strong>How total length works.</strong>
+    The X-size is computed as the sum of consecutive anchor-to-anchor
+    distances. Adding a midpoint that's collinear with the start and
+    end is a no-op (the sum equals the straight span). Adding an
+    off-axis waypoint adds the detour length. Removing or moving
+    anchors at runtime (via Detach + re-Stretch) resizes the part
+    accordingly.
+</div>
+
+<h2 id="combining-weld-stretch">Combining welds and stretches</h2>
+
+<p>
+    A common pattern: <strong>weld an accessory to a fixed spot on
+    the rig, then drive deformations / warping on it via
+    stretches.</strong> A hat sits on the head, and a ribbon trailing
+    off the hat warps with stretch anchors. A pauldron is welded to
+    the shoulder, and shoulder-tassels stretch off the pauldron. A
+    sword is welded to the hand, and a glow-aura stretches between
+    the blade tip and the hand vertex.
+</p>
+
+<p>
+    The rule that makes this work: <strong>welds and stretches
+    can't share the same target part</strong> (the second one
+    overwrites the first every tick — last weld wins on a given
+    target). To combine them, build a small hierarchy: weld the
+    primary part to its anchor, then wrap that primary part as its
+    own DynMesh and use it as the anchor for stretches. The whole
+    chain follows the original parent automatically.
+</p>
+
+<h3>Hat with a warping ribbon trailing off the back</h3>
+
+<pre><code><span class="hl-kw">local</span> DynMesh    = <span class="hl-fn">import</span>(<span class="hl-str">"DynMesh"</span>)
+<span class="hl-kw">local</span> Renderable = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
+<span class="hl-kw">local</span> Asset      = <span class="hl-fn">import</span>(<span class="hl-str">"Asset"</span>)
+<span class="hl-kw">local</span> Vector     = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Vector
+
+<span class="hl-com">-- 1. Weld the hat to the head's local-space spot. This part is</span>
+<span class="hl-com">--    rigid: it just sits +1.7Y above the head and follows it.</span>
+<span class="hl-kw">local</span> head = Renderable.BaseModel(Asset.GetAsset(<span class="hl-str">"Model"</span>, <span class="hl-str">"chars.head"</span>))
+<span class="hl-kw">local</span> head_dm = DynMesh.new(head)
+
+<span class="hl-kw">local</span> hat = Renderable.BaseModel(Asset.GetAsset(<span class="hl-str">"Model"</span>, <span class="hl-str">"gear.tophat"</span>))
+head_dm:Weld(hat, {
+    kind  = <span class="hl-str">"Attach"</span>,
+    point = Vector.new(<span class="hl-num">0</span>, <span class="hl-num">1.7</span>, <span class="hl-num">0</span>),
+    name  = <span class="hl-str">"hat"</span>,
+})
+
+<span class="hl-com">-- 2. Wrap the hat itself as a DynMesh. Now we can attach things</span>
+<span class="hl-com">--    in the HAT'S local space, and they'll inherit the head's</span>
+<span class="hl-com">--    motion automatically (because the hat is welded to the head).</span>
+<span class="hl-kw">local</span> hat_dm = DynMesh.new(hat)
+
+<span class="hl-com">-- 3. Stretch a ribbon off the hat with multiple waypoints, so</span>
+<span class="hl-com">--    bobbing/warping comes through the stretch system. The waypoints</span>
+<span class="hl-com">--    are in the hat's local space, so they ride the head + hat</span>
+<span class="hl-com">--    transforms transparently.</span>
+<span class="hl-kw">local</span> ribbon = Renderable.BasePart(<span class="hl-str">"Cube"</span>)
+ribbon.Size = Vector.new(<span class="hl-num">1</span>, <span class="hl-num">0.05</span>, <span class="hl-num">0.05</span>)
+ribbon.Color = Color3.FromRGB(<span class="hl-num">200</span>, <span class="hl-num">40</span>, <span class="hl-num">40</span>)
+
+<span class="hl-kw">local</span> ribbon_id = hat_dm:Stretch(ribbon, {
+    { point = Vector.new(<span class="hl-num">0</span>,     <span class="hl-num">0.2</span>,  <span class="hl-num">-0.05</span>) },  <span class="hl-com">-- pinned to the hat brim</span>
+    { point = Vector.new(<span class="hl-num">0.05</span>, <span class="hl-num">-0.1</span>, <span class="hl-num">-0.3</span>)  },  <span class="hl-com">-- mid-bend</span>
+    { point = Vector.new(<span class="hl-num">0</span>,     <span class="hl-num">-0.4</span>, <span class="hl-num">-0.5</span>)  },  <span class="hl-com">-- tail tip</span>
+})</code></pre>
+
+<p>
+    What happens at runtime:
+</p>
+
+<ol>
+    <li>The head moves / rotates / animates.</li>
+    <li><code>head_dm</code> tick fires the hat's static weld, hat
+        sits +1.7Y above the head's current world position.</li>
+    <li><code>hat_dm</code> tick fires the ribbon's stretch, ribbon
+        is computed in the hat's <em>current</em> world frame
+        (the one the head_dm just set).</li>
+</ol>
+
+<p>
+    Net effect: ribbon waypoints look stable to the hat, and the
+    hat looks stable to the head. Move any anchor (say, animate the
+    second ribbon waypoint via <code>Detach</code> + re-Stretch each
+    frame) and you get warping deformation that still respects the
+    rig hierarchy.
+</p>
+
+<h3>When you don't need the combo</h3>
+
+<p>
+    If you just want a part to bend / stretch between two live mesh
+    points, a single <code>:Stretch</code> with vertex anchors is
+    enough — no weld required. A sleeve between shoulder and wrist
+    is one Stretch call. The combo pattern is only needed when:
+</p>
+
+<ul>
+    <li>The accessory has a <strong>fixed offset</strong> from the
+        rig (so a Weld with a <code>point</code> is the right tool
+        for that part of the chain), AND</li>
+    <li>You want <strong>further parts to stretch / warp relative
+        to that accessory</strong> (so a child DynMesh wrapping the
+        welded part is the right tool for those).</li>
+</ul>
+
+<h3>Animating the warp anchors</h3>
+
+<p>
+    Stretches automatically follow live vertex anchors, but you can
+    also animate <code>point</code> anchors over time by re-stretching
+    each frame with new offsets. This gives you procedural warping
+    on top of the welded base:
+</p>
+
+<pre><code><span class="hl-kw">local</span> Process = <span class="hl-fn">import</span>(<span class="hl-str">"Process"</span>)
+
+<span class="hl-kw">local</span> t = <span class="hl-num">0</span>
+Process.Heartbeat:Connect(<span class="hl-kw">function</span>(dt)
+    t += dt
+    <span class="hl-kw">local</span> wave = math.sin(t * <span class="hl-num">3</span>) * <span class="hl-num">0.1</span>
+
+    hat_dm:Detach(ribbon_id)
+    ribbon_id = hat_dm:Stretch(ribbon, {
+        { point = Vector.new(<span class="hl-num">0</span>,           <span class="hl-num">0.2</span>,  <span class="hl-num">-0.05</span>) },
+        { point = Vector.new(<span class="hl-num">0.05</span> + wave, <span class="hl-num">-0.1</span>, <span class="hl-num">-0.3</span>)  },
+        { point = Vector.new(wave * <span class="hl-num">0.5</span>,   <span class="hl-num">-0.4</span>, <span class="hl-num">-0.5</span>)  },
+    })
+<span class="hl-kw">end</span>)</code></pre>
+
+<p>
+    The hat's static weld keeps it pinned to the head. The ribbon's
+    stretch reshapes per frame to follow the wave. The two systems
+    don't conflict because they're on different DynMesh layers.
+</p>
 
 </main>
 

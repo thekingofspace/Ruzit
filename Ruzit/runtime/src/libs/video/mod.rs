@@ -8,8 +8,7 @@ use crate::libs::asset::{ImageAsset, next_shader_id};
 use crate::libs::renderable::{PartHandle, PartTextureRef};
 use crate::libs::sfx::SoundData;
 
-pub const VIDEO_EXTS: &[&str] = &["gif", "ruzitvid"];
-const RUZITVID_MAGIC: &[u8] = b"RZVD";
+pub const VIDEO_EXTS: &[&str] = &["gif", "mp4", "mov"];
 
 thread_local! {
     static LINKED_PARTS: RefCell<Vec<LinkedPart>> = const { RefCell::new(Vec::new()) };
@@ -179,19 +178,25 @@ pub fn parse_video_bytes(
     bytes: Vec<u8>,
     source: String,
 ) -> mlua::Result<(VideoAsset, Option<Vec<u8>>)> {
-    if bytes.starts_with(RUZITVID_MAGIC) {
-        return parse_ruzitvid(bytes, source);
-    }
     if looks_like_gif(&bytes) {
         return parse_gif(bytes, source).map(|v| (v, None));
     }
+    if looks_like_mp4_mov(&bytes) {
+        return parse_mp4_mov(bytes, source);
+    }
     Err(mlua::Error::RuntimeError(format!(
-        "Video '{source}': unsupported format. Supported: animated GIF (.gif), Ruzit Video (.ruzitvid)"
+        "Video '{source}': unsupported format. Supported: animated GIF (.gif), MP4 (.mp4), QuickTime (.mov)"
     )))
 }
 
 fn looks_like_gif(b: &[u8]) -> bool {
     b.starts_with(b"GIF87a") || b.starts_with(b"GIF89a")
+}
+
+/// MP4 / MOV / 3GP / m4v all share the ISO Base Media File Format with
+/// `ftyp` at offset 4 of the file. Cheap and reliable container check.
+fn looks_like_mp4_mov(b: &[u8]) -> bool {
+    b.len() >= 12 && &b[4..8] == b"ftyp"
 }
 
 fn parse_gif(bytes: Vec<u8>, source: String) -> mlua::Result<VideoAsset> {
@@ -246,56 +251,197 @@ fn parse_gif(bytes: Vec<u8>, source: String) -> mlua::Result<VideoAsset> {
     })
 }
 
-fn parse_ruzitvid(bytes: Vec<u8>, source: String) -> mlua::Result<(VideoAsset, Option<Vec<u8>>)> {
-    let err = |msg: &str| mlua::Error::RuntimeError(format!("Video '{source}' (.ruzitvid): {msg}"));
-    if bytes.len() < 4 + 16 {
-        return Err(err("file too small"));
+/// Decode an MP4 / MOV by shelling out to `ffmpeg` and `ffprobe`.
+/// FFmpeg must be installed and on PATH on the running machine — the
+/// engine doesn't bundle it. Returns the decoded VideoAsset (raw RGBA
+/// frames) and an Option of the audio track encoded as WAV bytes ready
+/// to feed into SFX.LoadSound.
+fn parse_mp4_mov(bytes: Vec<u8>, source: String) -> mlua::Result<(VideoAsset, Option<Vec<u8>>)> {
+    use std::process::Command;
+    let mkerr = |msg: String| mlua::Error::RuntimeError(format!("Video '{source}' (mp4/mov): {msg}"));
+
+    if !ffmpeg_on_path() {
+        return Err(mkerr(
+            "ffmpeg not found on PATH. MP4/MOV decoding is delegated to ffmpeg \
+             at runtime; install it (https://ffmpeg.org/download.html) and re-try, \
+             or convert the source to an animated GIF for the bundled decoder."
+                .into(),
+        ));
     }
-    let mut offset = 4;
-    let read_u32 =
-        |b: &[u8], o: usize| -> u32 { u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]) };
-    let width = read_u32(&bytes, offset);
-    offset += 4;
-    let height = read_u32(&bytes, offset);
-    offset += 4;
-    let frame_count = read_u32(&bytes, offset) as usize;
-    offset += 4;
-    let frame_delay_ms = read_u32(&bytes, offset);
-    offset += 4;
+
+    // Stage the input in a temp dir so ffmpeg can read it directly.
+    let tmp_dir = std::env::temp_dir().join(format!(
+        "ruzit-video-{:x}-{}",
+        std::process::id(),
+        next_shader_id()
+    ));
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| {
+        mkerr(format!("create temp dir {}: {e}", tmp_dir.display()))
+    })?;
+    let input_path = tmp_dir.join("input.bin");
+    let audio_path = tmp_dir.join("audio.wav");
+    std::fs::write(&input_path, &bytes).map_err(|e| {
+        mkerr(format!("write temp input: {e}"))
+    })?;
+
+    // Probe dimensions + fps + has-audio in one ffprobe call. JSON is the
+    // most parser-friendly output format.
+    let probe = Command::new("ffprobe")
+        .args([
+            "-v", "error",
+            "-print_format", "json",
+            "-show_streams",
+            "-show_entries", "stream=index,codec_type,width,height,r_frame_rate,nb_frames",
+        ])
+        .arg(&input_path)
+        .output()
+        .map_err(|e| mkerr(format!("spawn ffprobe: {e}")))?;
+    if !probe.status.success() {
+        let stderr = String::from_utf8_lossy(&probe.stderr).to_string();
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err(mkerr(format!("ffprobe failed: {stderr}")));
+    }
+    let probe_json: serde_json::Value = serde_json::from_slice(&probe.stdout)
+        .map_err(|e| mkerr(format!("parse ffprobe json: {e}")))?;
+    let streams = probe_json
+        .get("streams")
+        .and_then(|s| s.as_array())
+        .ok_or_else(|| mkerr("ffprobe returned no streams".into()))?;
+
+    let mut video_stream: Option<&serde_json::Value> = None;
+    let mut has_audio = false;
+    for s in streams {
+        match s.get("codec_type").and_then(|v| v.as_str()) {
+            Some("video") => {
+                if video_stream.is_none() {
+                    video_stream = Some(s);
+                }
+            }
+            Some("audio") => has_audio = true,
+            _ => {}
+        }
+    }
+
+    let video_stream = video_stream.ok_or_else(|| {
+        mkerr("file has no video stream".into())
+    })?;
+    let width = video_stream
+        .get("width")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| mkerr("video stream missing width".into()))?
+        as u32;
+    let height = video_stream
+        .get("height")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| mkerr("video stream missing height".into()))?
+        as u32;
+    let fps_str = video_stream
+        .get("r_frame_rate")
+        .and_then(|v| v.as_str())
+        .unwrap_or("30/1");
+    let fps = parse_rational(fps_str).unwrap_or(30.0).max(1.0);
+    let frame_delay_ms = (1000.0 / fps).round().max(10.0) as u32;
+
+    // Decode video to raw RGBA frames on stdout.
+    let video_out = Command::new("ffmpeg")
+        .args([
+            "-v", "error",
+            "-i",
+        ])
+        .arg(&input_path)
+        .args([
+            "-f", "rawvideo",
+            "-pix_fmt", "rgba",
+            "-an",
+            "-",
+        ])
+        .output()
+        .map_err(|e| mkerr(format!("spawn ffmpeg (video): {e}")))?;
+    if !video_out.status.success() {
+        let stderr = String::from_utf8_lossy(&video_out.stderr).to_string();
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err(mkerr(format!("ffmpeg video decode failed: {stderr}")));
+    }
 
     let frame_size = (width as usize) * (height as usize) * 4;
-    if bytes.len() < offset + frame_size * frame_count + 4 {
-        return Err(err("truncated payload"));
+    if frame_size == 0 || video_out.stdout.is_empty() {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err(mkerr("ffmpeg produced no video frames".into()));
     }
-
+    let frame_count = video_out.stdout.len() / frame_size;
+    if frame_count == 0 {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err(mkerr(format!(
+            "decoded buffer is {} bytes but a single frame is {} bytes",
+            video_out.stdout.len(),
+            frame_size
+        )));
+    }
     let mut frames: Vec<Vec<u8>> = Vec::with_capacity(frame_count);
-    for _ in 0..frame_count {
-        frames.push(bytes[offset..offset + frame_size].to_vec());
-        offset += frame_size;
+    for i in 0..frame_count {
+        let start = i * frame_size;
+        let end = start + frame_size;
+        frames.push(video_out.stdout[start..end].to_vec());
     }
 
-    let audio_len = read_u32(&bytes, offset) as usize;
-    offset += 4;
-    if bytes.len() < offset + audio_len {
-        return Err(err("audio payload truncated"));
-    }
-    let audio = if audio_len > 0 {
-        Some(bytes[offset..offset + audio_len].to_vec())
+    // Decode audio to a WAV file (separate ffmpeg call so the streams
+    // don't get mangled together over stdout). Skipped if no audio
+    // stream exists.
+    let audio_bytes = if has_audio {
+        let audio_status = Command::new("ffmpeg")
+            .args(["-v", "error", "-y", "-i"])
+            .arg(&input_path)
+            .args(["-vn", "-c:a", "pcm_s16le"])
+            .arg(&audio_path)
+            .output()
+            .map_err(|e| mkerr(format!("spawn ffmpeg (audio): {e}")))?;
+        if !audio_status.status.success() {
+            let stderr = String::from_utf8_lossy(&audio_status.stderr).to_string();
+            eprintln!("[Video] '{source}': audio extraction failed, video continues without audio: {stderr}");
+            None
+        } else {
+            std::fs::read(&audio_path).ok()
+        }
     } else {
         None
     };
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
 
     let video = VideoAsset {
         id: next_shader_id(),
         width,
         height,
         frames: Arc::new(frames),
-        frame_delay_ms: frame_delay_ms.max(1),
+        frame_delay_ms,
         source,
         state: Arc::new(Mutex::new(VideoState::default())),
         cached_image: Mutex::new(None),
     };
-    Ok((video, audio))
+    Ok((video, audio_bytes))
+}
+
+fn ffmpeg_on_path() -> bool {
+    std::process::Command::new("ffmpeg")
+        .arg("-version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn parse_rational(s: &str) -> Option<f32> {
+    if let Some((n, d)) = s.split_once('/') {
+        let num: f32 = n.parse().ok()?;
+        let den: f32 = d.parse().ok()?;
+        if den.abs() < 1e-6 {
+            return None;
+        }
+        Some(num / den)
+    } else {
+        s.parse().ok()
+    }
 }
 
 pub fn create_get_video_function(
