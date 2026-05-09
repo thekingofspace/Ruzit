@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drawable - Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css?v=4.0">
+    <script src="theme.js?v=4.0"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=4.0" defer></script>
+
+<main>
+
+<h1>DrawableImg &amp; CanvasBuffer</h1>
+<p class="lede">
+    CPU-mutable pixel buffers you draw to with simple shape primitives.
+    A <code>DrawableImg</code> is a live texture: assign it to a
+    <code>BasePart.Texture</code> and any draw call shows up on the
+    next frame. A <code>CanvasBuffer</code> is a scratch buffer with
+    the same draw methods, used to batch many edits into a single
+    GPU re-upload.
+</p>
+
+<pre><code><span class="hl-kw">local</span> GUI        = <span class="hl-fn">import</span>(<span class="hl-str">"GUI"</span>)
+<span class="hl-kw">local</span> Renderable = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
+<span class="hl-kw">local</span> Color3     = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Color3
+</code></pre>
+
+<h2 id="when-to-use">Picking the right texture source</h2>
+
+<table>
+    <thead>
+        <tr><th>If you want&hellip;</th><th>Use</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>A static image authored offline (PNG, JPG, &hellip;)</td>
+            <td><code>Asset.GetAsset("Image", "&hellip;")</code></td>
+        </tr>
+        <tr>
+            <td>A live composition of GUI primitives (text + image
+                layers, like an in-world sign)</td>
+            <td><a href="dynimg.html"><code>DynImg</code></a></td>
+        </tr>
+        <tr>
+            <td>To procedurally <em>draw</em> with shape primitives
+                (paint, plot, scribble, render gameplay state into
+                a texture)</td>
+            <td><strong><code>DrawableImg</code></strong>
+                (this page)</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>
+    All three plug into the same slot &mdash;
+    <code>part.Texture = &hellip;</code> &mdash; and the texture
+    refreshes automatically on the next frame for the live
+    variants.
+</p>
+
+<h2 id="overview">Conceptual model</h2>
+
+<ul>
+    <li>A <code>DrawableImg</code> owns a fixed-size RGBA8 buffer
+        plus a version counter. Every drawing method bumps the
+        version, the renderer notices and re-uploads to the GPU
+        before the next frame.</li>
+    <li>Drawing methods <strong>alpha-blend</strong> onto the
+        existing pixels. <code>Fill</code> /
+        <code>Clear</code> / <code>WritePixel</code> overwrite
+        instead.</li>
+    <li>A <code>CanvasBuffer</code> is the same buffer layout
+        without the version + GPU wiring. Use it as a scratch
+        pad: stage many draws, then commit in one shot via
+        <code>buffer:Apply(drawable, x, y)</code>. The drawable's
+        version bumps once, GPU re-uploads once.</li>
+</ul>
+
+<h2 id="coords">Coordinates &amp; color</h2>
+
+<ul>
+    <li>Top-left is <code>(0, 0)</code>; <code>x</code> increases
+        right, <code>y</code> increases down.</li>
+    <li>All coordinates are integer pixels. Floats are coerced
+        via Lua-to-int conversion. Out-of-bounds pixels are
+        clipped silently &mdash; no error, no wrap.</li>
+    <li>Colors are <a href="primitives.html#color3"><code>Color3</code></a>
+        (RGB in <code>0..1</code>). The optional
+        <code>transparency</code> arg is <code>0..1</code> with
+        <code>0 = fully opaque</code>, <code>1 = fully
+        transparent</code> &mdash; matches GUI primitives.</li>
+</ul>
+
+<h2 id="factories">Factories</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.DrawableImg(width, height)</span>
+            <span class="member-type">&rarr; DrawableImg</span>
+        </div>
+        <p class="member-desc">
+            Build a fresh, fixed-size mutable image. Pixels start
+            at <code>(0, 0, 0, 0)</code> (transparent black). Not
+            cached &mdash; each call returns a new instance with
+            its own buffer and texture id.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.CanvasBuffer(width, height)</span>
+            <span class="member-type">&rarr; CanvasBuffer</span>
+        </div>
+        <p class="member-desc">
+            Build a scratch buffer of the given size. Same draw
+            methods as <code>DrawableImg</code>; commit to a
+            real drawable via
+            <code>buffer:Apply(target, x?, y?)</code>.
+        </p>
+    </div>
+</div>
+
+<h2 id="draw-methods">Drawing methods</h2>
+
+<p>All of these exist on both <code>DrawableImg</code> and <code>CanvasBuffer</code>.</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">obj:WritePixel(x, y, color, transparency?)</span></div>
+        <p class="member-desc">
+            Overwrite a single pixel. Doesn't blend with what was
+            there. Default transparency 0.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">obj:DrawRect(x, y, w, h, color, transparency?)</span></div>
+        <p class="member-desc">
+            Alpha-blend a filled axis-aligned rectangle.
+            <code>obj:DrawCube(...)</code> is a synonym &mdash; same
+            method, same args. Pick whichever name reads better in
+            your code.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">obj:DrawLine(x0, y0, x1, y1, color, transparency?)</span></div>
+        <p class="member-desc">
+            Bresenham line, one pixel thick, alpha-blended onto
+            existing content.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">obj:DrawCircle(cx, cy, radius, color, transparency?, filled?)</span></div>
+        <p class="member-desc">
+            Outline circle by default (midpoint / Bresenham).
+            Pass <code>filled = true</code> for a solid disc.
+            <code>radius = 0</code> draws a single pixel at
+            <code>(cx, cy)</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">obj:Fill(color, transparency?)</span></div>
+        <p class="member-desc">
+            Overwrite every pixel with one color + alpha.
+            Doesn't blend &mdash; this is your "reset to a solid
+            color" call.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">obj:Clear()</span></div>
+        <p class="member-desc">
+            Reset every pixel to <code>(0, 0, 0, 0)</code> &mdash;
+            fully transparent black. Equivalent to
+            <code>Fill(Color3.new(0, 0, 0), 1)</code> but cheaper.
+        </p>
+    </div>
+</div>
+
+<h2 id="drawableimg-only">DrawableImg accessors</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Width()</span><span class="member-type">&rarr; number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Height()</span><span class="member-type">&rarr; number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Source()</span><span class="member-type">&rarr; string</span></div>
+        <p class="member-desc">
+            Origin label, formatted as
+            <code>"&lt;drawable:WxH&gt;"</code>. Mirrors
+            <a href="asset.html#image"><code>ImageAsset:Source</code></a>
+            so logging code that handles either kind doesn't have
+            to special-case.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Pixels()</span><span class="member-type">&rarr; string</span></div>
+        <p class="member-desc">
+            Snapshot of the current RGBA8 buffer
+            (<code>Width * Height * 4</code> bytes, row-major,
+            top-left origin). Useful for screenshots, save-state
+            blobs, or hand-rolled image processing.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:IsAlive()</span><span class="member-type">&rarr; boolean</span></div>
+        <p class="member-desc">
+            False after <code>:Destroy()</code>. Drawing methods
+            still accept calls (and bump the version) but the
+            visible result for any consuming part is transparent
+            black.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Apply(buffer, atX?, atY?)</span></div>
+        <p class="member-desc">
+            Convenience: alpha-blend a CanvasBuffer onto this
+            drawable at the given offset (default
+            <code>(0, 0)</code>). Equivalent to
+            <code>buffer:Apply(img, atX, atY)</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Destroy()</span></div>
+        <p class="member-desc">
+            Mark dead and zero the pixels. Drop your Lua
+            reference, and clear the part's
+            <code>.Texture</code> if it still points at this
+            drawable, to actually free the buffer + GPU
+            texture.
+        </p>
+    </div>
+</div>
+
+<h2 id="canvasbuffer-only">CanvasBuffer accessors</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">buffer:Width()</span><span class="member-type">&rarr; number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">buffer:Height()</span><span class="member-type">&rarr; number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">buffer:Pixels()</span><span class="member-type">&rarr; string</span></div>
+        <p class="member-desc">
+            Snapshot the buffer the same way
+            <code>DrawableImg:Pixels</code> does. Note that a
+            CanvasBuffer never goes to the GPU on its own.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">buffer:Apply(target, atX?, atY?)</span></div>
+        <p class="member-desc">
+            Alpha-blend the buffer onto the target
+            <code>DrawableImg</code> at <code>(atX, atY)</code>.
+            Bumps the drawable's version exactly once, so the
+            GPU re-upload happens in a single shot even though
+            the buffer was mutated dozens of times. The buffer
+            itself is unchanged after Apply &mdash; you can
+            keep drawing into it and Apply again.
+        </p>
+    </div>
+</div>
+
+<h2 id="lifecycle">Lifecycle &amp; performance</h2>
+
+<ul>
+    <li><strong>Not cached.</strong> Every
+        <code>GUI.DrawableImg(...)</code> creates a fresh buffer
+        and a unique texture id. There's no de-duplication
+        across calls; you get back a distinct instance.</li>
+    <li><strong>Per-call uploads.</strong> Every drawing method
+        on <code>DrawableImg</code> bumps the buffer's version,
+        which triggers <code>queue.write_texture</code> the
+        next time the renderer ticks. For one or two draws
+        per frame this is fine; for hundreds, stage in a
+        <code>CanvasBuffer</code> and Apply once.</li>
+    <li><strong>Cleanup.</strong> Drop the Lua reference and
+        clear any consuming part's <code>.Texture</code>; the
+        renderer's eviction sweep then drops the cached GPU
+        texture. <code>:Destroy()</code> zeros the pixels
+        immediately but doesn't itself free the buffer &mdash;
+        Arc refcounting handles that.</li>
+    <li><strong>CPU cost.</strong> Drawing is straightforward
+        software rasterization. <code>DrawCircle(filled=true)</code>
+        on a 200-pixel-radius disc paints ~125k pixels per
+        call &mdash; reasonable per frame, expensive per tick
+        if done dozens of times. Profile with
+        <code>Debug.Frame</code> if it shows up.</li>
+</ul>
+
+<h2 id="examples">Recipes</h2>
+
+<h3>Paint a face onto a cube</h3>
+
+<pre><code><span class="hl-kw">local</span> face = GUI.<span class="hl-fn">DrawableImg</span>(<span class="hl-num">128</span>, <span class="hl-num">128</span>)
+face:<span class="hl-fn">Fill</span>(Color3.<span class="hl-fn">new</span>(<span class="hl-num">1</span>, <span class="hl-num">0.9</span>, <span class="hl-num">0.7</span>))                          <span class="hl-com">-- skin tone</span>
+face:<span class="hl-fn">DrawCircle</span>(<span class="hl-num">42</span>, <span class="hl-num">48</span>, <span class="hl-num">8</span>, Color3.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>), <span class="hl-num">0</span>, <span class="hl-kw">true</span>)  <span class="hl-com">-- left eye</span>
+face:<span class="hl-fn">DrawCircle</span>(<span class="hl-num">86</span>, <span class="hl-num">48</span>, <span class="hl-num">8</span>, Color3.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>), <span class="hl-num">0</span>, <span class="hl-kw">true</span>)
+face:<span class="hl-fn">DrawLine</span>(<span class="hl-num">40</span>, <span class="hl-num">90</span>, <span class="hl-num">88</span>, <span class="hl-num">90</span>, Color3.<span class="hl-fn">new</span>(<span class="hl-num">0.6</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>))       <span class="hl-com">-- mouth</span>
+
+<span class="hl-kw">local</span> head = Renderable.<span class="hl-fn">BasePart</span>(<span class="hl-str">"Cube"</span>)
+head.Texture = face</code></pre>
+
+<h3>HUD health bar (re-blit each tick)</h3>
+
+<pre><code><span class="hl-kw">local</span> bar = GUI.<span class="hl-fn">DrawableImg</span>(<span class="hl-num">256</span>, <span class="hl-num">32</span>)
+
+<span class="hl-kw">local</span> <span class="hl-kw">function</span> <span class="hl-fn">draw_bar</span>(hp01)
+    bar:<span class="hl-fn">Fill</span>(Color3.<span class="hl-fn">new</span>(<span class="hl-num">0.1</span>, <span class="hl-num">0.1</span>, <span class="hl-num">0.1</span>))
+    <span class="hl-kw">local</span> w = math.<span class="hl-fn">floor</span>(<span class="hl-num">252</span> * hp01)
+    bar:<span class="hl-fn">DrawRect</span>(<span class="hl-num">2</span>, <span class="hl-num">2</span>, w, <span class="hl-num">28</span>, Color3.<span class="hl-fn">new</span>(<span class="hl-num">0.9</span>, <span class="hl-num">0.2</span>, <span class="hl-num">0.2</span>))
+    bar:<span class="hl-fn">DrawRect</span>(<span class="hl-num">2</span>, <span class="hl-num">2</span>, math.<span class="hl-fn">min</span>(<span class="hl-num">8</span>, w), <span class="hl-num">28</span>, Color3.<span class="hl-fn">new</span>(<span class="hl-num">1</span>, <span class="hl-num">1</span>, <span class="hl-num">1</span>), <span class="hl-num">0.5</span>) <span class="hl-com">-- hilite</span>
+<span class="hl-kw">end</span>
+
+<span class="hl-fn">draw_bar</span>(<span class="hl-num">1</span>)
+hud_part.Texture = bar
+
+<span class="hl-com">-- Each time HP changes:</span>
+<span class="hl-fn">draw_bar</span>(player.HP / player.MaxHP)
+<span class="hl-com">-- 4 draw calls = 4 version bumps in a row, but the GPU only re-uploads</span>
+<span class="hl-com">-- once per frame, so this is fine.</span></code></pre>
+
+<h3>Mini-map dot plot (batched via CanvasBuffer)</h3>
+
+<pre><code><span class="hl-kw">local</span> minimap = GUI.<span class="hl-fn">DrawableImg</span>(<span class="hl-num">256</span>, <span class="hl-num">256</span>)
+<span class="hl-kw">local</span> scratch = GUI.<span class="hl-fn">CanvasBuffer</span>(<span class="hl-num">256</span>, <span class="hl-num">256</span>)
+
+<span class="hl-kw">local</span> <span class="hl-kw">function</span> <span class="hl-fn">redraw_minimap</span>(entities)
+    scratch:<span class="hl-fn">Fill</span>(Color3.<span class="hl-fn">new</span>(<span class="hl-num">0.05</span>, <span class="hl-num">0.05</span>, <span class="hl-num">0.05</span>))
+    <span class="hl-kw">for</span> _, e <span class="hl-kw">in</span> entities <span class="hl-kw">do</span>
+        <span class="hl-kw">local</span> px = math.<span class="hl-fn">floor</span>((e.X / WORLD_W) * <span class="hl-num">256</span>)
+        <span class="hl-kw">local</span> py = math.<span class="hl-fn">floor</span>((e.Z / WORLD_D) * <span class="hl-num">256</span>)
+        scratch:<span class="hl-fn">DrawCircle</span>(px, py, <span class="hl-num">3</span>, e.Color, <span class="hl-num">0</span>, <span class="hl-kw">true</span>)
+    <span class="hl-kw">end</span>
+    scratch:<span class="hl-fn">Apply</span>(minimap)        <span class="hl-com">-- single GPU re-upload, no matter how many entities</span>
+<span class="hl-kw">end</span>
+
+minimap_part.Texture = minimap
+Process.Heartbeat:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>() <span class="hl-fn">redraw_minimap</span>(world.entities) <span class="hl-kw">end</span>)</code></pre>
+
+<h3>Pixel scribble in response to clicks</h3>
+
+<pre><code><span class="hl-kw">local</span> board = GUI.<span class="hl-fn">DrawableImg</span>(<span class="hl-num">512</span>, <span class="hl-num">512</span>)
+board:<span class="hl-fn">Fill</span>(Color3.<span class="hl-fn">new</span>(<span class="hl-num">1</span>, <span class="hl-num">1</span>, <span class="hl-num">1</span>))
+
+canvas_part.Texture = board
+
+<span class="hl-kw">local</span> Mouse = <span class="hl-fn">import</span>(<span class="hl-str">"Mouse"</span>)
+<span class="hl-kw">local</span> last
+Mouse.Move:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(pos)
+    <span class="hl-kw">if</span> Mouse.IsDown(<span class="hl-str">"Left"</span>) <span class="hl-kw">and</span> last <span class="hl-kw">then</span>
+        board:<span class="hl-fn">DrawLine</span>(last.X, last.Y, pos.X, pos.Y, Color3.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>))
+    <span class="hl-kw">end</span>
+    last = pos
+<span class="hl-kw">end</span>)</code></pre>
+
+<h2 id="caveats">Caveats</h2>
+
+<ul>
+    <li>No anti-aliasing. <code>DrawLine</code> and
+        <code>DrawCircle</code> are pixel-snapped Bresenham
+        plots, so diagonal edges step. If you need smooth
+        edges, supersample at higher resolution and downscale,
+        or use a pre-baked AA sprite.</li>
+    <li>No text drawing on the buffer itself. Build a text
+        glyph in a <a href="dynimg.html"><code>DynImg</code></a>
+        layer (which uses fontdue's rasterizer) if you need
+        labels.</li>
+    <li>No transforms. Coordinates are absolute pixels &mdash;
+        rotation / scaling on the source must be done by your
+        own code or via a 3D shader on the consuming part.</li>
+    <li>Single texture format: 8-bit per channel sRGB RGBA.
+        High-precision content (HDR, single-channel
+        height-fields) needs a different path.</li>
+</ul>
+
+</main>
+
+</body>
+</html>
