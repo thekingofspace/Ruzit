@@ -28,10 +28,6 @@ pub fn take_present_mode_dirty() -> bool {
     PRESENT_MODE_DIRTY.swap(false, Ordering::Relaxed)
 }
 
-/// Power-mode preference, picked up at adapter selection.
-/// 0 = Quality (HighPerformance adapter, max-FPS bias)
-/// 1 = Performance (LowPower adapter, battery-friendly)
-/// 2 = Auto (driver default — typically picks LowPower on laptops)
 static POWER_MODE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
 pub fn set_power_mode_quality() {
