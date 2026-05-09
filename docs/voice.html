@@ -87,6 +87,46 @@ on_peer_packet:Connect(<span class="hl-kw">function</span>(packet) chan:Push(pac
         </div>
         <p class="member-desc">Inverse of <code>recorder:Serialize()</code>.</p>
     </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Voice.Record(duration)</span>
+            <span class="member-type">→ Signal&lt;VoiceRecording, string&gt;</span>
+        </div>
+        <p class="member-desc">
+            One-shot mic recording. Opens the default input, captures for
+            <code>duration</code> seconds (clamped to 1 hour), stops
+            automatically, and fires the returned Signal once with
+            <code>(recording, serialized)</code> — the recording handle for
+            local playback (<code>recording:PlayInto(channel)</code> or
+            <code>Voice.PlayRecording(recording)</code>) and the serialized
+            string for sending over the network / saving to disk / reloading
+            via <code>Voice.LoadRecording</code>.
+        </p>
+        <pre><code><span class="hl-kw">local</span> Voice = <span class="hl-fn">import</span>(<span class="hl-str">"Voice"</span>)
+
+Voice.<span class="hl-fn">Record</span>(<span class="hl-num">3</span>):<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(recording, serialized)
+    <span class="hl-cmt">-- Local playback:</span>
+    Voice.<span class="hl-fn">PlayRecording</span>(recording)
+    <span class="hl-cmt">-- Or send to peers and have them Voice.LoadRecording(s):PlayInto(ch):</span>
+    lobby:<span class="hl-fn">Broadcast</span>(serialized)
+<span class="hl-kw">end</span>)</code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Voice.PlayRecording(data, opts?)</span>
+            <span class="member-type">→ VoiceChannel</span>
+        </div>
+        <p class="member-desc">
+            Fire-and-forget recording playback. <code>data</code> is either
+            a <code>VoiceRecording</code> handle or a serialized string
+            (the same form <code>Voice.LoadRecording</code> takes).
+            Spins up a transient channel, plays the whole recording, and
+            returns the channel so you can apply shaders, watch
+            <code>IsPlaying</code>, or stop it early.
+            <code>opts</code>: <code>{ loop?: boolean, speed?: number }</code>
+            (<code>speed</code> clamps to 0.25..4).
+        </p>
+    </div>
 </div>
 
 <h3>Shader factories</h3>

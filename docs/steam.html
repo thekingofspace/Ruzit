@@ -444,6 +444,18 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
         </p>
     </div>
     <div class="member">
+        <div class="member-header"><span class="member-name">.OnMessage</span><span class="member-type">Signal&lt;string, string&gt;</span></div>
+        <p class="member-desc">
+            Fires with <code>(senderSteamId, bytes)</code> when another
+            lobby member sends a P2P packet via <code>:Send</code> or
+            <code>:Broadcast</code>. Bytes are the exact payload the
+            sender passed in. Routed via Steam Networking Sockets
+            (NAT-friendly, encrypted, identified by SteamID — IPs are
+            never exposed). Messages from peers who aren't current
+            members of any of your lobbies are silently dropped.
+        </p>
+    </div>
+    <div class="member">
         <div class="member-header"><span class="member-name">.IsOwner</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
         <p class="member-desc">True if the local user owns this lobby.</p>
     </div>
@@ -513,6 +525,38 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
         <p class="member-desc">Open Steam's invite-friends overlay for this lobby.</p>
     </div>
     <div class="member">
+        <div class="member-header"><span class="member-name">lobby:Send(memberId, data, reliability?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            P2P send to one specific lobby member. Uses Steam Networking
+            Sockets — relay-fallback, encrypted, NAT-friendly, addressed
+            by SteamID (no IPs ever leaked). The connection is opened
+            lazily on the first send to that peer (one handshake, ~100ms
+            on the relay path, instant on direct LAN).
+        </p>
+        <p class="member-desc">
+            <code>data</code> is raw bytes — pass any string / buffer
+            holding your serialized payload. <code>reliability</code>
+            is one of <code>"Reliable"</code> (default, ordered, no-drop),
+            <code>"Unreliable"</code> (fast, lossy, no order),
+            <code>"ReliableNoNagle"</code> (reliable but flush
+            immediately), <code>"UnreliableNoDelay"</code> (drop instead
+            of buffer if the link isn't ready). Max ~1 MB per message.
+        </p>
+        <p class="member-desc">
+            Raises if <code>memberId</code> isn't a current member of
+            this lobby, or is yourself.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">lobby:Broadcast(data, reliability?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            P2P broadcast to every other member of this lobby. Equivalent
+            to iterating <code>:Members()</code> and calling <code>:Send</code>
+            on each (skipping yourself). Same reliability semantics as
+            <code>:Send</code>.
+        </p>
+    </div>
+    <div class="member">
         <div class="member-header"><span class="member-name">lobby:Leave()</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Leave the lobby. The handle goes inert after this. If you're the owner and want everyone to leave, use <code>:Close()</code>.</p>
     </div>
@@ -528,6 +572,44 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
     accordingly. Non-Ruzit clients (third-party tools talking directly to
     Steam matchmaking) won't honor the flags — kicks/closes only work
     against players running your built game.
+</div>
+
+<h3 id="lobby-p2p">P2P networking via the lobby</h3>
+
+<p>
+    <code>:Send</code> / <code>:Broadcast</code> / <code>OnMessage</code> are
+    backed by <strong>Steam Networking Sockets</strong> — Valve's modern P2P
+    transport with NAT punch-through, free relay fallback, end-to-end
+    encryption, and addressing by SteamID (peers never see each other's IPs).
+    Use this for actual gameplay packets; <code>:SendChat</code> is rate-
+    limited and only fits lobby-room chat.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Steam = <span class="hl-fn">import</span>(<span class="hl-str">"Steam"</span>)
+
+Steam.Lobby.<span class="hl-fn">Create</span>(<span class="hl-num">8</span>, <span class="hl-str">"Public"</span>):<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(lobby)
+    <span class="hl-cmt">-- Receive packets from any other member.</span>
+    lobby.OnMessage:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(senderId, bytes)
+        <span class="hl-fn">print</span>(senderId, <span class="hl-str">"sent"</span>, #bytes, <span class="hl-str">"bytes"</span>)
+    <span class="hl-kw">end</span>)
+
+    <span class="hl-cmt">-- Reliable (default) — ordered, no-loss. For chat, RPCs, state syncs.</span>
+    lobby:<span class="hl-fn">Broadcast</span>(<span class="hl-str">"hello everyone"</span>)
+
+    <span class="hl-cmt">-- Unreliable — fast, may drop. For positions/inputs.</span>
+    Heart:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>()
+        lobby:<span class="hl-fn">Broadcast</span>(<span class="hl-fn">serialize_player_state</span>(), <span class="hl-str">"Unreliable"</span>)
+    <span class="hl-kw">end</span>)
+<span class="hl-kw">end</span>)</code></pre>
+
+<div class="callout note">
+    <strong>Lazy connect, auto-reject.</strong>
+    The first <code>:Send</code> to a given peer opens the P2P connection
+    (one round-trip handshake, ~100ms on relay, instant on direct LAN).
+    Connections are torn down automatically when a peer is no longer a
+    member of any lobby you're in. Incoming connections from peers
+    who aren't a member of any of your lobbies are auto-rejected, so
+    random Steam users on the same AppID can't spam your game.
 </div>
 
 <h3 id="server-obj">SteamServer</h3>

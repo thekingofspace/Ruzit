@@ -19,12 +19,22 @@ const OUTPUT_CHANNELS: u16 = 2;
 thread_local! {
     static OUTPUT: RefCell<Option<OutputStreamHandle>> = const { RefCell::new(None) };
     static CAPTURES: RefCell<Vec<CaptureRegistration>> = const { RefCell::new(Vec::new()) };
+    static PENDING_RECORDS: RefCell<Vec<PendingRecord>> = const { RefCell::new(Vec::new()) };
 }
 
 struct CaptureRegistration {
     rx: std::sync::mpsc::Receiver<Vec<u8>>,
     signal_table: Table,
     alive: Arc<AtomicBool>,
+}
+
+struct PendingRecord {
+    rx: std::sync::mpsc::Receiver<Vec<u8>>,
+    alive: Arc<AtomicBool>,
+    stream: Mutex<Option<Stream>>,
+    deadline: std::time::Instant,
+    packets: Vec<Vec<u8>>,
+    signal_table: Table,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -88,35 +98,82 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     t.set(
         "LoadRecording",
         lua.create_function(|lua, data: mlua::String| -> mlua::Result<AnyUserData> {
-            let bytes = data.as_bytes();
-            if bytes.len() < 4 {
-                return Err(mlua::Error::RuntimeError(
-                    "Voice.LoadRecording: payload too short".into(),
-                ));
-            }
-            let count = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
-            let mut packets = Vec::with_capacity(count);
-            let mut i = 4;
-            for _ in 0..count {
-                if i + 2 > bytes.len() {
-                    return Err(mlua::Error::RuntimeError(
-                        "Voice.LoadRecording: truncated length prefix".into(),
-                    ));
-                }
-                let len = u16::from_le_bytes([bytes[i], bytes[i + 1]]) as usize;
-                i += 2;
-                if i + len > bytes.len() {
-                    return Err(mlua::Error::RuntimeError(
-                        "Voice.LoadRecording: truncated packet".into(),
-                    ));
-                }
-                packets.push(bytes[i..i + len].to_vec());
-                i += len;
-            }
-            lua.create_userdata(Recording {
-                packets: Arc::new(packets),
-            })
+            deserialize_recording(lua, data.as_bytes().as_ref())
         })?,
+    )?;
+    t.set(
+        "Record",
+        lua.create_function(|lua, duration: f64| -> mlua::Result<Table> {
+            record_one_shot(lua, duration)
+        })?,
+    )?;
+    t.set(
+        "PlayRecording",
+        lua.create_function(
+            |lua, (data, opts): (Value, Option<Table>)| -> mlua::Result<AnyUserData> {
+                let recording_ud = match data {
+                    Value::UserData(ud) => {
+                        if ud.is::<Recording>() {
+                            ud
+                        } else {
+                            return Err(mlua::Error::RuntimeError(
+                                "Voice.PlayRecording: userdata must be a Recording".into(),
+                            ));
+                        }
+                    }
+                    Value::String(s) => deserialize_recording(lua, s.as_bytes().as_ref())?,
+                    _ => {
+                        return Err(mlua::Error::RuntimeError(
+                            "Voice.PlayRecording: expected serialized bytes or a Recording"
+                                .into(),
+                        ));
+                    }
+                };
+                let channel_ud = create_channel(lua)?;
+                {
+                    let recording = recording_ud.borrow::<Recording>()?;
+                    let channel = channel_ud.borrow::<ChannelHandle>()?;
+                    let looped = opts
+                        .as_ref()
+                        .and_then(|t| t.get::<bool>("loop").ok())
+                        .unwrap_or(false);
+                    let speed: f32 = opts
+                        .as_ref()
+                        .and_then(|t| t.get::<f32>("speed").ok())
+                        .unwrap_or(1.0)
+                        .clamp(0.25, 4.0);
+                    RECORDING_PLAYBACKS.with(|c| {
+                        c.borrow_mut().push(RecordingPlayback {
+                            packets: recording.packets.clone(),
+                            index: 0,
+                            accumulated_ms: 0.0,
+                            last_tick: std::time::Instant::now(),
+                            looped,
+                            speed,
+                            decoder: channel.decoder.clone(),
+                            queue: channel.queue.clone(),
+                        });
+                    });
+                    let handle = output_handle()?;
+                    let sink = Sink::try_new(&handle).map_err(|e| {
+                        mlua::Error::RuntimeError(format!("Voice sink: {e}"))
+                    })?;
+                    sink.append(VoiceSource {
+                        queue: channel.queue.clone(),
+                        shaders: channel.shaders.clone(),
+                        position: channel.position.clone(),
+                        next_channel: 0,
+                        last_l: 0.0,
+                        last_r: 0.0,
+                        speed_phase: 0.0,
+                    });
+                    sink.play();
+                    *channel.sink.lock().unwrap() = Some(sink);
+                    channel.playing.store(true, Ordering::Relaxed);
+                }
+                Ok(channel_ud)
+            },
+        )?,
     )?;
     t.set(
         "PlayPacket",
@@ -646,11 +703,12 @@ pub fn is_active() -> bool {
             .iter()
             .any(|reg| reg.alive.load(Ordering::Relaxed))
     });
-    captures_alive || recordings_active()
+    captures_alive || recordings_active() || pending_records_active()
 }
 
 pub fn pump(lua: &Lua) {
     drip_recordings();
+    pump_records(lua);
     pump_inner(lua);
 }
 
@@ -849,4 +907,189 @@ fn drip_recordings() {
 
 pub fn recordings_active() -> bool {
     RECORDING_PLAYBACKS.with(|c| !c.borrow().is_empty())
+}
+
+pub fn pending_records_active() -> bool {
+    PENDING_RECORDS.with(|c| !c.borrow().is_empty())
+}
+
+fn deserialize_recording(lua: &Lua, bytes: &[u8]) -> mlua::Result<AnyUserData> {
+    if bytes.len() < 4 {
+        return Err(mlua::Error::RuntimeError(
+            "Voice.LoadRecording: payload too short".into(),
+        ));
+    }
+    let count = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
+    let mut packets = Vec::with_capacity(count);
+    let mut i = 4;
+    for _ in 0..count {
+        if i + 2 > bytes.len() {
+            return Err(mlua::Error::RuntimeError(
+                "Voice.LoadRecording: truncated length prefix".into(),
+            ));
+        }
+        let len = u16::from_le_bytes([bytes[i], bytes[i + 1]]) as usize;
+        i += 2;
+        if i + len > bytes.len() {
+            return Err(mlua::Error::RuntimeError(
+                "Voice.LoadRecording: truncated packet".into(),
+            ));
+        }
+        packets.push(bytes[i..i + len].to_vec());
+        i += len;
+    }
+    lua.create_userdata(Recording {
+        packets: Arc::new(packets),
+    })
+}
+
+fn serialize_packets(packets: &[Vec<u8>]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(4 + packets.len() * 64);
+    buf.extend_from_slice(&(packets.len() as u32).to_le_bytes());
+    for p in packets {
+        let len = p.len().min(u16::MAX as usize) as u16;
+        buf.extend_from_slice(&len.to_le_bytes());
+        buf.extend_from_slice(&p[..len as usize]);
+    }
+    buf
+}
+
+fn record_one_shot(lua: &Lua, duration: f64) -> mlua::Result<Table> {
+    if !(duration > 0.0) {
+        return Err(mlua::Error::RuntimeError(
+            "Voice.Record: duration must be > 0 seconds".into(),
+        ));
+    }
+    let host = cpal::default_host();
+    let device = host
+        .default_input_device()
+        .ok_or_else(|| mlua::Error::RuntimeError("Voice.Record: no default input device".into()))?;
+    let supported = device
+        .default_input_config()
+        .map_err(|e| mlua::Error::RuntimeError(format!("Voice.Record: query input: {e}")))?;
+    let device_rate = supported.sample_rate().0;
+    let device_channels = supported.channels();
+    let cfg = StreamConfig {
+        channels: device_channels,
+        sample_rate: cpal::SampleRate(device_rate),
+        buffer_size: cpal::BufferSize::Default,
+    };
+
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    let alive = Arc::new(AtomicBool::new(true));
+    let alive_cb = alive.clone();
+
+    let mut encoder = Encoder::new(SAMPLE_RATE, OpusChannels::Mono, OpusApplication::Voip)
+        .map_err(|e| mlua::Error::RuntimeError(format!("Voice.Record opus encoder: {e}")))?;
+    let mut frame_buf: Vec<f32> = Vec::with_capacity(FRAME_SAMPLES * 2);
+    let mut packet_buf = vec![0u8; 4000];
+
+    let stream = device
+        .build_input_stream(
+            &cfg,
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                if !alive_cb.load(Ordering::Relaxed) {
+                    return;
+                }
+                let mono: Vec<f32> = if device_channels == 1 {
+                    data.to_vec()
+                } else {
+                    data.chunks(device_channels as usize)
+                        .map(|c| c.iter().sum::<f32>() / c.len() as f32)
+                        .collect()
+                };
+                let resampled = if device_rate == SAMPLE_RATE {
+                    mono
+                } else {
+                    linear_resample(&mono, device_rate, SAMPLE_RATE)
+                };
+                frame_buf.extend(resampled);
+                while frame_buf.len() >= FRAME_SAMPLES {
+                    let frame: Vec<f32> = frame_buf.drain(..FRAME_SAMPLES).collect();
+                    match encoder.encode_float(&frame, &mut packet_buf) {
+                        Ok(n) => {
+                            if tx.send(packet_buf[..n].to_vec()).is_err() {
+                                return;
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[voice] Record opus encode: {e}");
+                        }
+                    }
+                }
+            },
+            move |err| eprintln!("[voice] Record capture err: {err}"),
+            None,
+        )
+        .map_err(|e| mlua::Error::RuntimeError(format!("Voice.Record: build: {e}")))?;
+    stream
+        .play()
+        .map_err(|e| mlua::Error::RuntimeError(format!("Voice.Record: play: {e}")))?;
+
+    let signal_table = signal::new_instance(lua)?;
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_secs_f64(duration.min(3600.0));
+    PENDING_RECORDS.with(|cell| {
+        cell.borrow_mut().push(PendingRecord {
+            rx,
+            alive,
+            stream: Mutex::new(Some(stream)),
+            deadline,
+            packets: Vec::new(),
+            signal_table: signal_table.clone(),
+        });
+    });
+    Ok(signal_table)
+}
+
+fn pump_records(lua: &Lua) {
+    let now = std::time::Instant::now();
+    let completed: Vec<PendingRecord> = PENDING_RECORDS.with(|cell| {
+        let mut list = cell.borrow_mut();
+        for rec in list.iter_mut() {
+            while let Ok(p) = rec.rx.try_recv() {
+                rec.packets.push(p);
+            }
+        }
+        let mut done: Vec<PendingRecord> = Vec::new();
+        let mut i = 0;
+        while i < list.len() {
+            if now >= list[i].deadline {
+                done.push(list.swap_remove(i));
+            } else {
+                i += 1;
+            }
+        }
+        done
+    });
+
+    for mut rec in completed {
+        rec.alive.store(false, Ordering::Relaxed);
+        rec.stream.lock().unwrap().take();
+        while let Ok(p) = rec.rx.try_recv() {
+            rec.packets.push(p);
+        }
+        let serialized_bytes = serialize_packets(&rec.packets);
+        let recording_ud = lua
+            .create_userdata(Recording {
+                packets: Arc::new(rec.packets),
+            })
+            .ok();
+        let mut args = MultiValue::new();
+        if let Some(ud) = recording_ud {
+            args.push_back(Value::UserData(ud));
+        } else {
+            args.push_back(Value::Nil);
+        }
+        match lua.create_string(&serialized_bytes) {
+            Ok(s) => args.push_back(Value::String(s)),
+            Err(e) => {
+                eprintln!("[voice] Record serialize: {e}");
+                continue;
+            }
+        }
+        if let Err(e) = signal::fire(lua, &rec.signal_table, args) {
+            eprintln!("[voice] Record signal fire: {e}");
+        }
+    }
 }

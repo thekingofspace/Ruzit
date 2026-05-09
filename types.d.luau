@@ -1873,6 +1873,27 @@ export type Voice_API = {
 	NewRecorder: () -> VoiceRecorder,
 	-- Inverse of Recorder:Serialize(). Returns a replayable Recording.
 	LoadRecording: (data: string) -> VoiceRecording,
+	-- One-shot mic recording. Opens the default input, captures Opus frames
+	-- for `duration` seconds, stops automatically, and fires the returned
+	-- Signal once with (recording, serialized).
+	--   * `recording` is a VoiceRecording you can pipe straight into a
+	--     channel via `recording:PlayInto(channel)`, or send to
+	--     Voice.PlayRecording for a fire-and-forget channel.
+	--   * `serialized` is the same recording as bytes (a string) — use this
+	--     to send over the network, write to disk, or stash for later
+	--     replay via Voice.LoadRecording.
+	-- Duration is clamped to 1 hour. The returned Signal fires at most once.
+	Record: (duration: number) -> Signal<VoiceRecording, string>,
+	-- Fire-and-forget recording playback. Accepts either a VoiceRecording
+	-- handle (e.g. from Voice.Record / NewRecorder:ToRecording) OR a
+	-- serialized string (e.g. from Recorder:Serialize / Voice.Record's
+	-- second arg). Spins up a transient VoiceChannel, plays the recording,
+	-- and returns the channel so you can apply shaders / stop early /
+	-- watch IsPlaying. `loop` repeats forever; `speed` (0.25..4) re-times.
+	PlayRecording: (
+		data: string | VoiceRecording,
+		opts: { ["loop"]: boolean?, speed: number? }?
+	) -> VoiceChannel,
 	-- Built-in shaders. `Volume(0.5)` halves loudness, `Speed(1.2)` makes
 	-- them sound 20% faster, `Spatial(x, y, z)` pans + attenuates by
 	-- distance from the listener (the active Renderable.Camera, or set
@@ -1925,6 +1946,16 @@ declare class SteamLobby
 	-- this fires the local user has already auto-left and the lobby
 	-- handle is inert. Does NOT fire if you :Leave() yourself.
 	OnKick: Signal<string>
+	-- Fires when another lobby member sends a P2P packet via :Send or
+	-- :Broadcast. Args: (senderSteamId: string, bytes: string). The
+	-- bytes are the exact payload the sender passed in — Ruzit doesn't
+	-- impose any framing or serialization on top. P2P uses Steam's
+	-- relay-network: NAT-friendly, encrypted, identified by SteamID
+	-- (no IPs ever exposed). Up to ~1 MB per message; reliable channel
+	-- maintains ordering and won't drop, unreliable may drop and
+	-- reorder. Auto-routed: messages from peers who aren't a current
+	-- member of any lobby you're in are silently dropped.
+	OnMessage: Signal<string, string>
 	-- Snapshot of every member's Steam id.
 	function Members(self): { string }
 	-- Lobby-wide key/value store. Visible to everyone in the lobby.
@@ -1959,6 +1990,27 @@ declare class SteamLobby
 	function Kick(self, userId: string): ()
 	-- Open Steam's invite-friends overlay for this lobby.
 	function ShowInviteDialog(self): ()
+	-- P2P send to one specific lobby member. Uses Steam Networking
+	-- Sockets (relay-fallback, encrypted, NAT-friendly). The connection
+	-- is established lazily on the first send to that peer.
+	-- `data` is raw bytes — anything you can serialize into a string
+	-- (JSON, msgpack, your own format). `reliability` is "Reliable"
+	-- (default — ordered, no-drop, like TCP) or "Unreliable" (fast,
+	-- lossy, no order — best for hot-path packets like positions).
+	-- "ReliableNoNagle" / "UnreliableNoDelay" disable the Nagle
+	-- buffering for latency-sensitive RPCs.
+	-- The peer must be a current member of this lobby; raises
+	-- otherwise. Max payload ~1 MB.
+	function Send(
+		self,
+		memberId: string,
+		data: string | buffer,
+		reliability: SteamReliability?
+	): ()
+	-- P2P broadcast to every other member of this lobby. Equivalent to
+	-- iterating :Members() and calling :Send on each (skipping yourself).
+	-- Same reliability semantics as :Send.
+	function Broadcast(self, data: string | buffer, reliability: SteamReliability?): ()
 	-- Leave the lobby. The handle goes inert after this. Use :Close() if
 	-- you're the owner and want every member to leave.
 	function Leave(self): ()
@@ -2007,6 +2059,15 @@ export type SteamPersonaState = "Offline" | "Online" | "Busy" | "Away" | "Snooze
 -- "Kicked"       — owner removed you.
 -- "Banned"       — owner kicked AND banned you (rejoining will fail).
 export type SteamDisconnectReason = "Disconnected" | "Kicked" | "Banned"
+-- Reliability tier for SteamLobby:Send / :Broadcast.
+-- "Reliable"          — ordered, no-loss, like TCP. Default.
+-- "Unreliable"        — fast, lossy, no ordering. Best for positions / inputs.
+-- "ReliableNoNagle"   — reliable but flush immediately (no batching). Use for
+--                        latency-sensitive RPCs where you don't want to wait
+--                        for the Nagle timer to coalesce small writes.
+-- "UnreliableNoDelay" — unreliable AND don't queue if the connection isn't
+--                        ready. Drops the message instead of buffering.
+export type SteamReliability = "Reliable" | "Unreliable" | "ReliableNoNagle" | "UnreliableNoDelay"
 export type SteamAvatarSize = "small" | "medium" | "large"
 export type SteamLobbyKind = "Public" | "Private" | "FriendsOnly" | "Invisible"
 export type SteamServerMode = "NoAuthentication" | "Authentication" | "AuthenticationAndSecure"

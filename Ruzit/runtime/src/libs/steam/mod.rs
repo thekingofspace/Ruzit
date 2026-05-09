@@ -1,15 +1,19 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use mlua::{AnyUserData, Lua, MultiValue, Table, UserData, UserDataFields, UserDataMethods, Value};
 
+use steamworks::networking_sockets::{ListenSocket, NetConnection};
+use steamworks::networking_types::{
+    ListenSocketEvent, NetConnectionEnd, NetworkingIdentity, SendFlags,
+};
 use steamworks::{
-    AppId, ChatMemberStateChange, Client, FriendFlags, FriendState, LobbyChatUpdate,
-    LobbyDataUpdate, LobbyId, LobbyType, NotificationPosition, OverlayToStoreFlag,
-    PersonaStateChange, Server, ServerMode, SingleClient, SteamError, SteamId,
-    SteamServerConnectFailure, SteamServersConnected, SteamServersDisconnected,
+    AppId, ChatMemberStateChange, Client, ClientManager, FriendFlags, FriendState,
+    LobbyChatUpdate, LobbyDataUpdate, LobbyId, LobbyType, NotificationPosition,
+    OverlayToStoreFlag, PersonaStateChange, Server, ServerMode, SingleClient, SteamError,
+    SteamId, SteamServerConnectFailure, SteamServersConnected, SteamServersDisconnected,
     ValidateAuthTicketResponse,
 };
 
@@ -29,6 +33,9 @@ thread_local! {
     static SERVER_SIGNALS: RefCell<Option<ServerSignals>> = const { RefCell::new(None) };
     static GLOBAL_SIGNALS: RefCell<Option<GlobalSignals>> = const { RefCell::new(None) };
 
+    static LISTEN_SOCKET: RefCell<Option<ListenSocket<ClientManager>>> = const { RefCell::new(None) };
+    static CONNECTIONS: RefCell<HashMap<u64, NetConnection<ClientManager>>> = RefCell::new(HashMap::new());
+
     static PENDING_LOBBY_CREATES: RefCell<Vec<Table>> = RefCell::new(Vec::new());
     static PENDING_LOBBY_JOINS: RefCell<HashMap<u64, Table>> = RefCell::new(HashMap::new());
     static PENDING_LOBBY_LISTS: RefCell<Vec<Table>> = RefCell::new(Vec::new());
@@ -43,6 +50,7 @@ struct LobbySignals {
     disconnected: Table,
     closed: Table,
     kicked: Table,
+    on_message: Table,
 }
 
 struct ServerSignals {
@@ -85,6 +93,188 @@ struct EventQueue {
 
 fn steam_error_string(err: &SteamError) -> String {
     format!("{err:?}")
+}
+
+fn parse_send_flags(reliability: Option<&str>) -> SendFlags {
+    match reliability {
+        Some("Unreliable") => SendFlags::UNRELIABLE,
+        Some("UnreliableNoDelay") => SendFlags::UNRELIABLE_NO_DELAY,
+        Some("ReliableNoNagle") => SendFlags::RELIABLE_NO_NAGLE,
+        _ => SendFlags::RELIABLE,
+    }
+}
+
+fn ensure_listen_socket(client: &Client) -> mlua::Result<()> {
+    LISTEN_SOCKET.with(|cell| -> mlua::Result<()> {
+        let mut slot = cell.borrow_mut();
+        if slot.is_some() {
+            return Ok(());
+        }
+        client.networking_utils().init_relay_network_access();
+        let socket = client
+            .networking_sockets()
+            .create_listen_socket_p2p(0, vec![])
+            .map_err(|_| {
+                mlua::Error::RuntimeError("Steam: create_listen_socket_p2p failed".into())
+            })?;
+        *slot = Some(socket);
+        Ok(())
+    })
+}
+
+fn send_to_peer(client: &Client, peer_id: u64, data: &[u8], flags: SendFlags) -> mlua::Result<()> {
+    ensure_listen_socket(client)?;
+    CONNECTIONS.with(|cell| -> mlua::Result<()> {
+        let mut map = cell.borrow_mut();
+        if !map.contains_key(&peer_id) {
+            let conn = client
+                .networking_sockets()
+                .connect_p2p(
+                    NetworkingIdentity::new_steam_id(SteamId::from_raw(peer_id)),
+                    0,
+                    vec![],
+                )
+                .map_err(|_| {
+                    mlua::Error::RuntimeError(format!(
+                        "Steam: connect_p2p to {peer_id} failed"
+                    ))
+                })?;
+            map.insert(peer_id, conn);
+        }
+        if let Some(conn) = map.get_mut(&peer_id) {
+            let _ = conn.send_message(data, flags);
+        }
+        Ok(())
+    })
+}
+
+fn lobby_member_set() -> HashSet<u64> {
+    let mut set = HashSet::new();
+    if let Some(c) = CLIENT.get() {
+        let mm = c.matchmaking();
+        LOBBY_SIGNALS.with(|m| {
+            for &lobby_raw in m.borrow().keys() {
+                for member in mm.lobby_members(LobbyId::from_raw(lobby_raw)) {
+                    set.insert(member.raw());
+                }
+            }
+        });
+    }
+    set
+}
+
+fn lobbies_containing(peer_id: u64) -> Vec<u64> {
+    let mut out = Vec::new();
+    if let Some(c) = CLIENT.get() {
+        let mm = c.matchmaking();
+        LOBBY_SIGNALS.with(|m| {
+            for &lobby_raw in m.borrow().keys() {
+                if mm
+                    .lobby_members(LobbyId::from_raw(lobby_raw))
+                    .into_iter()
+                    .any(|s| s.raw() == peer_id)
+                {
+                    out.push(lobby_raw);
+                }
+            }
+        });
+    }
+    out
+}
+
+fn pump_p2p(lua: &Lua) -> mlua::Result<()> {
+    let mut events = Vec::new();
+    LISTEN_SOCKET.with(|cell| {
+        if let Some(socket) = cell.borrow().as_ref() {
+            while let Some(ev) = socket.try_receive_event() {
+                events.push(ev);
+            }
+        }
+    });
+
+    for ev in events {
+        match ev {
+            ListenSocketEvent::Connecting(req) => {
+                let peer_id = req.remote().steam_id().map(|s| s.raw()).unwrap_or(0);
+                if peer_id != 0 && lobby_member_set().contains(&peer_id) {
+                    let _ = req.accept();
+                } else {
+                    let _ = req.reject(NetConnectionEnd::AppGeneric, Some("not a lobby member"));
+                }
+            }
+            ListenSocketEvent::Connected(ev) => {
+                let peer_id = ev.remote().steam_id().map(|s| s.raw()).unwrap_or(0);
+                if peer_id != 0 {
+                    let conn = ev.take_connection();
+                    CONNECTIONS.with(|c| {
+                        c.borrow_mut().insert(peer_id, conn);
+                    });
+                }
+            }
+            ListenSocketEvent::Disconnected(ev) => {
+                let peer_id = ev.remote().steam_id().map(|s| s.raw()).unwrap_or(0);
+                if peer_id != 0 {
+                    CONNECTIONS.with(|c| {
+                        c.borrow_mut().remove(&peer_id);
+                    });
+                }
+            }
+        }
+    }
+
+    let mut messages: Vec<(u64, Vec<u8>)> = Vec::new();
+    let mut to_remove: Vec<u64> = Vec::new();
+    CONNECTIONS.with(|cell| {
+        let mut map = cell.borrow_mut();
+        for (peer_id, conn) in map.iter_mut() {
+            match conn.receive_messages(64) {
+                Ok(msgs) => {
+                    for m in msgs {
+                        messages.push((*peer_id, m.data().to_vec()));
+                    }
+                }
+                Err(_) => to_remove.push(*peer_id),
+            }
+        }
+        for id in &to_remove {
+            map.remove(id);
+        }
+    });
+
+    for (sender_id, data) in messages {
+        let lobby_ids = lobbies_containing(sender_id);
+        if lobby_ids.is_empty() {
+            continue;
+        }
+        for lobby_raw in lobby_ids {
+            let sig_opt = LOBBY_SIGNALS
+                .with(|m| m.borrow().get(&lobby_raw).map(|s| s.on_message.clone()));
+            if let Some(sig) = sig_opt {
+                let mut args = MultiValue::new();
+                args.push_back(Value::String(lua.create_string(&sender_id.to_string())?));
+                args.push_back(Value::String(lua.create_string(&data)?));
+                signal::fire(lua, &sig, args)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn close_orphan_connections() {
+    let live = lobby_member_set();
+    CONNECTIONS.with(|c| {
+        let to_drop: Vec<u64> = c
+            .borrow()
+            .keys()
+            .copied()
+            .filter(|id| !live.contains(id))
+            .collect();
+        let mut map = c.borrow_mut();
+        for id in to_drop {
+            map.remove(&id);
+        }
+    });
 }
 
 struct LobbyResult {
@@ -255,6 +445,7 @@ pub fn pump(lua: &Lua) {
         }
     });
     let _ = drain_events(lua);
+    let _ = pump_p2p(lua);
 }
 
 fn drain_events(lua: &Lua) -> mlua::Result<()> {
@@ -377,6 +568,7 @@ fn drain_events(lua: &Lua) -> mlua::Result<()> {
             LOBBY_SIGNALS.with(|m| {
                 m.borrow_mut().remove(&lobby_raw);
             });
+            close_orphan_connections();
         }
     }
 
@@ -418,6 +610,7 @@ fn drain_events(lua: &Lua) -> mlua::Result<()> {
                     }
                     mm.leave_lobby(lobby_id);
                     LOBBY_SIGNALS.with(|m| m.borrow_mut().remove(&lobby_raw));
+                    close_orphan_connections();
                     continue;
                 }
 
@@ -435,6 +628,7 @@ fn drain_events(lua: &Lua) -> mlua::Result<()> {
                     }
                     mm.leave_lobby(lobby_id);
                     LOBBY_SIGNALS.with(|m| m.borrow_mut().remove(&lobby_raw));
+                    close_orphan_connections();
                 }
             }
         }
@@ -531,6 +725,7 @@ fn make_lobby_userdata(lua: &Lua, raw: u64) -> mlua::Result<AnyUserData> {
     let disconnected = signal::new_instance(lua)?;
     let closed = signal::new_instance(lua)?;
     let kicked = signal::new_instance(lua)?;
+    let on_message = signal::new_instance(lua)?;
     LOBBY_SIGNALS.with(|m| {
         m.borrow_mut().insert(
             raw,
@@ -541,9 +736,13 @@ fn make_lobby_userdata(lua: &Lua, raw: u64) -> mlua::Result<AnyUserData> {
                 disconnected: disconnected.clone(),
                 closed: closed.clone(),
                 kicked: kicked.clone(),
+                on_message: on_message.clone(),
             },
         );
     });
+    if let Some(c) = CLIENT.get() {
+        let _ = ensure_listen_socket(c);
+    }
     let lobby = LobbyHandle {
         id: raw,
         member_joined,
@@ -552,6 +751,7 @@ fn make_lobby_userdata(lua: &Lua, raw: u64) -> mlua::Result<AnyUserData> {
         disconnected,
         closed,
         kicked,
+        on_message,
     };
     lua.create_userdata(lobby)
 }
@@ -564,6 +764,7 @@ pub struct LobbyHandle {
     disconnected: Table,
     closed: Table,
     kicked: Table,
+    on_message: Table,
 }
 
 impl UserData for LobbyHandle {
@@ -584,6 +785,7 @@ impl UserData for LobbyHandle {
         f.add_field_method_get("OnDisconnected", |_, this| Ok(this.disconnected.clone()));
         f.add_field_method_get("OnClose", |_, this| Ok(this.closed.clone()));
         f.add_field_method_get("OnKick", |_, this| Ok(this.kicked.clone()));
+        f.add_field_method_get("OnMessage", |_, this| Ok(this.on_message.clone()));
         f.add_field_method_get("IsOwner", |_, this| {
             let c = CLIENT
                 .get()
@@ -658,6 +860,7 @@ impl UserData for LobbyHandle {
                 .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
             c.matchmaking().leave_lobby(LobbyId::from_raw(this.id));
             LOBBY_SIGNALS.with(|m| m.borrow_mut().remove(&this.id));
+            close_orphan_connections();
             Ok(())
         });
         m.add_method(
@@ -690,6 +893,7 @@ impl UserData for LobbyHandle {
             }
             c.matchmaking().leave_lobby(lobby_id);
             LOBBY_SIGNALS.with(|m| m.borrow_mut().remove(&this.id));
+            close_orphan_connections();
             Ok(())
         });
         m.add_method(
@@ -763,6 +967,62 @@ impl UserData for LobbyHandle {
                 .set_lobby_data(lobby_id, &lobby_kick_key(user_raw), "1");
             Ok(())
         });
+        m.add_method(
+            "Send",
+            |_,
+             this,
+             (member_id_str, data, reliability): (String, mlua::String, Option<String>)|
+             -> mlua::Result<()> {
+                let c = CLIENT
+                    .get()
+                    .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
+                let peer_id: u64 = member_id_str.parse().map_err(|e| {
+                    mlua::Error::RuntimeError(format!("Lobby:Send: bad id: {e}"))
+                })?;
+                if peer_id == c.user().steam_id().raw() {
+                    return Err(mlua::Error::RuntimeError(
+                        "Lobby:Send: can't send to yourself".into(),
+                    ));
+                }
+                if !c
+                    .matchmaking()
+                    .lobby_members(LobbyId::from_raw(this.id))
+                    .into_iter()
+                    .any(|s| s.raw() == peer_id)
+                {
+                    return Err(mlua::Error::RuntimeError(
+                        "Lobby:Send: target is not a member of this lobby".into(),
+                    ));
+                }
+                let flags = parse_send_flags(reliability.as_deref());
+                send_to_peer(c, peer_id, data.as_bytes().as_ref(), flags)
+            },
+        );
+        m.add_method(
+            "Broadcast",
+            |_,
+             this,
+             (data, reliability): (mlua::String, Option<String>)|
+             -> mlua::Result<()> {
+                let c = CLIENT
+                    .get()
+                    .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
+                let my_id = c.user().steam_id().raw();
+                let members: Vec<u64> = c
+                    .matchmaking()
+                    .lobby_members(LobbyId::from_raw(this.id))
+                    .into_iter()
+                    .map(|s| s.raw())
+                    .filter(|id| *id != my_id)
+                    .collect();
+                let flags = parse_send_flags(reliability.as_deref());
+                let bytes = data.as_bytes();
+                for peer in members {
+                    send_to_peer(c, peer, bytes.as_ref(), flags)?;
+                }
+                Ok(())
+            },
+        );
     }
 }
 
