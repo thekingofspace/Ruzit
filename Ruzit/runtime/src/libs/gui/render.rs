@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::num::NonZeroU64;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use bytemuck::{Pod, Zeroable};
@@ -8,6 +9,55 @@ use wgpu::util::DeviceExt;
 use super::{ImageRef, RenderItem, SceneShaderState};
 
 use crate::libs::renderable::{self, render as r3d};
+
+static VSYNC_ON: AtomicBool = AtomicBool::new(false);
+static PRESENT_MODE_DIRTY: AtomicBool = AtomicBool::new(false);
+
+pub fn set_vsync(on: bool) {
+    let prev = VSYNC_ON.swap(on, Ordering::Relaxed);
+    if prev != on {
+        PRESENT_MODE_DIRTY.store(true, Ordering::Relaxed);
+    }
+}
+
+pub fn get_vsync() -> bool {
+    VSYNC_ON.load(Ordering::Relaxed)
+}
+
+pub fn take_present_mode_dirty() -> bool {
+    PRESENT_MODE_DIRTY.swap(false, Ordering::Relaxed)
+}
+
+fn vsync_preference() -> bool {
+    VSYNC_ON.load(Ordering::Relaxed)
+}
+
+fn pick_present_mode(
+    available: &[wgpu::PresentMode],
+    vsync: bool,
+) -> wgpu::PresentMode {
+    let prefer_order: &[wgpu::PresentMode] = if vsync {
+        &[
+            wgpu::PresentMode::Fifo,
+            wgpu::PresentMode::FifoRelaxed,
+            wgpu::PresentMode::Mailbox,
+            wgpu::PresentMode::Immediate,
+        ]
+    } else {
+        &[
+            wgpu::PresentMode::Mailbox,
+            wgpu::PresentMode::Immediate,
+            wgpu::PresentMode::FifoRelaxed,
+            wgpu::PresentMode::Fifo,
+        ]
+    };
+    for want in prefer_order {
+        if available.iter().any(|m| m == want) {
+            return *want;
+        }
+    }
+    available.first().copied().unwrap_or(wgpu::PresentMode::Fifo)
+}
 
 #[derive(Clone, Debug)]
 pub struct GpuMeta {
@@ -207,6 +257,7 @@ pub struct LiveTextureSlot {
 pub struct GpuState {
     pub device: Arc<wgpu::Device>,
     pub queue: Arc<wgpu::Queue>,
+    pub adapter: wgpu::Adapter,
     pub surface: wgpu::Surface<'static>,
     pub config: wgpu::SurfaceConfiguration,
     pub size: (u32, u32),
@@ -368,12 +419,7 @@ impl GpuState {
             format,
             width: size.width.clamp(1, max_dim),
             height: size.height.clamp(1, max_dim),
-            present_mode: caps
-                .present_modes
-                .iter()
-                .copied()
-                .find(|m| matches!(m, wgpu::PresentMode::Fifo))
-                .unwrap_or(caps.present_modes[0]),
+            present_mode: pick_present_mode(&caps.present_modes, vsync_preference()),
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
@@ -613,6 +659,7 @@ impl GpuState {
         Ok(Self {
             device,
             queue,
+            adapter,
             surface,
             config,
             size: (size.width, size.height),
@@ -1117,6 +1164,12 @@ impl GpuState {
     }
 
     pub fn render(&mut self, items: &[RenderItem], time: f32, clear: [f32; 3]) {
+        if take_present_mode_dirty() {
+            let caps = self.surface.get_capabilities(&self.adapter);
+            self.config.present_mode =
+                pick_present_mode(&caps.present_modes, vsync_preference());
+            self.surface.configure(&self.device, &self.config);
+        }
         let surface_texture = match self.surface.get_current_texture() {
             Ok(t) => t,
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {

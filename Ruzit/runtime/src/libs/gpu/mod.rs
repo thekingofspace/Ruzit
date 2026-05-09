@@ -90,6 +90,19 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
             }
         })?,
     )?;
+    t.set(
+        "SetVSync",
+        lua.create_function(|_, on: bool| -> mlua::Result<()> {
+            crate::libs::gui::render::set_vsync(on);
+            Ok(())
+        })?,
+    )?;
+    t.set(
+        "GetVSync",
+        lua.create_function(|_, _: ()| -> mlua::Result<bool> {
+            Ok(crate::libs::gui::render::get_vsync())
+        })?,
+    )?;
     Ok(t)
 }
 

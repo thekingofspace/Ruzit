@@ -178,11 +178,15 @@
             Cap or uncap the heart-loop tick rate. Pass
             <code>nil</code> (or <code>0</code>) to remove the cap
             and run as fast as the system allows; pass a positive
-            number to throttle. Default is 60 FPS. The cap is
-            applied by sleeping at the end of each tick if the
-            frame finished early, so it has no effect on a system
-            that can't keep up. Cheap to call live (atomic store),
-            wire it to a settings menu freely.
+            number to throttle. <strong>The engine ships
+            uncapped</strong> &mdash; frames run as fast as the
+            renderer + game logic allow, bounded only by the
+            swapchain present mode (see <code>SetVSync</code>).
+            The cap is applied by sleeping at the end of each
+            tick if the frame finished early, so it has no
+            effect on a system that can't keep up. Cheap to
+            call live (atomic store), wire it to a settings
+            menu freely.
         </p>
     </div>
     <div class="member">
@@ -191,6 +195,32 @@
             <span class="member-type">→ number?</span>
         </div>
         <p class="member-desc">Current cap, or <code>nil</code> when uncapped.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.SetVSync(on)</span>
+        </div>
+        <p class="member-desc">
+            Toggle vertical sync on the swapchain.
+            <strong>Default is OFF</strong> &mdash; the engine
+            picks the highest-FPS tear-free mode the driver
+            offers (Mailbox &gt; Immediate &gt; FifoRelaxed
+            &gt; Fifo). Turning VSync on hard-caps presents
+            to the monitor's refresh rate (Fifo / FifoRelaxed).
+            Use it for laptop battery life or to eliminate
+            tearing on monitors that don't expose a tear-free
+            uncapped mode. Takes effect on the next rendered
+            frame.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.GetVSync()</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+        <p class="member-desc">
+            True if the swapchain is currently in a VSync mode.
+        </p>
     </div>
     <div class="member">
         <div class="member-header">

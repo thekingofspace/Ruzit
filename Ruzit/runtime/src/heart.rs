@@ -1,11 +1,9 @@
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use mlua::{Function, Lua, Table, Value};
 
 pub const HEART_KEY: &str = "ruzit_heart";
-const TICK_HZ: u64 = 60;
-const TICK_INTERVAL: Duration = Duration::from_micros(1_000_000 / TICK_HZ);
 
 static MAX_FPS: AtomicU32 = AtomicU32::new(0);
 
@@ -73,13 +71,15 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
 
         crate::libs::runservice::fire_heartbeat(lua, dt);
 
-        let target_interval = match get_max_fps() {
-            Some(fps) if fps > 0 => Duration::from_micros(1_000_000 / fps as u64),
-            _ => TICK_INTERVAL,
-        };
-        let elapsed = last.elapsed();
-        if elapsed < target_interval {
-            std::thread::sleep(target_interval - elapsed);
+        if let Some(fps) = get_max_fps() {
+            if fps > 0 {
+                let target_interval =
+                    std::time::Duration::from_micros(1_000_000 / fps as u64);
+                let elapsed = last.elapsed();
+                if elapsed < target_interval {
+                    std::thread::sleep(target_interval - elapsed);
+                }
+            }
         }
     }
 }

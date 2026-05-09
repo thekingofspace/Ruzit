@@ -2572,14 +2572,28 @@ export type GPU_API = {
 	-- animation state, so the returned AABBs follow the live mesh.
 	-- Cap or uncap the heart-loop tick rate. Pass nil (or 0) to remove
 	-- the cap and run as fast as the system allows; pass a positive
-	-- number to throttle to that frames-per-second target. Default
-	-- (no call) is 60 FPS. The cap is applied by sleeping at the end
-	-- of each tick if the frame finished early, so it has no effect
-	-- on a system that can't keep up. Cheap to call repeatedly,
-	-- atomic store, can be flipped from a settings menu live.
+	-- number to throttle to that frames-per-second target. The
+	-- engine ships UNCAPPED by default — frames run as fast as
+	-- the renderer + game logic allow, bounded only by the swap-
+	-- chain present mode (see SetVSync). The cap is applied by
+	-- sleeping at the end of each tick if the frame finished
+	-- early, so it has no effect on a system that can't keep up.
+	-- Cheap to call repeatedly, atomic store, can be flipped from
+	-- a settings menu live.
 	SetMaxFrameRate: (fps: number?) -> (),
 	-- Read the current cap. Returns nil when uncapped.
 	GetMaxFrameRate: () -> number?,
+	-- Toggle vertical sync on the swapchain. Default is OFF —
+	-- the engine prefers Mailbox (uncapped, tear-free) when the
+	-- driver supports it, falling back to Immediate, then
+	-- FifoRelaxed, then Fifo. Turning VSync on hard-caps presents
+	-- to the monitor's refresh rate (Fifo / FifoRelaxed). Useful
+	-- for laptop battery life or to eliminate tearing on monitors
+	-- that don't have a tear-free uncapped mode. The change takes
+	-- effect on the next rendered frame.
+	SetVSync: (on: boolean) -> (),
+	-- True if the swapchain is currently in a VSync mode.
+	GetVSync: () -> boolean,
 	GetBounds: (part: BasePart, quality: number?) -> { { Position: Vector, Size: Vector, Min: Vector, Max: Vector } },
 	-- Returns every renderable BasePart whose bounds (computed at the
 	-- given quality) overlap the AABB centered at `center` with extents
