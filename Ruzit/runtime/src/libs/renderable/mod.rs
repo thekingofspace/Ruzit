@@ -85,6 +85,178 @@ thread_local! {
     static CAMERA: RefCell<CameraState> = RefCell::new(CameraState::default());
     static LIGHTING: RefCell<LightingState> = RefCell::new(LightingState::default());
     static FRAME_INDEX: RefCell<u32> = const { RefCell::new(0) };
+    static DISTORTION_BOXES: RefCell<Vec<Arc<Mutex<DistortionBoxState>>>> = const { RefCell::new(Vec::new()) };
+}
+
+pub struct DistortionBoxState {
+    pub id: u64,
+    pub target: Arc<Mutex<PartState>>,
+    pub alive: bool,
+    pub initial_cf: CFrame,
+    pub initial_size: Vector,
+    pub current_cf: CFrame,
+    pub current_size: Vector,
+    pub captured: Vec<(usize, [f32; 3])>,
+}
+
+pub struct DistortionBoxHandle {
+    pub inner: Arc<Mutex<DistortionBoxState>>,
+}
+
+impl UserData for DistortionBoxHandle {
+    fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
+        f.add_field_method_get("CFrame", |_, this| {
+            Ok(this.inner.lock().unwrap().current_cf)
+        });
+        f.add_field_method_set("CFrame", |_, this, value: AnyUserData| {
+            let cf = *value.borrow::<CFrame>().map_err(|_| {
+                mlua::Error::RuntimeError("DistortionBox.CFrame expects a CFrame".into())
+            })?;
+            let mut bs = this.inner.lock().unwrap();
+            if bs.alive {
+                bs.current_cf = cf;
+            }
+            Ok(())
+        });
+        f.add_field_method_get("Size", |_, this| {
+            Ok(this.inner.lock().unwrap().current_size)
+        });
+        f.add_field_method_set("Size", |_, this, value: AnyUserData| {
+            let v = *value.borrow::<Vector>().map_err(|_| {
+                mlua::Error::RuntimeError("DistortionBox.Size expects a Vector".into())
+            })?;
+            let mut bs = this.inner.lock().unwrap();
+            if bs.alive {
+                bs.current_size = v;
+            }
+            Ok(())
+        });
+        f.add_field_method_get("InitialCFrame", |_, this| {
+            Ok(this.inner.lock().unwrap().initial_cf)
+        });
+        f.add_field_method_get("InitialSize", |_, this| {
+            Ok(this.inner.lock().unwrap().initial_size)
+        });
+        f.add_field_method_get("VertexCount", |_, this| {
+            Ok(this.inner.lock().unwrap().captured.len() as i64)
+        });
+        f.add_field_method_get("IsAlive", |_, this| {
+            Ok(this.inner.lock().unwrap().alive)
+        });
+    }
+
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method("Destroy", |_, this, _: ()| {
+            this.inner.lock().unwrap().alive = false;
+            Ok(())
+        });
+    }
+}
+
+fn capture_distortion_vertices(
+    verts: &[mesh::Vertex3D],
+    cf: CFrame,
+    size: Vector,
+) -> Vec<(usize, [f32; 3])> {
+    let inv_rot = mat3_transpose(euler_to_matrix_local(cf.rotation));
+    let half_x = size.x.abs() * 0.5;
+    let half_y = size.y.abs() * 0.5;
+    let half_z = size.z.abs() * 0.5;
+    let mut out = Vec::new();
+    for (i, v) in verts.iter().enumerate() {
+        let delta = Vector::new(
+            v.position[0] - cf.position.x,
+            v.position[1] - cf.position.y,
+            v.position[2] - cf.position.z,
+        );
+        let local = mat3_apply_local(inv_rot, delta);
+        if local.x.abs() > half_x || local.y.abs() > half_y || local.z.abs() > half_z {
+            continue;
+        }
+        let u = [
+            if size.x.abs() > 1e-6 {
+                local.x / size.x
+            } else {
+                0.0
+            },
+            if size.y.abs() > 1e-6 {
+                local.y / size.y
+            } else {
+                0.0
+            },
+            if size.z.abs() > 1e-6 {
+                local.z / size.z
+            } else {
+                0.0
+            },
+        ];
+        out.push((i, u));
+    }
+    out
+}
+
+pub fn tick_distortion_boxes() {
+    let snapshot: Vec<Arc<Mutex<DistortionBoxState>>> = DISTORTION_BOXES.with(|c| {
+        let mut reg = c.borrow_mut();
+        reg.retain(|b| {
+            let bs = b.lock().unwrap();
+            bs.target.lock().unwrap().alive
+        });
+        reg.iter().cloned().collect()
+    });
+    if snapshot.is_empty() {
+        return;
+    }
+
+    let mut groups: HashMap<usize, Vec<Arc<Mutex<DistortionBoxState>>>> = HashMap::new();
+    for b in snapshot {
+        let key = Arc::as_ptr(&b.lock().unwrap().target) as usize;
+        groups.entry(key).or_default().push(b);
+    }
+
+    for (_, boxes) in groups {
+        let target = {
+            let bs = boxes[0].lock().unwrap();
+            bs.target.clone()
+        };
+        let mut p = target.lock().unwrap();
+        let Some(base_model) = p.model.clone() else {
+            continue;
+        };
+        let mut working: Vec<mesh::Vertex3D> = match &p.deformed {
+            Some(d) if d.id == base_model.id => (*d.vertices).clone(),
+            _ => (*base_model.vertices).clone(),
+        };
+        let mut any_change = false;
+        for box_arc in &boxes {
+            let bs = box_arc.lock().unwrap();
+            let cf = bs.current_cf;
+            let size = bs.current_size;
+            let rot = euler_to_matrix_local(cf.rotation);
+            for (idx, u) in &bs.captured {
+                if *idx >= working.len() {
+                    continue;
+                }
+                let scaled = Vector::new(u[0] * size.x, u[1] * size.y, u[2] * size.z);
+                let rotated = mat3_apply_local(rot, scaled);
+                working[*idx].position = [
+                    cf.position.x + rotated.x,
+                    cf.position.y + rotated.y,
+                    cf.position.z + rotated.z,
+                ];
+                any_change = true;
+            }
+        }
+        if any_change {
+            mesh::recompute_normals(&mut working, &base_model.indices);
+            p.deformed = Some(ModelRef {
+                id: base_model.id,
+                vertices: Arc::new(working),
+                indices: base_model.indices.clone(),
+            });
+            p.deform_version = p.deform_version.wrapping_add(1);
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1264,6 +1436,53 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     )?;
 
     t.set("Camera", lua.create_userdata(CameraHandle)?)?;
+
+    t.set(
+        "DistortionBox",
+        lua.create_function(
+            |lua,
+             (part, cf, size): (AnyUserData, AnyUserData, AnyUserData)|
+             -> mlua::Result<AnyUserData> {
+                let h = part.borrow::<PartHandle>().map_err(|_| {
+                    mlua::Error::RuntimeError(
+                        "DistortionBox: first argument must be a BasePart".into(),
+                    )
+                })?;
+                let cf = *cf.borrow::<CFrame>().map_err(|_| {
+                    mlua::Error::RuntimeError(
+                        "DistortionBox: second argument must be a CFrame".into(),
+                    )
+                })?;
+                let size = *size.borrow::<Vector>().map_err(|_| {
+                    mlua::Error::RuntimeError(
+                        "DistortionBox: third argument must be a Vector (size)".into(),
+                    )
+                })?;
+                let captured = {
+                    let p = h.state.lock().unwrap();
+                    let model = p.model.as_ref().ok_or_else(|| {
+                        mlua::Error::RuntimeError(
+                            "DistortionBox: target part has no mesh (only BaseModel parts can be distorted)".into(),
+                        )
+                    })?;
+                    capture_distortion_vertices(&model.vertices, cf, size)
+                };
+                let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+                let state = Arc::new(Mutex::new(DistortionBoxState {
+                    id,
+                    target: h.state.clone(),
+                    alive: true,
+                    initial_cf: cf,
+                    initial_size: size,
+                    current_cf: cf,
+                    current_size: size,
+                    captured,
+                }));
+                DISTORTION_BOXES.with(|c| c.borrow_mut().push(state.clone()));
+                lua.create_userdata(DistortionBoxHandle { inner: state })
+            },
+        )?,
+    )?;
 
     t.set(
         "SimplifyMesh",

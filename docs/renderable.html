@@ -115,7 +115,194 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
             than <code>Asset.Drop</code>.
         </p>
     </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Renderable.DistortionBox(part, cframe, size)</span>
+            <span class="member-type">&rarr; <a href="#distortionbox">DistortionBox</a></span>
+        </div>
+        <p class="member-desc">
+            Define a region inside a part's mesh that you can move,
+            rotate, or resize to deform whatever vertices fall within
+            it. See <a href="#distortionbox">DistortionBox</a>.
+        </p>
+    </div>
 </div>
+
+<h2 id="distortionbox">DistortionBox</h2>
+
+<p>
+    Lightweight, ad-hoc bones. Wrap an arbitrary region of a part's
+    mesh with a box, then mutate the box's <code>CFrame</code> and
+    <code>Size</code> at runtime to move / rotate / scale every
+    captured vertex together. The classic uses are rotating a head,
+    blinking eyelids, customising a face without authoring a real
+    skeleton, or stretching limbs without per-bone rigging.
+</p>
+
+<h3>Coordinate system</h3>
+
+<p>
+    The <code>cframe</code> and <code>size</code> arguments are in the
+    part's <strong>local mesh space</strong> &mdash; the unit-cube
+    space the engine scales by <code>part.Size</code> at render time.
+    For procedural shapes this is roughly the
+    <code>[-0.5, 0.5]</code> cube; for loaded models it's whatever the
+    source <code>.obj</code> / <code>.fbx</code> exported. So a box
+    centred at <code>(0, 0.4, 0)</code> with size
+    <code>(0.6, 0.3, 0.6)</code> covers roughly the top of a unit
+    cube &mdash; the "head" region of a humanoid mesh authored with
+    its head at the top.
+</p>
+
+<h3>Lifecycle</h3>
+
+<ol>
+    <li><strong>Creation</strong>: every vertex whose model-space
+        position falls inside the rotated box is captured. Each
+        captured vertex stores its position relative to the box's
+        frame, normalised to <code>[-0.5, 0.5]</code> per axis.</li>
+    <li><strong>Mutation</strong>: write to <code>box.CFrame</code> or
+        <code>box.Size</code>. Each tick the engine re-applies those
+        captured offsets to the box's current frame, displacing
+        every captured vertex in the part's deformed mesh.</li>
+    <li><strong>Destroy</strong>: <code>box:Destroy()</code> freezes
+        the box at its current pose. Captured vertices stay where
+        they are; further <code>CFrame</code> / <code>Size</code>
+        writes are ignored. The mesh is <em>not</em> restored
+        &mdash; this is intentional so chained / nested boxes don't
+        snap back when one is removed.</li>
+</ol>
+
+<h3>Multiple boxes</h3>
+
+<p>
+    Several boxes can coexist on the same part. The engine applies
+    them in creation order; later boxes override earlier ones for
+    any vertex captured by both. So the natural pattern for a face
+    is: create the head box first (covers the whole head), then
+    each eyelid / brow box second (smaller, overrides the head
+    box's claim on those vertices). Animations run before
+    distortion, so a captured vertex inside an active distortion
+    box ignores its baseline animation contribution.
+</p>
+
+<h3>Properties</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.CFrame</span>
+            <span class="member-type">CFrame</span>
+        </div>
+        <p class="member-desc">
+            Current centre + rotation in part-local space. Writable.
+            Setting it transforms captured vertices on the next
+            tick.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.Size</span>
+            <span class="member-type">Vector</span>
+        </div>
+        <p class="member-desc">
+            Current full extent on each axis. Writable. Scales
+            captured vertices along the box's local axes.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.InitialCFrame</span>
+            <span class="member-type">CFrame</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            The box's CFrame at creation. The reference frame for
+            captured vertex offsets. An identity transform
+            (<code>CFrame == InitialCFrame</code> and
+            <code>Size == InitialSize</code>) leaves vertices
+            untouched.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.InitialSize</span>
+            <span class="member-type">Vector</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.VertexCount</span>
+            <span class="member-type">number</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            Number of vertices the box captured at creation. If this
+            is 0 the box was placed where no mesh geometry lives;
+            check your CFrame / Size against the model's actual
+            extents.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.IsAlive</span>
+            <span class="member-type">boolean</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            False after <code>:Destroy()</code>. The box still
+            applies its last transform every tick, but won't accept
+            further mutations.
+        </p>
+    </div>
+</div>
+
+<h3>Methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">box:Destroy()</span>
+        </div>
+        <p class="member-desc">
+            Freeze the box. Captured vertices stay at their current
+            displaced positions; subsequent property writes are
+            ignored. Mesh is not restored &mdash; recreate a fresh
+            box at <code>InitialCFrame</code> /
+            <code>InitialSize</code> if you need to undo the
+            distortion.
+        </p>
+    </div>
+</div>
+
+<h3>Example: head + eyelids</h3>
+
+<pre><code><span class="hl-kw">local</span> Renderable = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
+<span class="hl-kw">local</span> Asset      = <span class="hl-fn">import</span>(<span class="hl-str">"Asset"</span>)
+
+<span class="hl-kw">local</span> body = Renderable.<span class="hl-fn">BaseModel</span>(Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"Model"</span>, <span class="hl-str">"character"</span>))
+
+<span class="hl-com">-- Head: covers the top of the model. Use this to rotate the head.</span>
+<span class="hl-kw">local</span> head = Renderable.<span class="hl-fn">DistortionBox</span>(
+    body,
+    CFrame.<span class="hl-fn">new</span>(Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0.45</span>, <span class="hl-num">0</span>), Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>)),
+    Vector.<span class="hl-fn">new</span>(<span class="hl-num">0.5</span>, <span class="hl-num">0.3</span>, <span class="hl-num">0.5</span>)
+)
+
+<span class="hl-com">-- Eyelids: smaller boxes inside the head. Order matters — these</span>
+<span class="hl-com">-- come after `head` so they override head's claim on those vertices.</span>
+<span class="hl-kw">local</span> lid_l = Renderable.<span class="hl-fn">DistortionBox</span>(
+    body,
+    CFrame.<span class="hl-fn">new</span>(Vector.<span class="hl-fn">new</span>(<span class="hl-num">-0.1</span>, <span class="hl-num">0.5</span>, <span class="hl-num">0.22</span>), Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>)),
+    Vector.<span class="hl-fn">new</span>(<span class="hl-num">0.08</span>, <span class="hl-num">0.04</span>, <span class="hl-num">0.05</span>)
+)
+
+<span class="hl-com">-- Turn the head 30° to the right.</span>
+head.CFrame = CFrame.<span class="hl-fn">new</span>(head.InitialCFrame.Position, Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, math.<span class="hl-fn">rad</span>(<span class="hl-num">30</span>), <span class="hl-num">0</span>))
+
+<span class="hl-com">-- Blink: squash the lid box flat.</span>
+lid_l.Size = Vector.<span class="hl-fn">new</span>(<span class="hl-num">0.08</span>, <span class="hl-num">0.005</span>, <span class="hl-num">0.05</span>)</code></pre>
 
 <h2 id="basepart">BasePart</h2>
 

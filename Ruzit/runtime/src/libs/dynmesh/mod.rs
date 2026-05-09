@@ -48,11 +48,33 @@ pub struct Weld {
     pub kind: WeldKind,
     pub original_size_x: f32,
     pub joint_state: Mutex<JointState>,
+    pub static_state: Mutex<StaticWeldState>,
 }
 
 #[derive(Default, Clone, Copy)]
 pub struct JointState {
     pub last_parent_cframe: Option<CFrame>,
+}
+
+#[derive(Clone, Copy)]
+pub struct StaticWeldState {
+    pub initialized: bool,
+    pub offset_pos: Vector,
+    pub offset_rot: Vector,
+    pub last_applied_cf: Option<CFrame>,
+    pub explicit_offset: Option<(Vector, Vector)>,
+}
+
+impl Default for StaticWeldState {
+    fn default() -> Self {
+        Self {
+            initialized: false,
+            offset_pos: Vector::new(0.0, 0.0, 0.0),
+            offset_rot: Vector::new(0.0, 0.0, 0.0),
+            last_applied_cf: None,
+            explicit_offset: None,
+        }
+    }
 }
 
 pub enum WeldKind {
@@ -116,7 +138,7 @@ impl UserData for DynMeshHandle {
                 let target_state = target_handle.state.clone();
                 let original_size_x = target_state.lock().unwrap().size.x;
 
-                let (kind, name) = parse_weld_options(opts.as_ref())?;
+                let (kind, name, explicit) = parse_weld_options(opts.as_ref())?;
 
                 let weld_id = NEXT_WELD_ID.fetch_add(1, Ordering::Relaxed);
                 let mut s = this.inner.lock().unwrap();
@@ -125,6 +147,10 @@ impl UserData for DynMeshHandle {
                         "DynMesh:Weld: this DynMesh has been destroyed".into(),
                     ));
                 }
+                let static_state = StaticWeldState {
+                    explicit_offset: explicit,
+                    ..Default::default()
+                };
                 s.welds.push(Weld {
                     id: weld_id,
                     name,
@@ -132,6 +158,7 @@ impl UserData for DynMeshHandle {
                     kind,
                     original_size_x,
                     joint_state: Mutex::new(JointState::default()),
+                    static_state: Mutex::new(static_state),
                 });
                 Ok(weld_id as i64)
             },
@@ -190,6 +217,7 @@ impl UserData for DynMeshHandle {
                     kind: WeldKind::Stretch { anchors },
                     original_size_x,
                     joint_state: Mutex::new(JointState::default()),
+                    static_state: Mutex::new(StaticWeldState::default()),
                 });
                 Ok(weld_id as i64)
             },
@@ -331,13 +359,16 @@ fn restore_weld_state(weld: &mut Weld) {
     }
 }
 
-fn parse_weld_options(opts: Option<&Table>) -> mlua::Result<(WeldKind, Option<String>)> {
+fn parse_weld_options(
+    opts: Option<&Table>,
+) -> mlua::Result<(WeldKind, Option<String>, Option<(Vector, Vector)>)> {
     let Some(t) = opts else {
         return Ok((
             WeldKind::Static {
                 offset_pos: Vector::new(0.0, 0.0, 0.0),
                 offset_rot: Vector::new(0.0, 0.0, 0.0),
             },
+            None,
             None,
         ));
     };
@@ -348,15 +379,19 @@ fn parse_weld_options(opts: Option<&Table>) -> mlua::Result<(WeldKind, Option<St
                 vertex_index: idx.max(0) as usize,
             },
             name,
+            None,
         ));
     }
-    let pos = match t.get::<Option<AnyUserData>>("point")? {
+    let point_v = t.get::<Option<AnyUserData>>("point")?;
+    let rot_v = t.get::<Option<AnyUserData>>("rotation")?;
+    let has_explicit = point_v.is_some() || rot_v.is_some();
+    let pos = match point_v {
         Some(v) => *v.borrow::<Vector>().map_err(|_| {
             mlua::Error::RuntimeError("DynMesh:Weld: 'point' must be a Vector".into())
         })?,
         None => Vector::new(0.0, 0.0, 0.0),
     };
-    let rot = match t.get::<Option<AnyUserData>>("rotation")? {
+    let rot = match rot_v {
         Some(v) => *v.borrow::<Vector>().map_err(|_| {
             mlua::Error::RuntimeError("DynMesh:Weld: 'rotation' must be a Vector".into())
         })?,
@@ -380,7 +415,8 @@ fn parse_weld_options(opts: Option<&Table>) -> mlua::Result<(WeldKind, Option<St
             )));
         }
     };
-    Ok((kind, name))
+    let explicit = if has_explicit { Some((pos, rot)) } else { None };
+    Ok((kind, name, explicit))
 }
 
 pub fn tick() {
@@ -430,10 +466,7 @@ pub fn tick() {
         }
         for weld in &s.welds {
             match &weld.kind {
-                WeldKind::Static {
-                    offset_pos,
-                    offset_rot,
-                } => apply_static_weld(&weld.target, base_cf, *offset_pos, *offset_rot),
+                WeldKind::Static { .. } => apply_static_weld(weld, base_cf),
                 WeldKind::Joint {
                     offset_pos,
                     offset_rot,
@@ -442,19 +475,12 @@ pub fn tick() {
                     if let Some(world_verts) = &base_world_verts {
                         if let Some(world_pos) = world_verts.get(*vertex_index) {
                             apply_static_weld(
-                                &weld.target,
+                                weld,
                                 CFrame::new(*world_pos, base_cf.rotation),
-                                Vector::new(0.0, 0.0, 0.0),
-                                Vector::new(0.0, 0.0, 0.0),
                             );
                         }
                     } else {
-                        apply_static_weld(
-                            &weld.target,
-                            base_cf,
-                            Vector::new(0.0, 0.0, 0.0),
-                            Vector::new(0.0, 0.0, 0.0),
-                        );
+                        apply_static_weld(weld, base_cf);
                     }
                 }
                 WeldKind::Stretch { anchors } => {
@@ -527,30 +553,81 @@ fn anchor_to_world(
     }
 }
 
-fn apply_static_weld(
-    target: &Arc<Mutex<PartState>>,
-    base_cf: CFrame,
-    offset_pos: Vector,
-    offset_rot: Vector,
-) {
-    let mut t = target.lock().unwrap();
+fn apply_static_weld(weld: &Weld, base_cf: CFrame) {
+    let mut state = weld.static_state.lock().unwrap();
+    let mut t = weld.target.lock().unwrap();
     if !t.alive {
         return;
     }
+
+    if !state.initialized {
+        if let Some((ep, er)) = state.explicit_offset {
+            state.offset_pos = ep;
+            state.offset_rot = er;
+        } else {
+            let (op, or) = compute_local_offset(base_cf, t.cframe);
+            state.offset_pos = op;
+            state.offset_rot = or;
+        }
+        state.initialized = true;
+    } else if let Some(last) = state.last_applied_cf {
+        if !cframe_close(last, t.cframe) {
+            let (op, or) = compute_local_offset(base_cf, t.cframe);
+            state.offset_pos = op;
+            state.offset_rot = or;
+        }
+    }
+
     let rot = euler_to_matrix(base_cf.rotation);
-    let r = mat3_apply(rot, offset_pos);
-    t.cframe = CFrame::new(
+    let r = mat3_apply(rot, state.offset_pos);
+    let new_cf = CFrame::new(
         Vector::new(
             base_cf.position.x + r.x,
             base_cf.position.y + r.y,
             base_cf.position.z + r.z,
         ),
         Vector::new(
-            base_cf.rotation.x + offset_rot.x,
-            base_cf.rotation.y + offset_rot.y,
-            base_cf.rotation.z + offset_rot.z,
+            base_cf.rotation.x + state.offset_rot.x,
+            base_cf.rotation.y + state.offset_rot.y,
+            base_cf.rotation.z + state.offset_rot.z,
         ),
     );
+    t.cframe = new_cf;
+    state.last_applied_cf = Some(new_cf);
+}
+
+fn compute_local_offset(base_cf: CFrame, target_world: CFrame) -> (Vector, Vector) {
+    let inv_rot = mat3_transpose(euler_to_matrix(base_cf.rotation));
+    let dp = Vector::new(
+        target_world.position.x - base_cf.position.x,
+        target_world.position.y - base_cf.position.y,
+        target_world.position.z - base_cf.position.z,
+    );
+    let local_pos = mat3_apply(inv_rot, dp);
+    let local_rot = Vector::new(
+        target_world.rotation.x - base_cf.rotation.x,
+        target_world.rotation.y - base_cf.rotation.y,
+        target_world.rotation.z - base_cf.rotation.z,
+    );
+    (local_pos, local_rot)
+}
+
+fn cframe_close(a: CFrame, b: CFrame) -> bool {
+    let eps = 1e-4_f32;
+    (a.position.x - b.position.x).abs() < eps
+        && (a.position.y - b.position.y).abs() < eps
+        && (a.position.z - b.position.z).abs() < eps
+        && (a.rotation.x - b.rotation.x).abs() < eps
+        && (a.rotation.y - b.rotation.y).abs() < eps
+        && (a.rotation.z - b.rotation.z).abs() < eps
+}
+
+fn mat3_transpose(m: Mat3) -> Mat3 {
+    [
+        [m[0][0], m[1][0], m[2][0]],
+        [m[0][1], m[1][1], m[2][1]],
+        [m[0][2], m[1][2], m[2][2]],
+    ]
 }
 
 fn apply_joint_weld(weld: &Weld, base_cf: CFrame, offset_pos: Vector, offset_rot: Vector) {

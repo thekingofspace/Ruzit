@@ -342,7 +342,7 @@ impl GuiPrimitive {
             color: Color3::new(1.0, 1.0, 1.0),
             transparency: 0.0,
             z_index: 0,
-            visible: true,
+            visible: false,
             alive: true,
             attached: Vec::new(),
             changed_signal,

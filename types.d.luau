@@ -1331,7 +1331,68 @@ export type Renderable_API = {
 	-- grid is uniform. The returned asset inherits the source's animation
 	-- clips so swapping it in for distant parts keeps `:GetTrack` working.
 	SimplifyMesh: (asset: ModelAsset, ratio: number?) -> ModelAsset,
+
+	-- Define a region inside a part's mesh that you can move / rotate /
+	-- scale to deform whatever vertices fall within it. The classic
+	-- use-case is ad-hoc bones, rotate a head box to turn a head,
+	-- shrink an eyelid box to blink an eye, stretch a torso box to
+	-- elongate a body, all without authoring a real skeleton.
+	--
+	-- Arguments are interpreted in the part's LOCAL mesh space (the
+	-- unit-cube space the engine scales by part.Size at render time):
+	--   * `cframe` is the box's center + rotation. Pick the spot in
+	--     model space the box should anchor at.
+	--   * `size` is the box's full extent on each axis. Vertices whose
+	--     model-space position falls inside the cframe-rotated box of
+	--     this size are captured.
+	--
+	-- Captured vertices remember their position relative to the box's
+	-- frame (normalized to [-0.5, 0.5] on each axis). Updating
+	-- `box.CFrame` rotates / translates them around the box centre;
+	-- updating `box.Size` scales them along the box's local axes.
+	-- An identity transform (CFrame and Size unchanged from creation)
+	-- leaves vertices untouched.
+	--
+	-- Multiple boxes can coexist on the same part. They apply in
+	-- creation order, with later boxes overriding earlier ones for any
+	-- vertices both captured. So `head` first, then `eyelid_top` /
+	-- `eyelid_bottom` per eye gives nested control.
+	--
+	-- `box:Destroy()` freezes the box, captured vertices stay at
+	-- whatever displaced position the box left them at, and the box
+	-- stops accepting CFrame / Size writes. The mesh is NOT restored,
+	-- this is by design so multi-pass distortions don't snap back.
+	-- To restore, hold onto the part's source ModelAsset and rebuild,
+	-- or flip a fresh DistortionBox over the same area with the
+	-- original CFrame / Size.
+	DistortionBox: (part: BasePart, cframe: CFrame, size: Vector) -> DistortionBox,
 }
+
+declare class DistortionBox
+	-- Current center + rotation of the box, in part-local model
+	-- space. Writable, mutating it transforms the captured vertices
+	-- on the next tick.
+	CFrame: CFrame
+	-- Current full extent of the box. Writable, scales captured
+	-- vertices on the next tick.
+	Size: Vector
+	-- The box's CFrame at creation. Used as the reference frame for
+	-- the captured vertex offsets. Read-only.
+	InitialCFrame: CFrame
+	-- The box's Size at creation. Read-only.
+	InitialSize: Vector
+	-- Number of vertices the box captured at creation. Useful for
+	-- debugging "why isn't this region deforming?" cases (typically
+	-- the box was placed off-center or sized too small to enclose
+	-- any vertices).
+	VertexCount: number
+	IsAlive: boolean
+
+	-- Freeze the box. Captured vertices stay where they currently
+	-- are; subsequent CFrame / Size writes are ignored. The mesh is
+	-- intentionally NOT restored.
+	function Destroy(self): ()
+end
 
 -- =============================================================================
 -- GUI, 2D overlay primitives, post-effects, skybox.
@@ -1352,6 +1413,9 @@ declare class Primitive
 	-- Higher = drawn on top. Defaults to 0.
 	ZIndex: number
 	-- Hide without destroying. Equivalent to setting Render=false on parts.
+	-- DEFAULTS TO FALSE on every freshly-created Primitive — set this to
+	-- true once you've finished configuring size / position / image /
+	-- text so half-built primitives don't flash on screen.
 	Visible: boolean
 	-- Fires with the property name that was set ("Position", "Size", "Text", etc.).
 	Changed: Signal<string>
@@ -2579,10 +2643,16 @@ declare class DynMesh
 	-- pass to :GetPart / :Detach later. The opts table accepts:
 	--   kind     = "Static" | "Attach" | "Joint", default "Static"
 	--                "Static" / "Attach" — rigid follow. The welded
-	--                  part's CFrame is fully driven by the base each
-	--                  tick. Animations on the welded part are
-	--                  overwritten. Use for hats, stickers, props
-	--                  pinned to a fixed local-space point.
+	--                  part's CFrame is captured at link time (its
+	--                  current world position becomes the local
+	--                  offset), then the part tracks the base each
+	--                  tick. If you reassign target.CFrame between
+	--                  ticks, the new pose is captured as a new local
+	--                  offset, useful for eyes that look around while
+	--                  staying welded to a head, or limbs that pose
+	--                  locally while the body moves. Animations
+	--                  PLAYING on the welded part still get
+	--                  overwritten by the weld.
 	--                "Joint" — hierarchical follow. The welded part
 	--                  is dragged along by the base's per-tick motion
 	--                  but keeps its own pose on top, so animation
@@ -2592,8 +2662,12 @@ declare class DynMesh
 	--                  own FBX animation (upper / lower body, jointed
 	--                  limbs, etc.).
 	--   point    = Vector                 -- offset in base part's
-	--                                        local space
-	--   rotation = Vector                 -- additional Euler offset
+	--                                        local space; setting
+	--                                        this overrides the
+	--                                        capture-on-link
+	--                                        behaviour
+	--   rotation = Vector                 -- additional Euler offset;
+	--                                        same override semantics
 	--   vertex   = number                 -- live-tracked vertex index
 	--                                        on the base mesh; mutually
 	--                                        exclusive with point/rotation
@@ -2601,6 +2675,10 @@ declare class DynMesh
 	--                                        :GetPartByName / :DetachByName
 	-- Welding the same target multiple times is allowed; the last
 	-- weld processed in a given tick wins for that target's pose.
+	-- On detach (:Detach / :DetachByName / :Clear / :DetachPart) the
+	-- welded part stays at whatever world CFrame the weld last set,
+	-- so it retains its pose instead of snapping back to its
+	-- pre-weld location.
 	function Weld(self, target: BasePart, opts: { kind: ("Static" | "Attach" | "Joint")?, point: Vector?, rotation: Vector?, vertex: number?, name: string? }?): number
 	-- Stretch a target part along a polyline of two or more anchor
 	-- points. Each anchor is `{ point = Vector }` (offset in the base

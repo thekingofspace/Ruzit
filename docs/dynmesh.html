@@ -90,11 +90,19 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
                     default <code>"Static"</code>:
                     <ul>
                         <li><strong>Static / Attach</strong> — rigid
-                            follow. The welded part's CFrame is fully
-                            driven by the base each tick. Animations
-                            on the welded part are overwritten. Use
-                            for hats, stickers, props pinned to a
-                            fixed local-space point.</li>
+                            follow. On link the target's <em>current
+                            world CFrame</em> is captured as the
+                            local offset, so the part visually
+                            stays put instead of snapping to the
+                            base. Each tick the part tracks the
+                            base. If you reassign
+                            <code>target.CFrame</code> between
+                            ticks, the new pose is captured as the
+                            new local offset, ideal for eyes that
+                            look around or limbs that pose locally
+                            while the body moves.
+                            Animations playing on the welded part
+                            are still overwritten by the weld.</li>
                         <li><strong>Joint</strong> — hierarchical
                             follow. The welded part is dragged along
                             by the base's per-tick motion but keeps
@@ -107,10 +115,14 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
                     </ul>
                 </li>
                 <li><code>point = Vector</code>, fixed offset in
-                    base part's local space.</li>
+                    the base part's local space. Setting
+                    <code>point</code> or <code>rotation</code>
+                    overrides the capture-on-link behaviour
+                    above &mdash; the offset comes from the
+                    options, not the target's current world
+                    pose.</li>
                 <li><code>rotation = Vector</code>, additional Euler
-                    rotation offset (only applied on the snap
-                    tick for <code>Joint</code>).</li>
+                    rotation offset.</li>
                 <li><code>vertex = number</code>, a vertex index on
                     the base mesh; the welded part follows that
                     vertex live (deform / animation aware). Mutually
@@ -120,8 +132,8 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
                     <code>:GetPartByName</code> /
                     <code>:DetachByName</code>.</li>
             </ul>
-            Calling without opts welds rigidly at the base part's
-            origin.
+            Calling without opts welds the target where it currently
+            stands &mdash; capture-on-link.
         </p>
     </div>
     <div class="member">
@@ -297,6 +309,55 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
     in range, out-of-range indices fall back to the base part's
     origin.
 </div>
+
+<h2 id="local-pose">Locally-posed welds &mdash; eyes, limbs, look-around</h2>
+
+<p>
+    Static / Attach welds are <em>capture-on-link</em>: when you call
+    <code>:Weld</code> without an explicit <code>point</code> /
+    <code>rotation</code>, the welded part's current world CFrame is
+    snapshotted as the local offset relative to the base. This gives
+    you two useful properties:
+</p>
+
+<ul>
+    <li>The part doesn't visually snap when you weld it &mdash; it
+        stays exactly where you placed it before linking.</li>
+    <li>If you later reassign <code>target.CFrame</code>, the new
+        pose becomes the new local offset. The part keeps tracking
+        the base, but with the freshly-set rotation / translation
+        applied locally.</li>
+</ul>
+
+<p>
+    The canonical use is eyes welded to a head. Each tick the eyes
+    follow the head's position; in between, you set
+    <code>eye.CFrame</code> to point them somewhere, and they keep
+    looking that way as the head moves around. Same idea for limbs
+    posed locally on a body that's flying through the world.
+</p>
+
+<pre><code><span class="hl-kw">local</span> dm  = DynMesh.<span class="hl-fn">new</span>(head)
+<span class="hl-kw">local</span> id  = dm:<span class="hl-fn">Weld</span>(eye_l)              <span class="hl-com">-- captures eye_l's current world CFrame</span>
+
+<span class="hl-com">-- Look 20° to the right (locally — head still moves the eye around).</span>
+eye_l.CFrame = CFrame.<span class="hl-fn">new</span>(eye_l.CFrame.Position, Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, math.<span class="hl-fn">rad</span>(<span class="hl-num">20</span>), <span class="hl-num">0</span>))</code></pre>
+
+<p>
+    On <code>:Detach</code> the welded part stays at whatever world
+    CFrame the weld last set, so the eye doesn't snap back to its
+    pre-weld pose &mdash; another consequence of the capture-on-link
+    semantics.
+</p>
+
+<p>
+    To get the old "snap to a fixed local offset" behaviour, pass
+    <code>point</code> and / or <code>rotation</code> in the opts
+    table. Those override the capture and the welded part is
+    repositioned to <code>base + point</code> on the first tick:
+</p>
+
+<pre><code><span class="hl-kw">local</span> hat_id = dm:<span class="hl-fn">Weld</span>(hat, { point = Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">1.1</span>, <span class="hl-num">0</span>) })</code></pre>
 
 <h2 id="stretch-examples">Stretch examples</h2>
 
