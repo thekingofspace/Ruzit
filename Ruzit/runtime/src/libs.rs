@@ -1,6 +1,8 @@
 pub mod actor;
 pub mod asset;
 pub mod debug;
+pub mod drawable;
+pub mod dynimg;
 pub mod dynmesh;
 pub mod gamepad;
 pub mod gpu;

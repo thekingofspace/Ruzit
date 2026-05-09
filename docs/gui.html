@@ -248,6 +248,214 @@ grade:SetData(<span class="hl-str">"strength"</span>, <span class="hl-num">0.0</
     <span class="hl-kw">end</span>)
 <span class="hl-kw">end</span></code></pre>
 
+<h2 id="drawableimg">DrawableImg &amp; CanvasBuffer</h2>
+
+<p>
+    <code>DrawableImg</code> is a CPU-mutable image you can draw to with
+    primitive shapes. It exposes the same accessors as
+    <a href="asset.html#image"><code>ImageAsset</code></a>
+    (<code>Width</code>, <code>Height</code>, <code>Source</code>,
+    <code>Pixels</code>) and is accepted directly on a part's
+    <code>.Texture</code>; mutating the drawable updates the texture
+    on the next frame.
+</p>
+
+<p>
+    <code>CanvasBuffer</code> is a scratch buffer with the same draw
+    methods, but mutations stay local until you
+    <code>:Apply</code> them to a <code>DrawableImg</code>. Use it
+    when you want to rebuild a sprite over many draw calls without
+    triggering a per-call texture re-upload.
+</p>
+
+<p>
+    Coordinate convention: top-left is <code>(0, 0)</code>, x
+    increases right, y increases down. All coordinates are integer
+    pixels; out-of-bounds pixels are clipped silently. Drawing
+    methods alpha-blend over existing content; <code>Fill</code>
+    and <code>Clear</code> overwrite without blending.
+</p>
+
+<h3>Factories</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.DrawableImg(width, height)</span>
+            <span class="member-type">&rarr; DrawableImg</span>
+        </div>
+        <p class="member-desc">
+            Build a fresh, fixed-size mutable image. Pixels start
+            at <code>(0, 0, 0, 0)</code> (transparent black). Not
+            cached: each call returns a new instance with its own
+            buffer.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.CanvasBuffer(width, height)</span>
+            <span class="member-type">&rarr; CanvasBuffer</span>
+        </div>
+        <p class="member-desc">
+            Build a scratch buffer of the given size. Has the
+            same draw methods as <code>DrawableImg</code>, but
+            you commit its contents to a real drawable via
+            <code>buffer:Apply(target, x, y)</code>.
+        </p>
+    </div>
+</div>
+
+<h3>Drawing methods (both DrawableImg and CanvasBuffer)</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">obj:WritePixel(x, y, color, transparency?)</span></div>
+        <p class="member-desc">
+            Set a single pixel directly &mdash; overwrites,
+            doesn't blend. Default transparency 0 (opaque).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">obj:DrawRect(x, y, w, h, color, transparency?)</span></div>
+        <p class="member-desc">
+            Alpha-blend a filled rectangle. <code>:DrawCube</code>
+            is a synonym.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">obj:DrawLine(x0, y0, x1, y1, color, transparency?)</span></div>
+        <p class="member-desc">
+            Bresenham line, alpha-blended.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">obj:DrawCircle(cx, cy, radius, color, transparency?, filled?)</span></div>
+        <p class="member-desc">
+            Outline circle by default. Pass
+            <code>filled = true</code> for a solid disc.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">obj:Fill(color, transparency?)</span></div>
+        <p class="member-desc">
+            Overwrite every pixel with one color + alpha. Doesn't
+            blend.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">obj:Clear()</span></div>
+        <p class="member-desc">
+            Reset every pixel to <code>(0, 0, 0, 0)</code>.
+        </p>
+    </div>
+</div>
+
+<h3>DrawableImg-only methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Width()</span><span class="member-type">&rarr; number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Height()</span><span class="member-type">&rarr; number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Source()</span><span class="member-type">&rarr; string</span></div>
+        <p class="member-desc">
+            Origin label, <code>"&lt;drawable:WxH&gt;"</code>. Mirrors
+            <code>ImageAsset:Source</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Pixels()</span><span class="member-type">&rarr; string</span></div>
+        <p class="member-desc">
+            Snapshot of the current RGBA8 buffer
+            (<code>Width * Height * 4</code> bytes). Useful for
+            inspection or hand-rolled image processing.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:IsAlive()</span><span class="member-type">&rarr; boolean</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Apply(buffer, atX?, atY?)</span></div>
+        <p class="member-desc">
+            Convenience: alpha-blend a CanvasBuffer onto this
+            drawable at the given offset. Equivalent to
+            <code>buffer:Apply(img, atX, atY)</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Destroy()</span></div>
+        <p class="member-desc">
+            Mark the drawable dead and zero its pixels. Any part
+            still using it as a Texture will see transparent
+            black. Drop the Lua reference (and clear the part's
+            Texture) to release the buffer.
+        </p>
+    </div>
+</div>
+
+<h3>CanvasBuffer-only methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">buffer:Width()</span><span class="member-type">&rarr; number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">buffer:Height()</span><span class="member-type">&rarr; number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">buffer:Pixels()</span><span class="member-type">&rarr; string</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">buffer:Apply(target, atX?, atY?)</span></div>
+        <p class="member-desc">
+            Alpha-blend the buffer onto the target
+            <code>DrawableImg</code> at the given offset (default
+            <code>(0, 0)</code>). Bumps the drawable's version
+            once, so the GPU re-upload happens in a single shot
+            even though the buffer was mutated dozens of times.
+        </p>
+    </div>
+</div>
+
+<h3>Lifecycle</h3>
+
+<p>
+    <code>DrawableImg</code>s are <strong>not cached</strong>
+    (unlike <code>Asset.GetAsset</code> images). Every
+    <code>GUI.DrawableImg(...)</code> call creates a fresh buffer.
+    Once nothing references it, the Lua variable is gone and
+    every consumer (parts using it as a Texture) has been
+    cleared, the underlying buffer is freed; on the GPU side
+    the renderer's eviction sweep drops the cached texture
+    once no part references its id.
+</p>
+
+<h3>Worked example: paint a face onto a cube</h3>
+
+<pre><code><span class="hl-kw">local</span> GUI = <span class="hl-fn">import</span>(<span class="hl-str">"GUI"</span>)
+<span class="hl-kw">local</span> Renderable = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
+<span class="hl-kw">local</span> Color3 = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Color3
+
+<span class="hl-kw">local</span> face = GUI.<span class="hl-fn">DrawableImg</span>(<span class="hl-num">128</span>, <span class="hl-num">128</span>)
+face:<span class="hl-fn">Fill</span>(Color3.<span class="hl-fn">new</span>(<span class="hl-num">1</span>, <span class="hl-num">0.9</span>, <span class="hl-num">0.7</span>))                            <span class="hl-com">-- skin tone</span>
+face:<span class="hl-fn">DrawCircle</span>(<span class="hl-num">42</span>, <span class="hl-num">48</span>, <span class="hl-num">8</span>, Color3.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>), <span class="hl-num">0</span>, <span class="hl-kw">true</span>)    <span class="hl-com">-- left eye</span>
+face:<span class="hl-fn">DrawCircle</span>(<span class="hl-num">86</span>, <span class="hl-num">48</span>, <span class="hl-num">8</span>, Color3.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>), <span class="hl-num">0</span>, <span class="hl-kw">true</span>)
+face:<span class="hl-fn">DrawLine</span>(<span class="hl-num">40</span>, <span class="hl-num">90</span>, <span class="hl-num">88</span>, <span class="hl-num">90</span>, Color3.<span class="hl-fn">new</span>(<span class="hl-num">0.6</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>))         <span class="hl-com">-- mouth</span>
+
+<span class="hl-kw">local</span> head = Renderable.<span class="hl-fn">BasePart</span>(<span class="hl-str">"Cube"</span>)
+head.Texture = face
+
+<span class="hl-com">-- Later: swap the eyes for a "blink" frame using a CanvasBuffer.</span>
+<span class="hl-kw">local</span> blink = GUI.<span class="hl-fn">CanvasBuffer</span>(<span class="hl-num">128</span>, <span class="hl-num">128</span>)
+blink:<span class="hl-fn">Fill</span>(Color3.<span class="hl-fn">new</span>(<span class="hl-num">1</span>, <span class="hl-num">0.9</span>, <span class="hl-num">0.7</span>))
+blink:<span class="hl-fn">DrawLine</span>(<span class="hl-num">34</span>, <span class="hl-num">48</span>, <span class="hl-num">50</span>, <span class="hl-num">48</span>, Color3.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>))
+blink:<span class="hl-fn">DrawLine</span>(<span class="hl-num">78</span>, <span class="hl-num">48</span>, <span class="hl-num">94</span>, <span class="hl-num">48</span>, Color3.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>))
+blink:<span class="hl-fn">DrawLine</span>(<span class="hl-num">40</span>, <span class="hl-num">90</span>, <span class="hl-num">88</span>, <span class="hl-num">90</span>, Color3.<span class="hl-fn">new</span>(<span class="hl-num">0.6</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>))
+blink:<span class="hl-fn">Apply</span>(face)                                              <span class="hl-com">-- one re-upload</span></code></pre>
+
 </main>
 
 </body>

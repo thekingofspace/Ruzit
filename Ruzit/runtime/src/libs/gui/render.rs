@@ -196,6 +196,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 }
 "#;
 
+pub struct LiveTextureSlot {
+    pub texture: wgpu::Texture,
+    pub view: wgpu::TextureView,
+    pub width: u32,
+    pub height: u32,
+    pub last_version: u64,
+}
+
 pub struct GpuState {
     pub device: Arc<wgpu::Device>,
     pub queue: Arc<wgpu::Queue>,
@@ -219,6 +227,7 @@ pub struct GpuState {
     white_view: wgpu::TextureView,
 
     image_textures: HashMap<u64, wgpu::TextureView>,
+    live_textures: HashMap<u64, LiveTextureSlot>,
 
     fullscreen_vs: wgpu::ShaderModule,
 
@@ -616,6 +625,7 @@ impl GpuState {
             sampler,
             white_view,
             image_textures: HashMap::new(),
+            live_textures: HashMap::new(),
             fullscreen_vs,
             skybox_pipelines: HashMap::new(),
             post_pipelines: HashMap::new(),
@@ -940,6 +950,8 @@ impl GpuState {
         self.model_buffers.retain(|id, _| live_models.contains(id));
         self.image_textures
             .retain(|id, _| live_textures.contains(id));
+        self.live_textures
+            .retain(|id, _| live_textures.contains(id));
         self.bind_group_3d_cache
             .retain(|key, _| *key == 0 || live_textures.contains(key));
     }
@@ -964,6 +976,64 @@ impl GpuState {
     }
 
     fn ensure_part_texture(&mut self, tex: &renderable::PartTextureRef) -> &wgpu::TextureView {
+        if let Some(live_arc) = &tex.live {
+            let entry = self.live_textures.entry(tex.id).or_insert_with(|| {
+                let buf = live_arc.lock().unwrap();
+                let w = buf.width.max(1);
+                let h = buf.height.max(1);
+                let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("Ruzit DynImg texture"),
+                    size: wgpu::Extent3d {
+                        width: w,
+                        height: h,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING
+                        | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                LiveTextureSlot {
+                    texture,
+                    view,
+                    width: w,
+                    height: h,
+                    last_version: u64::MAX,
+                }
+            });
+            let buf = live_arc.lock().unwrap();
+            if buf.version != entry.last_version
+                && buf.width == entry.width
+                && buf.height == entry.height
+                && (buf.bytes.len() as u32) >= 4 * entry.width * entry.height
+            {
+                self.queue.write_texture(
+                    wgpu::ImageCopyTexture {
+                        texture: &entry.texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &buf.bytes,
+                    wgpu::ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(4 * entry.width),
+                        rows_per_image: Some(entry.height),
+                    },
+                    wgpu::Extent3d {
+                        width: entry.width,
+                        height: entry.height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+                entry.last_version = buf.version;
+            }
+            return &self.live_textures.get(&tex.id).unwrap().view;
+        }
         if !self.image_textures.contains_key(&tex.id) {
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("Ruzit 3D texture"),

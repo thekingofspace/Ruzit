@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynImg - Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css?v=4.0">
+    <script src="theme.js?v=4.0"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=4.0" defer></script>
+
+<main>
+
+<h1>DynImg</h1>
+<p class="lede">
+    Compose GUI primitives into a CPU-rasterized canvas, then apply that
+    canvas as a 3D part's <code>Texture</code>. Mutating the underlying
+    primitives updates the texture every frame, so a Lua-driven UI
+    becomes a live decal you can wallpaper onto a part.
+</p>
+
+<pre><code><span class="hl-kw">local</span> DynImg     = <span class="hl-fn">import</span>(<span class="hl-str">"DynImg"</span>)
+<span class="hl-kw">local</span> GUI        = <span class="hl-fn">import</span>(<span class="hl-str">"GUI"</span>)
+<span class="hl-kw">local</span> Asset      = <span class="hl-fn">import</span>(<span class="hl-str">"Asset"</span>)
+<span class="hl-kw">local</span> Renderable = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
+<span class="hl-kw">local</span> Vector     = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Vector
+<span class="hl-kw">local</span> Color3     = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Color3
+</code></pre>
+
+<h2 id="overview">How it works</h2>
+
+<ol>
+    <li>Build GUI primitives the same way you'd build on-screen UI
+        (<code>GUI.Basic.Image</code>, <code>GUI.Basic.Square</code>,
+        <code>GUI.Basic.Font</code>, &hellip;).</li>
+    <li>Hand them to <code>DynImg.New(width, height, { &hellip; })</code>.
+        Each primitive has its <code>.Visible</code> flipped to false
+        and is tagged as canvas-owned so it no longer draws on the
+        regular GUI overlay.</li>
+    <li>Assign the resulting DynImg as a part's <code>.Texture</code>:
+        <code>part.Texture = canvas</code>. The 3D part displays
+        the live canvas, refreshed every frame.</li>
+</ol>
+
+<p>
+    The canvas is a fixed-size <code>width &times; height</code> RGBA8
+    pixel buffer. Each frame the engine re-rasterizes the canvas:
+    sorts the primitives by <code>ZIndex</code> ascending, then alpha-
+    blends them onto the buffer. Primitives' <code>.Position</code>
+    and <code>.Size</code> are read in pixel-space, with
+    <code>(0, 0)</code> at the top-left of the canvas (NOT the
+    screen).
+</p>
+
+<h2 id="api">DynImg API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">DynImg.New(width, height, primitives?)</span>
+            <span class="member-type">&rarr; DynImg</span>
+        </div>
+        <p class="member-desc">
+            Build a fresh canvas of the given pixel size. The
+            <code>primitives</code> list is optional, you can also
+            <code>:Add</code> later. Order in the list doesn't
+            matter, draw order is determined by each primitive's
+            <code>ZIndex</code> at composition time.
+        </p>
+    </div>
+</div>
+
+<h3>DynImg properties</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Width</span><span class="member-type">number</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Height</span><span class="member-type">number</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.IsAlive</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+</div>
+
+<h3>DynImg methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">canvas:Add(primitive)</span></div>
+        <p class="member-desc">
+            Add an existing GUI primitive to the canvas. Sets
+            <code>primitive.Visible = false</code> and routes the
+            primitive into this DynImg only. A primitive can only
+            belong to one DynImg at a time, adding it to a second
+            silently re-tags ownership.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">canvas:Remove(primitive)</span><span class="member-type">&rarr; boolean</span></div>
+        <p class="member-desc">
+            Remove a primitive from the canvas. Returns true if it
+            was in the list. Clears the canvas-ownership tag, but
+            leaves <code>primitive.Visible</code> at false &mdash;
+            set it back to true yourself if you want the primitive
+            to appear on the regular GUI again.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">canvas:Destroy()</span></div>
+        <p class="member-desc">
+            Tear down the canvas. Owned primitives stay alive (the
+            canvas doesn't destroy them) but are released from this
+            DynImg. The texture buffer is freed on the next
+            renderer-side eviction sweep.
+        </p>
+    </div>
+</div>
+
+<h2 id="example">Example: floating speech bubble</h2>
+
+<pre><code><span class="hl-com">-- A 256×128 canvas: a translucent square background plus a text label.</span>
+<span class="hl-kw">local</span> bg = GUI.Basic.<span class="hl-fn">Square</span>()
+bg.Size         = Dim.<span class="hl-fn">new</span>(<span class="hl-num">256</span>, <span class="hl-num">128</span>)
+bg.Position     = Dim.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>)
+bg.Color        = Color3.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>)
+bg.Transparency = <span class="hl-num">0.4</span>
+bg.ZIndex       = <span class="hl-num">0</span>
+
+<span class="hl-kw">local</span> font = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"Font"</span>, <span class="hl-str">"ui.label"</span>)
+<span class="hl-kw">local</span> txt  = GUI.Basic.<span class="hl-fn">Font</span>(font)
+txt.Position  = Dim.<span class="hl-fn">new</span>(<span class="hl-num">12</span>, <span class="hl-num">40</span>)
+txt.Text      = <span class="hl-str">"hello!"</span>
+txt.TextSize  = <span class="hl-num">48</span>
+txt.TextColor = Color3.<span class="hl-fn">new</span>(<span class="hl-num">1</span>, <span class="hl-num">1</span>, <span class="hl-num">1</span>)
+txt.ZIndex    = <span class="hl-num">1</span>   <span class="hl-com">-- drawn on top of bg</span>
+
+<span class="hl-kw">local</span> canvas = DynImg.<span class="hl-fn">New</span>(<span class="hl-num">256</span>, <span class="hl-num">128</span>, { bg, txt })
+
+<span class="hl-com">-- Apply it to a 3D part standing in the world.</span>
+<span class="hl-kw">local</span> part = Renderable.<span class="hl-fn">BasePart</span>(<span class="hl-str">"Cube"</span>)
+part.Size    = Vector.<span class="hl-fn">new</span>(<span class="hl-num">2</span>, <span class="hl-num">1</span>, <span class="hl-num">0.05</span>)
+part.Texture = canvas
+
+<span class="hl-com">-- Mutate the text — the texture refreshes on the next frame.</span>
+txt.Text = <span class="hl-str">"new line!"</span></code></pre>
+
+<h2 id="limitations">Limitations of v1</h2>
+
+<ul>
+    <li><strong>Shape support</strong>: <code>Image</code>,
+        <code>Square</code>, and baked <code>Text</code> primitives
+        composite as colored / tinted rectangles.
+        <code>Circle</code> and <code>Triangle</code> are drawn as
+        their bounding rectangle. Sub-pixel anti-aliasing on the
+        non-rectangle shapes is not yet implemented.</li>
+    <li><strong>2D shaders not applied</strong>: per-primitive
+        fragment shader attachments
+        (<code>primitive:AttachShader</code>) are skipped during
+        canvas composition. Use a 3D fragment shader on the
+        consuming BasePart instead, see
+        <a href="renderable.html">Renderable</a> shader docs.</li>
+    <li><strong>One canvas per primitive</strong>: a primitive
+        can only belong to one DynImg at a time. If you need the
+        same content in two canvases, build two primitives.</li>
+    <li><strong>CPU cost</strong>: composition runs on the CPU
+        every frame, so very large canvases or hundreds of
+        layered primitives will start to show in your frame
+        time. Aim for canvases at the resolution you actually
+        need on the part &mdash; a 512&times;512 panel is fine,
+        a 4096&times;4096 panel is not.</li>
+</ul>
+
+</main>
+
+</body>
+</html>

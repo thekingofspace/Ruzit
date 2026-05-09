@@ -50,6 +50,15 @@ pub struct PartTextureRef {
     pub width: u32,
     pub height: u32,
     pub data: Arc<Vec<u8>>,
+    pub version: u64,
+    pub live: Option<Arc<Mutex<DynTextureBuffer>>>,
+}
+
+pub struct DynTextureBuffer {
+    pub width: u32,
+    pub height: u32,
+    pub bytes: Vec<u8>,
+    pub version: u64,
 }
 
 pub struct PartState {
@@ -727,22 +736,30 @@ impl UserData for PartHandle {
             let new_tex = match value {
                 Value::Nil => None,
                 Value::UserData(ud) => {
-                    let img = ud.borrow::<ImageAsset>().map_err(|_| {
-                        mlua::Error::RuntimeError(
-                            "Texture expects an ImageAsset (Asset.GetAsset(\"Image\", ...)) or nil"
-                                .into(),
-                        )
-                    })?;
-                    Some(PartTextureRef {
-                        id: img.id,
-                        width: img.width,
-                        height: img.height,
-                        data: img.data.clone(),
-                    })
+                    if let Ok(img) = ud.borrow::<ImageAsset>() {
+                        Some(PartTextureRef {
+                            id: img.id,
+                            width: img.width,
+                            height: img.height,
+                            data: img.data.clone(),
+                            version: 0,
+                            live: None,
+                        })
+                    } else if let Ok(dyn_img) = ud.borrow::<crate::libs::dynimg::DynImgHandle>() {
+                        Some(crate::libs::dynimg::dynimg_to_part_texture(&dyn_img))
+                    } else if let Ok(drawable) =
+                        ud.borrow::<crate::libs::drawable::DrawableImgHandle>()
+                    {
+                        Some(crate::libs::drawable::drawable_to_part_texture(&drawable))
+                    } else {
+                        return Err(mlua::Error::RuntimeError(
+                            "Texture expects an ImageAsset, DynImg, DrawableImg, or nil".into(),
+                        ));
+                    }
                 }
                 _ => {
                     return Err(mlua::Error::RuntimeError(
-                        "Texture expects an ImageAsset or nil".into(),
+                        "Texture expects an ImageAsset, DynImg, DrawableImg, or nil".into(),
                     ));
                 }
             };

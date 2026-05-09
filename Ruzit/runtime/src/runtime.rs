@@ -156,6 +156,7 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
                 owner.clone(),
             )?)),
             "Debug" => Ok(Value::Table(libs::debug::create(lua)?)),
+            "DynImg" => Ok(Value::Table(libs::dynimg::create(lua)?)),
             "DynMesh" => Ok(Value::Table(libs::dynmesh::create(lua)?)),
             "Gamepad" => Ok(Value::Table(libs::gamepad::create(lua)?)),
             "GPU" => Ok(Value::Table(libs::gpu::create(lua)?)),

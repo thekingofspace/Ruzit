@@ -25,7 +25,7 @@ fn steam_lib_name() -> &'static str {
 fn agent() -> Agent {
     ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(60))
-        .user_agent("ruzit/3.9")
+        .user_agent("ruzit/4.0")
         .build()
 }
 

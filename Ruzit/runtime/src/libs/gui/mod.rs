@@ -82,6 +82,8 @@ pub struct PrimitiveState {
     pub image: Option<Arc<ImageRef>>,
 
     pub text: Option<TextState>,
+
+    pub dyn_img_owner: Option<u64>,
 }
 
 pub struct TextState {
@@ -182,7 +184,7 @@ pub fn snapshot() -> Vec<RenderItem> {
             .iter()
             .filter_map(|p| {
                 let mut s = p.lock().unwrap();
-                if !s.visible {
+                if !s.visible || s.dyn_img_owner.is_some() {
                     return None;
                 }
 
@@ -292,10 +294,14 @@ fn bake_text(font: &fontdue::Font, content: &str, size_px: f32, color: Color3) -
 }
 
 pub struct GuiPrimitive {
-    state: Arc<Mutex<PrimitiveState>>,
+    pub(crate) state: Arc<Mutex<PrimitiveState>>,
 }
 
 impl GuiPrimitive {
+    pub fn state_arc(&self) -> Arc<Mutex<PrimitiveState>> {
+        self.state.clone()
+    }
+
     fn new(lua: &Lua, shape: Shape) -> mlua::Result<Self> {
         Self::with_state(lua, shape, None, None, Dim::new(100.0, 100.0))
     }
@@ -348,6 +354,7 @@ impl GuiPrimitive {
             changed_signal,
             image,
             text,
+            dyn_img_owner: None,
         }));
         REGISTRY.with(|cell| cell.borrow_mut().push(state.clone()));
         Ok(Self { state })
@@ -823,6 +830,35 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         })?,
     )?;
     t.set("Basic", basic)?;
+
+    t.set(
+        "DrawableImg",
+        lua.create_function(
+            |lua, (width, height): (u32, u32)| -> mlua::Result<AnyUserData> {
+                if width == 0 || height == 0 {
+                    return Err(mlua::Error::RuntimeError(
+                        "GUI.DrawableImg: width and height must be > 0".into(),
+                    ));
+                }
+                let state = crate::libs::drawable::new_drawable(width, height);
+                lua.create_userdata(crate::libs::drawable::DrawableImgHandle { inner: state })
+            },
+        )?,
+    )?;
+    t.set(
+        "CanvasBuffer",
+        lua.create_function(
+            |lua, (width, height): (u32, u32)| -> mlua::Result<AnyUserData> {
+                if width == 0 || height == 0 {
+                    return Err(mlua::Error::RuntimeError(
+                        "GUI.CanvasBuffer: width and height must be > 0".into(),
+                    ));
+                }
+                let state = crate::libs::drawable::new_canvas_buffer(width, height);
+                lua.create_userdata(crate::libs::drawable::CanvasBufferHandle { inner: state })
+            },
+        )?,
+    )?;
 
     t.set(
         "SetSkybox",

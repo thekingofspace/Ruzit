@@ -1174,7 +1174,15 @@ declare class BasePart
 	-- Useful for trigger / collision-only volumes (when those land).
 	Render: boolean
 	-- Optional surface texture. Uses the part's Color as a tint.
-	Texture: ImageAsset?
+	-- Accepts:
+	--   * ImageAsset (loaded from disk / generated)
+	--   * DynImg     (live-composited canvas of GUI primitives)
+	--   * DrawableImg (CPU-mutable image you draw to with shape
+	--                  primitives — see GUI.DrawableImg)
+	-- For DynImg / DrawableImg the texture refreshes whenever the
+	-- underlying buffer changes, so a UI you keep mutating in Lua
+	-- becomes a live texture you can wallpaper onto a 3D part.
+	Texture: (ImageAsset | DynImg | DrawableImg)?
 	-- Render-hint flags. None of these change the engine's default
 	-- lighting yet, they're plumbed straight through to every 3D
 	-- fragment shader as `I.cast_shadow` / `I.receive_shadow` (u32 0/1)
@@ -1445,6 +1453,144 @@ declare class SceneShader
 	function Destroy(self): ()
 end
 
+-- =============================================================================
+-- DynImg, a CPU-composited "canvas" of GUI primitives that you can apply to a
+-- 3D BasePart as its Texture. Each frame the engine re-rasterizes the
+-- canvas, so any mutation to the underlying primitives (image, color,
+-- transparency, position, size, baked text) shows up on the textured 3D
+-- part the next frame.
+--
+-- Conceptual flow:
+--   1. Build GUI primitives the same way you'd build on-screen UI
+--      (`GUI.Basic.Image`, `GUI.Basic.Square`, `GUI.Basic.Font`, ...).
+--   2. Hand them to `DynImg.New(width, height, { ... })`. The engine
+--      flips their `.Visible` to false and tags them as canvas-owned, so
+--      they no longer appear on the regular GUI overlay.
+--   3. Assign the resulting DynImg as a part's `.Texture`. The 3D
+--      part displays the live canvas.
+--
+-- Each canvas is a fixed-size pixel buffer (width × height RGBA8). Layers
+-- are sorted by `Primitive.ZIndex` (lower = drawn first), then alpha-blended.
+-- Primitives' `.Position` and `.Size` are read in pixel-space, with
+-- (0, 0) at the top-left of the canvas (NOT the screen).
+--
+-- Limitations of v1:
+--   * Image, Square, and Text primitives composite as colored / tinted
+--     rectangles. Circle and Triangle render as their bounding rectangle.
+--   * Per-primitive shader attachments are NOT applied; canvas
+--     primitives can't have their own 2D fragment shader. Use 3D
+--     shaders on the consuming BasePart instead.
+--   * A single primitive can only belong to ONE DynImg at a time.
+-- =============================================================================
+
+declare class DynImg
+	Width: number
+	Height: number
+	IsAlive: boolean
+
+	-- Add an existing GUI primitive to this canvas. Sets the
+	-- primitive's `.Visible = false` and routes it into this DynImg
+	-- only.
+	function Add(self, primitive: Primitive): ()
+	-- Remove a primitive from this canvas. Returns true if it was
+	-- in the list. Restores the primitive's owner tag, but leaves
+	-- `.Visible` at false (set it back yourself if you want it on
+	-- the regular GUI again).
+	function Remove(self, primitive: Primitive): boolean
+	-- Tear down the canvas. Owned primitives stay alive but are
+	-- released from this DynImg.
+	function Destroy(self): ()
+end
+
+-- =============================================================================
+-- DrawableImg, a CPU-mutable image you can draw to with primitive shapes.
+-- Same accessors as ImageAsset (Width, Height, Source, Pixels) so it's a
+-- drop-in for ImageAsset on `BasePart.Texture`. Drawing methods
+-- alpha-blend the new pixels over the existing buffer; "Set"-style
+-- overwrites are available via `Fill` (whole image) and `WritePixel`
+-- (single pixel).
+--
+-- Coordinate convention: top-left is (0, 0), x increases right, y
+-- increases down. All coordinates are integer pixels and clamped to
+-- the buffer.
+--
+-- Lifecycle: not cached. Each `GUI.DrawableImg(...)` produces a fresh
+-- instance with its own pixel buffer; once nothing references it
+-- (Lua variable + any part using it as a Texture), the buffer is
+-- freed.
+-- =============================================================================
+
+declare class DrawableImg
+	-- Pixel width.
+	function Width(self): number
+	-- Pixel height.
+	function Height(self): number
+	-- Origin label, "<drawable:WxH>". Useful for logging.
+	function Source(self): string
+	-- Raw RGBA8 buffer (Width * Height * 4 bytes). Snapshot of the
+	-- current pixels.
+	function Pixels(self): string
+	function IsAlive(self): boolean
+
+	-- Set the pixel at (x, y) to `color` with the given transparency
+	-- (default 0 = opaque). Overwrites whatever was there.
+	function WritePixel(self, x: number, y: number, color: Color3, transparency: number?): ()
+	-- Alpha-blend a filled rectangle of (w, h) at (x, y). Default
+	-- transparency 0 = fully opaque. `DrawCube` is a synonym for
+	-- callers who think in 3D-ish terms.
+	function DrawRect(self, x: number, y: number, w: number, h: number, color: Color3, transparency: number?): ()
+	function DrawCube(self, x: number, y: number, w: number, h: number, color: Color3, transparency: number?): ()
+	-- Bresenham line from (x0, y0) to (x1, y1).
+	function DrawLine(self, x0: number, y0: number, x1: number, y1: number, color: Color3, transparency: number?): ()
+	-- Outline (default) or filled circle of `radius` pixels centered
+	-- at (cx, cy). Pass `filled = true` for a solid disc.
+	function DrawCircle(self, cx: number, cy: number, radius: number, color: Color3, transparency: number?, filled: boolean?): ()
+	-- Overwrite the entire buffer with one color + alpha. Doesn't
+	-- blend.
+	function Fill(self, color: Color3, transparency: number?): ()
+	-- Reset every pixel to (0, 0, 0, 0) — fully transparent black.
+	function Clear(self): ()
+	-- Alpha-blend a `CanvasBuffer`'s contents onto this drawable at
+	-- the given offset (default (0, 0)).
+	function Apply(self, buffer: CanvasBuffer, atX: number?, atY: number?): ()
+	-- Mark dead. The pixels are zeroed and any consuming part
+	-- shows transparent black until you point its Texture
+	-- elsewhere.
+	function Destroy(self): ()
+end
+
+-- =============================================================================
+-- CanvasBuffer, a scratch RGBA8 buffer with the same drawing methods as
+-- DrawableImg. Mutations stay local until you call :Apply on a
+-- DrawableImg. Use this when you want to rebuild a sprite over many
+-- draw calls without triggering a texture re-upload per call, do
+-- the work in the buffer, then commit once.
+-- =============================================================================
+
+declare class CanvasBuffer
+	function Width(self): number
+	function Height(self): number
+	function Pixels(self): string
+
+	function WritePixel(self, x: number, y: number, color: Color3, transparency: number?): ()
+	function DrawRect(self, x: number, y: number, w: number, h: number, color: Color3, transparency: number?): ()
+	function DrawCube(self, x: number, y: number, w: number, h: number, color: Color3, transparency: number?): ()
+	function DrawLine(self, x0: number, y0: number, x1: number, y1: number, color: Color3, transparency: number?): ()
+	function DrawCircle(self, cx: number, cy: number, radius: number, color: Color3, transparency: number?, filled: boolean?): ()
+	function Fill(self, color: Color3, transparency: number?): ()
+	function Clear(self): ()
+	-- Alpha-blend this buffer onto `target` at the given offset.
+	function Apply(self, target: DrawableImg, atX: number?, atY: number?): ()
+end
+
+export type DynImg_API = {
+	-- Build a fresh DynImg of the given pixel size. The primitives
+	-- list is optional; you can also `:Add` later. Order in the
+	-- list doesn't matter, ZIndex is what governs draw order at
+	-- composition time.
+	New: (width: number, height: number, primitives: { Primitive }?) -> DynImg,
+}
+
 export type GUI_API = {
 	-- 2D overlay primitives. Each factory returns a Primitive you can then
 	-- position, size, color, etc. on screen.
@@ -1458,6 +1604,31 @@ export type GUI_API = {
 		-- (sized by .TextSize / colored by .TextColor).
 		Font: (asset: FontAsset) -> Primitive,
 	},
+
+	-- ── DrawableImg / CanvasBuffer ────────────────────────────────────
+	-- Build a fixed-size CPU-side mutable image. Has all the standard
+	-- image accessors (Width, Height, Source, Pixels) plus drawing
+	-- methods (DrawRect / DrawCube, DrawLine, DrawCircle, WritePixel,
+	-- Fill, Clear). Each draw call mutates pixels in place and bumps
+	-- a version counter; if you've assigned the DrawableImg as a
+	-- BasePart's `.Texture`, the texture re-uploads on the next
+	-- frame.
+	--
+	-- DrawableImgs are NOT cached (unlike Asset.GetAsset images). The
+	-- pixel buffer lives for as long as you hold the userdata; once
+	-- the last reference drops (and any consuming part has cleared
+	-- its Texture), the buffer is released.
+	DrawableImg: (width: number, height: number) -> DrawableImg,
+
+	-- A scratch RGBA8 buffer with the same drawing methods as
+	-- DrawableImg, but the changes don't go anywhere on their own.
+	-- When you're done staging, call `buffer:Apply(target, x?, y?)`
+	-- (or `target:Apply(buffer, x?, y?)`) to alpha-blend the buffer
+	-- onto a DrawableImg. This avoids per-call texture re-uploads
+	-- when you're rebuilding a complex sprite, you stage into the
+	-- buffer, then commit in one shot.
+	CanvasBuffer: (width: number, height: number) -> CanvasBuffer,
+
 	-- ── Skybox ────────────────────────────────────────────────────────
 	-- Install a fragment shader that runs across the whole window before
 	-- the 3D scene draws. Replaces the flat clear color with whatever the
@@ -2829,6 +3000,7 @@ export type Imports = {
 	Actor: Actor_API,
 	Asset: Asset_API,
 	Debug: Debug_API,
+	DynImg: DynImg_API,
 	DynMesh: DynMesh_API,
 	Gamepad: Gamepad_API,
 	GPU: GPU_API,

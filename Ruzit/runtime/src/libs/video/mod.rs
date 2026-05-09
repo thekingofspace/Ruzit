@@ -473,6 +473,8 @@ pub fn tick(dt_ms: f64) {
                 width: l.width,
                 height: l.height,
                 data: Arc::new(l.frames[frame_idx].clone()),
+                version: 0,
+                live: None,
             });
         }
     });
