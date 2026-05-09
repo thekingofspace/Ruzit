@@ -2720,6 +2720,7 @@ dependencies = [
  "sha2",
  "sha3",
  "steamworks",
+ "steamworks-sys",
  "sysinfo",
  "tiny_http",
  "toml",

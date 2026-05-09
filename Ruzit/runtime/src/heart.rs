@@ -46,6 +46,7 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
 
         if snapshot.is_empty() && !window_open && !sfx_active && !voice_active {
             crate::libs::steam::shutdown_p2p();
+            crate::libs::steam::force_steam_api_shutdown();
             return Ok(());
         }
 

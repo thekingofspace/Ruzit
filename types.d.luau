@@ -2134,6 +2134,15 @@ export type Steam_API = {
 	-- abrupt exit (os.exit, panic, etc.) and want clean Steam teardown
 	-- with no "sockets still open" warnings.
 	Shutdown: () -> (),
+	-- Bring up Valve's relay-network for P2P (cross-NAT punch-through,
+	-- relay fallback when direct fails). Call ONCE at startup if your
+	-- game ships to players on different networks. Skip it for local
+	-- LAN / same-machine testing — direct P2P works without it, and
+	-- skipping avoids spinning up the relay sockets (which Steam's SDK
+	-- can't fully tear down before process exit, leading to the
+	-- "still have sockets open" shutdown warning). Costs a few seconds
+	-- on init while the SDK pings relay servers.
+	InitRelayNetwork: () -> (),
 	-- Local user / friends.
 	User: {
 		-- Local user's steam id.

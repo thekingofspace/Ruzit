@@ -110,7 +110,6 @@ fn ensure_listen_socket(client: &Client) -> mlua::Result<()> {
         if slot.is_some() {
             return Ok(());
         }
-        client.networking_utils().init_relay_network_access();
         let socket = client
             .networking_sockets()
             .create_listen_socket_p2p(0, vec![])
@@ -261,6 +260,32 @@ fn pump_p2p(lua: &Lua) -> mlua::Result<()> {
     Ok(())
 }
 
+fn pump_steam_callbacks(times: u32) {
+    SINGLE.with(|c| {
+        if let Some(s) = c.borrow().as_ref() {
+            for _ in 0..times {
+                s.run_callbacks();
+            }
+        }
+    });
+}
+
+fn drain_pending_listen_events() {
+    LISTEN_SOCKET.with(|cell| {
+        if let Some(socket) = cell.borrow().as_ref() {
+            while let Some(ev) = socket.try_receive_event() {
+                match ev {
+                    ListenSocketEvent::Connecting(req) => {
+                        let _ = req.reject(NetConnectionEnd::AppGeneric, Some("shutdown"));
+                    }
+                    ListenSocketEvent::Connected(_) | ListenSocketEvent::Disconnected(_) => {
+                    }
+                }
+            }
+        }
+    });
+}
+
 fn close_orphan_connections() {
     let live = lobby_member_set();
     let to_drop: Vec<u64> = CONNECTIONS.with(|c| {
@@ -270,38 +295,60 @@ fn close_orphan_connections() {
             .filter(|id| !live.contains(id))
             .collect()
     });
+    let mut closed_any = false;
     for id in to_drop {
         let conn = CONNECTIONS.with(|c| c.borrow_mut().remove(&id));
-        if let Some(conn) = conn {
-            let _ = conn.close(NetConnectionEnd::AppGeneric, Some("lobby ended"), false);
-        }
+        drop(conn);
+        closed_any = true;
+    }
+    if closed_any {
+        pump_steam_callbacks(2);
     }
     if LOBBY_SIGNALS.with(|m| m.borrow().is_empty()) {
+        drain_pending_listen_events();
+        pump_steam_callbacks(2);
         let socket = LISTEN_SOCKET.with(|cell| cell.borrow_mut().take());
         drop(socket);
-        SINGLE.with(|c| {
-            if let Some(s) = c.borrow().as_ref() {
-                s.run_callbacks();
-            }
-        });
+        pump_steam_callbacks(2);
     }
 }
 
 pub fn shutdown_p2p() {
     let conns: Vec<u64> = CONNECTIONS.with(|c| c.borrow().keys().copied().collect());
+    let had_any = !conns.is_empty();
     for id in conns {
         let conn = CONNECTIONS.with(|c| c.borrow_mut().remove(&id));
-        if let Some(conn) = conn {
-            let _ = conn.close(NetConnectionEnd::AppGeneric, Some("shutdown"), false);
-        }
+        drop(conn);
+    }
+    if had_any {
+        pump_steam_callbacks(3);
+    }
+    drain_pending_listen_events();
+    let had_listen = LISTEN_SOCKET.with(|cell| cell.borrow().is_some());
+    if had_listen {
+        pump_steam_callbacks(3);
     }
     let socket = LISTEN_SOCKET.with(|cell| cell.borrow_mut().take());
     drop(socket);
+    if had_listen {
+        pump_steam_callbacks(3);
+    }
+}
+
+pub fn force_steam_api_shutdown() {
     SINGLE.with(|c| {
         if let Some(s) = c.borrow().as_ref() {
-            s.run_callbacks();
+            for _ in 0..3 {
+                s.run_callbacks();
+            }
         }
+        *c.borrow_mut() = None;
     });
+    if CLIENT.get().is_some() {
+        unsafe {
+            steamworks_sys::SteamAPI_Shutdown();
+        }
+    }
 }
 
 struct LobbyResult {
@@ -330,7 +377,32 @@ pub fn is_present() -> bool {
         || std::env::var("SteamGameId").is_ok()
         || std::env::var("STEAM_RUNTIME").is_ok();
     let in_test = crate::package::try_self_launcher().is_none();
-    launched_via_steam || in_test
+    let configured_app_id = std::env::var("RUZIT_STEAM_APPID")
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(DEFAULT_APP_ID);
+    let is_test_appid = configured_app_id == DEFAULT_APP_ID;
+    launched_via_steam || in_test || is_test_appid
+}
+
+fn maybe_write_steam_appid(app_id: u32) {
+    if app_id != DEFAULT_APP_ID {
+        return;
+    }
+    if std::env::var("SteamAppId").is_ok() || std::env::var("SteamGameId").is_ok() {
+        return;
+    }
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let Some(dir) = exe.parent() else {
+        return;
+    };
+    let path = dir.join("steam_appid.txt");
+    if path.exists() {
+        return;
+    }
+    let _ = std::fs::write(&path, app_id.to_string());
 }
 
 fn steam_lib_alongside_exe() -> bool {
@@ -372,6 +444,7 @@ fn ensure_client() -> mlua::Result<&'static Client> {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(DEFAULT_APP_ID);
+    maybe_write_steam_appid(app_id);
     let (client, single) = Client::init_app(AppId(app_id)).map_err(|e| {
         mlua::Error::RuntimeError(format!(
             "Steam init failed (app id {app_id}): {e}. Is the Steam client running?"
@@ -1188,6 +1261,16 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         "Shutdown",
         lua.create_function(|_, _: ()| -> mlua::Result<()> {
             shutdown_p2p();
+            Ok(())
+        })?,
+    )?;
+    t.set(
+        "InitRelayNetwork",
+        lua.create_function(|_, _: ()| -> mlua::Result<()> {
+            let c = CLIENT
+                .get()
+                .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
+            c.networking_utils().init_relay_network_access();
             Ok(())
         })?,
     )?;
