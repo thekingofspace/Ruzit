@@ -1897,6 +1897,10 @@ declare class SteamLobby
 	ID: string
 	-- The lobby owner's Steam id.
 	Owner: string
+	-- True if the local user owns this lobby.
+	IsOwner: boolean
+	-- True if the lobby has been closed (set by the owner via :Close()).
+	IsClosed: boolean
 	-- Fires with (memberSteamId: string).
 	OnMemberJoined: Signal<string>
 	-- Fires with (memberSteamId: string).
@@ -1904,14 +1908,59 @@ declare class SteamLobby
 	-- Fires with (memberSteamId: string?). Nil when lobby-wide data changed,
 	-- otherwise the id of the member whose per-member data changed.
 	OnDataUpdate: Signal<string?>
+	-- Fires when the LOCAL user is involuntarily removed from the lobby —
+	-- i.e. lost network connection, was kicked, or was banned. Does NOT
+	-- fire when you call :Leave() yourself. Argument is the reason:
+	-- "Disconnected" | "Kicked" | "Banned". After this fires the lobby
+	-- handle is inert; create or join a new lobby to keep playing.
+	OnDisconnected: Signal<SteamDisconnectReason>
+	-- Fires when the lobby has been gracefully closed by the owner via
+	-- :Close(). Fires on every member (including the owner). Use this to
+	-- show "host ended the lobby" UI. After this fires the local user has
+	-- already auto-left and the lobby handle is inert.
+	OnClose: Signal<>
+	-- Fires when the LOCAL user has been kicked by the lobby owner via
+	-- owner:Kick(myId). Argument is the kicker's Steam id (usually the
+	-- lobby owner). Use this to show a "you were kicked" popup. After
+	-- this fires the local user has already auto-left and the lobby
+	-- handle is inert. Does NOT fire if you :Leave() yourself.
+	OnKick: Signal<string>
 	-- Snapshot of every member's Steam id.
 	function Members(self): { string }
 	-- Lobby-wide key/value store. Visible to everyone in the lobby.
+	-- Keys starting with "_ruzit_" are reserved by the engine and will
+	-- raise an error.
 	function SetData(self, key: string, value: string): ()
 	function GetData(self, key: string): string?
+	-- Delete a key from the lobby-wide store. Returns true if it existed.
+	function DeleteData(self, key: string): boolean
+	-- Snapshot of every visible lobby-wide key/value pair (engine-reserved
+	-- "_ruzit_" keys are filtered out).
+	function GetAllData(self): { [string]: string }
+	-- Configured maximum member count, or nil if Steam hasn't pushed the
+	-- value yet (you can also see this in SteamLobbyInfo from List()).
+	function MemberLimit(self): number?
 	-- Broadcast a chat message to every member.
 	function SendChat(self, message: string): ()
-	-- Leave the lobby. The handle goes inert after this.
+	-- Owner-only. Toggle whether other users can join via Lobby.Join.
+	-- Returns true on success.
+	function SetJoinable(self, joinable: boolean): boolean
+	-- Owner-only. Politely close the lobby:
+	--   1. Mark the lobby unjoinable.
+	--   2. Broadcast a "closed" flag every member observes.
+	--   3. Fire OnClose on every member (including the owner).
+	--   4. Auto-leave for every member (including the owner).
+	-- After this, the lobby handle is inert. Use this instead of :Leave()
+	-- when the host wants to end the session for everyone.
+	function Close(self): ()
+	-- Owner-only. Kick a member by Steam id. The targeted member's client
+	-- fires OnKick and auto-leaves. Other members observe the leave via
+	-- OnMemberLeft. Cannot kick yourself — use :Close() or :Leave() instead.
+	function Kick(self, userId: string): ()
+	-- Open Steam's invite-friends overlay for this lobby.
+	function ShowInviteDialog(self): ()
+	-- Leave the lobby. The handle goes inert after this. Use :Close() if
+	-- you're the owner and want every member to leave.
 	function Leave(self): ()
 end
 
@@ -1920,17 +1969,44 @@ declare class SteamServer
 	ID: string
 	-- Fires with (clientSteamId: string) when a client successfully authenticates.
 	OnClientAuthed: Signal<string>
+	-- Fires with (reason: string) when this hosted server's connection to the
+	-- Steam backend is lost. The server is no longer reachable through Steam
+	-- matchmaking until OnConnected fires again.
+	OnDisconnected: Signal<string>
+	-- Fires with no arguments when the hosted server (re)establishes its
+	-- connection to the Steam backend.
+	OnConnected: Signal<>
+	-- Fires with (reason: string, stillRetrying: boolean) when the hosted
+	-- server fails to reach the Steam backend. If stillRetrying is true,
+	-- Steam will keep attempting; otherwise the server has given up.
+	OnConnectFailure: Signal<string, boolean>
+	-- Fires with no arguments when the server is being shut down via :Close()
+	-- or :Stop(). Use this to clean up moderation/scoreboard state.
+	OnClose: Signal<>
 	-- Server-list metadata. Players see this in the in-game / web server browser.
 	function SetServerName(self, name: string): ()
 	function SetMapName(self, map: string): ()
 	function SetMaxPlayers(self, max: number): ()
 	-- Anonymous logon, no game-server-account credentials required.
 	function LogOnAnonymous(self): ()
-	-- Stop and clean up the server. Idempotent.
+	-- Revoke a connected client's auth ticket. The Steam backend will no
+	-- longer regard the user as authenticated; your game's networking
+	-- layer should also drop the underlying socket / NetConnection.
+	function Kick(self, userId: string): ()
+	-- Gracefully shut down the server. Fires OnClose, then tears down the
+	-- Steam server instance. Identical to :Stop(); use whichever name reads
+	-- better in your code. Idempotent.
+	function Close(self): ()
+	-- Stop and clean up the server. Fires OnClose. Idempotent.
 	function Stop(self): ()
 end
 
 export type SteamPersonaState = "Offline" | "Online" | "Busy" | "Away" | "Snooze" | "LookingToTrade" | "LookingToPlay"
+-- Reason the local user was removed from a SteamLobby.
+-- "Disconnected" — network drop / Steam client lost connection.
+-- "Kicked"       — owner removed you.
+-- "Banned"       — owner kicked AND banned you (rejoining will fail).
+export type SteamDisconnectReason = "Disconnected" | "Kicked" | "Banned"
 export type SteamAvatarSize = "small" | "medium" | "large"
 export type SteamLobbyKind = "Public" | "Private" | "FriendsOnly" | "Invisible"
 export type SteamServerMode = "NoAuthentication" | "Authentication" | "AuthenticationAndSecure"
@@ -1978,6 +2054,18 @@ export type Steam_API = {
 	--       Steam.RichPresence.Set(...)
 	--   end
 	SteamPresent: boolean,
+	-- Fires with (reason: string) when the local Steam client loses its
+	-- connection to the Steam backend. Affects EVERY Steam-backed feature
+	-- (lobbies, matchmaking, friends, achievements/stat sync, cloud, etc.)
+	-- — gracefully pause networking until OnConnected fires.
+	OnDisconnected: Signal<string>,
+	-- Fires with no arguments when the local Steam client (re)connects to
+	-- the Steam backend after a disconnect.
+	OnConnected: Signal<>,
+	-- Fires with (reason: string, stillRetrying: boolean) when the Steam
+	-- client fails to reach the backend. If stillRetrying is true, Steam
+	-- will keep attempting; otherwise it has given up.
+	OnConnectFailure: Signal<string, boolean>,
 	-- Local user / friends.
 	User: {
 		-- Local user's steam id.

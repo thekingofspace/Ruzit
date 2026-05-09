@@ -8,7 +8,9 @@ use mlua::{AnyUserData, Lua, MultiValue, Table, UserData, UserDataFields, UserDa
 use steamworks::{
     AppId, ChatMemberStateChange, Client, FriendFlags, FriendState, LobbyChatUpdate,
     LobbyDataUpdate, LobbyId, LobbyType, NotificationPosition, OverlayToStoreFlag,
-    PersonaStateChange, Server, ServerMode, SingleClient, SteamId, ValidateAuthTicketResponse,
+    PersonaStateChange, Server, ServerMode, SingleClient, SteamError, SteamId,
+    SteamServerConnectFailure, SteamServersConnected, SteamServersDisconnected,
+    ValidateAuthTicketResponse,
 };
 
 use crate::libs::signal;
@@ -25,6 +27,7 @@ thread_local! {
 
     static LOBBY_SIGNALS: RefCell<HashMap<u64, LobbySignals>> = RefCell::new(HashMap::new());
     static SERVER_SIGNALS: RefCell<Option<ServerSignals>> = const { RefCell::new(None) };
+    static GLOBAL_SIGNALS: RefCell<Option<GlobalSignals>> = const { RefCell::new(None) };
 
     static PENDING_LOBBY_CREATES: RefCell<Vec<Table>> = RefCell::new(Vec::new());
     static PENDING_LOBBY_JOINS: RefCell<HashMap<u64, Table>> = RefCell::new(HashMap::new());
@@ -37,10 +40,30 @@ struct LobbySignals {
     member_joined: Table,
     member_left: Table,
     data_update: Table,
+    disconnected: Table,
+    closed: Table,
+    kicked: Table,
 }
 
 struct ServerSignals {
     client_authed: Table,
+    disconnected: Table,
+    connected: Table,
+    connect_failure: Table,
+    closed: Table,
+}
+
+const RUZIT_CLOSED_KEY: &str = "_ruzit_closed";
+const RUZIT_KICK_PREFIX: &str = "_ruzit_kick_";
+
+fn lobby_kick_key(user_id: u64) -> String {
+    format!("{RUZIT_KICK_PREFIX}{user_id}")
+}
+
+struct GlobalSignals {
+    disconnected: Table,
+    connected: Table,
+    connect_failure: Table,
 }
 
 #[derive(Default)]
@@ -52,6 +75,16 @@ struct EventQueue {
     lobby_data_update: Vec<LobbyDataUpdate>,
     server_client_authed: Vec<u64>,
     persona_changed: Vec<u64>,
+    client_disconnected: Vec<String>,
+    client_connected: Vec<()>,
+    client_connect_failure: Vec<(String, bool)>,
+    server_disconnected: Vec<String>,
+    server_connected: Vec<()>,
+    server_connect_failure: Vec<(String, bool)>,
+}
+
+fn steam_error_string(err: &SteamError) -> String {
+    format!("{err:?}")
 }
 
 struct LobbyResult {
@@ -153,6 +186,27 @@ fn register_client_callbacks(client: &Client) {
     let _ = client.register_callback(move |upd: PersonaStateChange| {
         q.lock().unwrap().persona_changed.push(upd.steam_id.raw());
     });
+
+    let q = evq.clone();
+    let _ = client.register_callback(move |ev: SteamServersDisconnected| {
+        q.lock()
+            .unwrap()
+            .client_disconnected
+            .push(steam_error_string(&ev.reason));
+    });
+
+    let q = evq.clone();
+    let _ = client.register_callback(move |_ev: SteamServersConnected| {
+        q.lock().unwrap().client_connected.push(());
+    });
+
+    let q = evq.clone();
+    let _ = client.register_callback(move |ev: SteamServerConnectFailure| {
+        q.lock()
+            .unwrap()
+            .client_connect_failure
+            .push((steam_error_string(&ev.reason), ev.still_retrying));
+    });
 }
 
 fn register_server_callbacks(server: &Server) {
@@ -165,6 +219,27 @@ fn register_server_callbacks(server: &Server) {
                 .server_client_authed
                 .push(v.steam_id.raw());
         }
+    });
+
+    let q = evq.clone();
+    let _ = server.register_callback(move |ev: SteamServersDisconnected| {
+        q.lock()
+            .unwrap()
+            .server_disconnected
+            .push(steam_error_string(&ev.reason));
+    });
+
+    let q = evq.clone();
+    let _ = server.register_callback(move |_ev: SteamServersConnected| {
+        q.lock().unwrap().server_connected.push(());
+    });
+
+    let q = evq.clone();
+    let _ = server.register_callback(move |ev: SteamServerConnectFailure| {
+        q.lock()
+            .unwrap()
+            .server_connect_failure
+            .push((steam_error_string(&ev.reason), ev.still_retrying));
     });
 }
 
@@ -258,6 +333,8 @@ fn drain_events(lua: &Lua) -> mlua::Result<()> {
         }
     }
 
+    let local_steam_id = CLIENT.get().map(|c| c.user().steam_id().raw()).unwrap_or(0);
+
     for upd in drained.lobby_chat_update {
         let lobby_raw = upd.lobby.raw();
         let user_raw = upd.user_changed.raw();
@@ -276,6 +353,31 @@ fn drain_events(lua: &Lua) -> mlua::Result<()> {
             args.push_back(Value::String(lua.create_string(&user_raw.to_string())?));
             signal::fire(lua, &sig, args)?;
         }
+
+        let local_disconnect_reason: Option<&'static str> =
+            if user_raw == local_steam_id && local_steam_id != 0 {
+                match upd.member_state_change {
+                    ChatMemberStateChange::Disconnected => Some("Disconnected"),
+                    ChatMemberStateChange::Kicked => Some("Kicked"),
+                    ChatMemberStateChange::Banned => Some("Banned"),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+
+        if let Some(reason) = local_disconnect_reason {
+            let dc_sig = LOBBY_SIGNALS
+                .with(|m| m.borrow().get(&lobby_raw).map(|s| s.disconnected.clone()));
+            if let Some(sig) = dc_sig {
+                let mut args = MultiValue::new();
+                args.push_back(Value::String(lua.create_string(reason)?));
+                signal::fire(lua, &sig, args)?;
+            }
+            LOBBY_SIGNALS.with(|m| {
+                m.borrow_mut().remove(&lobby_raw);
+            });
+        }
     }
 
     for upd in drained.lobby_data_update {
@@ -291,6 +393,50 @@ fn drain_events(lua: &Lua) -> mlua::Result<()> {
                 args.push_back(Value::String(lua.create_string(&member_raw.to_string())?));
             }
             signal::fire(lua, &sig, args)?;
+        }
+
+        if member_raw == lobby_raw {
+            if let Some(c) = CLIENT.get() {
+                let lobby_id = LobbyId::from_raw(lobby_raw);
+                let my_id = c.user().steam_id().raw();
+                let mm = c.matchmaking();
+
+                let i_was_kicked = my_id != 0
+                    && mm.lobby_data(lobby_id, &lobby_kick_key(my_id))
+                        .map(|v| v == "1")
+                        .unwrap_or(false);
+
+                if i_was_kicked {
+                    let kick_sig = LOBBY_SIGNALS
+                        .with(|m| m.borrow().get(&lobby_raw).map(|s| s.kicked.clone()));
+                    if let Some(sig) = kick_sig {
+                        let mut args = MultiValue::new();
+                        args.push_back(Value::String(
+                            lua.create_string(&mm.lobby_owner(lobby_id).raw().to_string())?,
+                        ));
+                        signal::fire(lua, &sig, args)?;
+                    }
+                    mm.leave_lobby(lobby_id);
+                    LOBBY_SIGNALS.with(|m| m.borrow_mut().remove(&lobby_raw));
+                    continue;
+                }
+
+                let lobby_closed = mm
+                    .lobby_data(lobby_id, RUZIT_CLOSED_KEY)
+                    .map(|v| v == "1")
+                    .unwrap_or(false);
+                let i_am_owner = mm.lobby_owner(lobby_id).raw() == my_id;
+
+                if lobby_closed && !i_am_owner {
+                    let close_sig = LOBBY_SIGNALS
+                        .with(|m| m.borrow().get(&lobby_raw).map(|s| s.closed.clone()));
+                    if let Some(sig) = close_sig {
+                        signal::fire(lua, &sig, MultiValue::new())?;
+                    }
+                    mm.leave_lobby(lobby_id);
+                    LOBBY_SIGNALS.with(|m| m.borrow_mut().remove(&lobby_raw));
+                }
+            }
         }
     }
 
@@ -318,6 +464,63 @@ fn drain_events(lua: &Lua) -> mlua::Result<()> {
         }
     }
 
+    for reason in drained.client_disconnected {
+        let sig_opt =
+            GLOBAL_SIGNALS.with(|s| s.borrow().as_ref().map(|s| s.disconnected.clone()));
+        if let Some(sig) = sig_opt {
+            let mut args = MultiValue::new();
+            args.push_back(Value::String(lua.create_string(&reason)?));
+            signal::fire(lua, &sig, args)?;
+        }
+    }
+
+    for _ in drained.client_connected {
+        let sig_opt = GLOBAL_SIGNALS.with(|s| s.borrow().as_ref().map(|s| s.connected.clone()));
+        if let Some(sig) = sig_opt {
+            signal::fire(lua, &sig, MultiValue::new())?;
+        }
+    }
+
+    for (reason, retry) in drained.client_connect_failure {
+        let sig_opt =
+            GLOBAL_SIGNALS.with(|s| s.borrow().as_ref().map(|s| s.connect_failure.clone()));
+        if let Some(sig) = sig_opt {
+            let mut args = MultiValue::new();
+            args.push_back(Value::String(lua.create_string(&reason)?));
+            args.push_back(Value::Boolean(retry));
+            signal::fire(lua, &sig, args)?;
+        }
+    }
+
+    for reason in drained.server_disconnected {
+        let sig_opt =
+            SERVER_SIGNALS.with(|s| s.borrow().as_ref().map(|s| s.disconnected.clone()));
+        if let Some(sig) = sig_opt {
+            let mut args = MultiValue::new();
+            args.push_back(Value::String(lua.create_string(&reason)?));
+            signal::fire(lua, &sig, args)?;
+        }
+    }
+
+    for _ in drained.server_connected {
+        let sig_opt =
+            SERVER_SIGNALS.with(|s| s.borrow().as_ref().map(|s| s.connected.clone()));
+        if let Some(sig) = sig_opt {
+            signal::fire(lua, &sig, MultiValue::new())?;
+        }
+    }
+
+    for (reason, retry) in drained.server_connect_failure {
+        let sig_opt =
+            SERVER_SIGNALS.with(|s| s.borrow().as_ref().map(|s| s.connect_failure.clone()));
+        if let Some(sig) = sig_opt {
+            let mut args = MultiValue::new();
+            args.push_back(Value::String(lua.create_string(&reason)?));
+            args.push_back(Value::Boolean(retry));
+            signal::fire(lua, &sig, args)?;
+        }
+    }
+
     Ok(())
 }
 
@@ -325,6 +528,9 @@ fn make_lobby_userdata(lua: &Lua, raw: u64) -> mlua::Result<AnyUserData> {
     let member_joined = signal::new_instance(lua)?;
     let member_left = signal::new_instance(lua)?;
     let data_update = signal::new_instance(lua)?;
+    let disconnected = signal::new_instance(lua)?;
+    let closed = signal::new_instance(lua)?;
+    let kicked = signal::new_instance(lua)?;
     LOBBY_SIGNALS.with(|m| {
         m.borrow_mut().insert(
             raw,
@@ -332,6 +538,9 @@ fn make_lobby_userdata(lua: &Lua, raw: u64) -> mlua::Result<AnyUserData> {
                 member_joined: member_joined.clone(),
                 member_left: member_left.clone(),
                 data_update: data_update.clone(),
+                disconnected: disconnected.clone(),
+                closed: closed.clone(),
+                kicked: kicked.clone(),
             },
         );
     });
@@ -340,6 +549,9 @@ fn make_lobby_userdata(lua: &Lua, raw: u64) -> mlua::Result<AnyUserData> {
         member_joined,
         member_left,
         data_update,
+        disconnected,
+        closed,
+        kicked,
     };
     lua.create_userdata(lobby)
 }
@@ -349,6 +561,9 @@ pub struct LobbyHandle {
     member_joined: Table,
     member_left: Table,
     data_update: Table,
+    disconnected: Table,
+    closed: Table,
+    kicked: Table,
 }
 
 impl UserData for LobbyHandle {
@@ -366,6 +581,24 @@ impl UserData for LobbyHandle {
         f.add_field_method_get("OnMemberJoined", |_, this| Ok(this.member_joined.clone()));
         f.add_field_method_get("OnMemberLeft", |_, this| Ok(this.member_left.clone()));
         f.add_field_method_get("OnDataUpdate", |_, this| Ok(this.data_update.clone()));
+        f.add_field_method_get("OnDisconnected", |_, this| Ok(this.disconnected.clone()));
+        f.add_field_method_get("OnClose", |_, this| Ok(this.closed.clone()));
+        f.add_field_method_get("OnKick", |_, this| Ok(this.kicked.clone()));
+        f.add_field_method_get("IsOwner", |_, this| {
+            let c = CLIENT
+                .get()
+                .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
+            Ok(c.matchmaking().lobby_owner(LobbyId::from_raw(this.id)) == c.user().steam_id())
+        });
+        f.add_field_method_get("IsClosed", |_, this| {
+            let c = CLIENT
+                .get()
+                .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
+            Ok(c.matchmaking()
+                .lobby_data(LobbyId::from_raw(this.id), RUZIT_CLOSED_KEY)
+                .map(|v| v == "1")
+                .unwrap_or(false))
+        });
     }
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
         m.add_method("Members", |lua, this, _: ()| -> mlua::Result<Table> {
@@ -386,6 +619,11 @@ impl UserData for LobbyHandle {
         m.add_method(
             "SetData",
             |_, this, (key, value): (String, String)| -> mlua::Result<()> {
+                if key.starts_with("_ruzit_") {
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "Lobby:SetData: keys starting with '_ruzit_' are reserved (got {key:?})"
+                    )));
+                }
                 let c = CLIENT
                     .get()
                     .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
@@ -422,6 +660,109 @@ impl UserData for LobbyHandle {
             LOBBY_SIGNALS.with(|m| m.borrow_mut().remove(&this.id));
             Ok(())
         });
+        m.add_method(
+            "SetJoinable",
+            |_, this, joinable: bool| -> mlua::Result<bool> {
+                let c = CLIENT
+                    .get()
+                    .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
+                Ok(c.matchmaking()
+                    .set_lobby_joinable(LobbyId::from_raw(this.id), joinable))
+            },
+        );
+        m.add_method("Close", |lua, this, _: ()| -> mlua::Result<()> {
+            let c = CLIENT
+                .get()
+                .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
+            let lobby_id = LobbyId::from_raw(this.id);
+            if c.matchmaking().lobby_owner(lobby_id) != c.user().steam_id() {
+                return Err(mlua::Error::RuntimeError(
+                    "Lobby:Close: only the lobby owner can close the lobby".into(),
+                ));
+            }
+            c.matchmaking().set_lobby_joinable(lobby_id, false);
+            c.matchmaking()
+                .set_lobby_data(lobby_id, RUZIT_CLOSED_KEY, "1");
+            let close_sig = LOBBY_SIGNALS
+                .with(|m| m.borrow().get(&this.id).map(|s| s.closed.clone()));
+            if let Some(sig) = close_sig {
+                signal::fire(lua, &sig, MultiValue::new())?;
+            }
+            c.matchmaking().leave_lobby(lobby_id);
+            LOBBY_SIGNALS.with(|m| m.borrow_mut().remove(&this.id));
+            Ok(())
+        });
+        m.add_method(
+            "DeleteData",
+            |_, this, key: String| -> mlua::Result<bool> {
+                if key.starts_with("_ruzit_") {
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "Lobby:DeleteData: keys starting with '_ruzit_' are reserved (got {key:?})"
+                    )));
+                }
+                let c = CLIENT
+                    .get()
+                    .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
+                Ok(c.matchmaking()
+                    .delete_lobby_data(LobbyId::from_raw(this.id), &key))
+            },
+        );
+        m.add_method("GetAllData", |lua, this, _: ()| -> mlua::Result<Table> {
+            let c = CLIENT
+                .get()
+                .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
+            let lobby_id = LobbyId::from_raw(this.id);
+            let mm = c.matchmaking();
+            let count = mm.lobby_data_count(lobby_id);
+            let t = lua.create_table()?;
+            for i in 0..count {
+                if let Some((k, v)) = mm.lobby_data_by_index(lobby_id, i) {
+                    if k.starts_with("_ruzit_") {
+                        continue;
+                    }
+                    t.set(k, v)?;
+                }
+            }
+            Ok(t)
+        });
+        m.add_method("MemberLimit", |_, this, _: ()| -> mlua::Result<Option<i64>> {
+            let c = CLIENT
+                .get()
+                .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
+            Ok(c.matchmaking()
+                .lobby_member_limit(LobbyId::from_raw(this.id))
+                .map(|v| v as i64))
+        });
+        m.add_method("ShowInviteDialog", |_, this, _: ()| -> mlua::Result<()> {
+            let c = CLIENT
+                .get()
+                .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
+            c.friends()
+                .activate_invite_dialog(LobbyId::from_raw(this.id));
+            Ok(())
+        });
+        m.add_method("Kick", |_, this, user_id_str: String| -> mlua::Result<()> {
+            let c = CLIENT
+                .get()
+                .ok_or_else(|| mlua::Error::RuntimeError("Steam not initialized".into()))?;
+            let lobby_id = LobbyId::from_raw(this.id);
+            if c.matchmaking().lobby_owner(lobby_id) != c.user().steam_id() {
+                return Err(mlua::Error::RuntimeError(
+                    "Lobby:Kick: only the lobby owner can kick".into(),
+                ));
+            }
+            let user_raw: u64 = user_id_str
+                .parse()
+                .map_err(|e| mlua::Error::RuntimeError(format!("Lobby:Kick: bad id: {e}")))?;
+            if user_raw == c.user().steam_id().raw() {
+                return Err(mlua::Error::RuntimeError(
+                    "Lobby:Kick: can't kick yourself; call :Close() or :Leave() instead".into(),
+                ));
+            }
+            c.matchmaking()
+                .set_lobby_data(lobby_id, &lobby_kick_key(user_raw), "1");
+            Ok(())
+        });
     }
 }
 
@@ -440,6 +781,38 @@ impl UserData for ServerHandle {
                 s.borrow()
                     .as_ref()
                     .map(|sig| sig.client_authed.clone())
+                    .ok_or_else(|| mlua::Error::RuntimeError("Steam server not started".into()))
+            })
+        });
+        f.add_field_method_get("OnDisconnected", |_, _| {
+            SERVER_SIGNALS.with(|s| {
+                s.borrow()
+                    .as_ref()
+                    .map(|sig| sig.disconnected.clone())
+                    .ok_or_else(|| mlua::Error::RuntimeError("Steam server not started".into()))
+            })
+        });
+        f.add_field_method_get("OnConnected", |_, _| {
+            SERVER_SIGNALS.with(|s| {
+                s.borrow()
+                    .as_ref()
+                    .map(|sig| sig.connected.clone())
+                    .ok_or_else(|| mlua::Error::RuntimeError("Steam server not started".into()))
+            })
+        });
+        f.add_field_method_get("OnConnectFailure", |_, _| {
+            SERVER_SIGNALS.with(|s| {
+                s.borrow()
+                    .as_ref()
+                    .map(|sig| sig.connect_failure.clone())
+                    .ok_or_else(|| mlua::Error::RuntimeError("Steam server not started".into()))
+            })
+        });
+        f.add_field_method_get("OnClose", |_, _| {
+            SERVER_SIGNALS.with(|s| {
+                s.borrow()
+                    .as_ref()
+                    .map(|sig| sig.closed.clone())
                     .ok_or_else(|| mlua::Error::RuntimeError("Steam server not started".into()))
             })
         });
@@ -473,9 +846,34 @@ impl UserData for ServerHandle {
             s.log_on_anonymous();
             Ok(())
         });
-        m.add_method("Stop", |_, _, _: ()| -> mlua::Result<()> {
+        m.add_method("Stop", |lua, _, _: ()| -> mlua::Result<()> {
+            let close_sig = SERVER_SIGNALS
+                .with(|s| s.borrow().as_ref().map(|sig| sig.closed.clone()));
+            if let Some(sig) = close_sig {
+                signal::fire(lua, &sig, MultiValue::new())?;
+            }
             SERVER_SINGLE.with(|c| *c.borrow_mut() = None);
             SERVER_SIGNALS.with(|s| *s.borrow_mut() = None);
+            Ok(())
+        });
+        m.add_method("Close", |lua, _, _: ()| -> mlua::Result<()> {
+            let close_sig = SERVER_SIGNALS
+                .with(|s| s.borrow().as_ref().map(|sig| sig.closed.clone()));
+            if let Some(sig) = close_sig {
+                signal::fire(lua, &sig, MultiValue::new())?;
+            }
+            SERVER_SINGLE.with(|c| *c.borrow_mut() = None);
+            SERVER_SIGNALS.with(|s| *s.borrow_mut() = None);
+            Ok(())
+        });
+        m.add_method("Kick", |_, _, user_id_str: String| -> mlua::Result<()> {
+            let s = SERVER
+                .get()
+                .ok_or_else(|| mlua::Error::RuntimeError("Steam server not started".into()))?;
+            let raw: u64 = user_id_str
+                .parse()
+                .map_err(|e| mlua::Error::RuntimeError(format!("Server:Kick: bad id: {e}")))?;
+            s.end_authentication_session(SteamId::from_raw(raw));
             Ok(())
         });
     }
@@ -485,6 +883,20 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     let _ = ensure_client();
 
     let t = lua.create_table()?;
+
+    let on_disconnected = signal::new_instance(lua)?;
+    let on_connected = signal::new_instance(lua)?;
+    let on_connect_failure = signal::new_instance(lua)?;
+    GLOBAL_SIGNALS.with(|s| {
+        *s.borrow_mut() = Some(GlobalSignals {
+            disconnected: on_disconnected.clone(),
+            connected: on_connected.clone(),
+            connect_failure: on_connect_failure.clone(),
+        });
+    });
+    t.set("OnDisconnected", on_disconnected)?;
+    t.set("OnConnected", on_connected)?;
+    t.set("OnConnectFailure", on_connect_failure)?;
 
     t.set("SteamPresent", is_present())?;
     t.set("User", build_user(lua)?)?;
@@ -1741,8 +2153,18 @@ fn build_server(lua: &Lua) -> mlua::Result<Table> {
 
             register_server_callbacks(&server);
             let client_authed = signal::new_instance(lua)?;
+            let disconnected = signal::new_instance(lua)?;
+            let connected = signal::new_instance(lua)?;
+            let connect_failure = signal::new_instance(lua)?;
+            let closed = signal::new_instance(lua)?;
             SERVER_SIGNALS.with(|s| {
-                *s.borrow_mut() = Some(ServerSignals { client_authed });
+                *s.borrow_mut() = Some(ServerSignals {
+                    client_authed,
+                    disconnected,
+                    connected,
+                    connect_failure,
+                    closed,
+                });
             });
 
             let _ = SERVER.set(server);

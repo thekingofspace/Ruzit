@@ -86,6 +86,61 @@
     a clear license trail.
 </div>
 
+<h2 id="connection">Steam.OnDisconnected / OnConnected / OnConnectFailure</h2>
+
+<p>
+    Top-level signals reporting the local Steam client's connection to the
+    Steam backend. Affects <em>every</em> Steam-backed feature — lobbies,
+    matchmaking, friends, achievements/stat sync, cloud, etc. — so this is
+    the right place to globally pause networking when Steam goes offline.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnDisconnected</span><span class="member-type">Signal&lt;string&gt;</span></div>
+        <p class="member-desc">
+            Fires with a reason string when the Steam client loses its
+            connection to the Steam backend (network drop, Steam servers
+            down, etc.). Lobby data and friend lists become stale until
+            <code>OnConnected</code> fires.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnConnected</span><span class="member-type">Signal&lt;&gt;</span></div>
+        <p class="member-desc">
+            Fires (no args) when the Steam client (re)connects. Refresh any
+            cached lobby / friend / matchmaking state on this signal.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnConnectFailure</span><span class="member-type">Signal&lt;string, boolean&gt;</span></div>
+        <p class="member-desc">
+            Fires with <code>(reason, stillRetrying)</code> when Steam fails
+            to reach its backend. If <code>stillRetrying</code> is
+            <code>true</code>, Steam will keep trying; otherwise it has
+            given up and you should surface the error to the user.
+        </p>
+    </div>
+</div>
+
+<p>
+    If you only care about lobby disconnects, hook
+    <code>SteamLobby.OnDisconnected</code> on the specific lobby — it
+    distinguishes <code>"Disconnected"</code> from <code>"Kicked"</code> /
+    <code>"Banned"</code>, and only fires for that lobby.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Steam = <span class="hl-fn">import</span>(<span class="hl-str">"Steam"</span>)
+
+Steam.OnDisconnected:Connect(<span class="hl-kw">function</span>(reason)
+    <span class="hl-cmt">-- Pause matchmaking UI, show "reconnecting…" toast, etc.</span>
+    <span class="hl-fn">print</span>(<span class="hl-str">"Steam offline:"</span>, reason)
+<span class="hl-kw">end</span>)
+
+Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
+    <span class="hl-fn">print</span>(<span class="hl-str">"Steam back online"</span>)
+<span class="hl-kw">end</span>)</code></pre>
+
 <h2 id="user">Steam.User</h2>
 
 <table>
@@ -360,23 +415,119 @@
         </p>
     </div>
     <div class="member">
+        <div class="member-header"><span class="member-name">.OnDisconnected</span><span class="member-type">Signal&lt;SteamDisconnectReason&gt;</span></div>
+        <p class="member-desc">
+            Fires when the LOCAL user is involuntarily removed from the lobby.
+            Reason is one of <code>"Disconnected"</code> (network drop /
+            Steam offline), <code>"Kicked"</code>, or <code>"Banned"</code>.
+            Does NOT fire when you call <code>:Leave()</code> yourself.
+            After this fires the lobby handle is inert.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnClose</span><span class="member-type">Signal&lt;&gt;</span></div>
+        <p class="member-desc">
+            Fires on every member (including the owner) when the lobby is
+            gracefully closed via <code>owner:Close()</code>. Use this to
+            show "host ended the lobby" UI. After it fires the local user
+            has already auto-left and the handle is inert.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnKick</span><span class="member-type">Signal&lt;string&gt;</span></div>
+        <p class="member-desc">
+            Fires only on the kicked member when the lobby owner calls
+            <code>owner:Kick(myId)</code>. Argument is the kicker's Steam
+            id. Use this to show a "you were kicked" popup. After it fires
+            the local user has already auto-left and the handle is inert.
+            Does NOT fire when you call <code>:Leave()</code> yourself.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.IsOwner</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">True if the local user owns this lobby.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.IsClosed</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">True once the lobby has been closed by the owner.</p>
+    </div>
+    <div class="member">
         <div class="member-header"><span class="member-name">lobby:Members()</span><span class="member-type">→ { string }</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Snapshot of every member's Steam id.</p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">lobby:SetData(key, value)</span><span class="tag tag-method">method</span></div>
-        <p class="member-desc">Lobby-wide key/value store. Visible to every member.</p>
+        <p class="member-desc">
+            Lobby-wide key/value store. Visible to every member. Keys
+            beginning with <code>_ruzit_</code> are reserved by the
+            engine and will raise an error.
+        </p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">lobby:GetData(key)</span><span class="member-type">→ string?</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
+        <div class="member-header"><span class="member-name">lobby:DeleteData(key)</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Delete a key from the lobby-wide store. Returns true if the key existed.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">lobby:GetAllData()</span><span class="member-type">→ { [string]: string }</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Full snapshot of every visible lobby-wide key/value pair.
+            Engine-reserved <code>_ruzit_*</code> keys are filtered out.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">lobby:MemberLimit()</span><span class="member-type">→ number?</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Configured maximum member count, or nil if Steam hasn't pushed the value yet.</p>
+    </div>
+    <div class="member">
         <div class="member-header"><span class="member-name">lobby:SendChat(message)</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">lobby:Leave()</span><span class="tag tag-method">method</span></div>
-        <p class="member-desc">Leave the lobby. The handle goes inert after this.</p>
+        <div class="member-header"><span class="member-name">lobby:SetJoinable(joinable)</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span><span class="tag">owner-only</span></div>
+        <p class="member-desc">Owner-only. Toggle whether new players can join via <code>Steam.Lobby.Join</code>.</p>
     </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">lobby:Close()</span><span class="tag tag-method">method</span><span class="tag">owner-only</span></div>
+        <p class="member-desc">
+            Owner-only. Politely shut the lobby down: marks it unjoinable,
+            broadcasts a closed flag, fires <code>OnClose</code> on every
+            member (including the owner), and auto-leaves everyone. Use
+            this instead of <code>:Leave()</code> when the host wants to
+            end the session for everyone.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">lobby:Kick(userId)</span><span class="tag tag-method">method</span><span class="tag">owner-only</span></div>
+        <p class="member-desc">
+            Owner-only. Kick a member by Steam id. The targeted client
+            fires <code>OnKick</code> and auto-leaves. Other members
+            observe the leave via <code>OnMemberLeft</code>. You can't
+            kick yourself — use <code>:Close()</code> or
+            <code>:Leave()</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">lobby:ShowInviteDialog()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Open Steam's invite-friends overlay for this lobby.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">lobby:Leave()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Leave the lobby. The handle goes inert after this. If you're the owner and want everyone to leave, use <code>:Close()</code>.</p>
+    </div>
+</div>
+
+<div class="callout note">
+    <strong>How <code>:Close()</code> and <code>:Kick()</code> work under the hood.</strong>
+    Steam's matchmaking SDK has no native "close lobby" or "kick from lobby"
+    primitive. Ruzit implements both by writing reserved
+    <code>_ruzit_closed</code> and <code>_ruzit_kick_&lt;steamId&gt;</code> keys
+    to the lobby-data store. Every Ruzit client watches those keys and
+    auto-leaves / auto-fires <code>OnClose</code> / <code>OnKick</code>
+    accordingly. Non-Ruzit clients (third-party tools talking directly to
+    Steam matchmaking) won't honor the flags — kicks/closes only work
+    against players running your built game.
 </div>
 
 <h3 id="server-obj">SteamServer</h3>
@@ -395,6 +546,34 @@
         <p class="member-desc">Fires with the client Steam id when a client successfully authenticates.</p>
     </div>
     <div class="member">
+        <div class="member-header"><span class="member-name">.OnDisconnected</span><span class="member-type">Signal&lt;string&gt;</span></div>
+        <p class="member-desc">
+            Fires with a reason string when this hosted server's connection
+            to the Steam backend is lost. The server is no longer reachable
+            through Steam matchmaking until <code>OnConnected</code> fires.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnConnected</span><span class="member-type">Signal&lt;&gt;</span></div>
+        <p class="member-desc">
+            Fires (no args) when the hosted server (re)establishes its
+            connection to the Steam backend.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnConnectFailure</span><span class="member-type">Signal&lt;string, boolean&gt;</span></div>
+        <p class="member-desc">
+            Fires with <code>(reason, stillRetrying)</code> when the
+            hosted server fails to reach the Steam backend. If
+            <code>stillRetrying</code> is <code>true</code>, Steam will
+            keep attempting; otherwise it has given up.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnClose</span><span class="member-type">Signal&lt;&gt;</span></div>
+        <p class="member-desc">Fires when the server is being shut down via <code>:Close()</code> or <code>:Stop()</code>.</p>
+    </div>
+    <div class="member">
         <div class="member-header"><span class="member-name">srv:SetServerName(name)</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
@@ -408,8 +587,23 @@
         <p class="member-desc">Anonymous logon, no game-server-account credentials required.</p>
     </div>
     <div class="member">
+        <div class="member-header"><span class="member-name">srv:Kick(userId)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Revoke a connected client's auth ticket
+            (<code>EndAuthSession</code> on the Steam SDK side). The
+            backend will no longer regard them as authenticated. Your
+            game's networking layer should also drop the underlying
+            socket / NetConnection — Steam's gameserver API only handles
+            authentication, not transport.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">srv:Close()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Gracefully shut the server down. Fires <code>OnClose</code>, then tears down the Steam server instance. Identical to <code>:Stop()</code>; pick whichever name reads better. Idempotent.</p>
+    </div>
+    <div class="member">
         <div class="member-header"><span class="member-name">srv:Stop()</span><span class="tag tag-method">method</span></div>
-        <p class="member-desc">Stop and clean up. Idempotent.</p>
+        <p class="member-desc">Stop and clean up. Fires <code>OnClose</code>. Idempotent.</p>
     </div>
 </div>
 
