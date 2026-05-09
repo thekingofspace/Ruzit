@@ -245,11 +245,11 @@ ruzit fetch-deps .</code></pre>
 ruzit refresh-types
 
 <span class="hl-com"># pin to a tagged version of the types</span>
-RUZIT_TYPES_URL=https://raw.githubusercontent.com/thekingofspace/Ruzit/v3.8.0/types.d.luau \
+RUZIT_TYPES_URL=https://raw.githubusercontent.com/thekingofspace/Ruzit/v3.9.0/types.d.luau \
 ruzit refresh-types
 
 <span class="hl-com"># or point at your own fork / mirror</span>
-RUZIT_TYPES_URL=https://example.com/types/v3.8.0.luau \
+RUZIT_TYPES_URL=https://example.com/types/v3.9.0.luau \
 ruzit refresh-types</code></pre>
 
 <div class="callout note">
@@ -279,11 +279,11 @@ ruzit refresh-types</code></pre>
 ruzit update
 
 <span class="hl-com"># Or pin to a specific tagged version:</span>
-RUZIT_RELEASE_BASE=https://github.com/thekingofspace/Ruzit/releases/download/v3.8.0
+RUZIT_RELEASE_BASE=https://github.com/thekingofspace/Ruzit/releases/download/v3.9.0
 ruzit update
 
 <span class="hl-com"># Or point at your own fork / mirror:</span>
-RUZIT_RELEASE_BASE=https://example.com/ruzit/v3.8.0
+RUZIT_RELEASE_BASE=https://example.com/ruzit/v3.9.0
 ruzit update</code></pre>
 
 <p>
@@ -338,8 +338,8 @@ ruzit update</code></pre>
             <td>
                 Reads the version from
                 <code>runtime/Cargo.toml</code> (e.g.
-                <code>3.8.0</code>), builds the binaries, force-tags
-                the current commit as <code>v3.8.0</code>, and
+                <code>3.9.0</code>), builds the binaries, force-tags
+                the current commit as <code>v3.9.0</code>, and
                 publishes a normal release marked
                 <code>--latest</code> on GitHub. Both
                 <code>ruzit-windows.zip</code> and
@@ -368,11 +368,11 @@ ruzit update</code></pre>
 </p>
 
 <p>
-    To cut a new version: bump <code>version = "3.8.0"</code> →
-    <code>"3.9.0"</code> in
+    To cut a new version: bump <code>version = "3.9.0"</code> →
+    <code>"3.10.0"</code> in
     <code>Ruzit/runtime/Cargo.toml</code> (and the matching
     <code>core</code> + <code>cli</code> Cargo.tomls), commit, push.
-    The workflow tags + releases <code>v3.9.0</code> automatically.
+    The workflow tags + releases <code>v3.10.0</code> automatically.
 </p>
 
 <p>
