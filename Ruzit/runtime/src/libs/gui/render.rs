@@ -45,8 +45,8 @@ fn pick_present_mode(
         ]
     } else {
         &[
-            wgpu::PresentMode::Mailbox,
             wgpu::PresentMode::Immediate,
+            wgpu::PresentMode::Mailbox,
             wgpu::PresentMode::FifoRelaxed,
             wgpu::PresentMode::Fifo,
         ]
@@ -280,6 +280,9 @@ pub struct GpuState {
     image_textures: HashMap<u64, wgpu::TextureView>,
     live_textures: HashMap<u64, LiveTextureSlot>,
 
+    last_parts_version: u64,
+    last_instance_count: usize,
+
     fullscreen_vs: wgpu::ShaderModule,
 
     skybox_pipelines: HashMap<u64, wgpu::RenderPipeline>,
@@ -414,12 +417,17 @@ impl GpuState {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or_else(|| caps.formats[0]);
+        let chosen_present = pick_present_mode(&caps.present_modes, vsync_preference());
+        eprintln!(
+            "[Ruzit] swapchain present_mode = {:?}  (available: {:?})",
+            chosen_present, caps.present_modes
+        );
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
             width: size.width.clamp(1, max_dim),
             height: size.height.clamp(1, max_dim),
-            present_mode: pick_present_mode(&caps.present_modes, vsync_preference()),
+            present_mode: chosen_present,
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
@@ -673,6 +681,8 @@ impl GpuState {
             white_view,
             image_textures: HashMap::new(),
             live_textures: HashMap::new(),
+            last_parts_version: 0,
+            last_instance_count: 0,
             fullscreen_vs,
             skybox_pipelines: HashMap::new(),
             post_pipelines: HashMap::new(),
@@ -1191,7 +1201,8 @@ impl GpuState {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let parts = renderable::snapshot();
+        let parts_arc = renderable::snapshot();
+        let parts: &[renderable::PartRender] = parts_arc.as_slice();
         let skybox = super::skybox_snapshot();
         let post_effect = super::post_effect_snapshot();
 
@@ -1214,7 +1225,7 @@ impl GpuState {
                 self.ensure_image(img);
             }
         }
-        for part in &parts {
+        for part in parts {
             if let Some(sh) = &part.active_shader {
                 self.ensure_pipeline_3d(sh.id, &sh.wgsl);
             }
@@ -1306,7 +1317,11 @@ impl GpuState {
         self.queue
             .write_buffer(&self.frame_uniform, 0, bytemuck::bytes_of(&frame));
 
-        if !parts.is_empty() {
+        let parts_version = renderable::parts_version();
+        let parts_dirty = parts_version != self.last_parts_version
+            || parts.len() != self.last_instance_count;
+        let any_animated_shader = parts.iter().any(|p| p.active_shader.is_some());
+        if !parts.is_empty() && (parts_dirty || any_animated_shader) {
             let stride = self.instance_stride as usize;
             let inst_size = std::mem::size_of::<r3d::InstanceUniform3D>();
             let total = parts.len() * stride;
@@ -1349,6 +1364,8 @@ impl GpuState {
             }
             self.queue.write_buffer(&self.instance_buffer, 0, &staging);
         }
+        self.last_parts_version = parts_version;
+        self.last_instance_count = parts.len();
 
         let bind_groups_2d: Vec<wgpu::BindGroup> = items
             .iter()
@@ -1387,7 +1404,7 @@ impl GpuState {
         let active_storage = crate::libs::gpu::current_storage();
 
         let inst_bind_size = NonZeroU64::new(std::mem::size_of::<r3d::InstanceUniform3D>() as u64);
-        for part in &parts {
+        for part in parts {
             let key = part.texture.as_ref().map(|t| t.id).unwrap_or(0);
             if self.bind_group_3d_cache.contains_key(&key) {
                 continue;

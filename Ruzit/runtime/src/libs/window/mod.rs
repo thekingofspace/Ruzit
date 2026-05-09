@@ -305,7 +305,7 @@ impl WindowApp {
         let items = gui::snapshot();
         let t = self.start.elapsed().as_secs_f32();
 
-        gpu.render(&items, t, [0.0, 0.0, 0.0]);
+        gpu.render(items.as_slice(), t, [0.0, 0.0, 0.0]);
     }
 }
 

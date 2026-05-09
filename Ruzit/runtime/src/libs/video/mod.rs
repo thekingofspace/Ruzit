@@ -476,6 +476,7 @@ pub fn tick(dt_ms: f64) {
                 version: 0,
                 live: None,
             });
+            crate::libs::renderable::bump_parts_dirty();
         }
     });
 }

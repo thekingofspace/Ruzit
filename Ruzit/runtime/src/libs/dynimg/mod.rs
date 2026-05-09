@@ -229,7 +229,14 @@ pub fn tick() {
 
         let buffer_arc = state_arc.lock().unwrap().buffer.clone();
         let mut buffer = buffer_arc.lock().unwrap_or_else(|e| e.into_inner());
-        let mut bytes = vec![0u8; (width as usize) * (height as usize) * 4];
+        let needed = (width as usize) * (height as usize) * 4;
+        if buffer.bytes.len() != needed {
+            buffer.bytes = vec![0u8; needed];
+        } else {
+            for byte in buffer.bytes.iter_mut() {
+                *byte = 0;
+            }
+        }
 
         for layer in &layers {
             if layer.w <= 0 || layer.h <= 0 {
@@ -270,10 +277,10 @@ pub fn tick() {
                     let tint_g = layer.color[1] * (sg as f32 / 255.0);
                     let tint_b = layer.color[2] * (sb as f32 / 255.0);
                     let off = ((py as u32 * width + px as u32) * 4) as usize;
-                    let dr = bytes[off] as f32 / 255.0;
-                    let dg = bytes[off + 1] as f32 / 255.0;
-                    let db = bytes[off + 2] as f32 / 255.0;
-                    let da = bytes[off + 3] as f32 / 255.0;
+                    let dr = buffer.bytes[off] as f32 / 255.0;
+                    let dg = buffer.bytes[off + 1] as f32 / 255.0;
+                    let db = buffer.bytes[off + 2] as f32 / 255.0;
+                    let da = buffer.bytes[off + 3] as f32 / 255.0;
                     let out_a = src_a_norm + da * (1.0 - src_a_norm);
                     let out_r =
                         (tint_r * src_a_norm + dr * da * (1.0 - src_a_norm)) / out_a.max(1e-6);
@@ -281,15 +288,14 @@ pub fn tick() {
                         (tint_g * src_a_norm + dg * da * (1.0 - src_a_norm)) / out_a.max(1e-6);
                     let out_b =
                         (tint_b * src_a_norm + db * da * (1.0 - src_a_norm)) / out_a.max(1e-6);
-                    bytes[off] = (out_r.clamp(0.0, 1.0) * 255.0) as u8;
-                    bytes[off + 1] = (out_g.clamp(0.0, 1.0) * 255.0) as u8;
-                    bytes[off + 2] = (out_b.clamp(0.0, 1.0) * 255.0) as u8;
-                    bytes[off + 3] = (out_a.clamp(0.0, 1.0) * 255.0) as u8;
+                    buffer.bytes[off] = (out_r.clamp(0.0, 1.0) * 255.0) as u8;
+                    buffer.bytes[off + 1] = (out_g.clamp(0.0, 1.0) * 255.0) as u8;
+                    buffer.bytes[off + 2] = (out_b.clamp(0.0, 1.0) * 255.0) as u8;
+                    buffer.bytes[off + 3] = (out_a.clamp(0.0, 1.0) * 255.0) as u8;
                 }
             }
         }
 
-        buffer.bytes = bytes;
         buffer.version = buffer.version.wrapping_add(1);
     }
 }

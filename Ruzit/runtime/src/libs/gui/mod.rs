@@ -176,7 +176,33 @@ fn purge_primitives_matching(lua: &Lua, mut pred: impl FnMut(&PrimitiveState) ->
     }
 }
 
-pub fn snapshot() -> Vec<RenderItem> {
+thread_local! {
+    static SNAPSHOT_CACHE: RefCell<(u64, Arc<Vec<RenderItem>>)> =
+        RefCell::new((0, Arc::new(Vec::new())));
+}
+
+pub fn snapshot() -> Arc<Vec<RenderItem>> {
+    let version = current_version();
+    let cached_match = SNAPSHOT_CACHE.with(|cell| {
+        let cache = cell.borrow();
+        if cache.0 == version {
+            Some(cache.1.clone())
+        } else {
+            None
+        }
+    });
+    if let Some(items) = cached_match {
+        return items;
+    }
+    let items = build_snapshot();
+    let arc = Arc::new(items);
+    SNAPSHOT_CACHE.with(|cell| {
+        *cell.borrow_mut() = (version, arc.clone());
+    });
+    arc
+}
+
+fn build_snapshot() -> Vec<RenderItem> {
     REGISTRY.with(|cell| {
         let mut reg = cell.borrow_mut();
         reg.retain(|p| p.lock().unwrap().alive);
@@ -357,6 +383,7 @@ impl GuiPrimitive {
             dyn_img_owner: None,
         }));
         REGISTRY.with(|cell| cell.borrow_mut().push(state.clone()));
+        bump_dirty();
         Ok(Self { state })
     }
 
@@ -372,9 +399,20 @@ impl GuiPrimitive {
 }
 
 fn fire_changed(lua: &Lua, signal_table: Table, prop: &str) -> mlua::Result<()> {
+    bump_dirty();
     let mut args = MultiValue::new();
     args.push_back(Value::String(lua.create_string(prop)?));
     signal::fire(lua, &signal_table, args)
+}
+
+static GUI_VERSION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+pub fn bump_dirty() {
+    GUI_VERSION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn current_version() -> u64 {
+    GUI_VERSION.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 fn build_attached(asset: &AnyUserData) -> mlua::Result<AttachedShader> {

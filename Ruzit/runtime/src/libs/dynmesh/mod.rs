@@ -440,6 +440,15 @@ pub fn tick() {
         reg.iter().cloned().collect()
     });
 
+    if snapshot.is_empty() {
+        return;
+    }
+    let any_active_welds = snapshot.iter().any(|s| !s.lock().unwrap().welds.is_empty());
+    if !any_active_welds {
+        return;
+    }
+    crate::libs::renderable::bump_parts_dirty();
+
     for state_arc in snapshot {
         {
             let mut s = state_arc.lock().unwrap();

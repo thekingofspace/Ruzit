@@ -105,6 +105,8 @@ pub struct DistortionBoxState {
     pub initial_size: Vector,
     pub current_cf: CFrame,
     pub current_size: Vector,
+    pub last_applied_cf: Option<CFrame>,
+    pub last_applied_size: Option<Vector>,
     pub captured: Vec<(usize, [f32; 3])>,
 }
 
@@ -228,6 +230,21 @@ pub fn tick_distortion_boxes() {
             let bs = boxes[0].lock().unwrap();
             bs.target.clone()
         };
+
+        let any_dirty = boxes.iter().any(|b| {
+            let bs = b.lock().unwrap();
+            match (bs.last_applied_cf, bs.last_applied_size) {
+                (Some(prev_cf), Some(prev_size)) => {
+                    !cframe_close(prev_cf, bs.current_cf)
+                        || !vector_close(prev_size, bs.current_size)
+                }
+                _ => true,
+            }
+        });
+        if !any_dirty {
+            continue;
+        }
+
         let mut p = target.lock().unwrap();
         let Some(base_model) = p.model.clone() else {
             continue;
@@ -238,7 +255,7 @@ pub fn tick_distortion_boxes() {
         };
         let mut any_change = false;
         for box_arc in &boxes {
-            let bs = box_arc.lock().unwrap();
+            let mut bs = box_arc.lock().unwrap();
             let cf = bs.current_cf;
             let size = bs.current_size;
             let rot = euler_to_matrix_local(cf.rotation);
@@ -255,6 +272,8 @@ pub fn tick_distortion_boxes() {
                 ];
                 any_change = true;
             }
+            bs.last_applied_cf = Some(cf);
+            bs.last_applied_size = Some(size);
         }
         if any_change {
             mesh::recompute_normals(&mut working, &base_model.indices);
@@ -264,8 +283,24 @@ pub fn tick_distortion_boxes() {
                 indices: base_model.indices.clone(),
             });
             p.deform_version = p.deform_version.wrapping_add(1);
+            bump_parts_dirty();
         }
     }
+}
+
+fn cframe_close(a: CFrame, b: CFrame) -> bool {
+    let eps = 1e-5_f32;
+    (a.position.x - b.position.x).abs() < eps
+        && (a.position.y - b.position.y).abs() < eps
+        && (a.position.z - b.position.z).abs() < eps
+        && (a.rotation.x - b.rotation.x).abs() < eps
+        && (a.rotation.y - b.rotation.y).abs() < eps
+        && (a.rotation.z - b.rotation.z).abs() < eps
+}
+
+fn vector_close(a: Vector, b: Vector) -> bool {
+    let eps = 1e-5_f32;
+    (a.x - b.x).abs() < eps && (a.y - b.y).abs() < eps && (a.z - b.z).abs() < eps
 }
 
 #[derive(Clone, Copy)]
@@ -384,6 +419,7 @@ pub fn camera_snapshot() -> CameraState {
 
 pub fn set_camera_cframe(cf: CFrame) {
     CAMERA.with(|c| c.borrow_mut().cframe = cf);
+    bump_camera_dirty();
 }
 
 pub struct PartRender {
@@ -398,7 +434,33 @@ pub struct PartRender {
     pub receive_shadow: bool,
 }
 
-pub fn snapshot() -> Vec<PartRender> {
+thread_local! {
+    static PARTS_SNAPSHOT_CACHE: RefCell<(u64, Arc<Vec<PartRender>>)> =
+        RefCell::new((0, Arc::new(Vec::new())));
+}
+
+pub fn snapshot() -> Arc<Vec<PartRender>> {
+    let version = parts_version();
+    let cached_match = PARTS_SNAPSHOT_CACHE.with(|cell| {
+        let cache = cell.borrow();
+        if cache.0 == version {
+            Some(cache.1.clone())
+        } else {
+            None
+        }
+    });
+    if let Some(items) = cached_match {
+        return items;
+    }
+    let items = build_parts_snapshot();
+    let arc = Arc::new(items);
+    PARTS_SNAPSHOT_CACHE.with(|cell| {
+        *cell.borrow_mut() = (version, arc.clone());
+    });
+    arc
+}
+
+fn build_parts_snapshot() -> Vec<PartRender> {
     PARTS.with(|cell| {
         let mut reg = cell.borrow_mut();
         reg.retain(|p| p.lock().unwrap().alive);
@@ -467,6 +529,7 @@ impl PartHandle {
             source_animations,
         }));
         PARTS.with(|cell| cell.borrow_mut().push(state.clone()));
+        bump_parts_dirty();
         Ok(Self { state })
     }
 
@@ -481,9 +544,38 @@ impl PartHandle {
 }
 
 fn fire_changed(lua: &Lua, signal_table: Table, prop: &str) -> mlua::Result<()> {
+    bump_parts_dirty();
     let mut args = MultiValue::new();
     args.push_back(Value::String(lua.create_string(prop)?));
     signal::fire(lua, &signal_table, args)
+}
+
+static PARTS_VERSION: AtomicU64 = AtomicU64::new(1);
+static CAMERA_VERSION: AtomicU64 = AtomicU64::new(1);
+static LIGHTING_VERSION: AtomicU64 = AtomicU64::new(1);
+
+pub fn bump_parts_dirty() {
+    PARTS_VERSION.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn parts_version() -> u64 {
+    PARTS_VERSION.load(Ordering::Relaxed)
+}
+
+pub fn bump_camera_dirty() {
+    CAMERA_VERSION.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn camera_version() -> u64 {
+    CAMERA_VERSION.load(Ordering::Relaxed)
+}
+
+pub fn bump_lighting_dirty() {
+    LIGHTING_VERSION.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn lighting_version() -> u64 {
+    LIGHTING_VERSION.load(Ordering::Relaxed)
 }
 
 type LocalMat3 = [[f32; 3]; 3];
@@ -1277,6 +1369,13 @@ pub fn tick_animations(lua: &Lua, dt: f32) {
         return;
     }
     let parts = list_part_states();
+    let any_tracks = parts
+        .iter()
+        .any(|p| !p.lock().unwrap().tracks.is_empty());
+    if !any_tracks {
+        return;
+    }
+    bump_parts_dirty();
     for part_arc in parts {
         let snapshot = {
             let p = part_arc.lock().unwrap();
@@ -1389,21 +1488,25 @@ impl UserData for CameraHandle {
                 .borrow::<CFrame>()
                 .map_err(|_| mlua::Error::RuntimeError("CFrame expects a CFrame".into()))?;
             CAMERA.with(|c| c.borrow_mut().cframe = cf);
+            bump_camera_dirty();
             Ok(())
         });
         f.add_field_method_get("FOV", |_, _| Ok(CAMERA.with(|c| c.borrow().fov_deg)));
         f.add_field_method_set("FOV", |_, _, value: f32| {
             CAMERA.with(|c| c.borrow_mut().fov_deg = value.clamp(1.0, 179.0));
+            bump_camera_dirty();
             Ok(())
         });
         f.add_field_method_get("Near", |_, _| Ok(CAMERA.with(|c| c.borrow().near)));
         f.add_field_method_set("Near", |_, _, value: f32| {
             CAMERA.with(|c| c.borrow_mut().near = value.max(0.001));
+            bump_camera_dirty();
             Ok(())
         });
         f.add_field_method_get("Far", |_, _| Ok(CAMERA.with(|c| c.borrow().far)));
         f.add_field_method_set("Far", |_, _, value: f32| {
             CAMERA.with(|c| c.borrow_mut().far = value.max(0.01));
+            bump_camera_dirty();
             Ok(())
         });
     }
@@ -1493,6 +1596,8 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                     initial_size: size,
                     current_cf: cf,
                     current_size: size,
+                    last_applied_cf: None,
+                    last_applied_size: None,
                     captured,
                 }));
                 DISTORTION_BOXES.with(|c| c.borrow_mut().push(state.clone()));
@@ -1546,6 +1651,7 @@ animations: ma.animations.clone(),
                         s.sun_color = c;
                     }
                 });
+                bump_lighting_dirty();
                 Ok(())
             },
         )?,
@@ -1555,6 +1661,7 @@ animations: ma.animations.clone(),
         lua.create_function(|_, color: AnyUserData| -> mlua::Result<()> {
             let c = *color.borrow::<Color3>()?;
             LIGHTING.with(|cell| cell.borrow_mut().sun_color = c);
+            bump_lighting_dirty();
             Ok(())
         })?,
     )?;
@@ -1563,6 +1670,7 @@ animations: ma.animations.clone(),
         lua.create_function(|_, color: AnyUserData| -> mlua::Result<()> {
             let c = *color.borrow::<Color3>()?;
             LIGHTING.with(|cell| cell.borrow_mut().ambient = c);
+            bump_lighting_dirty();
             Ok(())
         })?,
     )?;
