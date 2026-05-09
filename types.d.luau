@@ -631,6 +631,14 @@ export type Asset_API = {
 	-- Use this to free a level's content between scenes when you want
 	-- the next GetAsset to genuinely re-decrypt + re-decompress from disk.
 	Drop: (entry: string) -> (),
+
+	-- Load a video plus its companion audio in one call. Returns
+	-- (Video, SoundData?), the second value is nil for sources that
+	-- don't carry audio (animated GIFs). Pass the SoundData to
+	-- SFX.LoadSound if you want it to play. Supported formats:
+	--   .gif        animated GIF (no audio)
+	--   .ruzitvid   Ruzit's bundled-video format (frames + audio)
+	GetVideo: (path: string) -> (Video, SoundData?),
 }
 
 -- =============================================================================
@@ -1156,6 +1164,16 @@ declare class BasePart
 	-- those.
 	function ResetDeformation(self): ()
 
+	-- ── Local <-> world helpers ──────────────────────────────────────────
+	-- Convert an offset in the part's local space to a world-space
+	-- position. `Vector.new(0, 3, 0)` returns the world point 3 units
+	-- "above" the part (along its rotated local Y axis), accounting for
+	-- the part's CFrame.
+	function LocalToWorld(self, local_offset: Vector): Vector
+	-- Inverse of LocalToWorld. Convert a world-space position into the
+	-- part's local frame.
+	function WorldToLocal(self, world: Vector): Vector
+
 	-- ── Animation tracks ─────────────────────────────────────────────────
 	-- Get (or create) an AnimationTrack scoped to this part. If the source
 	-- ModelAsset is an FBX with a matching AnimationStack, the track's
@@ -1192,6 +1210,14 @@ declare class AnimationTrack
 	TimePosition: number
 	IsPlaying: boolean
 	IsPaused: boolean
+	-- Fires when :Play() is called and the track starts feeding samples.
+	Played: Signal<>
+	-- Fires when the track stops, either naturally at the end (when
+	-- Looped is false) or because :Stop was called.
+	Stopped: Signal<>
+	-- Fires every time a looped track wraps from end to start (only
+	-- fires when Looped is true).
+	DidLoop: Signal<>
 
 	function Play(self): ()
 	function Pause(self): ()
@@ -1200,6 +1226,11 @@ declare class AnimationTrack
 	function Reset(self): ()
 	function AddKeyframe(self, time: number, kind: "CFrame" | "Deform", ...: any): ()
 	function ClearKeyframes(self): ()
+	-- Returns a Signal that fires every `interval` track-time seconds with
+	-- the elapsed playback time. Useful for syncing footstep sound effects,
+	-- particle bursts, or gameplay events to specific moments in an
+	-- animation. Mirrors Sound:LinkToUpdate.
+	function LinkToUpdate(self, interval: number): Signal<number>
 end
 
 declare class Camera
@@ -1647,6 +1678,16 @@ export type SteamFriendInfo = {
 }
 
 export type Steam_API = {
+	-- True if the Steam SDK is loadable AND we were either launched
+	-- through Steam (SteamAppId / SteamGameId in env) OR are running in
+	-- a test environment (`ruzit-cli test`). False in any other case
+	-- — DLL missing, run via the launcher EXE outside Steam, etc.
+	-- Reading is free; gate every Steam API behind this flag so the
+	-- game still runs cleanly when Steam isn't available:
+	--   if Steam.SteamPresent then
+	--       Steam.RichPresence.Set(...)
+	--   end
+	SteamPresent: boolean,
 	-- Local user / friends.
 	User: {
 		-- Local user's steam id.
@@ -2226,6 +2267,36 @@ export type GPU_API = {
 	-- Unbind the active storage buffer. SDATA reverts to a 1-float stub
 	-- so shaders that don't reference it keep working.
 	ClearBuffer: () -> (),
+	-- Returns one or more world-space AABBs covering a BasePart. `quality`
+	-- controls how many boxes you get back:
+	--   1 (default): a single box that encloses the entire part. Cheapest;
+	--                works for any shape (cube, sphere, model, deformed,
+	--                animated). Always accurate for cubes/spheres.
+	--   2+        : split a model's vertices into N bins along the longest
+	--                axis and return a tight AABB per bin. Useful for tighter
+	--                collision approximations on long thin meshes (a sword,
+	--                a fence, a tunnel). Cubes / spheres always return one
+	--                box regardless of quality.
+	-- Each entry is { Position = Vector (center), Size = Vector (extents),
+	-- Min = Vector, Max = Vector }. Honors deformations and current
+	-- animation state, so the returned AABBs follow the live mesh.
+	-- Cap or uncap the heart-loop tick rate. Pass nil (or 0) to remove
+	-- the cap and run as fast as the system allows; pass a positive
+	-- number to throttle to that frames-per-second target. Default
+	-- (no call) is 60 FPS. The cap is applied by sleeping at the end
+	-- of each tick if the frame finished early, so it has no effect
+	-- on a system that can't keep up. Cheap to call repeatedly,
+	-- atomic store, can be flipped from a settings menu live.
+	SetMaxFrameRate: (fps: number?) -> (),
+	-- Read the current cap. Returns nil when uncapped.
+	GetMaxFrameRate: () -> number?,
+	GetBounds: (part: BasePart, quality: number?) -> { { Position: Vector, Size: Vector, Min: Vector, Max: Vector } },
+	-- Returns every renderable BasePart whose bounds (computed at the
+	-- given quality) overlap the AABB centered at `center` with extents
+	-- `size`. Same quality semantics as GetBounds. Skips parts with
+	-- Render = false. Honors deformed / animated meshes and DynMesh
+	-- offsets.
+	CheckArea: (center: Vector, size: Vector, quality: number?) -> { BasePart },
 }
 
 declare class GPUBuffer
@@ -2378,6 +2449,213 @@ export type Actor_API = {
 -- returns the SAME table for the same name across the entire Lua state.
 -- =============================================================================
 
+-- =============================================================================
+-- Debug, in-test profiler. Flag-based timings, frame-drop monitoring,
+-- live memory and CPU readouts. Methods are silent no-ops in a built game,
+-- so profiling code can stay in your scripts without affecting shipped
+-- performance. Background sampler runs on its own thread; the main loop
+-- never waits on sysinfo refreshes.
+-- =============================================================================
+
+declare class DebugFlag
+	-- Snapshot baseline metrics (time, memory, frame-drop count). Pair
+	-- with :End to get a delta report.
+	function Begin(self): ()
+	-- Read the delta since :Begin and return a report:
+	--   { name, ms, mem_delta_mb, cpu_pct, frame_drops, gpu_avg_ms }
+	-- Also prints a one-line summary to stdout. Errors if :Begin wasn't
+	-- called first.
+	function End(self): { name: string, ms: number, mem_delta_mb: number, cpu_pct: number, frame_drops: number, gpu_avg_ms: number }
+	-- The most recent { last_ms, last_mem_delta_mb, last_frame_drops }
+	-- from this flag. Empty until the first :End.
+	function Last(self): { [string]: number }
+	-- The flag's name as passed to Debug.Flag.
+	function Name(self): string
+end
+
+export type Debug_API = {
+	-- True under `Ruzit Test`, false in a built game. All other methods
+	-- are no-ops when this is false, so leaving Debug calls in shipped
+	-- code is safe.
+	IsTest: boolean,
+	-- Allocate a named flag for measuring a span. Repeated Begin / End
+	-- pairs on the same flag work fine and overwrite Last(). Naming the
+	-- flag makes it easy to grep the log.
+	Flag: (name: string) -> DebugFlag,
+	-- Process resident memory in bytes / megabytes (latest sample).
+	Memory: () -> number,
+	MemoryMB: () -> number,
+	-- Process CPU usage as a percentage (0..100 * cpu_count). Latest
+	-- sample, refreshed every ~500 ms by the sampler thread.
+	CpuPercent: () -> number,
+	-- Total number of frames the heart loop has flagged as drops since
+	-- process start (frame time exceeded the threshold).
+	FrameDrops: () -> number,
+	-- Largest single-frame time in milliseconds since the last
+	-- ResetPeak. Useful for spike hunting.
+	PeakFrameMs: () -> number,
+	ResetPeak: () -> (),
+	-- Set the threshold (in milliseconds) above which a heart tick
+	-- counts as a frame drop. Default is 25 (≈ a missed 60 Hz tick).
+	SetFrameDropThreshold: (ms: number) -> (),
+	-- Subscribe to frame-drop events. Returns a Signal that fires once
+	-- per dropped frame with the frame time in milliseconds. If
+	-- threshold_ms is omitted, fires on any frame above the global
+	-- SetFrameDropThreshold value.
+	MonitorFrameDrops: (threshold_ms: number?) -> Signal<number>,
+	-- Average milliseconds spent in the GPU queue submit since the last
+	-- ResetGpuStats. Cheap proxy for GPU pressure (true GPU utilization
+	-- needs platform-specific APIs). 0 until at least one frame submits.
+	GpuSubmitAvgMs: () -> number,
+	ResetGpuStats: () -> (),
+}
+
+-- =============================================================================
+-- DynMesh, a runtime "skeleton" wrapped around a base BasePart. Weld extra
+-- parts to fixed local-space points, to specific vertices on the source
+-- mesh (vertex follows live deformation / animation), or stretch a part
+-- between multiple anchors. Useful for character attachments (swords,
+-- helmets, capes, glow effects) and for skin-style customization where
+-- pieces snap onto a shared base mesh.
+-- =============================================================================
+
+declare class DynMesh
+	-- Weld a BasePart to this mesh. Returns a numeric weld id you can
+	-- pass to :GetPart / :Detach later. The opts table accepts:
+	--   kind     = "Static" | "Attach" | "Joint", default "Static"
+	--                "Static" / "Attach" — rigid follow. The welded
+	--                  part's CFrame is fully driven by the base each
+	--                  tick. Animations on the welded part are
+	--                  overwritten. Use for hats, stickers, props
+	--                  pinned to a fixed local-space point.
+	--                "Joint" — hierarchical follow. The welded part
+	--                  is dragged along by the base's per-tick motion
+	--                  but keeps its own pose on top, so animation
+	--                  tracks playing on the welded part keep working
+	--                  as a "local pose" relative to the welded
+	--                  position. Use this when a child part has its
+	--                  own FBX animation (upper / lower body, jointed
+	--                  limbs, etc.).
+	--   point    = Vector                 -- offset in base part's
+	--                                        local space
+	--   rotation = Vector                 -- additional Euler offset
+	--   vertex   = number                 -- live-tracked vertex index
+	--                                        on the base mesh; mutually
+	--                                        exclusive with point/rotation
+	--   name     = string                 -- optional label for
+	--                                        :GetPartByName / :DetachByName
+	-- Welding the same target multiple times is allowed; the last
+	-- weld processed in a given tick wins for that target's pose.
+	function Weld(self, target: BasePart, opts: { kind: ("Static" | "Attach" | "Joint")?, point: Vector?, rotation: Vector?, vertex: number?, name: string? }?): number
+	-- Stretch a target part between two or more anchor points. Each
+	-- anchor is { point = Vector } or { vertex = number }. The target
+	-- part is repositioned at the midpoint and its X-axis Size is set
+	-- to the distance between the first and last anchor, so a thin
+	-- cube becomes a "string" or "tendon" between the anchors.
+	function Stretch(self, target: BasePart, anchors: { { point: Vector?, vertex: number? } }): number
+	-- Remove a weld by id. The welded BasePart stays alive in the
+	-- scene at its last computed pose, it just stops being driven by
+	-- this DynMesh. Stretch welds restore the target's original X
+	-- size; Joint welds release their parent-follow state. The
+	-- target's animation tracks (if any) keep running and now own
+	-- the part's CFrame uncontested. Returns true if a weld with that
+	-- id existed.
+	function Detach(self, weld_id: number): boolean
+	-- Same as Detach but matches by the optional `name` passed at
+	-- weld time. Removes ALL welds with that name (a Lua chain like
+	-- `:Weld({ name = "extra" })` twice produces two welds with the
+	-- same name; both come off in one call). Returns true if any
+	-- welds were removed.
+	function DetachByName(self, name: string): boolean
+	-- Same as Detach but matches by the BasePart userdata directly.
+	-- Useful when you have the part in hand but don't remember its
+	-- weld id.
+	function DetachPart(self, target: BasePart): boolean
+	-- Detach every weld at once. Returns the number removed. Equivalent
+	-- to looping over GetParts and calling DetachPart on each, but
+	-- O(welds) and atomic. Useful when changing skin/customization
+	-- presets, swap the welds rather than rebuilding the rig.
+	function Clear(self): number
+	-- Return the BasePart welded under `weld_id`, or nil if no such
+	-- weld exists. The BasePart is the one you originally passed to
+	-- :Weld / :Stretch, you get the same userdata back.
+	function GetPart(self, weld_id: number): BasePart?
+	-- Look up a welded part by the `name` you passed at weld time.
+	-- Returns nil if no weld with that name exists. Useful for
+	-- character rigs where you want to grab "left_arm" or "helmet"
+	-- without remembering the numeric id.
+	function GetPartByName(self, name: string): BasePart?
+	-- All current welds as { { Id = number, Name = string?, Part = BasePart }, ... }.
+	function GetParts(self): { { Id: number, Name: string?, Part: BasePart } }
+	-- Return the underlying base BasePart this DynMesh is anchored to.
+	function GetBase(self): BasePart
+	-- True if both the DynMesh and its base part are still alive.
+	-- Goes false automatically if the base BasePart is destroyed
+	-- (e.g. via Asset.Drop on the base mesh's ModelAsset), so you
+	-- can poll this to detect that the rig has been torn down out
+	-- from under you.
+	function IsAlive(self): boolean
+	-- Stop running the per-tick weld update for this DynMesh. The
+	-- welded parts stay alive and where they were last placed, they
+	-- just stop following the base part. Asset.Drop on the base
+	-- mesh's ModelAsset implicitly does this.
+	function Destroy(self): ()
+end
+
+export type DynMesh_API = {
+	-- Create a DynMesh anchored to an existing BasePart. Welds and
+	-- stretches added to the returned handle update once per heart tick
+	-- relative to the base part's pose.
+	new: (base: BasePart) -> DynMesh,
+}
+
+-- =============================================================================
+-- Video, animated frames + optional audio companion. Asset.GetVideo
+-- returns BOTH a Video and a SoundData (the audio side, nil for sources
+-- that don't carry audio). Hand the SoundData to SFX.LoadSound to play
+-- it; the Video drives texture updates on welded BaseParts.
+--
+-- Supported formats:
+--   .gif        Animated GIF, no audio (companion is nil).
+--   .ruzitvid   Custom container, raw RGBA frames + uniform delay +
+--                inline audio bytes. Use a tool to author this from a
+--                source video; the engine doesn't ship with an encoder.
+-- =============================================================================
+
+declare class Video
+	-- Whether the video advances back to frame 0 when it reaches the
+	-- end. Toggle live; setting false mid-play lets the current frame
+	-- run out then stops.
+	Looped: boolean
+	-- The frame index currently being shown. Read at any time; writing
+	-- seeks the playhead immediately.
+	CurrentFrame: number
+
+	function Width(self): number
+	function Height(self): number
+	function FrameCount(self): number
+	function FrameDelayMs(self): number
+	-- Total length in seconds (FrameCount * FrameDelayMs / 1000).
+	function Length(self): number
+	function Source(self): string
+
+	function Play(self): ()
+	function Pause(self): ()
+	function Stop(self): ()
+	-- Build an ImageAsset of the current frame. Cached, repeated calls
+	-- in the same frame return the same cheap ImageAsset.
+	function CurrentImage(self): ImageAsset
+	-- Bind a BasePart so its Texture auto-updates each frame the video
+	-- advances. The engine swaps the part's Texture with fresh frame
+	-- pixels on every video tick. Each BasePart can only be linked to
+	-- one Video at a time, calling LinkPart again with a different
+	-- video transparently re-routes the binding.
+	function LinkPart(self, part: BasePart): ()
+	-- Stop driving texture updates on the part; its current Texture
+	-- value is left as the last frame that was uploaded.
+	function UnlinkPart(self, part: BasePart): ()
+end
+
 export type Register_API = {
 	-- Get (or create) the named register. First call with a given name
 	-- creates a fresh empty table; every subsequent call with the same
@@ -2399,6 +2677,8 @@ export type Register_API = {
 export type Imports = {
 	Actor: Actor_API,
 	Asset: Asset_API,
+	Debug: Debug_API,
+	DynMesh: DynMesh_API,
 	Gamepad: Gamepad_API,
 	GPU: GPU_API,
 	GUI: GUI_API,

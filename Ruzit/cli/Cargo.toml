@@ -1,0 +1,16 @@
+[package]
+name = "ruzit-cli"
+version = "3.7.0"
+edition = "2024"
+
+[[bin]]
+name = "ruzit"
+path = "src/main.rs"
+
+[dependencies]
+ruzit-core = { path = "../core" }
+serde_json = "1"
+toml = "0.8"
+base64 = "0.22"
+ureq = { version = "2", default-features = false, features = ["tls", "gzip"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }

@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Process - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=3.3">
-    <script src="theme.js?v=3.3"></script>
+    <link rel="stylesheet" href="style.css?v=3.7">
+    <script src="theme.js?v=3.7"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=3.3" defer></script>
+<script src="sidebar.js?v=3.7" defer></script>
 
 <main>
 
@@ -58,7 +58,7 @@
         <p class="member-desc">
             True when running from a built game launcher
             (<code>.exe</code> + <code>Managed/</code>); false under
-            <code>Ruzit Test</code>. Gate dev-only debug overlays etc.
+            <code>ruzit test</code>. Gate dev-only debug overlays etc.
             behind this (or behind <code>InTest</code>, which is exactly
             the inverse).
         </p>
@@ -67,7 +67,7 @@
         <div class="member-header"><span class="member-name">.InTest</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
         <p class="member-desc">
             Inverse of <code>IsBuilt</code>, true while running
-            via <code>Ruzit Test</code>. Reads naturally for guards like
+            via <code>ruzit test</code>. Reads naturally for guards like
             <code>if Process.InTest then ... end</code>.
         </p>
     </div>

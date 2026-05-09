@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynMesh - Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css?v=3.7">
+    <script src="theme.js?v=3.7"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=3.7" defer></script>
+
+<main>
+
+<h1>DynMesh</h1>
+<p class="lede">
+    Runtime "skeleton" wrapped around a base BasePart. Weld extra parts
+    to fixed local-space points, to specific vertices on the source
+    mesh (vertex follows live deformation / animation), or stretch a
+    part between multiple anchors. Built for character attachments
+    (swords, helmets, capes) and for skin-style customization where
+    pieces snap onto a shared base mesh.
+</p>
+
+<pre><code><span class="hl-kw">local</span> DynMesh = <span class="hl-fn">import</span>(<span class="hl-str">"DynMesh"</span>)
+<span class="hl-kw">local</span> Renderable = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
+<span class="hl-kw">local</span> Asset = <span class="hl-fn">import</span>(<span class="hl-str">"Asset"</span>)
+<span class="hl-kw">local</span> Vector = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Vector
+
+<span class="hl-kw">local</span> body = Renderable.BaseModel(Asset.GetAsset(<span class="hl-str">"Model"</span>, <span class="hl-str">"chars.hero_body"</span>))
+<span class="hl-kw">local</span> dm = DynMesh.new(body)
+
+<span class="hl-com">-- Hat: rigid attach. Sits on the head, no animation of its own.</span>
+<span class="hl-kw">local</span> hat = Renderable.BaseModel(Asset.GetAsset(<span class="hl-str">"Model"</span>, <span class="hl-str">"gear.tophat"</span>))
+dm:Weld(hat, {
+    kind = <span class="hl-str">"Attach"</span>,
+    point = Vector.new(<span class="hl-num">0</span>, <span class="hl-num">1.7</span>, <span class="hl-num">0</span>),
+    name = <span class="hl-str">"hat"</span>,
+})
+
+<span class="hl-com">-- Upper body: hierarchical Joint, plays its own breathing animation</span>
+<span class="hl-com">-- on top of whatever the lower body is doing.</span>
+<span class="hl-kw">local</span> upper = Renderable.BaseModel(Asset.GetAsset(<span class="hl-str">"Model"</span>, <span class="hl-str">"chars.hero_torso"</span>))
+dm:Weld(upper, {
+    kind = <span class="hl-str">"Joint"</span>,
+    point = Vector.new(<span class="hl-num">0</span>, <span class="hl-num">1.0</span>, <span class="hl-num">0</span>),
+    name = <span class="hl-str">"torso"</span>,
+})
+upper:GetTrack(<span class="hl-str">"breathing"</span>):Play()  <span class="hl-com">-- runs in torso's local frame</span>
+
+<span class="hl-com">-- Cape stretched between two vertices on the body mesh.</span>
+<span class="hl-kw">local</span> cape = Renderable.BasePart(<span class="hl-str">"Cube"</span>)
+dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span class="hl-num">312</span> } })
+
+<span class="hl-com">-- Look up by name later.</span>
+<span class="hl-kw">local</span> got = dm:GetPartByName(<span class="hl-str">"torso"</span>)</code></pre>
+
+<h2 id="api">DynMesh API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">DynMesh.new(base)</span>
+            <span class="member-type">→ DynMesh</span>
+        </div>
+        <p class="member-desc">
+            Wrap a BasePart as a DynMesh. Welds added to the
+            returned handle update once per heart tick relative to
+            the base part's pose.
+        </p>
+    </div>
+</div>
+
+<h2 id="dynmesh">DynMesh</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">dm:Weld(target, opts?)</span>
+            <span class="member-type">→ number (weld id)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Weld a BasePart to this mesh. Returns the weld id for
+            <code>:GetPart</code> / <code>:Detach</code>. Options:
+            <ul>
+                <li><code>kind = "Static" | "Attach" | "Joint"</code>,
+                    default <code>"Static"</code>:
+                    <ul>
+                        <li><strong>Static / Attach</strong> — rigid
+                            follow. The welded part's CFrame is fully
+                            driven by the base each tick. Animations
+                            on the welded part are overwritten. Use
+                            for hats, stickers, props pinned to a
+                            fixed local-space point.</li>
+                        <li><strong>Joint</strong> — hierarchical
+                            follow. The welded part is dragged along
+                            by the base's per-tick motion but keeps
+                            its own pose on top, so animation tracks
+                            playing on the welded part keep working as
+                            a "local pose" relative to the welded
+                            position. Use this when a child part has
+                            its own FBX animation (upper / lower body,
+                            jointed limbs, etc.).</li>
+                    </ul>
+                </li>
+                <li><code>point = Vector</code>, fixed offset in
+                    base part's local space.</li>
+                <li><code>rotation = Vector</code>, additional Euler
+                    rotation offset (only applied on the snap
+                    tick for <code>Joint</code>).</li>
+                <li><code>vertex = number</code>, a vertex index on
+                    the base mesh; the welded part follows that
+                    vertex live (deform / animation aware). Mutually
+                    exclusive with <code>point</code> /
+                    <code>rotation</code>.</li>
+                <li><code>name = string</code>, optional label for
+                    <code>:GetPartByName</code> /
+                    <code>:DetachByName</code>.</li>
+            </ul>
+            Calling without opts welds rigidly at the base part's
+            origin.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">dm:Stretch(target, anchors)</span>
+            <span class="member-type">→ number</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Stretch <code>target</code> between two or more anchor
+            points. Each anchor is
+            <code>{ point = Vector }</code> or
+            <code>{ vertex = number }</code>. The target part is
+            repositioned at the midpoint of the first and last
+            anchor and its X-axis Size is set to the distance
+            between them, so a thin cube becomes a tendon-like span.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">dm:Detach(weld_id)</span>
+            <span class="member-type">→ boolean</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Remove a weld by id. <strong>The welded BasePart is not
+            destroyed</strong> — it stays alive in the scene at its
+            last computed pose and just stops being driven by this
+            DynMesh. Stretch welds restore the target's original X
+            Size on detach; Joint welds release their parent-follow
+            state. Animation tracks running on the welded part keep
+            playing and now own the cframe uncontested.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">dm:DetachByName(name)</span>
+            <span class="member-type">→ boolean</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Same as Detach but matches by the optional <code>name</code>
+            passed at weld time. Removes every weld with that name in
+            one call.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">dm:DetachPart(target)</span>
+            <span class="member-type">→ boolean</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Same as Detach but matches by the BasePart userdata
+            directly, useful when you have the part in hand but don't
+            remember its weld id.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">dm:Clear()</span>
+            <span class="member-type">→ number</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Detach every weld at once. Returns the number removed.
+            Useful for skin / customization preset swaps, drop the
+            current welds and re-Weld the new pieces rather than
+            rebuilding the whole rig.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">dm:GetPart(weld_id)</span>
+            <span class="member-type">→ BasePart?</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Return the BasePart welded under <code>weld_id</code>,
+            or nil if no such weld exists. Same userdata you
+            originally passed to <code>:Weld</code> /
+            <code>:Stretch</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">dm:GetPartByName(name)</span>
+            <span class="member-type">→ BasePart?</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Look up a welded part by the <code>name</code> you
+            passed at weld time. Useful for character rigs where
+            you want to grab <code>"left_arm"</code> or
+            <code>"helmet"</code> without remembering the numeric
+            id.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">dm:GetParts()</span>
+            <span class="member-type">→ {{ Id, Name?, Part }}</span>
+            <span class="tag tag-method">method</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">dm:GetBase()</span>
+            <span class="member-type">→ BasePart</span>
+            <span class="tag tag-method">method</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">dm:IsAlive()</span>
+            <span class="member-type">→ boolean</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            True if both the DynMesh and its base part are still
+            alive. Goes false automatically when the base BasePart
+            is destroyed (e.g. via <code>Asset.Drop</code> on the
+            base mesh's ModelAsset). Useful for tearing down rig
+            state when content is unloaded under you.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">dm:Destroy()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Stop running the per-tick weld update. Welded parts
+            stay alive and where they were last placed, they just
+            stop following the base part. <code>Asset.Drop</code>
+            on the base mesh's ModelAsset implicitly does this
+            (and pruning kicks in on the next tick).
+        </p>
+    </div>
+</div>
+
+<div class="callout warn">
+    <strong>Drop awareness.</strong>
+    <code>Asset.Drop</code> destroys the BaseParts using a content
+    asset (Image / Model / Font / Sound). DynMesh notices on the
+    next tick: dead welds are pruned automatically, and a DynMesh
+    whose base BasePart died is marked dead and stops ticking. You
+    don't need to manually clean up welds when their underlying
+    asset is dropped.
+</div>
+
+<div class="callout note">
+    <strong>Vertex anchors are live.</strong>
+    A <code>vertex</code> anchor reads the live world position of
+    that vertex each tick, so it tracks deformation, animation, and
+    explicit <code>part.CFrame</code> moves. Make sure the index is
+    in range, out-of-range indices fall back to the base part's
+    origin.
+</div>
+
+</main>
+
+</body>
+</html>

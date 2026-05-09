@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ruzit, Luau-scripted 2D + 3D game engine</title>
-    <link rel="stylesheet" href="style.css?v=3.3">
-    <script src="theme.js?v=3.3"></script>
+    <link rel="stylesheet" href="style.css?v=3.7">
+    <script src="theme.js?v=3.7"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=3.3" defer></script>
+<script src="sidebar.js?v=3.7" defer></script>
 
 <main>
 
@@ -22,7 +22,7 @@
             A Luau-scripted 2D and 3D game engine written in Rust,
             similar in spirit to LÖVE / love2d, but with Luau, a Roblox
             style API, real wgpu rendering, and a single
-            <code>Ruzit Build</code> command that bundles your project
+            <code>ruzit build</code> command that bundles your project
             into a self-contained launcher.
         </p>
         <div class="cta-row">
@@ -92,7 +92,7 @@
     <div class="feature">
         <h3>One-command shipping</h3>
         <p>
-            <code>Ruzit Build</code> packages scripts, assets, and a
+            <code>ruzit build</code> packages scripts, assets, and a
             launcher into a single executable. Cross-platform launchers
             on Windows / Linux / macOS.
         </p>
@@ -126,76 +126,132 @@
 
 <p>Scaffold a new project and run it in three commands:</p>
 
-<pre><code><span class="hl-com"># Drop the Ruzit binary somewhere on your PATH, then:</span>
-Ruzit Init MyGame
+<pre><code><span class="hl-com"># Drop the ruzit + ruzitrun binaries side-by-side somewhere on your PATH, then:</span>
+ruzit init MyGame
 cd MyGame
-Ruzit Test</code></pre>
+ruzit test</code></pre>
 
 <p>
-    <code>Ruzit Init</code> writes a starter project to the named folder
-    (<code>build.toml</code>, <code>Main.luau</code>,
-    <code>types.d.luau</code>, an empty <code>assets/</code>). The
-    scaffolded <code>Main.luau</code> opens a window, draws a cube, and
-    exits when you close the window, you replace it with your game.
+    <code>ruzit init</code> writes a starter project to the named folder
+    (<code>build.toml</code>, <code>Main.luau</code>, an empty
+    <code>assets/</code>) and fetches a fresh
+    <code>types.d.luau</code> from the master repo so autocomplete
+    is always current. The scaffolded <code>Main.luau</code> opens a
+    window, draws a cube, and exits on close — replace it with your
+    game.
 </p>
 
-<h3>The five commands</h3>
+<h3>The two binaries</h3>
+
+<p>
+    Ruzit ships as a Cargo workspace producing two distinct
+    binaries that you install side-by-side:
+</p>
+
+<table>
+    <thead><tr><th>Binary</th><th>Role</th></tr></thead>
+    <tbody>
+        <tr>
+            <td><code>ruzit</code></td>
+            <td>Dev tool. Tiny binary (~3.5 MB) that handles
+                scaffolding (<code>init</code> /
+                <code>initpackage</code>), running tests
+                (<code>test</code> spawns the runtime), packaging
+                (<code>build</code> / <code>package</code>), and
+                tooling (<code>fetch-deps</code>,
+                <code>refresh-types</code>,
+                <code>self-update</code>). Doesn't link the engine.</td>
+        </tr>
+        <tr>
+            <td><code>ruzitrun</code></td>
+            <td>The runtime engine. Big binary (~22 MB) with
+                wgpu, mlua, all the libraries. Doubles as the
+                launcher template that
+                <code>ruzit build</code> appends a project trailer
+                to when shipping. Normally not invoked directly.</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>See <a href="cli.html">CLI</a> for the full command reference.</p>
+
+<h3>The seven commands</h3>
 
 <div class="member-list">
     <div class="member">
         <div class="member-header">
-            <span class="member-name">Ruzit Init [path]</span>
+            <span class="member-name">ruzit init [path]</span>
         </div>
         <p class="member-desc">
             Scaffold a new project. Path defaults to the current
-            directory. Re-running keeps your edits but always
-            regenerates <code>types.d.luau</code> so autocomplete
-            stays current with whichever Ruzit version you're on.
+            directory. Fetches the latest <code>types.d.luau</code>
+            from <code>master</code> so autocomplete tracks the
+            running engine.
         </p>
     </div>
     <div class="member">
         <div class="member-header">
-            <span class="member-name">Ruzit InitPackage [path]</span>
+            <span class="member-name">ruzit initpackage [path]</span>
         </div>
         <p class="member-desc">
             Scaffold a Managed package folder
-            (<code>ManagedInfo.toml</code> + <code>init.luau</code>) you
-            can drop next to a project as a DLC.
+            (<code>ManagedInfo.toml</code> + <code>init.luau</code>)
+            you can drop next to a project as a DLC.
         </p>
     </div>
     <div class="member">
         <div class="member-header">
-            <span class="member-name">Ruzit Test [path]</span>
+            <span class="member-name">ruzit test [path]</span>
         </div>
         <p class="member-desc">
-            Run a project from source. No packaging, no encryption,
-            edits hit the next <code>Test</code> immediately. The default
-            entry is <code>Main.luau</code>; pass a path for a different
-            file.
+            Run a project from source. The CLI spawns
+            <code>ruzitrun --run &lt;path&gt;</code> as a subprocess
+            so the engine starts in dev mode (no packaging, no
+            encryption, edits hit the next <code>test</code>).
         </p>
     </div>
     <div class="member">
         <div class="member-header">
-            <span class="member-name">Ruzit Build [path] [-o out]</span>
+            <span class="member-name">ruzit build [path] [-o out]</span>
         </div>
         <p class="member-desc">
             Produce <code>Generated/&lt;exe&gt;</code> +
-            <code>Generated/Managed/*.managed</code>. The launcher is a
-            copy of the running Ruzit binary with the metadata appended
-            as a trailer; ship the whole <code>Generated/</code> folder
-            to players.
+            <code>Generated/Managed/*.managed</code>. The launcher is
+            a copy of the <code>ruzitrun</code> binary with the
+            metadata appended as a trailer; ship the whole
+            <code>Generated/</code> folder to players.
         </p>
     </div>
     <div class="member">
         <div class="member-header">
-            <span class="member-name">Ruzit Package [folder] [-o out]</span>
+            <span class="member-name">ruzit package [folder] [-o out]</span>
         </div>
         <p class="member-desc">
             Package a single Managed folder into
             <code>&lt;id&gt;.scripts.managed</code> +
             <code>&lt;id&gt;.assets.managed</code>. Used to publish
-            standalone Workshop / mod packages a player can drop into a
-            game's <code>Packages/</code> folder.
+            standalone Workshop / mod packages.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ruzit fetch-deps / refresh-types</span>
+        </div>
+        <p class="member-desc">
+            Pull the Steam SDK redistributable
+            (<code>fetch-deps</code>) or re-download
+            <code>types.d.luau</code> (<code>refresh-types</code>)
+            from configured URLs. See <a href="cli.html">CLI</a>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ruzit self-update</span>
+        </div>
+        <p class="member-desc">
+            Refresh the local <code>ruzit</code> +
+            <code>ruzitrun</code> binaries from the configured
+            release host. Defaults to the project's GitHub Releases.
         </p>
     </div>
 </div>

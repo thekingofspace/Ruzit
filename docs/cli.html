@@ -4,34 +4,54 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CLI - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=3.3">
-    <script src="theme.js?v=3.3"></script>
+    <link rel="stylesheet" href="style.css?v=3.7">
+    <script src="theme.js?v=3.7"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=3.3" defer></script>
+<script src="sidebar.js?v=3.7" defer></script>
 
 <main>
 
 <h1>Command Line</h1>
 <p class="lede">
-    The Ruzit binary is a single executable that does everything: scaffold,
-    run, and ship. Drop it on your <code>PATH</code> and you have the full
-    engine.
+    Ruzit ships as a Cargo workspace with two binaries:
+    <code>ruzit</code> (the dev tool for scaffolding, testing,
+    building, and packaging) and <code>ruzitrun</code> (the runtime /
+    launcher template — runs games, serves as the EXE shipped games
+    are cut from). Drop both on your <code>PATH</code>; the CLI calls
+    the runtime as a library for <code>test</code> and copies the
+    <code>ruzitrun</code> binary as a template for <code>build</code>.
 </p>
 
-<pre><code>Ruzit Init        [path]        scaffold a new project
-Ruzit InitPackage [path]        scaffold a Managed package folder
-Ruzit Test        [path]        run a Luau file
-Ruzit Build       [path] [-o]   produce Generated/&lt;exe&gt; + Generated/Managed/*.managed
-Ruzit Package     [folder] [-o] produce &lt;id&gt;.scripts.managed + &lt;id&gt;.assets.managed
-                  --console     attach a console window (for windowed launchers)
-                  --help        print this help</code></pre>
+<pre><code>ruzit init           [path]        scaffold a new project
+ruzit initpackage    [path]        scaffold a Managed package folder
+ruzit test           [path]        run a Luau file
+ruzit build          [path] [-o]   produce Generated/&lt;exe&gt; + Generated/Managed/*.managed
+ruzit package        [folder] [-o] produce &lt;id&gt;.scripts.managed + &lt;id&gt;.assets.managed
+ruzit fetch-deps     [path]        download steam_api into the given dir (default: cwd)
+ruzit refresh-types  [path]        re-download types.d.luau into the given dir (default: cwd)
+ruzit self-update    [path]        refresh ruzit + ruzitrun from the configured release base
+                     --help        print this help
 
-<h2 id="init">Ruzit Init</h2>
+ruzitrun                              embedded launcher; runs the bundled .managed
+                                      game when called with the appended trailer
+ruzitrun --run &lt;path&gt;                 run a project from disk directly
+ruzitrun --console                    attach/allocate a console for windowed launchers</code></pre>
 
-<div class="sig">Ruzit Init [path]</div>
+<div class="callout note">
+    <strong>The runtime is no longer self-dispatching.</strong>
+    Earlier versions accepted <code>ruzit init / Test / Build</code>
+    on the same binary. Those subcommands now live exclusively on
+    the <code>ruzit</code> CLI. The <code>ruzitrun</code> binary
+    handles only the running side: launcher mode (with appended
+    trailer) or a direct <code>--run &lt;path&gt;</code> invocation.
+</div>
+
+<h2 id="init">ruzit init</h2>
+
+<div class="sig">ruzit init [path]</div>
 
 <p>
     Creates a new project at <code>path</code> (current directory if omitted).
@@ -57,9 +77,9 @@ Ruzit Package     [folder] [-o] produce &lt;id&gt;.scripts.managed + &lt;id&gt;.
     your autocomplete tracks whichever Ruzit version you're on.
 </div>
 
-<h2 id="initpackage">Ruzit InitPackage</h2>
+<h2 id="initpackage">ruzit initpackage</h2>
 
-<div class="sig">Ruzit InitPackage [path]</div>
+<div class="sig">ruzit initpackage [path]</div>
 
 <p>
     Scaffolds a Managed package folder, the unit of distribution for
@@ -73,13 +93,13 @@ Ruzit Package     [folder] [-o] produce &lt;id&gt;.scripts.managed + &lt;id&gt;.
 
 <p>
     Drop the folder next to your project's <code>build.toml</code> and
-    <code>Ruzit Build</code> will pick it up as a DLC. See
+    <code>ruzit build</code> will pick it up as a DLC. See
     <a href="packages.html">Packages &amp; DLC</a> for the full lifecycle.
 </p>
 
-<h2 id="test">Ruzit Test</h2>
+<h2 id="test">ruzit test</h2>
 
-<div class="sig">Ruzit Test [path]</div>
+<div class="sig">ruzit test [path]</div>
 
 <p>
     Runs a project from source. No packaging, no encryption, the
@@ -93,9 +113,9 @@ Ruzit Package     [folder] [-o] produce &lt;id&gt;.scripts.managed + &lt;id&gt;.
     folders. Pass an explicit path to override:
 </p>
 
-<pre><code>Ruzit Test                       <span class="hl-com"># auto-find Main.luau</span>
-Ruzit Test ./MyGame              <span class="hl-com"># project dir → MyGame/Main.luau</span>
-Ruzit Test ./MyGame/scenes/level1.luau</code></pre>
+<pre><code>ruzit test                       <span class="hl-com"># auto-find Main.luau</span>
+ruzit test ./MyGame              <span class="hl-com"># project dir → MyGame/Main.luau</span>
+ruzit test ./MyGame/scenes/level1.luau</code></pre>
 
 <p>
     Any DLC folders adjacent to the project (folders containing
@@ -103,16 +123,16 @@ Ruzit Test ./MyGame/scenes/level1.luau</code></pre>
     packaged build.
 </p>
 
-<h2 id="build">Ruzit Build</h2>
+<h2 id="build">ruzit build</h2>
 
-<div class="sig">Ruzit Build [path] [-o output] [--console]</div>
+<div class="sig">ruzit build [path] [-o output] [--console]</div>
 
 <p>
     Packages a project for shipping. Output layout:
 </p>
 
 <pre><code>Generated/
-    MyGame.exe                          <span class="hl-com"># launcher (Ruzit binary + JSON trailer)</span>
+    MyGame.exe                          <span class="hl-com"># launcher (ruzitrun binary + JSON trailer)</span>
     steam_api64.dll                     <span class="hl-com"># Steam redistributable (Windows)</span>
     Managed/
         MyGame.scripts.managed          <span class="hl-com"># encrypted .luau bundle</span>
@@ -149,16 +169,16 @@ Ruzit Test ./MyGame/scenes/level1.luau</code></pre>
 
 <div class="callout warn">
     <strong>Per-platform launchers.</strong>
-    <code>Ruzit Build</code> always produces a launcher for the OS Ruzit
+    <code>ruzit build</code> always produces a launcher for the OS Ruzit
     is running on, it's a copy of the running binary plus a JSON
     trailer. To ship Windows + Linux + macOS, build Ruzit on each OS (or
-    use the GitHub Actions matrix), then run <code>Ruzit Build</code> on
+    use the GitHub Actions matrix), then run <code>ruzit build</code> on
     each.
 </div>
 
-<h2 id="package">Ruzit Package</h2>
+<h2 id="package">ruzit package</h2>
 
-<div class="sig">Ruzit Package [folder] [-o output]</div>
+<div class="sig">ruzit package [folder] [-o output]</div>
 
 <p>
     Packages a single Managed folder into <code>.scripts.managed</code> +
@@ -167,13 +187,173 @@ Ruzit Test ./MyGame/scenes/level1.luau</code></pre>
 </p>
 
 <pre><code>cd MyMod
-Ruzit Package                  <span class="hl-com"># → MyMod/Generated/Managed/&lt;id&gt;.scripts.managed</span>
-Ruzit Package . -o ../release  <span class="hl-com"># custom output dir</span></code></pre>
+ruzit package                  <span class="hl-com"># → MyMod/Generated/Managed/&lt;id&gt;.scripts.managed</span>
+ruzit package . -o ../release  <span class="hl-com"># custom output dir</span></code></pre>
 
 <p>
     Players install your package by copying the <code>.managed</code> files
     into a host game's <code>Packages/</code> folder. The host game's
     runtime mounts them as <code>require("@your-id/...")</code>.
+</p>
+
+<h2 id="fetch-deps">ruzit fetch-deps</h2>
+
+<div class="sig">ruzit fetch-deps [path]</div>
+
+<p>
+    Download the Steam SDK redistributable
+    (<code>steam_api64.dll</code> on Windows,
+    <code>libsteam_api.so</code> on Linux,
+    <code>libsteam_api.dylib</code> on macOS) into the given directory
+    (current directory if omitted). The Steamworks SDK is not bundled
+    with Ruzit, you obtain it from
+    <a href="https://partner.steamgames.com/" target="_blank" rel="noopener">partner.steamgames.com</a>,
+    host the redist binary somewhere reachable, and point the CLI at
+    it via:
+</p>
+
+<pre><code>RUZIT_STEAMSDK_URL=https://your.host/path/steam_api64.dll
+ruzit fetch-deps .</code></pre>
+
+<p>
+    Without the env var set, the command exits with an explanation
+    rather than guessing a URL. Drop the resulting file alongside
+    your <code>ruzit</code> binary (or your shipped game's
+    launcher EXE), Ruzit only loads Steam when it sees the redist
+    file next to the executable AND either runs through Steam or
+    runs in test mode. See <a href="steam.html">Steam</a> for the
+    runtime gating logic.
+</p>
+
+<h2 id="refresh-types">ruzit refresh-types</h2>
+
+<div class="sig">ruzit refresh-types [path]</div>
+
+<p>
+    Re-download <code>types.d.luau</code> into the given directory
+    (current directory if omitted). The CLI no longer ships a
+    bundled copy of the type declarations, every fresh
+    <code>ruzit init</code> fetches them from
+    <code>https://raw.githubusercontent.com/thekingofspace/Ruzit/master/types.d.luau</code>
+    so a newly-cloned project always picks up the latest API. This
+    command is the on-demand version, useful when you've updated
+    the runtime and want hover-docs / autocomplete to reflect the
+    new APIs without re-running <code>init</code>.
+</p>
+
+<pre><code><span class="hl-com"># default: pull latest from master</span>
+ruzit refresh-types
+
+<span class="hl-com"># pin to a tagged version of the types</span>
+RUZIT_TYPES_URL=https://raw.githubusercontent.com/thekingofspace/Ruzit/v3.7.0/types.d.luau \
+ruzit refresh-types
+
+<span class="hl-com"># or point at your own fork / mirror</span>
+RUZIT_TYPES_URL=https://example.com/types/v3.7.0.luau \
+ruzit refresh-types</code></pre>
+
+<div class="callout note">
+    <strong>Init is offline-tolerant.</strong>
+    If the URL is unreachable when you run <code>ruzit init</code>,
+    the CLI writes a small stub explaining how to retry instead of
+    failing the whole init. Run <code>ruzit refresh-types</code>
+    once you're online to drop in the real declarations.
+</div>
+
+<h2 id="self-update">ruzit self-update</h2>
+
+<div class="sig">ruzit self-update [path]</div>
+
+<p>
+    Refresh the local <code>Ruzit</code> runtime binary and the
+    <code>ruzit</code> tool from the configured release host.
+    Both are downloaded to temp paths, then renamed in place, so
+    a half-finished download doesn't replace your working binary.
+</p>
+
+<pre><code><span class="hl-com"># For GitHub Releases (matches the auto-release workflow):</span>
+RUZIT_RELEASE_BASE=https://github.com/&lt;user&gt;/&lt;repo&gt;/releases/download/latest
+ruzit self-update
+
+<span class="hl-com"># Or pin to a tagged version:</span>
+RUZIT_RELEASE_BASE=https://github.com/&lt;user&gt;/&lt;repo&gt;/releases/download/v3.7
+ruzit self-update</code></pre>
+
+<p>
+    The CLI fetches a single platform-specific zip and extracts the
+    two binaries inside it. The zip's contents are deliberately
+    plain-named so a manual download → extract leaves you with files
+    you can run as <code>ruzit init</code> /
+    <code>ruzitrun --run …</code> straight away:
+</p>
+
+<pre><code>{base}/ruzit-windows.zip   →  ruzit.exe + ruzitrun.exe
+{base}/ruzit-linux.zip     →  ruzit + ruzitrun
+{base}/ruzit-macos.zip     →  ruzit + ruzitrun       (when built)</code></pre>
+
+<p>
+    The bundled GitHub Actions workflow auto-publishes to
+    <code>https://github.com/&lt;user&gt;/&lt;repo&gt;/releases/download/latest</code>
+    on every push to <code>main</code>, and to
+    <code>https://github.com/&lt;user&gt;/&lt;repo&gt;/releases/download/v&lt;tag&gt;</code>
+    when you push a <code>v*</code> tag. See
+    <a href="#release-flow">Release flow</a> below.
+</p>
+
+<div class="callout note">
+    <strong>You can't replace a running CLI on Windows.</strong>
+    The CLI download lands as
+    <code>ruzit.update.exe</code>, the runtime swap completes,
+    and you're prompted to exit the current process and rename
+    the staged file into place. On Linux / macOS the rename
+    happens silently because POSIX allows replacing the file an
+    open process is using.
+</div>
+
+<h2 id="release-flow">Release flow</h2>
+
+<p>
+    The repo ships
+    <a href="https://github.com/thekingofspace/Ruzit/blob/master/.github/workflows/release.yml" target="_blank" rel="noopener"><code>.github/workflows/release.yml</code></a>
+    which builds Windows + Linux binaries, combines them into a
+    single artifact, and creates a GitHub Release with the four
+    binaries attached. Two trigger modes:
+</p>
+
+<table>
+    <thead><tr><th>Trigger</th><th>What happens</th></tr></thead>
+    <tbody>
+        <tr>
+            <td>Push to <code>main</code> / <code>master</code></td>
+            <td>
+                Builds, then deletes the existing
+                <code>latest</code> release (if any), force-pushes
+                the <code>latest</code> tag at the new commit, and
+                creates a <em>prerelease</em> with the four binaries.
+                Users on a rolling installation point
+                <code>RUZIT_RELEASE_BASE</code> at
+                <code>.../releases/download/latest</code>.
+            </td>
+        </tr>
+        <tr>
+            <td>Push a <code>v*</code> tag (e.g. <code>v3.7.1</code>)</td>
+            <td>
+                Builds, then creates a normal (non-prerelease)
+                release at that tag with the four binaries. Users
+                pin to that version by setting
+                <code>RUZIT_RELEASE_BASE</code> to
+                <code>.../releases/download/v3.7.1</code>.
+            </td>
+        </tr>
+    </tbody>
+</table>
+
+<p>
+    No secrets to configure, the workflow uses the built-in
+    <code>GITHUB_TOKEN</code>. Permissions are scoped via
+    <code>permissions: contents: write</code> at the workflow
+    level, so it can create / delete releases on its own
+    repository.
 </p>
 
 <h2 id="globals">Global flags</h2>

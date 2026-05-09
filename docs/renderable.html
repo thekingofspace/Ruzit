@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Renderable - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=3.3">
-    <script src="theme.js?v=3.3"></script>
+    <link rel="stylesheet" href="style.css?v=3.7">
+    <script src="theme.js?v=3.7"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=3.3" defer></script>
+<script src="sidebar.js?v=3.7" defer></script>
 
 <main>
 
@@ -302,6 +302,37 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
     </div>
 </div>
 
+<h3 id="local-world">Local / world helpers</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">part:LocalToWorld(local_offset)</span>
+            <span class="member-type">→ Vector</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Convert an offset in the part's local frame to a
+            world-space position. <code>Vector.new(0, 3, 0)</code>
+            returns the world point 3 units along the part's
+            rotated local Y axis. Useful for placing emitters,
+            nameplates, and child anchors relative to a moving /
+            rotating part.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">part:WorldToLocal(world)</span>
+            <span class="member-type">→ Vector</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Inverse of <code>LocalToWorld</code>. Convert a world-
+            space position into the part's local frame.
+        </p>
+    </div>
+</div>
+
 <h3 id="tracks">Animation tracks</h3>
 
 <div class="member-list">
@@ -399,6 +430,33 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
     </div>
 </div>
 
+<h3>Signals</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Played</span><span class="member-type">Signal&lt;&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Fires when <code>:Play()</code> is called and the track
+            starts feeding samples.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Stopped</span><span class="member-type">Signal&lt;&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Fires when the track stops, either naturally at the end
+            (when <code>Looped</code> is false) or because
+            <code>:Stop()</code> was called.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.DidLoop</span><span class="member-type">Signal&lt;&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Fires every time a looped track wraps from end to start.
+            Only fires when <code>Looped</code> is true.
+        </p>
+    </div>
+</div>
+
 <h3>Methods</h3>
 
 <div class="member-list">
@@ -437,6 +495,16 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">track:ClearKeyframes()</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">track:LinkToUpdate(interval)</span><span class="member-type">→ Signal&lt;number&gt;</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Returns a Signal that fires every <code>interval</code>
+            track-time seconds with the elapsed playback time.
+            Useful for syncing footstep sounds, particle bursts, or
+            gameplay events to specific moments in an animation.
+            Mirrors <code>Sound:LinkToUpdate</code>.
+        </p>
     </div>
 </div>
 

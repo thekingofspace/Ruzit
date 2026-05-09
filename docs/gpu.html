@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GPU - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=3.3">
-    <script src="theme.js?v=3.3"></script>
+    <link rel="stylesheet" href="style.css?v=3.7">
+    <script src="theme.js?v=3.7"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=3.3" defer></script>
+<script src="sidebar.js?v=3.7" defer></script>
 
 <main>
 
@@ -168,6 +168,68 @@
         <p class="member-desc">
             Unbind the active storage buffer. SDATA reverts to a 1-float
             stub so shaders that don't reference it keep working.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.SetMaxFrameRate(fps?)</span>
+        </div>
+        <p class="member-desc">
+            Cap or uncap the heart-loop tick rate. Pass
+            <code>nil</code> (or <code>0</code>) to remove the cap
+            and run as fast as the system allows; pass a positive
+            number to throttle. Default is 60 FPS. The cap is
+            applied by sleeping at the end of each tick if the
+            frame finished early, so it has no effect on a system
+            that can't keep up. Cheap to call live (atomic store),
+            wire it to a settings menu freely.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.GetMaxFrameRate()</span>
+            <span class="member-type">→ number?</span>
+        </div>
+        <p class="member-desc">Current cap, or <code>nil</code> when uncapped.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.GetBounds(part, quality?)</span>
+            <span class="member-type">→ { { Position, Size, Min, Max } }</span>
+        </div>
+        <p class="member-desc">
+            Return one or more world-space AABBs covering a BasePart.
+            Each entry is <code>{ Position, Size, Min, Max }</code> with
+            <code>Position</code> the AABB center and <code>Size</code>
+            its full extents (max − min). Honors deformations,
+            current animation state, and DynMesh-driven movement, so
+            the boxes follow the live mesh.
+        </p>
+        <p class="member-desc">
+            <code>quality</code> controls how many boxes you get:
+            <ul>
+                <li><strong>1 (default)</strong> — single box that
+                    encloses the entire part. Cheapest. Always
+                    accurate for cubes / spheres.</li>
+                <li><strong>2+</strong> — split a model's vertices
+                    into N bins along the longest axis and return a
+                    tight AABB per bin. Useful for long thin meshes
+                    where one big box is loose. Cubes and spheres
+                    always return one box regardless of quality.</li>
+            </ul>
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.CheckArea(center, size, quality?)</span>
+            <span class="member-type">→ { BasePart }</span>
+        </div>
+        <p class="member-desc">
+            Return every renderable BasePart whose bounds (computed at
+            the given quality) overlap the AABB centered at
+            <code>center</code> with full extents <code>size</code>.
+            Skips parts with <code>Render = false</code>. Honors
+            deformed / animated meshes and DynMesh offsets.
         </p>
     </div>
 </div>

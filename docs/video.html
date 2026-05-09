@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video - Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css?v=3.7">
+    <script src="theme.js?v=3.7"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=3.7" defer></script>
+
+<main>
+
+<h1>Video</h1>
+<p class="lede">
+    Animated frame sequences with optional audio. Loaded via
+    <code>Asset.GetVideo(path)</code>, which always returns
+    <em>two</em> values, the Video userdata and a companion
+    <code>SoundData</code> (or nil for sources that don't carry
+    audio). Hand the SoundData to <code>SFX.LoadSound</code> if you
+    want it to play; the Video drives texture updates on linked
+    BaseParts.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Asset = <span class="hl-fn">import</span>(<span class="hl-str">"Asset"</span>)
+<span class="hl-kw">local</span> SFX = <span class="hl-fn">import</span>(<span class="hl-str">"SFX"</span>)
+<span class="hl-kw">local</span> Renderable = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
+
+<span class="hl-kw">local</span> video, audio = Asset.GetVideo(<span class="hl-str">"cutscenes.intro"</span>)
+
+<span class="hl-com">-- Show the video on a flat panel in the world.</span>
+<span class="hl-kw">local</span> screen = Renderable.BasePart(<span class="hl-str">"Cube"</span>)
+screen.Size = Vector.new(<span class="hl-num">4</span>, <span class="hl-num">2.25</span>, <span class="hl-num">0.05</span>)
+video:LinkPart(screen)
+video.Looped = <span class="hl-kw">true</span>
+video:Play()
+
+<span class="hl-com">-- Audio (only present for .ruzitvid sources).</span>
+<span class="hl-kw">if</span> audio <span class="hl-kw">then</span>
+    <span class="hl-kw">local</span> snd = SFX.LoadSound(audio)
+    snd.Looped = <span class="hl-kw">true</span>
+    snd:Play()
+<span class="hl-kw">end</span></code></pre>
+
+<h2 id="formats">Supported formats</h2>
+
+<table>
+    <thead><tr><th>Extension</th><th>Audio</th><th>Notes</th></tr></thead>
+    <tbody>
+        <tr><td><code>.gif</code></td><td>none</td><td>Animated GIF, decoded by the <code>image</code> crate. Companion <code>SoundData</code> is nil.</td></tr>
+        <tr><td><code>.ruzitvid</code></td><td>any SFX-supported codec</td><td>Custom Ruzit container, RGBA frames + uniform delay + inline audio bytes. Use offline tooling to author from a source video.</td></tr>
+    </tbody>
+</table>
+
+<p>
+    Real codec support (H.264 / H.265 / VP9 / AV1) is not bundled,
+    decoders pull large platform-specific dependencies. Convert
+    sources offline (ffmpeg, your favourite tool) into one of the
+    above formats.
+</p>
+
+<h2 id="api">Video API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.Looped</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">
+            When true, advances back to frame 0 at the end. Toggle
+            live, setting false mid-play lets the current playthrough
+            finish then stops.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">.CurrentFrame</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Frame index currently being shown. Reading is free;
+            writing seeks the playhead immediately and resets the
+            elapsed-ms accumulator.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">video:Width()</span><span class="member-type">→ number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">video:Height()</span><span class="member-type">→ number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">video:FrameCount()</span><span class="member-type">→ number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">video:FrameDelayMs()</span><span class="member-type">→ number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">video:Length()</span><span class="member-type">→ number</span></div>
+        <p class="member-desc">Total length in seconds (FrameCount × FrameDelayMs ÷ 1000).</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">video:Source()</span><span class="member-type">→ string</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">video:Play()</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">video:Pause()</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">video:Stop()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Pause and reset to frame 0.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">video:CurrentImage()</span>
+            <span class="member-type">→ ImageAsset</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Build an ImageAsset from the current frame. Cached
+            per frame index, repeated calls during the same
+            displayed frame return the same cheap asset. Useful
+            if you want to feed a still snapshot into a GUI image
+            or a part Texture without LinkPart.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">video:LinkPart(part)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Bind a BasePart so its Texture auto-updates each tick
+            the video advances. The engine swaps the part's Texture
+            with fresh frame pixels every video tick. Each BasePart
+            can only be linked to one Video at a time, calling
+            <code>LinkPart</code> again on a different video
+            transparently re-routes the binding.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">video:UnlinkPart(part)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Stop driving the part's Texture; the part keeps the
+            last frame that was uploaded.
+        </p>
+    </div>
+</div>
+
+<div class="callout note">
+    <strong>Audio is decoupled by design.</strong>
+    A Video doesn't auto-play its companion audio, you decide when.
+    For lip-sync, start the SFX sound and the video on the same
+    frame and let both advance independently. For UI ambient loops
+    just play the video and ignore the sound.
+</div>
+
+</main>
+
+</body>
+</html>

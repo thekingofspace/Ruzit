@@ -3,24 +3,30 @@ name: Build Ruzit
 on:
   push:
     branches: [master, main]
+    tags: ['v*']
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
-    name: ${{ matrix.os }}
+    name: build-${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            artifact_name: Ruzit.exe
-            asset_name: ruzit-windows
-            steam_lib: steam_api64.dll
+            platform: windows
+            ruzit_bin: ruzit.exe
+            ruzitrun_bin: ruzitrun.exe
+            exe_ext: .exe
           - os: ubuntu-latest
-            artifact_name: Ruzit
-            asset_name: ruzit-linux
-            steam_lib: libsteam_api.so
+            platform: linux
+            ruzit_bin: ruzit
+            ruzitrun_bin: ruzitrun
+            exe_ext: ""
 
     steps:
       - uses: actions/checkout@v4
@@ -51,20 +57,135 @@ jobs:
       - name: Set executable bit (unix)
         if: matrix.os != 'windows-latest'
         working-directory: Ruzit
-        run: chmod +x target/release/${{ matrix.artifact_name }}
+        run: |
+          chmod +x target/release/${{ matrix.ruzit_bin }}
+          chmod +x target/release/${{ matrix.ruzitrun_bin }}
 
-      - name: Stage artifact
+      - name: Stage raw binaries (plain names, no platform suffix)
         shell: bash
         working-directory: Ruzit
         run: |
           mkdir -p staging
-          cp target/release/${{ matrix.artifact_name }} staging/
-          if [ -f target/release/${{ matrix.steam_lib }} ]; then
-            cp target/release/${{ matrix.steam_lib }} staging/
-          fi
+          cp target/release/${{ matrix.ruzit_bin }}    staging/ruzit${{ matrix.exe_ext }}
+          cp target/release/${{ matrix.ruzitrun_bin }} staging/ruzitrun${{ matrix.exe_ext }}
+          ls -lh staging/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset_name }}
+          name: ruzit-raw-${{ matrix.platform }}
           path: Ruzit/staging/*
           if-no-files-found: error
+
+  combine:
+    name: combine-and-zip
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download windows raw binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: ruzit-raw-windows
+          path: stage/windows
+
+      - name: Download linux raw binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: ruzit-raw-linux
+          path: stage/linux
+
+      - name: Restore +x on linux binaries
+        run: |
+          chmod +x stage/linux/ruzit
+          chmod +x stage/linux/ruzitrun
+
+      - name: Zip per platform (plain inner names → ruzit, ruzitrun)
+        run: |
+          mkdir -p release
+          (cd stage/windows && zip -j ../../release/ruzit-windows.zip ruzit.exe ruzitrun.exe)
+          (cd stage/linux   && zip -j ../../release/ruzit-linux.zip   ruzit ruzitrun)
+          ls -lh release/
+          for z in release/*.zip; do
+            echo "--- $z ---"
+            unzip -l "$z"
+          done
+
+      - name: Upload combined zips as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruzit-all
+          path: release/*.zip
+          if-no-files-found: error
+
+  release:
+    name: github-release
+    needs: combine
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download release zips
+        uses: actions/download-artifact@v4
+        with:
+          name: ruzit-all
+          path: release
+
+      - name: Determine release tag and title
+        id: meta
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            echo "title=Ruzit ${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "rolling=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+            echo "title=Ruzit (latest from $(echo $GITHUB_REF | sed 's|refs/heads/||'))" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "rolling=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Recreate rolling 'latest' tag (push only, no tag)
+        if: steps.meta.outputs.rolling == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f latest
+          git push -f origin latest
+
+      - name: Delete prior release at this tag (so we can recreate)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${{ steps.meta.outputs.tag }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete "${{ steps.meta.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --yes
+          fi
+
+      - name: Create release with platform zips
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NOTES="Auto-built from ${GITHUB_SHA::7} on $(date -u +%Y-%m-%dT%H:%M:%SZ).
+
+          Assets — each archive contains the two binaries with their plain names so you can drop them on PATH and type \`ruzit\` directly:
+          - \`ruzit-windows.zip\` → \`ruzit.exe\` + \`ruzitrun.exe\`
+          - \`ruzit-linux.zip\`   → \`ruzit\` + \`ruzitrun\`
+
+          Self-update target:
+          \`\`\`
+          export RUZIT_RELEASE_BASE=https://github.com/$GITHUB_REPOSITORY/releases/download/${{ steps.meta.outputs.tag }}
+          ruzit self-update
+          \`\`\`"
+
+          PRERELEASE_FLAG=""
+          if [[ "${{ steps.meta.outputs.prerelease }}" == "true" ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "${{ steps.meta.outputs.title }}" \
+            --notes "$NOTES" \
+            $PRERELEASE_FLAG \
+            release/ruzit-windows.zip \
+            release/ruzit-linux.zip

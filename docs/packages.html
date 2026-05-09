@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Packages &amp; DLC - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=3.3">
-    <script src="theme.js?v=3.3"></script>
+    <link rel="stylesheet" href="style.css?v=3.7">
+    <script src="theme.js?v=3.7"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=3.3" defer></script>
+<script src="sidebar.js?v=3.7" defer></script>
 
 <main>
 
@@ -91,7 +91,7 @@
 
 <p>
     A DLC is a folder inside your project that contains a
-    <code>ManagedInfo.toml</code>. <code>Ruzit Build</code> auto-discovers
+    <code>ManagedInfo.toml</code>. <code>ruzit build</code> auto-discovers
     them and packages each one alongside the project:
 </p>
 
@@ -115,7 +115,7 @@ entry   = <span class="hl-str">"init.luau"</span>
 <span class="hl-str">"File Type"</span> = <span class="hl-str">"Relative"</span></code></pre>
 
 <p>
-    Scaffold a fresh DLC folder with <code>Ruzit InitPackage Physics</code>.
+    Scaffold a fresh DLC folder with <code>ruzit initpackage Physics</code>.
 </p>
 
 <h2 id="external">External packages: Workshop / mods</h2>
@@ -123,8 +123,8 @@ entry   = <span class="hl-str">"init.luau"</span>
 <p>
     Third-party packages live as <code>.managed</code> files in a
     <code>Packages/</code> folder, either in the project root (during
-    <code>Ruzit Test</code>) or next to the launcher (after
-    <code>Ruzit Build</code>). They're loaded the same way DLC is, but
+    <code>ruzit test</code>) or next to the launcher (after
+    <code>ruzit build</code>). They're loaded the same way DLC is, but
     aren't bundled into the project's launcher, they're drop-ins.
 </p>
 
@@ -136,7 +136,7 @@ entry   = <span class="hl-str">"init.luau"</span>
         community-mod.assets.managed</code></pre>
 
 <p>
-    Producers ship their package by running <code>Ruzit Package</code>
+    Producers ship their package by running <code>ruzit package</code>
     against a folder with a <code>ManagedInfo.toml</code>, same shape
     as a DLC folder, just packaged independently of any project.
 </p>

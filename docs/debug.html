@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug - Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css?v=3.7">
+    <script src="theme.js?v=3.7"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=3.7" defer></script>
+
+<main>
+
+<h1>Debug</h1>
+<p class="lede">
+    In-test profiler. Flag spans for timing, memory and CPU readouts,
+    frame-drop monitoring, GPU submit timings. All methods become
+    silent no-ops in a built game (when <code>Debug.IsTest</code>
+    is false), so leaving Debug calls in shipped code is safe.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Debug = <span class="hl-fn">import</span>(<span class="hl-str">"Debug"</span>)
+
+<span class="hl-kw">local</span> level = Debug.Flag(<span class="hl-str">"level-load"</span>)
+level:Begin()
+load_the_level()
+<span class="hl-kw">local</span> r = level:End()
+<span class="hl-fn">print</span>(<span class="hl-str">"loaded in "</span>, r.ms, <span class="hl-str">"ms; mem +"</span>, r.mem_delta_mb, <span class="hl-str">"MB"</span>)
+
+Debug.MonitorFrameDrops(<span class="hl-num">35</span>):Connect(<span class="hl-kw">function</span>(dt_ms)
+    <span class="hl-fn">print</span>(<span class="hl-str">"frame drop: "</span>, dt_ms, <span class="hl-str">"ms"</span>)
+<span class="hl-kw">end</span>)</code></pre>
+
+<h2 id="api">Debug API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Debug.IsTest</span>
+            <span class="member-type">boolean</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            True under <code>ruzit test</code>, false in a built
+            game. All other Debug methods are no-ops when this is
+            false. Profiling code can stay in your scripts without
+            affecting shipped performance.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Debug.Flag(name)</span>
+            <span class="member-type">→ DebugFlag</span>
+        </div>
+        <p class="member-desc">
+            Allocate a named flag for measuring a span. The name
+            shows up in the printed summary so you can grep the log.
+            Repeated <code>:Begin</code> / <code>:End</code> pairs
+            on the same flag work fine and overwrite the
+            <code>:Last</code> snapshot.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">Debug.Memory()</span><span class="member-type">→ number</span></div>
+        <p class="member-desc">
+            Process resident memory in bytes (latest sample,
+            refreshed every ~500 ms by the sampler thread).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">Debug.MemoryMB()</span><span class="member-type">→ number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">Debug.CpuPercent()</span><span class="member-type">→ number</span></div>
+        <p class="member-desc">
+            Process CPU usage as a percentage. Sysinfo reports this
+            as a sum across logical cores, so a fully busy 8-core
+            process can read up to 800.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">Debug.FrameDrops()</span><span class="member-type">→ number</span></div>
+        <p class="member-desc">
+            Total frame drops the heart loop has flagged since
+            process start. A frame drop is a tick whose total time
+            exceeded <code>SetFrameDropThreshold</code> (default 25 ms).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">Debug.PeakFrameMs()</span><span class="member-type">→ number</span></div>
+        <p class="member-desc">
+            Largest single-frame time in milliseconds since the last
+            <code>ResetPeak</code>. Useful for spike hunting.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">Debug.ResetPeak()</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">Debug.SetFrameDropThreshold(ms)</span></div>
+        <p class="member-desc">
+            Frames longer than this count as a drop and feed
+            <code>FrameDrops</code> / <code>MonitorFrameDrops</code>.
+            Default 25 (≈ a missed 60 Hz tick).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Debug.MonitorFrameDrops(threshold_ms?)</span>
+            <span class="member-type">→ Signal&lt;number&gt;</span>
+        </div>
+        <p class="member-desc">
+            Subscribe to frame-drop events. The Signal fires once
+            per dropped frame with the frame's total time in
+            milliseconds. If <code>threshold_ms</code> is omitted,
+            uses the global <code>SetFrameDropThreshold</code>
+            value.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">Debug.GpuSubmitAvgMs()</span><span class="member-type">→ number</span></div>
+        <p class="member-desc">
+            Average milliseconds spent in
+            <code>queue.submit</code> since the last
+            <code>ResetGpuStats</code>. A cheap proxy for GPU
+            pressure, true GPU utilization needs platform-
+            specific APIs.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">Debug.ResetGpuStats()</span></div>
+    </div>
+</div>
+
+<h2 id="flag">DebugFlag</h2>
+
+<p>
+    Returned by <code>Debug.Flag(name)</code>. A flag is a named span
+    you can re-use, every <code>:Begin</code> / <code>:End</code> pair
+    captures a fresh delta on the same flag.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">flag:Begin()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Snapshot baseline (time, memory, frame-drop count, GPU submit count).</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">flag:End()</span>
+            <span class="member-type">→ table</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Return a delta report
+            <code>{ name, ms, mem_delta_mb, cpu_pct, frame_drops, gpu_avg_ms }</code>
+            and print a one-line summary to stdout. Errors if
+            <code>:Begin</code> wasn't called first.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">flag:Last()</span><span class="member-type">→ table</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">The most recent <code>{ last_ms, last_mem_delta_mb, last_frame_drops }</code>. Empty until the first <code>:End</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">flag:Name()</span><span class="member-type">→ string</span><span class="tag tag-method">method</span></div>
+    </div>
+</div>
+
+<div class="callout note">
+    <strong>Idle, never blocks.</strong>
+    The sampler runs on a dedicated thread that calls into sysinfo
+    every ~500 ms. The main loop never waits on it, calls like
+    <code>Debug.MemoryMB()</code> read an atomic snapshot. Flags
+    cost a single timestamp + counter read on Begin/End, so you can
+    sprinkle them generously without measurable overhead.
+</div>
+
+</main>
+
+</body>
+</html>
