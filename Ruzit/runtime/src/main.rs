@@ -16,7 +16,7 @@ fn print_usage() {
     eprintln!("for built games. Normally not invoked directly.");
     eprintln!();
     eprintln!("For dev commands (init / test / build / package / fetch-deps");
-    eprintln!("/ self-update), use the `ruzit` CLI tool from this workspace.");
+    eprintln!("/ update), use the `ruzit` CLI tool from this workspace.");
     eprintln!();
     eprintln!("Direct invocations:");
     eprintln!("  --run <project-root> [<entry>]   run a project from disk");

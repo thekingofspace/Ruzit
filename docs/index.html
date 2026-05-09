@@ -160,7 +160,7 @@ ruzit test</code></pre>
                 (<code>build</code> / <code>package</code>), and
                 tooling (<code>fetch-deps</code>,
                 <code>refresh-types</code>,
-                <code>self-update</code>). Doesn't link the engine.</td>
+                <code>update</code>). Doesn't link the engine.</td>
         </tr>
         <tr>
             <td><code>ruzitrun</code></td>
@@ -246,12 +246,13 @@ ruzit test</code></pre>
     </div>
     <div class="member">
         <div class="member-header">
-            <span class="member-name">ruzit self-update</span>
+            <span class="member-name">ruzit update</span>
         </div>
         <p class="member-desc">
-            Refresh the local <code>ruzit</code> +
-            <code>ruzitrun</code> binaries from the configured
-            release host. Defaults to the project's GitHub Releases.
+            Refresh the local <code>ruzitrun</code> binary from the
+            configured release host (defaults to the project's
+            GitHub Releases). The <code>ruzit</code> CLI itself is
+            left alone, swap it manually if you want a newer CLI.
         </p>
     </div>
 </div>

@@ -145,11 +145,11 @@ fn make_executable(path: &Path) {
 #[cfg(not(unix))]
 fn make_executable(_path: &Path) {}
 
-pub fn cmd_self_update(arg: Option<&String>) -> Result<(), String> {
+pub fn cmd_update(arg: Option<&String>) -> Result<(), String> {
     let exe_dir = env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(PathBuf::from))
-        .ok_or("self-update: could not locate current exe")?;
+        .ok_or("update: could not locate current exe")?;
     let dest_dir = match arg {
         Some(p) => PathBuf::from(p),
         None => exe_dir.clone(),
@@ -164,7 +164,7 @@ pub fn cmd_self_update(arg: Option<&String>) -> Result<(), String> {
     } else if cfg!(target_os = "macos") {
         "macos"
     } else {
-        return Err("self-update: unsupported platform".into());
+        return Err("update: unsupported platform".into());
     };
     let exe_ext = if cfg!(target_os = "windows") {
         ".exe"
@@ -179,50 +179,17 @@ pub fn cmd_self_update(arg: Option<&String>) -> Result<(), String> {
     let archive_bytes = download_bytes(&archive_url)?;
 
     let runtime_inner = format!("ruzitrun{exe_ext}");
-    let cli_inner = format!("ruzit{exe_ext}");
-
     let runtime_dest = dest_dir.join(&runtime_inner);
-    let cli_dest = dest_dir.join(&cli_inner);
 
-    let runtime_tmp = dest_dir.join(format!("ruzitrun.update{exe_ext}"));
-    let cli_tmp = dest_dir.join(format!("ruzit.update{exe_ext}"));
-
-    let runtime_bytes = extract_one_from_zip(&archive_bytes, &runtime_inner, &runtime_tmp)?;
-    let cli_bytes = extract_one_from_zip(&archive_bytes, &cli_inner, &cli_tmp)?;
-
-    make_executable(&runtime_tmp);
-    make_executable(&cli_tmp);
-
-    fs::rename(&runtime_tmp, &runtime_dest).map_err(|e| {
-        format!(
-            "rename {} → {}: {e}",
-            runtime_tmp.display(),
-            runtime_dest.display()
-        )
-    })?;
-
-    let running_cli = env::current_exe().unwrap_or_default();
-    if cli_dest == running_cli {
-        eprintln!(
-            "[ruzit] new cli binary staged at {}, but the OS won't let us replace the\n\
-             running executable in place. Exit this process, then rename:\n  \
-             {}  →  {}",
-            cli_tmp.display(),
-            cli_tmp.display(),
-            cli_dest.display()
-        );
-    } else {
-        fs::rename(&cli_tmp, &cli_dest)
-            .map_err(|e| format!("rename {} → {}: {e}", cli_tmp.display(), cli_dest.display()))?;
-    }
+    let runtime_bytes = extract_one_from_zip(&archive_bytes, &runtime_inner, &runtime_dest)?;
+    make_executable(&runtime_dest);
 
     println!(
-        "[ruzit] self-update complete from {}\n        → {} ({} bytes)\n        → {} ({} bytes)",
+        "[ruzit] update complete from {}\n        → {} ({} bytes)\n\
+         [ruzit] CLI binary unchanged. Reinstall ruzit{exe_ext} manually if you need a new CLI.",
         archive_url,
         runtime_dest.display(),
         runtime_bytes,
-        cli_dest.display(),
-        cli_bytes,
     );
     Ok(())
 }

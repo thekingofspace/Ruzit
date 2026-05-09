@@ -30,7 +30,7 @@ fn print_usage() {
         "  ruzit refresh-types  [path]        re-download types.d.luau into the given dir (default: cwd)"
     );
     eprintln!(
-        "  ruzit self-update    [path]        refresh the local ruzit + ruzitrun binaries from the configured release base"
+        "  ruzit update         [path]        refresh the local ruzitrun binary from the configured release base (CLI itself is left alone)"
     );
 }
 
@@ -52,7 +52,9 @@ fn dispatch(args: &[String]) -> Result<(), String> {
         }
         "FetchDeps" | "fetchdeps" | "fetch-deps" => update::cmd_fetch_deps(args.get(1)),
         "RefreshTypes" | "refreshtypes" | "refresh-types" => update::cmd_refresh_types(args.get(1)),
-        "SelfUpdate" | "selfupdate" | "self-update" => update::cmd_self_update(args.get(1)),
+        "Update" | "update" | "SelfUpdate" | "selfupdate" | "self-update" => {
+            update::cmd_update(args.get(1))
+        }
         "-h" | "--help" | "help" => {
             print_usage();
             Ok(())

@@ -32,7 +32,7 @@ ruzit build          [path] [-o]   produce Generated/&lt;exe&gt; + Generated/Man
 ruzit package        [folder] [-o] produce &lt;id&gt;.scripts.managed + &lt;id&gt;.assets.managed
 ruzit fetch-deps     [path]        download steam_api into the given dir (default: cwd)
 ruzit refresh-types  [path]        re-download types.d.luau into the given dir (default: cwd)
-ruzit self-update    [path]        refresh ruzit + ruzitrun from the configured release base
+ruzit update         [path]        refresh ruzitrun from the configured release base (CLI itself is left alone)
                      --help        print this help
 
 ruzitrun                              embedded launcher; runs the bundled .managed
@@ -260,60 +260,65 @@ ruzit refresh-types</code></pre>
     once you're online to drop in the real declarations.
 </div>
 
-<h2 id="self-update">ruzit self-update</h2>
+<h2 id="update">ruzit update</h2>
 
-<div class="sig">ruzit self-update [path]</div>
+<div class="sig">ruzit update [path]</div>
 
 <p>
-    Refresh the local <code>Ruzit</code> runtime binary and the
-    <code>ruzit</code> tool from the configured release host.
-    Both are downloaded to temp paths, then renamed in place, so
-    a half-finished download doesn't replace your working binary.
+    Refresh the local <code>ruzitrun</code> runtime binary from the
+    configured release host. The <code>ruzit</code> CLI itself is
+    deliberately <em>not</em> touched, so the running CLI doesn't have
+    to swap itself out and there's no
+    <code>ruzit.update.exe</code> staging dance on Windows. To upgrade
+    the CLI, reinstall it manually (download a new zip and replace
+    <code>ruzit.exe</code>) or run a fresh install once.
 </p>
 
-<pre><code><span class="hl-com"># Default: pull the latest stable release straight from GitHub.</span>
+<pre><code><span class="hl-com"># Default: pull the latest stable runtime straight from GitHub.</span>
 <span class="hl-com"># No env var needed, the CLI ships pointing at the official repo.</span>
-ruzit self-update
+ruzit update
 
 <span class="hl-com"># Or pin to a specific tagged version:</span>
 RUZIT_RELEASE_BASE=https://github.com/thekingofspace/Ruzit/releases/download/v3.8.0
-ruzit self-update
+ruzit update
 
 <span class="hl-com"># Or point at your own fork / mirror:</span>
 RUZIT_RELEASE_BASE=https://example.com/ruzit/v3.8.0
-ruzit self-update</code></pre>
+ruzit update</code></pre>
 
 <p>
-    The CLI fetches a single platform-specific zip and extracts the
-    two binaries inside it. The zip's contents are deliberately
+    The CLI fetches a single platform-specific zip and extracts only
+    the runtime binary inside it. The zip's contents are deliberately
     plain-named so a manual download → extract leaves you with files
     you can run as <code>ruzit init</code> /
     <code>ruzitrun --run …</code> straight away:
 </p>
 
-<pre><code>{base}/ruzit-windows.zip   →  ruzit.exe + ruzitrun.exe
-{base}/ruzit-linux.zip     →  ruzit + ruzitrun
-{base}/ruzit-macos.zip     →  ruzit + ruzitrun       (when built)</code></pre>
+<pre><code>{base}/ruzit-windows.zip   →  ruzit.exe + ruzitrun.exe   (update extracts ruzitrun.exe)
+{base}/ruzit-linux.zip     →  ruzit + ruzitrun           (update extracts ruzitrun)
+{base}/ruzit-macos.zip     →  ruzit + ruzitrun           (when built)</code></pre>
 
 <p>
     The default base URL is
     <code>https://github.com/thekingofspace/Ruzit/releases/latest/download</code>
     — GitHub's own redirect that always points at the most recent
     stable release. So a fresh install can run <code>ruzit
-    self-update</code> with no setup. The bundled GitHub Actions
+    update</code> with no setup. The bundled GitHub Actions
     workflow auto-publishes versioned releases on every push, see
     <a href="#release-flow">Release flow</a> below.
 </p>
 
 <div class="callout note">
-    <strong>You can't replace a running CLI on Windows.</strong>
-    The CLI download lands as
-    <code>ruzit.update.exe</code>, the runtime swap completes,
-    and you're prompted to exit the current process and rename
-    the staged file into place. On Linux / macOS the rename
-    happens silently because POSIX allows replacing the file an
-    open process is using.
+    <strong>Don't run <code>ruzit update</code> while a game is open.</strong>
+    On Windows the runtime exe is locked while it's running, so close
+    any <code>Ruzit Test</code> session or shipped game built on the
+    same <code>ruzitrun.exe</code> before updating.
 </div>
+
+<p class="member-desc">
+    <code>self-update</code> is kept as an alias of <code>update</code>
+    for back-compat.
+</p>
 
 <h2 id="release-flow">Release flow</h2>
 
