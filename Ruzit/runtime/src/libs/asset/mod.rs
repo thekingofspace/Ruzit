@@ -110,6 +110,32 @@ fn extract_asset_id(value: &Value, kind: &str) -> Option<u64> {
     }
 }
 
+pub fn free_asset_by_id(lua: &Lua, kind: &str, id: u64) {
+    purge_asset_uses(lua, kind, id);
+    if let Ok(cache) = ensure_asset_cache(lua) {
+        let to_remove: Vec<String> = cache
+            .pairs::<String, Value>()
+            .filter_map(|p| p.ok())
+            .filter(|(_, v)| extract_asset_id(v, kind) == Some(id))
+            .map(|(k, _)| k)
+            .collect();
+        for k in to_remove {
+            let _ = cache.set(k, Value::Nil);
+        }
+    }
+    if let Ok(strong) = ensure_strong_cache(lua) {
+        let to_remove: Vec<String> = strong
+            .pairs::<String, Value>()
+            .filter_map(|p| p.ok())
+            .filter(|(_, v)| extract_asset_id(v, kind) == Some(id))
+            .map(|(k, _)| k)
+            .collect();
+        for k in to_remove {
+            let _ = strong.set(k, Value::Nil);
+        }
+    }
+}
+
 fn purge_asset_uses(lua: &Lua, kind: &str, asset_id: u64) {
     match kind {
         "Image" => {
@@ -764,6 +790,10 @@ impl UserData for ImageAsset {
         m.add_method("Pixels", |lua, this, _: ()| {
             lua.create_string(this.data.as_slice())
         });
+        m.add_method("Free", |lua, this, _: ()| {
+            free_asset_by_id(lua, "Image", this.id);
+            Ok(())
+        });
     }
 }
 
@@ -783,7 +813,15 @@ impl TextAsset for ShaderAsset {
     }
 }
 
-impl UserData for ShaderAsset {}
+impl UserData for ShaderAsset {
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
+        m.add_method("Free", |lua, this, _: ()| {
+            free_asset_by_id(lua, "Shader", this.id);
+            Ok(())
+        });
+    }
+}
 
 pub struct FragmentAsset {
     pub id: u64,
@@ -801,7 +839,15 @@ impl TextAsset for FragmentAsset {
     }
 }
 
-impl UserData for FragmentAsset {}
+impl UserData for FragmentAsset {
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
+        m.add_method("Free", |lua, this, _: ()| {
+            free_asset_by_id(lua, "Fragment", this.id);
+            Ok(())
+        });
+    }
+}
 
 pub struct ModelAsset {
     pub id: u64,
@@ -821,6 +867,10 @@ impl UserData for ModelAsset {
             Ok((this.indices.len() / 3) as i64)
         });
         m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
+        m.add_method("Free", |lua, this, _: ()| {
+            free_asset_by_id(lua, "Model", this.id);
+            Ok(())
+        });
     }
 }
 
@@ -833,6 +883,10 @@ pub struct FontAsset {
 impl UserData for FontAsset {
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
         m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
+        m.add_method("Free", |lua, this, _: ()| {
+            free_asset_by_id(lua, "Font", this.id);
+            Ok(())
+        });
     }
 }
 

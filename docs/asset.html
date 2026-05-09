@@ -249,6 +249,47 @@ Asset.Drop(<span class="hl-str">"Model:levels.forest.cabin"</span>)</code></pre>
     the underlying GPU / audio resources have already been released.
 </div>
 
+<h2 id="free">:Free() &mdash; per-instance free</h2>
+
+<p>
+    Every asset userdata (<code>ImageAsset</code>, <code>SoundData</code>,
+    <code>ShaderAsset</code>, <code>FragmentAsset</code>,
+    <code>ModelAsset</code>, <code>FontAsset</code>) exposes a
+    <code>:Free()</code> method. It does the same engine-side work as
+    <code>Asset.Drop</code>, but you call it on the handle directly,
+    no path required:
+</p>
+
+<ul>
+    <li><code>Asset.Drop("Image:foo.bar")</code>, free by path.
+        Handy when you only know the path.</li>
+    <li><code>asset:Free()</code>, free this exact instance.
+        Works on procedurally-generated assets too
+        (<code>Asset.FromString</code>, <code>Asset.FromPixels</code>,
+        <code>Renderable.SimplifyMesh</code>), which never had a path
+        in the first place.</li>
+</ul>
+
+<p>
+    Effects are identical to <code>Drop</code>: every BasePart /
+    Primitive / Sound currently using the asset is detached or
+    destroyed, and the asset is removed from the cache. The only
+    difference is that <code>:Free()</code> doesn't assume the asset
+    came from disk, so the local Lua variable in your hand keeps
+    pointing at the same userdata. The engine just stops tracking
+    it. Memory is reclaimed once nothing in Lua holds it either.
+</p>
+
+<pre><code><span class="hl-com">-- Generate a procedural texture, use it, then free engine refs.</span>
+<span class="hl-kw">local</span> noise = Asset.FromPixels(<span class="hl-num">256</span>, <span class="hl-num">256</span>, my_rgba)
+part.Texture = noise
+<span class="hl-com">-- ...later...</span>
+noise:Free() <span class="hl-com">-- detaches part.Texture, drops cache entry</span>
+
+<span class="hl-com">-- Same effect on a file-loaded asset, no path string needed.</span>
+<span class="hl-kw">local</span> mesh = Asset.GetAsset(<span class="hl-str">"Model"</span>, <span class="hl-str">"levels.forest.cabin"</span>)
+mesh:Free()</code></pre>
+
 <h2 id="image">ImageAsset</h2>
 
 <div class="member-list">
@@ -269,6 +310,14 @@ Asset.Drop(<span class="hl-str">"Model:levels.forest.cabin"</span>)</code></pre>
             Useful for inspection or hand-rolled image processing.
         </p>
     </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">img:Free()</span></div>
+        <p class="member-desc">
+            See <a href="#free">:Free()</a>. Detaches every Part /
+            Primitive textured with this image and drops it from the
+            cache.
+        </p>
+    </div>
 </div>
 
 <h2 id="model">ModelAsset</h2>
@@ -282,6 +331,15 @@ Asset.Drop(<span class="hl-str">"Model:levels.forest.cabin"</span>)</code></pre>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">model:Source()</span><span class="member-type">→ string</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">model:Free()</span></div>
+        <p class="member-desc">
+            See <a href="#free">:Free()</a>. Destroys every BasePart
+            spawned from this model (<code>BaseModel</code> /
+            <code>SimplifyMesh</code> output) and drops it from the
+            cache.
+        </p>
     </div>
 </div>
 
@@ -301,6 +359,14 @@ Asset.Drop(<span class="hl-str">"Model:levels.forest.cabin"</span>)</code></pre>
         <div class="member-header"><span class="member-name">snd:ByteCount()</span><span class="member-type">→ number</span></div>
         <p class="member-desc">Encoded byte length (NOT decoded sample count). Decoding happens on <code>SFX.LoadSound</code>.</p>
     </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:Free()</span></div>
+        <p class="member-desc">
+            See <a href="#free">:Free()</a>. Stops every Sound
+            backed by this data; subsequent <code>:Play()</code>
+            errors.
+        </p>
+    </div>
 </div>
 
 <h2 id="font">FontAsset</h2>
@@ -308,6 +374,13 @@ Asset.Drop(<span class="hl-str">"Model:levels.forest.cabin"</span>)</code></pre>
 <div class="member-list">
     <div class="member">
         <div class="member-header"><span class="member-name">font:Source()</span><span class="member-type">→ string</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">font:Free()</span></div>
+        <p class="member-desc">
+            See <a href="#free">:Free()</a>. Drops every Text
+            Primitive using this font and clears the cache.
+        </p>
     </div>
 </div>
 
@@ -320,8 +393,7 @@ Asset.Drop(<span class="hl-str">"Model:levels.forest.cabin"</span>)</code></pre>
 <h2 id="shader">ShaderAsset</h2>
 
 <p>
-    Opaque handle wrapping a vertex-stage WGSL program. No methods of its
-    own, you load it with
+    Opaque handle wrapping a vertex-stage WGSL program. Load with
     <code>Asset.GetAsset("Shader", path)</code> and pass it to a shader-
     accepting method like
     <code>part:AttachShader(shader)</code> or
@@ -334,6 +406,21 @@ Asset.Drop(<span class="hl-str">"Model:levels.forest.cabin"</span>)</code></pre>
     <a href="shaders.html">Shaders</a> for the WGSL contract.
 </p>
 
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">shader:Source()</span><span class="member-type">→ string</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">shader:Free()</span></div>
+        <p class="member-desc">
+            See <a href="#free">:Free()</a>. Detaches this shader
+            from every Part / Primitive / scene hook and drops it
+            from the cache. Detach-only, the consumers keep
+            rendering with the engine default.
+        </p>
+    </div>
+</div>
+
 <h2 id="fragment">FragmentAsset</h2>
 
 <p>
@@ -344,6 +431,20 @@ Asset.Drop(<span class="hl-str">"Model:levels.forest.cabin"</span>)</code></pre>
     <code>GUI.SetSkybox(asset)</code>, or
     <code>GUI.SetPostEffect(asset)</code>.
 </p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">frag:Source()</span><span class="member-type">→ string</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">frag:Free()</span></div>
+        <p class="member-desc">
+            See <a href="#free">:Free()</a>. Detach-only, like
+            <code>ShaderAsset:Free()</code>; clears any skybox /
+            post-effect slot it was bound to as well.
+        </p>
+    </div>
+</div>
 
 <p>
     This is where ~all custom shader work lives, surface lighting,

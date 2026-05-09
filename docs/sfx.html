@@ -39,7 +39,12 @@ snd:Volume(<span class="hl-num">0.6</span>):Echo(<span class="hl-num">120</span>
         <p class="member-desc">
             Wrap a <code>SoundData</code> into a playable <code>Sound</code>.
             The same data can back many independent Sounds, each
-            with its own shader chain and Play/Stop state.
+            with its own shader chain and Play/Stop state. To
+            free every Sound backed by a particular
+            <code>SoundData</code>, call
+            <a href="asset.html#free"><code>data:Free()</code></a>
+            (or <code>Asset.Drop("Sound:path")</code> for path-loaded
+            sounds).
         </p>
     </div>
 </div>

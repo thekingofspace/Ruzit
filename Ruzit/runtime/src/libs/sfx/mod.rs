@@ -126,6 +126,10 @@ impl UserData for SoundData {
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
         m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
         m.add_method("ByteCount", |_, this, _: ()| Ok(this.bytes.len() as i64));
+        m.add_method("Free", |lua, this, _: ()| {
+            crate::libs::asset::free_asset_by_id(lua, "Sound", this.id);
+            Ok(())
+        });
     }
 }
 

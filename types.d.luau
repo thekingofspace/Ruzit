@@ -247,6 +247,30 @@ export type Process_API = {
 -- Asset, typed loaders for images, sounds, shaders, fonts, models, files.
 -- =============================================================================
 
+-- =============================================================================
+-- :Free()
+-- Every asset userdata (ImageAsset, SoundData, ShaderAsset, FragmentAsset,
+-- ModelAsset, FontAsset) exposes a :Free() method. It's the per-instance
+-- counterpart of Asset.Drop:
+--   * Asset.Drop("Image:foo.bar") frees the asset behind a path.
+--   * asset:Free() frees the engine references to *this exact handle*,
+--     no path needed, works on procedurally-generated assets too
+--     (Asset.FromString, Asset.FromPixels, Renderable.SimplifyMesh).
+--
+-- What it actually does:
+--   * Detaches every BasePart / Primitive / Sound currently using this asset
+--     (textures, models, fonts, shader attachments, sound voices),
+--   * Drops the entry from the engine's asset cache so a future GetAsset
+--     re-loads from disk,
+--   * Leaves your local Lua variable alone, you can keep a reference, the
+--     engine just stops tracking it. Memory is reclaimed once nothing in
+--     Lua holds it either.
+--
+-- Use :Free() when you've still got the asset in a local but want to nuke
+-- engine usage of it (e.g. clearing every Part textured with the same image).
+-- Use Asset.Drop when you only know the path.
+-- =============================================================================
+
 declare class ImageAsset
 	-- Pixel width.
 	function Width(self): number
@@ -259,6 +283,9 @@ declare class ImageAsset
 	-- you need to inspect or mutate pixels, most uses just hand the asset
 	-- to a GUI / Renderable.
 	function Pixels(self): string
+	-- Per-instance free, see top of section. Detaches every Part / Primitive
+	-- using this image and drops it from the asset cache.
+	function Free(self): ()
 end
 
 declare class SoundData
@@ -266,6 +293,10 @@ declare class SoundData
 	-- Encoded byte length (NOT decoded sample count). Decoding happens on
 	-- :Play() in SFX.LoadSound.
 	function ByteCount(self): number
+	-- Per-instance free, see top of section. Stops every Sound currently
+	-- backed by this data and drops it from the asset cache. Existing
+	-- Sound wrappers go silent on next :Play().
+	function Free(self): ()
 end
 
 -- =============================================================================
@@ -515,11 +546,26 @@ end
 --
 -- =============================================================================
 
-declare class ShaderAsset end
-declare class FragmentAsset end
+declare class ShaderAsset
+	function Source(self): string
+	-- Per-instance free, see top of Asset section. Detaches this shader
+	-- from every Part / Primitive / scene hook and drops it from the
+	-- asset cache.
+	function Free(self): ()
+end
+declare class FragmentAsset
+	function Source(self): string
+	-- Per-instance free, see top of Asset section. Detaches this fragment
+	-- shader from every Part / Primitive / SetSkybox / SetPostEffect hook
+	-- and drops it from the asset cache.
+	function Free(self): ()
+end
 
 declare class FontAsset
 	function Source(self): string
+	-- Per-instance free, see top of Asset section. Drops every text
+	-- Primitive backed by this font and clears it from the cache.
+	function Free(self): ()
 end
 
 export type Asset_API = {
@@ -1045,6 +1091,10 @@ declare class ModelAsset
 	-- Triangle count (== indices/3).
 	function TriangleCount(self): number
 	function Source(self): string
+	-- Per-instance free, see top of Asset section. Destroys every
+	-- BasePart spawned from this model (BaseModel / SimplifyMesh
+	-- output) and drops it from the asset cache.
+	function Free(self): ()
 end
 
 declare class CFrame

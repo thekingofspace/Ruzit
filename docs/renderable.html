@@ -108,7 +108,11 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
         <p class="member-desc">
             Polygon reduction by quantization clustering. <code>ratio</code>
             is a 0..1 hint (default 0.5 &asymp; half the vertices). The
-            returned LOD inherits the source's animation clips.
+            returned LOD inherits the source's animation clips. The
+            ModelAsset has no path (it was generated, not loaded), so
+            free it with
+            <a href="asset.html#free"><code>lod:Free()</code></a> rather
+            than <code>Asset.Drop</code>.
         </p>
     </div>
 </div>
