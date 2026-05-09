@@ -193,8 +193,6 @@ fn looks_like_gif(b: &[u8]) -> bool {
     b.starts_with(b"GIF87a") || b.starts_with(b"GIF89a")
 }
 
-/// MP4 / MOV / 3GP / m4v all share the ISO Base Media File Format with
-/// `ftyp` at offset 4 of the file. Cheap and reliable container check.
 fn looks_like_mp4_mov(b: &[u8]) -> bool {
     b.len() >= 12 && &b[4..8] == b"ftyp"
 }
@@ -251,14 +249,10 @@ fn parse_gif(bytes: Vec<u8>, source: String) -> mlua::Result<VideoAsset> {
     })
 }
 
-/// Decode an MP4 / MOV by shelling out to `ffmpeg` and `ffprobe`.
-/// FFmpeg must be installed and on PATH on the running machine — the
-/// engine doesn't bundle it. Returns the decoded VideoAsset (raw RGBA
-/// frames) and an Option of the audio track encoded as WAV bytes ready
-/// to feed into SFX.LoadSound.
 fn parse_mp4_mov(bytes: Vec<u8>, source: String) -> mlua::Result<(VideoAsset, Option<Vec<u8>>)> {
     use std::process::Command;
-    let mkerr = |msg: String| mlua::Error::RuntimeError(format!("Video '{source}' (mp4/mov): {msg}"));
+    let mkerr =
+        |msg: String| mlua::Error::RuntimeError(format!("Video '{source}' (mp4/mov): {msg}"));
 
     if !ffmpeg_on_path() {
         return Err(mkerr(
@@ -269,29 +263,26 @@ fn parse_mp4_mov(bytes: Vec<u8>, source: String) -> mlua::Result<(VideoAsset, Op
         ));
     }
 
-    // Stage the input in a temp dir so ffmpeg can read it directly.
     let tmp_dir = std::env::temp_dir().join(format!(
         "ruzit-video-{:x}-{}",
         std::process::id(),
         next_shader_id()
     ));
-    std::fs::create_dir_all(&tmp_dir).map_err(|e| {
-        mkerr(format!("create temp dir {}: {e}", tmp_dir.display()))
-    })?;
+    std::fs::create_dir_all(&tmp_dir)
+        .map_err(|e| mkerr(format!("create temp dir {}: {e}", tmp_dir.display())))?;
     let input_path = tmp_dir.join("input.bin");
     let audio_path = tmp_dir.join("audio.wav");
-    std::fs::write(&input_path, &bytes).map_err(|e| {
-        mkerr(format!("write temp input: {e}"))
-    })?;
+    std::fs::write(&input_path, &bytes).map_err(|e| mkerr(format!("write temp input: {e}")))?;
 
-    // Probe dimensions + fps + has-audio in one ffprobe call. JSON is the
-    // most parser-friendly output format.
     let probe = Command::new("ffprobe")
         .args([
-            "-v", "error",
-            "-print_format", "json",
+            "-v",
+            "error",
+            "-print_format",
+            "json",
             "-show_streams",
-            "-show_entries", "stream=index,codec_type,width,height,r_frame_rate,nb_frames",
+            "-show_entries",
+            "stream=index,codec_type,width,height,r_frame_rate,nb_frames",
         ])
         .arg(&input_path)
         .output()
@@ -322,19 +313,15 @@ fn parse_mp4_mov(bytes: Vec<u8>, source: String) -> mlua::Result<(VideoAsset, Op
         }
     }
 
-    let video_stream = video_stream.ok_or_else(|| {
-        mkerr("file has no video stream".into())
-    })?;
+    let video_stream = video_stream.ok_or_else(|| mkerr("file has no video stream".into()))?;
     let width = video_stream
         .get("width")
         .and_then(|v| v.as_u64())
-        .ok_or_else(|| mkerr("video stream missing width".into()))?
-        as u32;
+        .ok_or_else(|| mkerr("video stream missing width".into()))? as u32;
     let height = video_stream
         .get("height")
         .and_then(|v| v.as_u64())
-        .ok_or_else(|| mkerr("video stream missing height".into()))?
-        as u32;
+        .ok_or_else(|| mkerr("video stream missing height".into()))? as u32;
     let fps_str = video_stream
         .get("r_frame_rate")
         .and_then(|v| v.as_str())
@@ -342,19 +329,10 @@ fn parse_mp4_mov(bytes: Vec<u8>, source: String) -> mlua::Result<(VideoAsset, Op
     let fps = parse_rational(fps_str).unwrap_or(30.0).max(1.0);
     let frame_delay_ms = (1000.0 / fps).round().max(10.0) as u32;
 
-    // Decode video to raw RGBA frames on stdout.
     let video_out = Command::new("ffmpeg")
-        .args([
-            "-v", "error",
-            "-i",
-        ])
+        .args(["-v", "error", "-i"])
         .arg(&input_path)
-        .args([
-            "-f", "rawvideo",
-            "-pix_fmt", "rgba",
-            "-an",
-            "-",
-        ])
+        .args(["-f", "rawvideo", "-pix_fmt", "rgba", "-an", "-"])
         .output()
         .map_err(|e| mkerr(format!("spawn ffmpeg (video): {e}")))?;
     if !video_out.status.success() {
@@ -384,9 +362,6 @@ fn parse_mp4_mov(bytes: Vec<u8>, source: String) -> mlua::Result<(VideoAsset, Op
         frames.push(video_out.stdout[start..end].to_vec());
     }
 
-    // Decode audio to a WAV file (separate ffmpeg call so the streams
-    // don't get mangled together over stdout). Skipped if no audio
-    // stream exists.
     let audio_bytes = if has_audio {
         let audio_status = Command::new("ffmpeg")
             .args(["-v", "error", "-y", "-i"])
@@ -397,7 +372,9 @@ fn parse_mp4_mov(bytes: Vec<u8>, source: String) -> mlua::Result<(VideoAsset, Op
             .map_err(|e| mkerr(format!("spawn ffmpeg (audio): {e}")))?;
         if !audio_status.status.success() {
             let stderr = String::from_utf8_lossy(&audio_status.stderr).to_string();
-            eprintln!("[Video] '{source}': audio extraction failed, video continues without audio: {stderr}");
+            eprintln!(
+                "[Video] '{source}': audio extraction failed, video continues without audio: {stderr}"
+            );
             None
         } else {
             std::fs::read(&audio_path).ok()
