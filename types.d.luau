@@ -2594,6 +2594,30 @@ export type GPU_API = {
 	SetVSync: (on: boolean) -> (),
 	-- True if the swapchain is currently in a VSync mode.
 	GetVSync: () -> boolean,
+
+	-- Set the GPU power mode. Affects which adapter the engine
+	-- requests at startup (and so which clock-speed bias the
+	-- driver applies).
+	--   "Quality"     — HighPerformance adapter. Discrete GPU on
+	--                   dual-GPU laptops, max-FPS bias. Best for
+	--                   shooters / action games where you want
+	--                   the highest sustained FPS the hardware
+	--                   can give. Default.
+	--   "Performance" — LowPower adapter. Integrated GPU when
+	--                   present, battery-friendly. Use for
+	--                   stylized / lightweight games where
+	--                   battery life matters more than peak FPS.
+	--   "Auto"        — Whatever the driver picks by default
+	--                   (often LowPower on laptops).
+	-- Adapter selection happens at startup, so calling this
+	-- AFTER the window is open only updates the value reported
+	-- by GetPowerMode and persists it for the next launch — the
+	-- live adapter doesn't change. Set this before opening the
+	-- window (or in build.toml's startup script) for the change
+	-- to take effect this run.
+	SetPowerMode: (mode: "Quality" | "Performance" | "Auto") -> (),
+	-- Read the current power-mode preference.
+	GetPowerMode: () -> "Quality" | "Performance" | "Auto",
 	GetBounds: (part: BasePart, quality: number?) -> { { Position: Vector, Size: Vector, Min: Vector, Max: Vector } },
 	-- Returns every renderable BasePart whose bounds (computed at the
 	-- given quality) overlap the AABB centered at `center` with extents

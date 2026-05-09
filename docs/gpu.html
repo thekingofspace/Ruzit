@@ -223,6 +223,53 @@
     </div>
     <div class="member">
         <div class="member-header">
+            <span class="member-name">GPU.SetPowerMode(mode)</span>
+        </div>
+        <p class="member-desc">
+            Set the GPU power-mode preference. Three options:
+            <ul>
+                <li><code>"Quality"</code> &mdash; <strong>default</strong>.
+                    Requests the <em>HighPerformance</em> adapter
+                    (discrete GPU on dual-GPU laptops) and biases
+                    the driver toward high clocks. Best for
+                    shooters / action games where you want the
+                    highest sustained FPS the hardware can give
+                    you.</li>
+                <li><code>"Performance"</code> &mdash; despite the
+                    name, the <em>battery-friendly</em> mode.
+                    Requests the <em>LowPower</em> adapter
+                    (integrated GPU when present) and lets the
+                    driver downclock aggressively. Use for
+                    lightweight / stylized games where you'd
+                    rather extend laptop battery life than push
+                    FPS.</li>
+                <li><code>"Auto"</code> &mdash; whatever the driver
+                    picks when no preference is given. On laptops
+                    that often means LowPower; on desktops it
+                    usually means the only available adapter.</li>
+            </ul>
+            <strong>Adapter selection happens once, at startup.</strong>
+            Calling <code>SetPowerMode</code> after the window
+            opens stores the preference (so
+            <code>GetPowerMode</code> returns it), but doesn't
+            switch the live adapter. To actually change the
+            adapter, call this <em>before</em> opening the
+            window (or set it from a startup script the launcher
+            runs).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.GetPowerMode()</span>
+            <span class="member-type">→ "Quality" | "Performance" | "Auto"</span>
+        </div>
+        <p class="member-desc">
+            Current power-mode preference. Default is
+            <code>"Quality"</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
             <span class="member-name">GPU.GetBounds(part, quality?)</span>
             <span class="member-type">→ { { Position, Size, Min, Max } }</span>
         </div>

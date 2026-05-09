@@ -103,6 +103,34 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
             Ok(crate::libs::gui::render::get_vsync())
         })?,
     )?;
+    t.set(
+        "SetPowerMode",
+        lua.create_function(|_, mode: String| -> mlua::Result<()> {
+            match mode.as_str() {
+                "Quality" | "quality" | "Q" | "max" | "Max" => {
+                    crate::libs::gui::render::set_power_mode_quality();
+                }
+                "Performance" | "performance" | "P" | "battery" | "Battery" => {
+                    crate::libs::gui::render::set_power_mode_performance();
+                }
+                "Auto" | "auto" | "default" | "Default" => {
+                    crate::libs::gui::render::set_power_mode_auto();
+                }
+                other => {
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "GPU.SetPowerMode: unknown mode '{other}' (try 'Quality', 'Performance', 'Auto')"
+                    )));
+                }
+            }
+            Ok(())
+        })?,
+    )?;
+    t.set(
+        "GetPowerMode",
+        lua.create_function(|_, _: ()| -> mlua::Result<String> {
+            Ok(crate::libs::gui::render::power_mode_label().to_string())
+        })?,
+    )?;
     Ok(t)
 }
 

@@ -28,6 +28,40 @@ pub fn take_present_mode_dirty() -> bool {
     PRESENT_MODE_DIRTY.swap(false, Ordering::Relaxed)
 }
 
+/// Power-mode preference, picked up at adapter selection.
+/// 0 = Quality (HighPerformance adapter, max-FPS bias)
+/// 1 = Performance (LowPower adapter, battery-friendly)
+/// 2 = Auto (driver default — typically picks LowPower on laptops)
+static POWER_MODE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+pub fn set_power_mode_quality() {
+    POWER_MODE.store(0, Ordering::Relaxed);
+}
+
+pub fn set_power_mode_performance() {
+    POWER_MODE.store(1, Ordering::Relaxed);
+}
+
+pub fn set_power_mode_auto() {
+    POWER_MODE.store(2, Ordering::Relaxed);
+}
+
+pub fn power_mode_label() -> &'static str {
+    match POWER_MODE.load(Ordering::Relaxed) {
+        0 => "Quality",
+        1 => "Performance",
+        _ => "Auto",
+    }
+}
+
+pub fn power_preference() -> wgpu::PowerPreference {
+    match POWER_MODE.load(Ordering::Relaxed) {
+        0 => wgpu::PowerPreference::HighPerformance,
+        1 => wgpu::PowerPreference::LowPower,
+        _ => wgpu::PowerPreference::default(),
+    }
+}
+
 fn vsync_preference() -> bool {
     VSYNC_ON.load(Ordering::Relaxed)
 }
@@ -356,7 +390,7 @@ impl GpuState {
             .map_err(|e| format!("create_surface: {e}"))?;
 
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::default(),
+            power_preference: power_preference(),
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
         }))
@@ -421,6 +455,11 @@ impl GpuState {
         eprintln!(
             "[Ruzit] swapchain present_mode = {:?}  (available: {:?})",
             chosen_present, caps.present_modes
+        );
+        eprintln!(
+            "[Ruzit] adapter power preference = {} ({:?})",
+            power_mode_label(),
+            power_preference()
         );
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
