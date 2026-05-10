@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Primitives - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=4.5">
-    <script src="theme.js?v=4.5"></script>
+    <link rel="stylesheet" href="style.css?v=4.6">
+    <script src="theme.js?v=4.6"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=4.5" defer></script>
+<script src="sidebar.js?v=4.6" defer></script>
 
 <main>
 
@@ -44,6 +44,24 @@
     velocities, anywhere a 3D quantity makes sense. Coordinate convention
     is right-handed: +X right, +Y up, +Z toward the camera.
 </p>
+
+<div class="callout note">
+    <strong>Native vector interop.</strong>
+    Every Ruzit API that accepts a <code>Vector</code> also accepts a
+    <a href="https://luau.org/library/#vector-library" target="_blank" rel="noopener">Luau native <code>vector</code></a>
+    (the built-in primitive returned by <code>vector(x, y, z)</code>),
+    so these are interchangeable:
+    <pre><code>part.Size = Vector.<span class="hl-fn">new</span>(<span class="hl-num">1</span>, <span class="hl-num">2</span>, <span class="hl-num">3</span>)
+part.Size = <span class="hl-fn">vector</span>(<span class="hl-num">1</span>, <span class="hl-num">2</span>, <span class="hl-num">3</span>)
+part:<span class="hl-fn">LookAt</span>(<span class="hl-fn">vector</span>(<span class="hl-num">0</span>, <span class="hl-num">5</span>, <span class="hl-num">0</span>))</code></pre>
+    Pass whichever feels natural. Use <code>Vector</code> when you want
+    the named methods (<code>:Lerp</code>, <code>:Cross</code>, etc.) or
+    component getters (<code>.X</code>, <code>.Magnitude</code>); reach
+    for native <code>vector</code> when you're hot-path reading
+    components in a tight loop, since native vector reads happen
+    entirely inside the VM (~5-10× faster than crossing the FFI
+    boundary every time).
+</div>
 
 <h3>Constructors</h3>
 
@@ -193,6 +211,25 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
             Euclidean distance between two points. Equivalent to
             <code>(v - other).Magnitude</code>.
         </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">v:ToNative()</span>
+            <span class="member-type">→ vector</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Convert to a Luau
+            <a href="https://luau.org/library/#vector-library" target="_blank" rel="noopener">native <code>vector</code></a>.
+            Use this in hot paths where you're reading components
+            repeatedly &mdash; native vector reads happen inside the VM
+            without crossing into Rust, which is roughly 5-10× faster
+            than reading <code>v.X</code> / <code>v.Y</code> /
+            <code>v.Z</code> on a userdata per access.
+        </p>
+        <pre><code><span class="hl-kw">local</span> nat = part.Size:<span class="hl-fn">ToNative</span>()
+<span class="hl-cmt">-- nat.x, nat.y, nat.z are pure Lua reads from here on,</span>
+<span class="hl-cmt">-- and you can pass `nat` back into any API that takes a Vector.</span></code></pre>
     </div>
     <div class="member">
         <div class="member-header">

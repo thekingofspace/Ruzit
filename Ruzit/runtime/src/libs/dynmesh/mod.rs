@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use mlua::{AnyUserData, Lua, Table, UserData, UserDataMethods, Value};
 
-use crate::libs::primitives::{CFrame, Vector};
+use crate::libs::primitives::{value_to_vector_opt, CFrame, Vector};
 use crate::libs::renderable::{PartHandle, PartState};
 
 static NEXT_DYNMESH_ID: AtomicU64 = AtomicU64::new(1);
@@ -183,8 +183,8 @@ impl UserData for DynMeshHandle {
                     let (_, t) = pair?;
                     if let Some(idx) = t.get::<Option<i64>>("vertex")? {
                         anchors.push(Anchor::Vertex(idx.max(0) as usize));
-                    } else if let Some(v) = t.get::<Option<AnyUserData>>("point")? {
-                        let pos = *v.borrow::<Vector>().map_err(|_| {
+                    } else if let Some(val) = t.get::<Option<Value>>("point")? {
+                        let pos = value_to_vector_opt(&val).ok_or_else(|| {
                             mlua::Error::RuntimeError(
                                 "DynMesh:Stretch: 'point' must be a Vector".into(),
                             )
@@ -382,17 +382,17 @@ fn parse_weld_options(
             None,
         ));
     }
-    let point_v = t.get::<Option<AnyUserData>>("point")?;
-    let rot_v = t.get::<Option<AnyUserData>>("rotation")?;
+    let point_v = t.get::<Option<Value>>("point")?;
+    let rot_v = t.get::<Option<Value>>("rotation")?;
     let has_explicit = point_v.is_some() || rot_v.is_some();
     let pos = match point_v {
-        Some(v) => *v.borrow::<Vector>().map_err(|_| {
+        Some(v) => value_to_vector_opt(&v).ok_or_else(|| {
             mlua::Error::RuntimeError("DynMesh:Weld: 'point' must be a Vector".into())
         })?,
         None => Vector::new(0.0, 0.0, 0.0),
     };
     let rot = match rot_v {
-        Some(v) => *v.borrow::<Vector>().map_err(|_| {
+        Some(v) => value_to_vector_opt(&v).ok_or_else(|| {
             mlua::Error::RuntimeError("DynMesh:Weld: 'rotation' must be a Vector".into())
         })?,
         None => Vector::new(0.0, 0.0, 0.0),

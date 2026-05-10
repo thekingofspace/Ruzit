@@ -10,6 +10,7 @@ use mlua::{
 };
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 
+use crate::libs::primitives::read_xyz_from_args;
 use crate::libs::shader::{AttachedShader, Params, read_param, shader_attach_spec, shader_id};
 use crate::libs::signal;
 
@@ -236,19 +237,6 @@ struct UpdateState {
     interval: f64,
     next_fire: f64,
     signal_key: Arc<RegistryKey>,
-}
-
-fn mlua_value_to_f32(v: mlua::Value) -> mlua::Result<f32> {
-    match v {
-        mlua::Value::Number(n) => Ok(n as f32),
-        mlua::Value::Integer(n) => Ok(n as f32),
-        mlua::Value::Nil => Err(mlua::Error::RuntimeError(
-            "Sound.SetPosition: expected number or nil to clear".into(),
-        )),
-        _ => Err(mlua::Error::RuntimeError(
-            "Sound.SetPosition: expected number".into(),
-        )),
-    }
 }
 
 fn output_handle() -> mlua::Result<OutputStreamHandle> {
@@ -491,20 +479,17 @@ impl UserData for Sound {
         m.add_method(
             "SetPosition",
             |_, this, args: mlua::MultiValue| -> mlua::Result<()> {
-                if args.is_empty() {
+                let first_is_nil = args
+                    .iter()
+                    .next()
+                    .map(|v| matches!(v, mlua::Value::Nil))
+                    .unwrap_or(true);
+                if args.is_empty() || first_is_nil {
                     *this.position.lock().unwrap() = None;
                     return Ok(());
                 }
-                let mut iter = args.into_iter();
-                let first = iter.next().unwrap_or(mlua::Value::Nil);
-                if matches!(first, mlua::Value::Nil) {
-                    *this.position.lock().unwrap() = None;
-                    return Ok(());
-                }
-                let x = mlua_value_to_f32(first)?;
-                let y = mlua_value_to_f32(iter.next().unwrap_or(mlua::Value::Nil))?;
-                let z = mlua_value_to_f32(iter.next().unwrap_or(mlua::Value::Nil))?;
-                let falloff = match iter.next() {
+                let ((x, y, z), tail) = read_xyz_from_args(args)?;
+                let falloff = match tail {
                     Some(mlua::Value::Number(n)) => n as f32,
                     Some(mlua::Value::Integer(n)) => n as f32,
                     _ => 20.0,

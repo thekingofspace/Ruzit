@@ -9,7 +9,7 @@ use mlua::{
 };
 
 use crate::libs::asset::{FragmentAsset, ImageAsset, ModelAsset, ShaderAsset};
-use crate::libs::primitives::{CFrame, Color3, Vector};
+use crate::libs::primitives::{value_to_vector_opt, CFrame, Color3, Vector};
 use crate::libs::signal;
 
 pub mod animation;
@@ -132,10 +132,7 @@ impl UserData for DistortionBoxHandle {
         f.add_field_method_get("Size", |_, this| {
             Ok(this.inner.lock().unwrap().current_size)
         });
-        f.add_field_method_set("Size", |_, this, value: AnyUserData| {
-            let v = *value.borrow::<Vector>().map_err(|_| {
-                mlua::Error::RuntimeError("DistortionBox.Size expects a Vector".into())
-            })?;
+        f.add_field_method_set("Size", |_, this, v: Vector| {
             let mut bs = this.inner.lock().unwrap();
             if bs.alive {
                 bs.current_size = v;
@@ -734,11 +731,8 @@ impl UserData for PartHandle {
         });
 
         f.add_field_method_get("Size", |_, this| Ok(this.state.lock().unwrap().size));
-        f.add_field_method_set("Size", |lua, this, value: AnyUserData| {
+        f.add_field_method_set("Size", |lua, this, v: Vector| {
             this.ensure_alive("set Size")?;
-            let v = *value
-                .borrow::<Vector>()
-                .map_err(|_| mlua::Error::RuntimeError("Size expects a Vector".into()))?;
             let sig = {
                 let mut s = this.state.lock().unwrap();
                 s.size = v;
@@ -944,16 +938,11 @@ impl UserData for PartHandle {
 
         m.add_method(
             "Deform",
-            |_, this, (target, envelope, disp): (AnyUserData, f32, AnyUserData)| -> mlua::Result<u32> {
+            |_, this, (target, envelope, d): (AnyUserData, f32, Vector)| -> mlua::Result<u32> {
                 this.ensure_alive("Deform")?;
                 let cf = *target.borrow::<CFrame>().map_err(|_| {
                     mlua::Error::RuntimeError(
                         "Deform: first argument must be a CFrame (target point on the mesh)".into(),
-                    )
-                })?;
-                let d = *disp.borrow::<Vector>().map_err(|_| {
-                    mlua::Error::RuntimeError(
-                        "Deform: third argument must be a Vector (displacement)".into(),
                     )
                 })?;
                 let mut s = this.state.lock().unwrap();
@@ -998,11 +987,8 @@ impl UserData for PartHandle {
 
         m.add_method(
             "LocalToWorld",
-            |_, this, local: AnyUserData| -> mlua::Result<Vector> {
+            |_, this, v: Vector| -> mlua::Result<Vector> {
                 this.ensure_alive("LocalToWorld")?;
-                let v = *local.borrow::<Vector>().map_err(|_| {
-                    mlua::Error::RuntimeError("LocalToWorld: argument must be a Vector".into())
-                })?;
                 let cf = this.state.lock().unwrap().cframe;
                 let rot = euler_to_matrix_local(cf.rotation);
                 let r = mat3_apply_local(rot, v);
@@ -1016,11 +1002,8 @@ impl UserData for PartHandle {
 
         m.add_method(
             "WorldToLocal",
-            |_, this, world: AnyUserData| -> mlua::Result<Vector> {
+            |_, this, v: Vector| -> mlua::Result<Vector> {
                 this.ensure_alive("WorldToLocal")?;
-                let v = *world.borrow::<Vector>().map_err(|_| {
-                    mlua::Error::RuntimeError("WorldToLocal: argument must be a Vector".into())
-                })?;
                 let cf = this.state.lock().unwrap().cframe;
                 let rel = Vector::new(
                     v.x - cf.position.x,
@@ -1303,17 +1286,17 @@ impl UserData for AnimationTrackHandle {
                                 ));
                             }
                         };
-                        let disp_ud = match iter.next() {
-                            Some(Value::UserData(u)) => u,
-                            _ => {
-                                return Err(mlua::Error::RuntimeError(
-                                    "AddKeyframe(\"Deform\"): displacement must be a Vector"
-                                        .into(),
-                                ));
-                            }
-                        };
+                        let disp_val = iter.next().ok_or_else(|| {
+                            mlua::Error::RuntimeError(
+                                "AddKeyframe(\"Deform\"): displacement must be a Vector".into(),
+                            )
+                        })?;
+                        let d = value_to_vector_opt(&disp_val).ok_or_else(|| {
+                            mlua::Error::RuntimeError(
+                                "AddKeyframe(\"Deform\"): displacement must be a Vector".into(),
+                            )
+                        })?;
                         let cf = *cf_ud.borrow::<CFrame>()?;
-                        let d = *disp_ud.borrow::<Vector>()?;
                         KeyframeAction::Deform {
                             center: [cf.position.x, cf.position.y, cf.position.z],
                             envelope,
@@ -1561,7 +1544,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         "DistortionBox",
         lua.create_function(
             |lua,
-             (part, cf, size): (AnyUserData, AnyUserData, AnyUserData)|
+             (part, cf, size): (AnyUserData, AnyUserData, Vector)|
              -> mlua::Result<AnyUserData> {
                 let h = part.borrow::<PartHandle>().map_err(|_| {
                     mlua::Error::RuntimeError(
@@ -1571,11 +1554,6 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 let cf = *cf.borrow::<CFrame>().map_err(|_| {
                     mlua::Error::RuntimeError(
                         "DistortionBox: second argument must be a CFrame".into(),
-                    )
-                })?;
-                let size = *size.borrow::<Vector>().map_err(|_| {
-                    mlua::Error::RuntimeError(
-                        "DistortionBox: third argument must be a Vector (size)".into(),
                     )
                 })?;
                 let captured = {
@@ -1638,8 +1616,7 @@ animations: ma.animations.clone(),
     t.set(
         "SetSun",
         lua.create_function(
-            |_, (dir, color): (AnyUserData, Option<AnyUserData>)| -> mlua::Result<()> {
-                let d = *dir.borrow::<Vector>()?;
+            |_, (d, color): (Vector, Option<AnyUserData>)| -> mlua::Result<()> {
                 let c = match color {
                     Some(ud) => Some(*ud.borrow::<Color3>()?),
                     None => None,

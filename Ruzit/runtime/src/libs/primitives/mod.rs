@@ -1,4 +1,4 @@
-use mlua::{AnyUserData, Lua, Table, UserData, UserDataFields, UserDataMethods, Value};
+use mlua::{AnyUserData, FromLua, Lua, Table, UserData, UserDataFields, UserDataMethods, Value};
 
 fn lerp_f(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
@@ -233,6 +233,62 @@ impl Vector {
         let dz = self.z - o.z;
         (dx * dx + dy * dy + dz * dz).sqrt()
     }
+
+    pub fn to_native(&self) -> mlua::Vector {
+        mlua::Vector::new(self.x, self.y, self.z)
+    }
+
+    pub fn from_native(v: mlua::Vector) -> Self {
+        Vector::new(v.x(), v.y(), v.z())
+    }
+}
+
+impl FromLua for Vector {
+    fn from_lua(value: Value, _: &Lua) -> mlua::Result<Self> {
+        match value {
+            Value::UserData(ud) => Ok(*ud.borrow::<Vector>()?),
+            Value::Vector(v) => Ok(Vector::from_native(v)),
+            other => Err(mlua::Error::FromLuaConversionError {
+                from: other.type_name(),
+                to: "Vector".to_string(),
+                message: Some(
+                    "expected a Ruzit Vector userdata or a Luau native vector".into(),
+                ),
+            }),
+        }
+    }
+}
+
+pub fn value_to_vector_opt(v: &Value) -> Option<Vector> {
+    match v {
+        Value::UserData(ud) => ud.borrow::<Vector>().ok().map(|r| *r),
+        Value::Vector(nv) => Some(Vector::from_native(*nv)),
+        _ => None,
+    }
+}
+
+fn value_to_f32(v: Value) -> mlua::Result<f32> {
+    match v {
+        Value::Number(n) => Ok(n as f32),
+        Value::Integer(n) => Ok(n as f32),
+        _ => Err(mlua::Error::RuntimeError(
+            "expected a number for x/y/z component".into(),
+        )),
+    }
+}
+
+pub fn read_xyz_from_args(
+    args: mlua::MultiValue,
+) -> mlua::Result<((f32, f32, f32), Option<Value>)> {
+    let mut iter = args.into_iter();
+    let first = iter.next().unwrap_or(Value::Nil);
+    if let Some(v) = value_to_vector_opt(&first) {
+        return Ok(((v.x, v.y, v.z), iter.next()));
+    }
+    let x = value_to_f32(first)?;
+    let y = value_to_f32(iter.next().unwrap_or(Value::Nil))?;
+    let z = value_to_f32(iter.next().unwrap_or(Value::Nil))?;
+    Ok(((x, y, z), iter.next()))
 }
 
 impl UserData for Vector {
@@ -246,8 +302,7 @@ impl UserData for Vector {
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
         m.add_method(
             "Lerp",
-            |_, this, (other, t): (AnyUserData, f32)| -> mlua::Result<Vector> {
-                let o = *other.borrow::<Vector>()?;
+            |_, this, (o, t): (Vector, f32)| -> mlua::Result<Vector> {
                 Ok(Vector::new(
                     lerp_f(this.x, o.x, t),
                     lerp_f(this.y, o.y, t),
@@ -255,27 +310,21 @@ impl UserData for Vector {
                 ))
             },
         );
-        m.add_method("Dot", |_, this, other: AnyUserData| -> mlua::Result<f32> {
-            let o = *other.borrow::<Vector>()?;
+        m.add_method("Dot", |_, this, o: Vector| -> mlua::Result<f32> {
             Ok(this.dot(&o))
         });
-        m.add_method(
-            "Cross",
-            |_, this, other: AnyUserData| -> mlua::Result<Vector> {
-                let o = *other.borrow::<Vector>()?;
-                Ok(this.cross(&o))
-            },
-        );
+        m.add_method("Cross", |_, this, o: Vector| -> mlua::Result<Vector> {
+            Ok(this.cross(&o))
+        });
         m.add_method("Normalized", |_, this, _: ()| -> mlua::Result<Vector> {
             Ok(this.normalized())
         });
-        m.add_method(
-            "Distance",
-            |_, this, other: AnyUserData| -> mlua::Result<f32> {
-                let o = *other.borrow::<Vector>()?;
-                Ok(this.distance(&o))
-            },
-        );
+        m.add_method("Distance", |_, this, o: Vector| -> mlua::Result<f32> {
+            Ok(this.distance(&o))
+        });
+        m.add_method("ToNative", |_, this, _: ()| -> mlua::Result<mlua::Vector> {
+            Ok(this.to_native())
+        });
 
         m.add_meta_method("__tostring", |_, this, _: ()| {
             Ok(format!("Vector({}, {}, {})", this.x, this.y, this.z))
@@ -283,61 +332,48 @@ impl UserData for Vector {
 
         m.add_meta_function(
             "__add",
-            |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<Vector> {
-                let a = *a.borrow::<Vector>()?;
-                let b = *b.borrow::<Vector>()?;
+            |_, (a, b): (Vector, Vector)| -> mlua::Result<Vector> {
                 Ok(Vector::new(a.x + b.x, a.y + b.y, a.z + b.z))
             },
         );
         m.add_meta_function(
             "__sub",
-            |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<Vector> {
-                let a = *a.borrow::<Vector>()?;
-                let b = *b.borrow::<Vector>()?;
+            |_, (a, b): (Vector, Vector)| -> mlua::Result<Vector> {
                 Ok(Vector::new(a.x - b.x, a.y - b.y, a.z - b.z))
             },
         );
         m.add_meta_function(
             "__mul",
             |_, (a, b): (Value, Value)| -> mlua::Result<Vector> {
-                let (v, s) =
-                    pair_with_scalar::<Vector>(&a, &b, "Vector * expects (Vector, number)")?;
+                let (v, s) = pair_vec_scalar(&a, &b, "Vector * expects (Vector, number)")?;
                 Ok(Vector::new(v.x * s, v.y * s, v.z * s))
             },
         );
         m.add_meta_function(
             "__div",
             |_, (a, b): (Value, Value)| -> mlua::Result<Vector> {
-                let (v, s) =
-                    pair_with_scalar::<Vector>(&a, &b, "Vector / expects (Vector, number)")?;
+                let (v, s) = pair_vec_scalar(&a, &b, "Vector / expects (Vector, number)")?;
                 Ok(Vector::new(v.x / s, v.y / s, v.z / s))
             },
         );
-        m.add_meta_function("__unm", |_, ud: AnyUserData| -> mlua::Result<Vector> {
-            let v = *ud.borrow::<Vector>()?;
+        m.add_meta_function("__unm", |_, v: Vector| -> mlua::Result<Vector> {
             Ok(Vector::new(-v.x, -v.y, -v.z))
         });
         m.add_meta_function(
             "__eq",
-            |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<bool> {
-                let a = a.borrow::<Vector>()?;
-                let b = b.borrow::<Vector>()?;
+            |_, (a, b): (Vector, Vector)| -> mlua::Result<bool> {
                 Ok(a.x == b.x && a.y == b.y && a.z == b.z)
             },
         );
         m.add_meta_function(
             "__lt",
-            |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<bool> {
-                let a = a.borrow::<Vector>()?;
-                let b = b.borrow::<Vector>()?;
+            |_, (a, b): (Vector, Vector)| -> mlua::Result<bool> {
                 Ok(a.x < b.x && a.y < b.y && a.z < b.z)
             },
         );
         m.add_meta_function(
             "__le",
-            |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<bool> {
-                let a = a.borrow::<Vector>()?;
-                let b = b.borrow::<Vector>()?;
+            |_, (a, b): (Vector, Vector)| -> mlua::Result<bool> {
                 Ok(a.x <= b.x && a.y <= b.y && a.z <= b.z)
             },
         );
@@ -531,7 +567,7 @@ impl UserData for CFrame {
                     let ud = lua.create_userdata(CFrame::new(position, rotation))?;
                     return Ok(Value::UserData(ud));
                 }
-                if let Some(v) = as_userdata::<Vector>(&b) {
+                if let Some(v) = value_to_vector_opt(&b) {
                     let rotated = mat3_apply(lhs_mat, v);
                     let result = Vector::new(
                         lhs.position.x + rotated.x,
@@ -555,6 +591,16 @@ fn pair_with_scalar<T: 'static + Copy>(a: &Value, b: &Value, err: &str) -> mlua:
     }
     if let (Some(s), Some(t)) = (as_scalar(a), as_userdata::<T>(b)) {
         return Ok((t, s));
+    }
+    Err(mlua::Error::RuntimeError(err.to_string()))
+}
+
+fn pair_vec_scalar(a: &Value, b: &Value, err: &str) -> mlua::Result<(Vector, f32)> {
+    if let (Some(v), Some(s)) = (value_to_vector_opt(a), as_scalar(b)) {
+        return Ok((v, s));
+    }
+    if let (Some(s), Some(v)) = (as_scalar(a), value_to_vector_opt(b)) {
+        return Ok((v, s));
     }
     Err(mlua::Error::RuntimeError(err.to_string()))
 }
@@ -651,24 +697,11 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     cframe_class.set(
         "new",
         lua.create_function(
-            |_, (pos, rot): (Option<AnyUserData>, Option<AnyUserData>)| -> mlua::Result<CFrame> {
-                let p = match pos {
-                    Some(ud) => *ud.borrow::<Vector>().map_err(|_| {
-                        mlua::Error::RuntimeError(
-                            "CFrame.new: first argument must be a Vector".into(),
-                        )
-                    })?,
-                    None => Vector::new(0.0, 0.0, 0.0),
-                };
-                let r = match rot {
-                    Some(ud) => *ud.borrow::<Vector>().map_err(|_| {
-                        mlua::Error::RuntimeError(
-                            "CFrame.new: second argument must be a Vector".into(),
-                        )
-                    })?,
-                    None => Vector::new(0.0, 0.0, 0.0),
-                };
-                Ok(CFrame::new(p, r))
+            |_, (pos, rot): (Option<Vector>, Option<Vector>)| -> mlua::Result<CFrame> {
+                Ok(CFrame::new(
+                    pos.unwrap_or(Vector::new(0.0, 0.0, 0.0)),
+                    rot.unwrap_or(Vector::new(0.0, 0.0, 0.0)),
+                ))
             },
         )?,
     )?;
@@ -685,19 +718,8 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     cframe_class.set(
         "LookAt",
         lua.create_function(
-            |_,
-             (eye_ud, target_ud, up_ud): (
-                AnyUserData,
-                AnyUserData,
-                Option<AnyUserData>,
-            )|
-             -> mlua::Result<CFrame> {
-                let eye = *eye_ud.borrow::<Vector>()?;
-                let target = *target_ud.borrow::<Vector>()?;
-                let up = match up_ud {
-                    Some(ud) => *ud.borrow::<Vector>()?,
-                    None => Vector::new(0.0, 1.0, 0.0),
-                };
+            |_, (eye, target, up): (Vector, Vector, Option<Vector>)| -> mlua::Result<CFrame> {
+                let up = up.unwrap_or(Vector::new(0.0, 1.0, 0.0));
                 let forward = Vector::new(
                     target.x - eye.x,
                     target.y - eye.y,

@@ -9,6 +9,7 @@ use mlua::{AnyUserData, Lua, MultiValue, Table, UserData, UserDataFields, UserDa
 use opus::{Application as OpusApplication, Channels as OpusChannels, Decoder, Encoder};
 use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
 
+use crate::libs::primitives::read_xyz_from_args;
 use crate::libs::signal;
 
 const SAMPLE_RATE: u32 = 48000;
@@ -71,18 +72,25 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     )?;
     t.set(
         "Spatial",
-        lua.create_function(|_, (x, y, z, falloff): (f32, f32, f32, Option<f32>)| {
+        lua.create_function(|_, args: MultiValue| -> mlua::Result<VoiceShader> {
+            let ((x, y, z), tail) = read_xyz_from_args(args)?;
+            let falloff = match tail {
+                Some(Value::Number(n)) => n as f32,
+                Some(Value::Integer(n)) => n as f32,
+                _ => 8.0,
+            };
             Ok(VoiceShader::Spatial {
                 x,
                 y,
                 z,
-                falloff: falloff.unwrap_or(8.0).max(0.1),
+                falloff: falloff.max(0.1),
             })
         })?,
     )?;
     t.set(
         "ListenerPosition",
-        lua.create_function(|_, (x, y, z): (f32, f32, f32)| -> mlua::Result<()> {
+        lua.create_function(|_, args: MultiValue| -> mlua::Result<()> {
+            let ((x, y, z), _) = read_xyz_from_args(args)?;
             LISTENER_POS.with(|c| *c.borrow_mut() = (x, y, z));
             Ok(())
         })?,
@@ -511,8 +519,13 @@ impl UserData for ChannelHandle {
         });
         m.add_method(
             "SetPosition",
-            |_, this, args: mlua::MultiValue| -> mlua::Result<()> {
-                if args.is_empty() {
+            |_, this, args: MultiValue| -> mlua::Result<()> {
+                let first_is_nil = args
+                    .iter()
+                    .next()
+                    .map(|v| matches!(v, Value::Nil))
+                    .unwrap_or(true);
+                if args.is_empty() || first_is_nil {
                     this.shaders
                         .lock()
                         .unwrap()
@@ -520,48 +533,30 @@ impl UserData for ChannelHandle {
                     *this.position.lock().unwrap() = (0.0, 0.0, 0.0);
                     return Ok(());
                 }
-                let mut iter = args.into_iter();
-                let first = iter.next().unwrap_or(mlua::Value::Nil);
-                if matches!(first, mlua::Value::Nil) {
-                    this.shaders
-                        .lock()
-                        .unwrap()
-                        .retain(|s| !matches!(s, VoiceShader::Spatial { .. }));
-                    *this.position.lock().unwrap() = (0.0, 0.0, 0.0);
-                    return Ok(());
-                }
-                let x = lua_value_to_f32(first)?;
-                let y = lua_value_to_f32(iter.next().unwrap_or(mlua::Value::Nil))?;
-                let z = lua_value_to_f32(iter.next().unwrap_or(mlua::Value::Nil))?;
+                let ((x, y, z), _) = read_xyz_from_args(args)?;
                 *this.position.lock().unwrap() = (x, y, z);
                 Ok(())
             },
         );
         m.add_method(
             "SetSpatial",
-            |_, this, args: mlua::MultiValue| -> mlua::Result<()> {
-                if args.is_empty() {
+            |_, this, args: MultiValue| -> mlua::Result<()> {
+                let first_is_nil = args
+                    .iter()
+                    .next()
+                    .map(|v| matches!(v, Value::Nil))
+                    .unwrap_or(true);
+                if args.is_empty() || first_is_nil {
                     this.shaders
                         .lock()
                         .unwrap()
                         .retain(|s| !matches!(s, VoiceShader::Spatial { .. }));
                     return Ok(());
                 }
-                let mut iter = args.into_iter();
-                let first = iter.next().unwrap_or(mlua::Value::Nil);
-                if matches!(first, mlua::Value::Nil) {
-                    this.shaders
-                        .lock()
-                        .unwrap()
-                        .retain(|s| !matches!(s, VoiceShader::Spatial { .. }));
-                    return Ok(());
-                }
-                let x = lua_value_to_f32(first)?;
-                let y = lua_value_to_f32(iter.next().unwrap_or(mlua::Value::Nil))?;
-                let z = lua_value_to_f32(iter.next().unwrap_or(mlua::Value::Nil))?;
-                let falloff = match iter.next() {
-                    Some(mlua::Value::Number(n)) => n as f32,
-                    Some(mlua::Value::Integer(n)) => n as f32,
+                let ((x, y, z), tail) = read_xyz_from_args(args)?;
+                let falloff = match tail {
+                    Some(Value::Number(n)) => n as f32,
+                    Some(Value::Integer(n)) => n as f32,
                     _ => 8.0,
                 };
                 let mut shaders = this.shaders.lock().unwrap();
@@ -576,16 +571,6 @@ impl UserData for ChannelHandle {
                 Ok(())
             },
         );
-    }
-}
-
-fn lua_value_to_f32(v: mlua::Value) -> mlua::Result<f32> {
-    match v {
-        mlua::Value::Number(n) => Ok(n as f32),
-        mlua::Value::Integer(n) => Ok(n as f32),
-        _ => Err(mlua::Error::RuntimeError(
-            "VoiceChannel position: expected number".into(),
-        )),
     }
 }
 

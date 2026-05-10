@@ -630,14 +630,9 @@ struct Hit {
 }
 
 fn vector_from_value(v: &Value, label: &str) -> mlua::Result<Vector> {
-    if let Value::UserData(ud) = v {
-        if let Ok(vv) = ud.borrow::<Vector>() {
-            return Ok(*vv);
-        }
-    }
-    Err(mlua::Error::RuntimeError(format!(
-        "{label} must be a Vector"
-    )))
+    crate::libs::primitives::value_to_vector_opt(v).ok_or_else(|| {
+        mlua::Error::RuntimeError(format!("{label} must be a Vector"))
+    })
 }
 
 fn screen_to_ray(lua: &Lua, point: AnyUserData) -> mlua::Result<MultiValue> {
@@ -672,8 +667,8 @@ fn screen_to_ray(lua: &Lua, point: AnyUserData) -> mlua::Result<MultiValue> {
     Ok(out)
 }
 
-fn world_to_screen(lua: &Lua, world: AnyUserData) -> mlua::Result<MultiValue> {
-    let world_pos = *world.borrow::<Vector>()?;
+fn world_to_screen(lua: &Lua, world: Vector) -> mlua::Result<MultiValue> {
+    let world_pos = world;
     let cam = renderable::camera_snapshot();
     let (w, h) = window_size();
     let aspect = if h > 0 { w as f32 / h as f32 } else { 1.0 };
