@@ -36,6 +36,7 @@ pub struct PlaneState {
     pub rest_threshold: f32,
     pub solver_iterations: u32,
     pub loop_solver: bool,
+    pub never_sleep: bool,
     pub defer_gpu: bool,
     pub gpu: Option<GpuPlaneResources>,
     pub rapier: Option<Box<RapierPlane>>,
@@ -113,6 +114,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
             let mut rest_threshold: f32 = 0.5;
             let mut solver_iterations: u32 = 4;
             let mut loop_solver: bool = false;
+            let mut never_sleep: bool = false;
             let mut defer_gpu: bool = false;
             if let Some(opts) = opts {
                 if let Ok(g) = opts.get::<Vector>("Gravity") {
@@ -135,6 +137,9 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 }
                 if let Ok(v) = opts.get::<bool>("LoopSolver") {
                     loop_solver = v;
+                }
+                if let Ok(v) = opts.get::<bool>("NeverSleep") {
+                    never_sleep = v;
                 }
                 if let Ok(v) = opts.get::<bool>("DeferGpu") {
                     defer_gpu = v;
@@ -164,6 +169,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 rest_threshold,
                 solver_iterations,
                 loop_solver,
+                never_sleep,
                 defer_gpu,
                 gpu: None,
                 rapier: None,
@@ -290,11 +296,27 @@ fn step_plane(plane_arc: &Arc<Mutex<PlaneState>>, dt: f32) {
     let plane_gravity = plane.gravity;
     let lin_damp = plane.linear_damping;
     let ang_damp = plane.angular_damping;
-    let solver_iters = if plane.loop_solver {
+    let never_sleep = plane.never_sleep;
+    let base_solver = if plane.loop_solver {
         64u32
     } else {
         plane.solver_iterations.max(1)
     };
+    let max_q = plane
+        .objects
+        .values()
+        .map(|o| o.hitbox_quality)
+        .max()
+        .unwrap_or(1)
+        .max(1) as f32;
+    let q_factor = ((max_q - 1.0) / 31.0).clamp(0.0, 1.0);
+    let solver_iters = ((base_solver as f32) * (1.0 + q_factor * 1.5)).round() as u32;
+    let friction_iters = (4.0 + q_factor * 12.0).round() as usize;
+    let pgs_iters = (2.0 + q_factor * 6.0).round() as usize;
+    let stab_iters = (2.0 + q_factor * 4.0).round() as usize;
+    let allowed_lin_err = 0.001 / (1.0 + q_factor * 4.0);
+    let prediction_dist = 0.002 / (1.0 + q_factor * 2.0);
+    let damping_ratio = 5.0 + q_factor * 5.0;
 
     let ids: Vec<u64> = plane.objects.keys().copied().collect();
 
@@ -305,15 +327,19 @@ fn step_plane(plane_arc: &Arc<Mutex<PlaneState>>, dt: f32) {
         rapier.integration_parameters.num_solver_iterations =
             std::num::NonZeroUsize::new(solver_iters as usize)
                 .unwrap_or(std::num::NonZeroUsize::new(1).unwrap());
-        rapier.integration_parameters.num_additional_friction_iterations = 4;
-        rapier.integration_parameters.num_internal_pgs_iterations = 2;
+        rapier.integration_parameters.num_additional_friction_iterations = friction_iters;
+        rapier.integration_parameters.num_internal_pgs_iterations = pgs_iters;
+        rapier.integration_parameters.num_internal_stabilization_iterations = stab_iters;
+        rapier.integration_parameters.normalized_allowed_linear_error = allowed_lin_err;
+        rapier.integration_parameters.normalized_prediction_distance = prediction_dist;
+        rapier.integration_parameters.contact_damping_ratio = damping_ratio;
 
         for id in &ids {
             let obj = match plane.objects.get_mut(id) {
                 Some(o) => o,
                 None => continue,
             };
-            sync_obj_to_rapier(obj, rapier, lin_damp, ang_damp);
+            sync_obj_to_rapier(obj, rapier, lin_damp, ang_damp, never_sleep);
         }
 
         let gravity = NaVec3::new(plane_gravity.x, plane_gravity.y, plane_gravity.z);
@@ -355,6 +381,7 @@ fn sync_obj_to_rapier(
     rapier: &mut RapierPlane,
     lin_damp: f32,
     ang_damp: f32,
+    never_sleep: bool,
 ) {
     let half = NaVec3::new(
         obj.cached_size.x.abs() * 0.5,
@@ -379,10 +406,13 @@ fn sync_obj_to_rapier(
         } else {
             obj.mass.max(0.0001) / volume.max(0.0001)
         };
+        let q = obj.hitbox_quality.max(1) as f32;
+        let skin = (0.02 / q).clamp(0.0002, 0.02);
         builder = builder
             .restitution(obj.bounciness.clamp(0.0, 1.0))
             .friction(obj.friction.clamp(0.0, 2.0))
-            .density(density);
+            .density(density)
+            .contact_skin(skin);
         if !obj.can_collide {
             builder = builder.collision_groups(InteractionGroups::none());
         }
@@ -444,6 +474,7 @@ fn sync_obj_to_rapier(
             .angular_damping(ang_damp)
             .locked_axes(locked)
             .ccd_enabled(obj.hitbox_quality > 1)
+            .can_sleep(!never_sleep)
             .build();
         let handle = rapier.bodies.insert(body);
         let collider = make_collider(obj, half);
@@ -472,12 +503,16 @@ fn sync_obj_to_rapier(
         Some(b) => b.colliders().iter().copied().collect(),
         None => return,
     };
+    let want_skin = (0.02 / (obj.hitbox_quality.max(1) as f32)).clamp(0.0002, 0.02);
     let mut needs_recompute = false;
     for ch in &col_handles {
         if let Some(c) = rapier.colliders.get_mut(*ch) {
             if (c.density() - want_density).abs() > 1e-4 {
                 c.set_density(want_density);
                 needs_recompute = true;
+            }
+            if (c.contact_skin() - want_skin).abs() > 1e-5 {
+                c.set_contact_skin(want_skin);
             }
         }
     }
@@ -491,6 +526,20 @@ fn sync_obj_to_rapier(
     }
     body.set_linear_damping(lin_damp);
     body.set_angular_damping(ang_damp);
+
+    {
+        let activation = body.activation_mut();
+        if never_sleep {
+            activation.normalized_linear_threshold = -1.0;
+            activation.angular_threshold = -1.0;
+            activation.sleeping = false;
+        } else {
+            activation.normalized_linear_threshold =
+                RigidBodyActivation::default_normalized_linear_threshold();
+            activation.angular_threshold =
+                RigidBodyActivation::default_angular_threshold();
+        }
+    }
 
     let want_translation = NaVec3::new(obj.position.x, obj.position.y, obj.position.z);
     let want_rotation = UnitQuaternion::from_euler_angles(
@@ -630,6 +679,14 @@ impl UserData for PlaneHandle {
         f.add_field_method_set("LoopSolver", |_, this, v: bool| {
             this.ensure_alive("set LoopSolver")?;
             this.state.lock().unwrap().loop_solver = v;
+            Ok(())
+        });
+        f.add_field_method_get("NeverSleep", |_, this| {
+            Ok(this.state.lock().unwrap().never_sleep)
+        });
+        f.add_field_method_set("NeverSleep", |_, this, v: bool| {
+            this.ensure_alive("set NeverSleep")?;
+            this.state.lock().unwrap().never_sleep = v;
             Ok(())
         });
         f.add_field_method_get("DeferGpu", |_, this| {

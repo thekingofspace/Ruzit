@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PhysicsService - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.1.0">
-    <script src="theme.js?v=1.1.0"></script>
+    <link rel="stylesheet" href="style.css?v=1.1.1">
+    <script src="theme.js?v=1.1.1"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.1.0" defer></script>
+<script src="sidebar.js?v=1.1.1" defer></script>
 
 <main>
 
@@ -104,6 +104,16 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
                 with a safety bound. Skip the per-scene tuning of
                 <code>SolverIterations</code>; pay a modest extra
                 per-tick cost in exchange.</li>
+            <li><code>NeverSleep</code> &mdash; boolean, default
+                <code>false</code>. By default rapier puts bodies whose
+                kinetic energy falls below a threshold to sleep &mdash;
+                forces, contacts, and integration are skipped on them
+                until something wakes them up. <code>NeverSleep = true</code>
+                disables that optimisation: every body keeps simulating
+                every tick. Use it when you need every object to react
+                instantly to scripted forces and CFrame writes without a
+                wake-up frame of latency. Costs CPU on otherwise-stable
+                scenes since rapier can't optimise away resting bodies.</li>
             <li><code>DeferGpu</code> &mdash; <em>boolean, default
                 <code>false</code>.</em> Picks the simulation backend.
                 <strong>False</strong> runs rapier3d on the CPU &mdash;
@@ -223,6 +233,19 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
             correct equilibrium. Default <code>4</code>; clamped to
             <code>[1, 64]</code>. <strong>Ignored when LoopSolver is
             true.</strong>
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.NeverSleep</span>
+            <span class="member-type">boolean</span>
+            <span class="tag tag-new">new in 1.1</span>
+        </div>
+        <p class="member-desc">
+            When <code>true</code>, rapier's sleep optimisation is
+            disabled for this plane: every body keeps simulating every
+            tick whether it's moving or not. Default <code>false</code>
+            (let rapier sleep resting bodies for free perf).
         </p>
     </div>
     <div class="member">
@@ -495,42 +518,54 @@ foam.Density = <span class="hl-num">30</span>        <span class="hl-com">-- sty
         </div>
         <p class="member-desc">
             Simulation-fidelity dial for this object, clamped to
-            <code>[1, 32]</code>, default <code>1</code>. Drives two
-            things that stack as it rises:
+            <code>[1, 32]</code>, default <code>1</code>. Higher values
+            cost more CPU but produce visibly tighter contacts. The
+            dial drives several knobs that compound as it rises:
         </p>
         <ul>
-            <li><strong>Sub-stepping.</strong> The plane sub-steps the
-                whole simulation at <code>max(HitBoxQuality)</code>
-                across its objects. Finer integration = smoother gravity,
-                less drift, less tunneling through thin walls,
-                <em>and</em> friction integrates more accurately so
-                things slide less when they should be at rest.</li>
-            <li><strong>Contact-driven rotation.</strong> The collider
-                is axis-aligned (AABB) — it doesn't track rotated
-                geometry, so letting cubes accumulate angular velocity
-                from off-center contacts produces visually-broken
-                "spin in place while sliding." To match player
-                expectations, contact impulses produce rotation
-                <strong>only on Spheres at HitBoxQuality &gt; 1</strong>;
-                everything else (cubes, models, low-quality spheres)
-                is treated as having infinite rotational inertia for
-                collision purposes — they translate but don't spin
-                from contacts. Spheres at quality &gt; 1 use the
-                proper <code>I = ²⁄₅ m r²</code> tensor and roll
-                naturally under friction.</li>
+            <li><strong>Per-object contact skin.</strong> The collider's
+                contact tolerance shrinks roughly as <code>0.02 / quality</code>.
+                At <code>1</code> the skin is loose (cheap, slightly
+                gappy at corners); at <code>32</code> it tightens to
+                near-zero so cube corners and edges meet faces cleanly
+                instead of sinking in or floating off.</li>
+            <li><strong>Plane-wide solver scaling.</strong> The plane
+                inspects <code>max(HitBoxQuality)</code> across its
+                objects and scales <em>solver iterations, friction
+                passes, internal PGS passes, and stabilization
+                passes</em> proportionally — up to ~2.5× more solver
+                work at quality 32 versus quality 1. Stacks settle
+                faster and slide less when they shouldn't.</li>
+            <li><strong>Tighter penetration tolerance.</strong>
+                <code>allowed_linear_error</code> and
+                <code>prediction_distance</code> shrink with quality,
+                and <code>contact_damping_ratio</code> rises — contacts
+                are stiffer and resolve closer to true geometry.</li>
+            <li><strong>CCD (continuous collision detection).</strong>
+                Enabled automatically at <code>HitBoxQuality &gt; 1</code>,
+                so fast-moving objects don't tunnel through thin
+                geometry.</li>
+            <li><strong>Rotation lock for low-quality cubes.</strong>
+                A non-sphere with <code>HitBoxQuality &lt; 2</code> and
+                no <code>CenterOfMass</code> offset has its rotation
+                axes locked at body creation — it translates but does
+                not spin from contacts. Bump quality to <code>2+</code>
+                or set a <code>CenterOfMass</code> to let it tip.</li>
         </ul>
         <p class="member-desc">
-            <em>Direct rotation always works.</em> Setting
-            <code>obj.AngularVelocity</code> from Lua, calling
+            <em>Direct rotation always works regardless of quality.</em>
+            Setting <code>obj.AngularVelocity</code>, calling
             <code>:RotateTo</code>, or assigning a rotated
             <code>obj.CFrame</code> integrates through
-            <code>AngularDamping</code> just like before — only the
-            collision-impulse path is blocked for non-rolling shapes.
+            <code>AngularDamping</code> as usual.
         </p>
         <p class="member-desc">
             Reserve high values for the few parts that actually need
-            precision (the player's ball, a bullet, a falling crate);
-            leave static props at <code>1</code>.
+            precision (the player, a bullet, a stacked crate tower);
+            leave static props at <code>1</code>. Because the plane
+            scales with the maximum across all objects, even one
+            quality-32 part will bump fidelity for the whole world
+            on that frame.
         </p>
     </div>
     <div class="member">

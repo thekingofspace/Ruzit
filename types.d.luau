@@ -3517,6 +3517,18 @@ export type PhysicsPlaneOptions = {
 	-- visibly stable stacks. Use it when you don't want to manually
 	-- tune `SolverIterations` for the worst pile in your scene.
 	LoopSolver: boolean?,
+	-- Disable rapier's sleep optimisation. By default a body whose
+	-- kinetic energy falls below a threshold is put to sleep — its
+	-- forces, contacts, and integration are skipped each tick until
+	-- something wakes it back up. With `NeverSleep = true` every body
+	-- in this plane stays active every tick: gravity, friction, and
+	-- contact response are continuously applied even at rest. Use it
+	-- when you need every object to react instantly to scripted forces
+	-- (`obj:ApplyImpulse`, `obj.ImpulseDirection`, runtime
+	-- `obj.CFrame` writes) without spending a frame waking the body
+	-- back up. Cost: more CPU per tick on otherwise-stable scenes,
+	-- since rapier can't optimise away the resting bodies. Default false.
+	NeverSleep: boolean?,
 	-- Pick the simulation backend.
 	--   • `false` (default) — runs rapier3d on the CPU. Real rigid-body
 	--     physics: proper OBB collision, contact manifolds, sleeping
@@ -3688,6 +3700,9 @@ declare class PhysicsPlane
 	-- Pin solver iterations at a high fixed cap (functionally
 	-- "iterate until stopped"). See PhysicsPlaneOptions.LoopSolver.
 	LoopSolver: boolean
+	-- When true, every body keeps simulating every tick instead of
+	-- being put to sleep when at rest. See PhysicsPlaneOptions.NeverSleep.
+	NeverSleep: boolean
 	-- Toggle the GPU compute physics path on/off at runtime. When true,
 	-- integration + collision run as wgpu compute dispatches; when false,
 	-- the rayon CPU path runs. See PhysicsPlaneOptions.DeferGpu.
