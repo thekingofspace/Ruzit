@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use mlua::{Function, Lua, RegistryKey, Table};
+use mlua::{Function, Lua, RegistryKey, Table, Thread, Value};
 
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::new());
@@ -10,15 +10,21 @@ thread_local! {
 struct State {
     clock: f64,
     next_anon: u64,
-    delays: Vec<DelayEntry>,
+    pending: Vec<PendingThread>,
+    deferred: Vec<DeferredThread>,
     scheduled: HashMap<String, ScheduleEntry>,
     repeatables: HashMap<String, RepeatEntry>,
-    deferred: Vec<RegistryKey>,
 }
 
-struct DelayEntry {
+struct PendingThread {
     fire_at: f64,
-    cb: RegistryKey,
+    thread: RegistryKey,
+    canceled: bool,
+}
+
+struct DeferredThread {
+    thread: RegistryKey,
+    canceled: bool,
 }
 
 struct ScheduleEntry {
@@ -37,10 +43,10 @@ impl State {
         State {
             clock: 0.0,
             next_anon: 0,
-            delays: Vec::new(),
+            pending: Vec::new(),
+            deferred: Vec::new(),
             scheduled: HashMap::new(),
             repeatables: HashMap::new(),
-            deferred: Vec::new(),
         }
     }
 
@@ -50,46 +56,128 @@ impl State {
     }
 }
 
+fn cancel_pending_for(lua: &Lua, target: &Thread) -> bool {
+    let mut canceled = false;
+    STATE.with(|s| {
+        let mut state = s.borrow_mut();
+        for entry in state.pending.iter_mut() {
+            if !entry.canceled {
+                if let Ok(t) = lua.registry_value::<Thread>(&entry.thread) {
+                    if t == *target {
+                        entry.canceled = true;
+                        canceled = true;
+                    }
+                }
+            }
+        }
+        for entry in state.deferred.iter_mut() {
+            if !entry.canceled {
+                if let Ok(t) = lua.registry_value::<Thread>(&entry.thread) {
+                    if t == *target {
+                        entry.canceled = true;
+                        canceled = true;
+                    }
+                }
+            }
+        }
+    });
+    canceled
+}
+
+fn register_wait(lua: &Lua, seconds: f64) -> mlua::Result<()> {
+    let thread = lua.current_thread();
+    let key = lua.create_registry_value(thread)?;
+    STATE.with(|s| {
+        let mut state = s.borrow_mut();
+        let resume_at = state.clock + seconds.max(0.0);
+        state.pending.push(PendingThread {
+            fire_at: resume_at,
+            thread: key,
+            canceled: false,
+        });
+    });
+    Ok(())
+}
+
+fn resume_thread(lua: &Lua, thread_key: &RegistryKey, source: &str) {
+    let thread = match lua.registry_value::<Thread>(thread_key) {
+        Ok(t) => t,
+        Err(_) => return,
+    };
+    if let Err(e) = thread.resume::<mlua::MultiValue>(()) {
+        eprintln!("[Task] {source} thread error: {e}");
+    }
+}
+
 pub fn create(lua: &Lua) -> mlua::Result<Table> {
     let t = lua.create_table()?;
 
     t.set(
         "Spawn",
-        lua.create_function(|lua, func: Function| -> mlua::Result<()> {
-            let key = lua.create_registry_value(func)?;
-            STATE.with(|s| {
-                let mut state = s.borrow_mut();
-                let fire_at = state.clock;
-                state.delays.push(DelayEntry { fire_at, cb: key });
-            });
-            Ok(())
+        lua.create_function(|lua, func: Function| -> mlua::Result<Thread> {
+            let thread = lua.create_thread(func)?;
+            if let Err(e) = thread.resume::<mlua::MultiValue>(()) {
+                eprintln!("[Task] Spawn thread error: {e}");
+            }
+            Ok(thread)
         })?,
     )?;
 
     t.set(
         "Defer",
-        lua.create_function(|lua, func: Function| -> mlua::Result<()> {
-            let key = lua.create_registry_value(func)?;
+        lua.create_function(|lua, func: Function| -> mlua::Result<Thread> {
+            let thread = lua.create_thread(func)?;
+            let key = lua.create_registry_value(thread.clone())?;
             STATE.with(|s| {
-                s.borrow_mut().deferred.push(key);
+                s.borrow_mut().deferred.push(DeferredThread {
+                    thread: key,
+                    canceled: false,
+                });
             });
-            Ok(())
+            Ok(thread)
         })?,
     )?;
 
     t.set(
         "Delay",
-        lua.create_function(|lua, (seconds, func): (f64, Function)| -> mlua::Result<()> {
-            let secs = seconds.max(0.0);
-            let key = lua.create_registry_value(func)?;
-            STATE.with(|s| {
-                let mut state = s.borrow_mut();
-                let fire_at = state.clock + secs;
-                state.delays.push(DelayEntry { fire_at, cb: key });
-            });
-            Ok(())
-        })?,
+        lua.create_function(
+            |lua, (seconds, func): (f64, Function)| -> mlua::Result<Thread> {
+                let secs = seconds.max(0.0);
+                let thread = lua.create_thread(func)?;
+                let key = lua.create_registry_value(thread.clone())?;
+                STATE.with(|s| {
+                    let mut state = s.borrow_mut();
+                    let fire_at = state.clock + secs;
+                    state.pending.push(PendingThread {
+                        fire_at,
+                        thread: key,
+                        canceled: false,
+                    });
+                });
+                Ok(thread)
+            },
+        )?,
     )?;
+
+    let register_wait_fn = lua.create_function(|lua, seconds: f64| -> mlua::Result<()> {
+        register_wait(lua, seconds)
+    })?;
+    let wait_chunk = lua
+        .load(
+            r#"
+local Task, _registerWait = ...
+Task.Wait = function(seconds)
+    seconds = tonumber(seconds) or 0
+    if not coroutine.isyieldable() then
+        error("Task.Wait must be called inside a Task.Spawn / Task.Delay / Task.Defer thread", 2)
+    end
+    _registerWait(seconds)
+    return coroutine.yield()
+end
+"#,
+        )
+        .into_function()?;
+    wait_chunk.call::<()>((t.clone(), register_wait_fn))?;
 
     t.set(
         "Schedule",
@@ -191,20 +279,29 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
 
     t.set(
         "Cancel",
-        lua.create_function(|lua, id: String| -> mlua::Result<bool> {
-            Ok(STATE.with(|s| {
-                let mut state = s.borrow_mut();
-                let mut removed = false;
-                if let Some(entry) = state.scheduled.remove(&id) {
-                    let _ = lua.remove_registry_value(entry.cb);
-                    removed = true;
+        lua.create_function(|lua, target: Value| -> mlua::Result<bool> {
+            match target {
+                Value::String(s) => {
+                    let id = s.to_str()?.to_string();
+                    Ok(STATE.with(|st| {
+                        let mut state = st.borrow_mut();
+                        let mut removed = false;
+                        if let Some(entry) = state.scheduled.remove(&id) {
+                            let _ = lua.remove_registry_value(entry.cb);
+                            removed = true;
+                        }
+                        if let Some(entry) = state.repeatables.remove(&id) {
+                            let _ = lua.remove_registry_value(entry.cb);
+                            removed = true;
+                        }
+                        removed
+                    }))
                 }
-                if let Some(entry) = state.repeatables.remove(&id) {
-                    let _ = lua.remove_registry_value(entry.cb);
-                    removed = true;
-                }
-                removed
-            }))
+                Value::Thread(thread) => Ok(cancel_pending_for(lua, &thread)),
+                _ => Err(mlua::Error::RuntimeError(
+                    "Task.Cancel: expected string id or thread".into(),
+                )),
+            }
         })?,
     )?;
 
@@ -245,27 +342,25 @@ pub fn pump(lua: &Lua, dt: f64) {
         state.clock
     });
 
-    let due_delays: Vec<RegistryKey> = STATE.with(|s| {
+    let due_pending: Vec<PendingThread> = STATE.with(|s| {
         let mut state = s.borrow_mut();
         let mut due = Vec::new();
-        let mut keep = Vec::with_capacity(state.delays.len());
-        for entry in state.delays.drain(..) {
+        let mut keep = Vec::with_capacity(state.pending.len());
+        for entry in state.pending.drain(..) {
             if entry.fire_at <= now {
-                due.push(entry.cb);
+                due.push(entry);
             } else {
                 keep.push(entry);
             }
         }
-        state.delays = keep;
+        state.pending = keep;
         due
     });
-    for cb_key in due_delays {
-        if let Ok(func) = lua.registry_value::<Function>(&cb_key) {
-            if let Err(e) = func.call::<()>(()) {
-                eprintln!("[Task] Spawn/Delay callback error: {e}");
-            }
+    for entry in due_pending {
+        if !entry.canceled {
+            resume_thread(lua, &entry.thread, "Spawn/Delay/Wait");
         }
-        let _ = lua.remove_registry_value(cb_key);
+        let _ = lua.remove_registry_value(entry.thread);
     }
 
     let due_scheduled_ids: Vec<String> = STATE.with(|s| {
@@ -321,14 +416,12 @@ pub fn pump(lua: &Lua, dt: f64) {
         }
     }
 
-    let deferred: Vec<RegistryKey> =
+    let deferred: Vec<DeferredThread> =
         STATE.with(|s| std::mem::take(&mut s.borrow_mut().deferred));
-    for cb_key in deferred {
-        if let Ok(func) = lua.registry_value::<Function>(&cb_key) {
-            if let Err(e) = func.call::<()>(()) {
-                eprintln!("[Task] Defer callback error: {e}");
-            }
+    for entry in deferred {
+        if !entry.canceled {
+            resume_thread(lua, &entry.thread, "Defer");
         }
-        let _ = lua.remove_registry_value(cb_key);
+        let _ = lua.remove_registry_value(entry.thread);
     }
 }

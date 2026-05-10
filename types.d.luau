@@ -3257,23 +3257,38 @@ declare class Video
 end
 
 export type Task_API = {
-	-- Run `fn` once on the next engine tick (so the caller doesn't block).
-	-- Errors inside `fn` are caught and printed; they don't crash the engine.
-	-- No ID, no cancel — fire-and-forget.
-	Spawn: (fn: () -> ()) -> (),
+	-- Run `fn` immediately on a fresh Lua coroutine. The caller doesn't
+	-- block: if `fn` calls Task.Wait it suspends and resumes later;
+	-- otherwise it runs synchronously to completion right here. Returns
+	-- the underlying thread so you can pass it to Task.Cancel later.
+	-- Errors inside `fn` are caught and printed.
+	Spawn: (fn: () -> ()) -> thread,
 	-- Run `fn` at the END of the current tick's scheduler pass — after
 	-- every Spawn / Delay / Schedule / Repeat that is due this tick.
 	-- Useful when you want to schedule cleanup that should run AFTER
-	-- everyone else has had a chance to react to this frame's events
-	-- (e.g. mutate state in a signal handler, then Defer the dependent
-	-- recompute so other handlers on the same signal still see the
-	-- pre-mutation state). If a Defer'd callback calls Defer again,
-	-- the new one runs on the NEXT tick (not the current one) — so
-	-- you can't accidentally infinite-loop within a single frame.
-	Defer: (fn: () -> ()) -> (),
-	-- Run `fn` once after `seconds` real time. Anonymous one-shot —
-	-- if you need to cancel, use Schedule with an ID instead.
-	Delay: (seconds: number, fn: () -> ()) -> (),
+	-- everyone else has had a chance to react to this frame's events.
+	-- If a Defer'd callback calls Defer again, the new one runs on the
+	-- NEXT tick (not the current one) — so you can't accidentally
+	-- infinite-loop within a single frame. Returns the thread so you
+	-- can cancel before it fires.
+	Defer: (fn: () -> ()) -> thread,
+	-- Run `fn` once after `seconds` real time on its own coroutine.
+	-- Returns the thread so it can be canceled via Task.Cancel(thread)
+	-- before it fires. The thread can also call Task.Wait inside `fn`
+	-- to chain further sleeps.
+	Delay: (seconds: number, fn: () -> ()) -> thread,
+	-- Yield the current coroutine for `seconds` real time, then resume
+	-- it on a future scheduler pump. MUST be called from inside a
+	-- thread created by Spawn / Delay / Defer (or any Lua coroutine
+	-- that's currently yieldable) — calling it from the top-level
+	-- script raises an error. Returns no values; use it as a fire-
+	-- and-forget sleep:
+	--     Task.Spawn(function()
+	--         play_intro()
+	--         Task.Wait(1.5)
+	--         show_menu()
+	--     end)
+	Wait: (seconds: number?) -> (),
 	-- Run `fn` once after `seconds` real time, tagged with `id`. Pass
 	-- `nil` for `id` to auto-generate one. Returns the id string so
 	-- you can later Cancel / Reschedule. Re-using an existing id
@@ -3293,10 +3308,15 @@ export type Task_API = {
 	-- happens `interval` seconds from now (i.e. the timer resets).
 	-- Returns true if `id` existed.
 	SetInterval: (id: string, interval: number) -> boolean,
-	-- Cancel a scheduled OR repeating task by id. Returns true if
-	-- something with that id was canceled. Safe to call on unknown
-	-- ids (returns false).
-	Cancel: (id: string) -> boolean,
+	-- Cancel a task by string id OR by thread reference.
+	--   * string  — cancel a Schedule / Repeat by id (existing behavior).
+	--   * thread  — cancel a Spawn / Delay / Defer by the thread it
+	--               returned. The thread is marked for cancellation;
+	--               on the next scheduler pump it's skipped (instead
+	--               of being resumed) and its registration cleared.
+	-- Returns true if something matching was canceled, false otherwise.
+	-- Safe on unknown ids / unrelated threads.
+	Cancel: (target: string | thread) -> boolean,
 	-- True if a Schedule or Repeat with this id is currently active.
 	Exists: (id: string) -> boolean,
 	-- Seconds until the named task next fires, or nil if no task with

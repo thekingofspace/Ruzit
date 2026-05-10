@@ -38,24 +38,36 @@ Task.<span class="hl-fn">Cancel</span>(<span class="hl-str">"autosave"</span>)</
 
 <h2 id="api">Task API</h2>
 
-<h3>Anonymous one-shots</h3>
+<h3>Coroutine-based one-shots</h3>
+
+<p>
+    All three of these run their callback on a fresh Lua coroutine,
+    so the callback can call <a href="#wait"><code>Task.Wait</code></a>
+    to sleep without blocking the rest of the engine. They each return
+    the underlying <code>thread</code>, which you can hand to
+    <a href="#cancel"><code>Task.Cancel</code></a> if you need to abort
+    before it fires.
+</p>
 
 <div class="member-list">
     <div class="member">
         <div class="member-header">
             <span class="member-name">Task.Spawn(fn)</span>
+            <span class="member-type">→ thread</span>
         </div>
         <p class="member-desc">
-            Run <code>fn</code> once on the next engine tick. The caller
-            doesn't block; <code>fn</code> runs after the rest of the
-            current frame's work. Errors inside <code>fn</code> are
-            caught and printed; they don't crash the engine.
-            Fire-and-forget &mdash; no id, no cancel.
+            Create a coroutine wrapping <code>fn</code> and resume it
+            <em>immediately</em>. If <code>fn</code> never yields it
+            runs synchronously to completion before <code>Spawn</code>
+            returns; if it yields (via <code>Task.Wait</code>) the
+            scheduler resumes it later. Errors inside <code>fn</code>
+            are caught and printed.
         </p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">Task.Defer(fn)</span>
+            <span class="member-type">→ thread</span>
         </div>
         <p class="member-desc">
             Run <code>fn</code> at the <em>end</em> of the current tick's
@@ -73,24 +85,42 @@ Task.<span class="hl-fn">Cancel</span>(<span class="hl-str">"autosave"</span>)</
     <div class="member">
         <div class="member-header">
             <span class="member-name">Task.Delay(seconds, fn)</span>
+            <span class="member-type">→ thread</span>
         </div>
         <p class="member-desc">
             Run <code>fn</code> once after <code>seconds</code> real time
-            (clamped to &ge; 0). No id &mdash; if you need cancel /
-            reschedule, use <code>Schedule</code> with an id instead.
+            (clamped to &ge; 0). The returned thread can be canceled
+            via <code>Task.Cancel(thread)</code> before it fires.
         </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name" id="wait">Task.Wait(seconds?)</span>
+        </div>
+        <p class="member-desc">
+            Yield the current coroutine for <code>seconds</code> real
+            time, then resume it on a future scheduler pump. <strong>Must
+            be called from inside a Spawn / Delay / Defer thread</strong>
+            (or any other yieldable Lua coroutine) &mdash; calling it
+            from top-level script code raises an error. Pass <code>nil</code>
+            or <code>0</code> to yield until the next pump.
+        </p>
+        <pre><code>Task.<span class="hl-fn">Spawn</span>(<span class="hl-kw">function</span>()
+    <span class="hl-fn">play_intro</span>()
+    Task.<span class="hl-fn">Wait</span>(<span class="hl-num">1.5</span>)
+    <span class="hl-fn">show_menu</span>()
+<span class="hl-kw">end</span>)</code></pre>
     </div>
 </div>
 
 <div class="callout note">
     <strong>Spawn vs Defer.</strong>
-    <code>Spawn</code> runs at the start of the next tick (its scheduled
-    time has already arrived). <code>Defer</code> runs at the end of the
-    current tick, AFTER every other due task has fired. So a Spawn'd
-    callback queued earlier this tick will run BEFORE a Defer'd one,
-    even though both effectively mean "soon." Pick Defer when ordering
-    against other reactive code matters (e.g. you want every observer
-    of an event to fire before your follow-up logic runs).
+    <code>Spawn</code> resumes its coroutine immediately (synchronously).
+    <code>Defer</code> queues the coroutine and resumes it at the end
+    of the current tick, AFTER every other due task has fired. Pick
+    Defer when ordering against other reactive code matters (e.g. you
+    want every observer of an event to fire before your follow-up
+    logic runs).
 </div>
 
 <h3 id="scheduled">Scheduled (named one-shots)</h3>
@@ -161,14 +191,32 @@ Task.<span class="hl-fn">Cancel</span>(<span class="hl-str">"autosave"</span>)</
 <div class="member-list">
     <div class="member">
         <div class="member-header">
-            <span class="member-name">Task.Cancel(id)</span>
+            <span class="member-name" id="cancel">Task.Cancel(target)</span>
             <span class="member-type">→ boolean</span>
         </div>
         <p class="member-desc">
-            Cancel a Schedule OR Repeat by id. Returns <code>true</code>
-            if something with that id was active and got canceled.
-            Safe on unknown ids (returns <code>false</code>).
+            Cancel a task by either a string id or a thread reference.
         </p>
+        <ul class="member-desc">
+            <li><strong>string</strong> &mdash; cancel a Schedule or
+                Repeat registered under that id.</li>
+            <li><strong>thread</strong> &mdash; the thread returned by
+                <code>Spawn</code> / <code>Delay</code> /
+                <code>Defer</code>. The thread is marked for
+                cancellation; on the next scheduler pump it's skipped
+                instead of being resumed, and its registration is
+                cleared. Calling Cancel on a thread that's already
+                running synchronously has no effect (you can't preempt
+                code that hasn't yielded yet).</li>
+        </ul>
+        <p class="member-desc">
+            Returns <code>true</code> if something matching was
+            canceled, <code>false</code> otherwise. Safe on unknown
+            ids / unrelated threads.
+        </p>
+        <pre><code><span class="hl-kw">local</span> handle = Task.<span class="hl-fn">Delay</span>(<span class="hl-num">5</span>, <span class="hl-kw">function</span>() <span class="hl-fn">save</span>() <span class="hl-kw">end</span>)
+<span class="hl-cmt">-- ...later, e.g. user pressed cancel:</span>
+Task.<span class="hl-fn">Cancel</span>(handle)</code></pre>
     </div>
     <div class="member">
         <div class="member-header">
