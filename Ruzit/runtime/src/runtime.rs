@@ -24,12 +24,28 @@ pub fn run_entry(fs: Fs, entry_key: &str) -> Result<(), String> {
     libs::runservice::install(&lua).map_err(|e| format!("runservice install: {e}"))?;
 
     let entry_owned = entry_key.to_string();
-    load_module(&lua, &fs, entry_key)
-        .map(|_| ())
+    run_entry_in_thread(&lua, &fs, entry_key)
         .map_err(|e| errors::pretty_format(&lua, &fs, &entry_owned, &entry_owned, &e))?;
 
     heart::run_loop(&lua)
         .map_err(|e| errors::pretty_format(&lua, &fs, &entry_owned, &entry_owned, &e))
+}
+
+fn run_entry_in_thread(lua: &Lua, fs: &Fs, key: &str) -> mlua::Result<()> {
+    let cache: Table = lua.named_registry_value(CACHE_KEY)?;
+    cache.set(key.to_string(), Value::Boolean(true))?;
+    let source = read_module(fs, key)
+        .ok_or_else(|| mlua::Error::RuntimeError(format!("could not read entry: {key}")))?;
+    let env = build_env(lua, fs.clone(), key.to_string())?;
+    let chunk_name = format!("@{key}");
+    let entry_fn = lua
+        .load(&source)
+        .set_name(&chunk_name)
+        .set_environment(env)
+        .into_function()?;
+    let entry_thread = lua.create_thread(entry_fn)?;
+    entry_thread.resume::<mlua::MultiValue>(())?;
+    Ok(())
 }
 
 fn load_module(lua: &Lua, fs: &Fs, key: &str) -> mlua::Result<Value> {

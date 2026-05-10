@@ -3278,16 +3278,13 @@ export type Task_API = {
 	-- to chain further sleeps.
 	Delay: (seconds: number, fn: () -> ()) -> thread,
 	-- Yield the current coroutine for `seconds` real time, then resume
-	-- it on a future scheduler pump. MUST be called from inside a
-	-- thread created by Spawn / Delay / Defer (or any Lua coroutine
-	-- that's currently yieldable) — calling it from the top-level
-	-- script raises an error. Returns no values; use it as a fire-
-	-- and-forget sleep:
-	--     Task.Spawn(function()
-	--         play_intro()
-	--         Task.Wait(1.5)
-	--         show_menu()
-	--     end)
+	-- it on a future scheduler pump. The engine runs every script in
+	-- a coroutine — entry script, signal handlers, Spawn / Delay /
+	-- Defer threads — so Wait is always callable, no setup needed.
+	-- Returns no values; use it as a fire-and-forget sleep:
+	--     play_intro()
+	--     Task.Wait(1.5)
+	--     show_menu()
 	Wait: (seconds: number?) -> (),
 	-- Run `fn` once after `seconds` real time, tagged with `id`. Pass
 	-- `nil` for `id` to auto-generate one. Returns the id string so

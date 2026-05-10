@@ -99,18 +99,27 @@ Task.<span class="hl-fn">Cancel</span>(<span class="hl-str">"autosave"</span>)</
         </div>
         <p class="member-desc">
             Yield the current coroutine for <code>seconds</code> real
-            time, then resume it on a future scheduler pump. <strong>Must
-            be called from inside a Spawn / Delay / Defer thread</strong>
-            (or any other yieldable Lua coroutine) &mdash; calling it
-            from top-level script code raises an error. Pass <code>nil</code>
-            or <code>0</code> to yield until the next pump.
+            time, then resume it on a future scheduler pump. The engine
+            runs every script in a coroutine &mdash; the entry script,
+            signal handlers, and Spawn / Delay / Defer threads all
+            already qualify &mdash; so <code>Wait</code> is callable
+            anywhere, no setup needed. Pass <code>nil</code> or
+            <code>0</code> to yield until the next pump.
         </p>
-        <pre><code>Task.<span class="hl-fn">Spawn</span>(<span class="hl-kw">function</span>()
-    <span class="hl-fn">play_intro</span>()
-    Task.<span class="hl-fn">Wait</span>(<span class="hl-num">1.5</span>)
-    <span class="hl-fn">show_menu</span>()
-<span class="hl-kw">end</span>)</code></pre>
+        <pre><code><span class="hl-cmt">-- At top level of any script:</span>
+<span class="hl-fn">play_intro</span>()
+Task.<span class="hl-fn">Wait</span>(<span class="hl-num">1.5</span>)
+<span class="hl-fn">show_menu</span>()</code></pre>
     </div>
+</div>
+
+<div class="callout note">
+    <strong>The whole engine runs in coroutines.</strong>
+    Your entry script (Main.luau) is launched on a coroutine; every
+    signal handler (<code>:Connect</code> callbacks) gets its own
+    fresh coroutine when the signal fires. That's why
+    <code>Task.Wait</code> "just works" everywhere &mdash; you're
+    never on the bare main thread.
 </div>
 
 <div class="callout note">

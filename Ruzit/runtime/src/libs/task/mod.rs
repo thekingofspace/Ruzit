@@ -168,9 +168,6 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
 local Task, _registerWait = ...
 Task.Wait = function(seconds)
     seconds = tonumber(seconds) or 0
-    if not coroutine.isyieldable() then
-        error("Task.Wait must be called inside a Task.Spawn / Task.Delay / Task.Defer thread", 2)
-    end
     _registerWait(seconds)
     return coroutine.yield()
 end
