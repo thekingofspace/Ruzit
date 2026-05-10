@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Primitives - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=4.4">
-    <script src="theme.js?v=4.4"></script>
+    <link rel="stylesheet" href="style.css?v=4.5">
+    <script src="theme.js?v=4.5"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=4.4" defer></script>
+<script src="sidebar.js?v=4.5" defer></script>
 
 <main>
 
@@ -74,6 +74,25 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
             <span class="tag tag-static">static</span>
         </div>
         <p class="member-desc">Shorthand for <code>Vector.new(1, 1, 1)</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Vector.FromNative(native)</span>
+            <span class="member-type">→ Vector</span>
+            <span class="tag tag-static">static</span>
+        </div>
+        <p class="member-desc">
+            Convert a Luau
+            <a href="https://luau.org/library/#vector-library" target="_blank" rel="noopener">native <code>vector</code></a>
+            (the built-in primitive returned by <code>vector(x, y, z)</code>
+            and the <code>vector.*</code> library) into a Ruzit
+            <code>Vector</code> userdata. Useful when you've got a
+            native vector from a math helper or external module and
+            need it in the form Ruzit's APIs (<code>BasePart.Size</code>,
+            <code>CFrame.new</code>, etc.) accept.
+        </p>
+        <pre><code>Vector.<span class="hl-fn">FromNative</span>(<span class="hl-fn">vector</span>(<span class="hl-num">1</span>, <span class="hl-num">2</span>, <span class="hl-num">3</span>))
+<span class="hl-com">-- → Vector(1, 2, 3)</span></code></pre>
     </div>
 </div>
 

@@ -639,6 +639,12 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         "one",
         lua.create_function(|_, _: ()| Ok(Vector::new(1.0, 1.0, 1.0)))?,
     )?;
+    vec_class.set(
+        "FromNative",
+        lua.create_function(|_, native: mlua::Vector| -> mlua::Result<Vector> {
+            Ok(Vector::new(native.x(), native.y(), native.z()))
+        })?,
+    )?;
     t.set("Vector", vec_class)?;
 
     let cframe_class = lua.create_table()?;

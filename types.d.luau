@@ -1242,6 +1242,13 @@ export type Vector_API = {
 	zero: () -> Vector,
 	-- (1, 1, 1) shorthand.
 	one: () -> Vector,
+	-- Convert a Luau native `vector` (the built-in primitive returned by
+	-- `vector(x, y, z)` and the `vector.*` library) into a Ruzit Vector
+	-- userdata. Useful when you've got a native vector from a math
+	-- helper or external module and need it in a form Ruzit's APIs
+	-- (BasePart.Size, CFrame.new, etc.) accept.
+	--     Vector.FromNative(vector(1, 2, 3)) == Vector.new(1, 2, 3)
+	FromNative: (native: vector) -> Vector,
 }
 export type CFrame_API = {
 	-- CFrame.new(position?, rotation?). Either argument is optional.
