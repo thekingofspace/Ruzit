@@ -65,6 +65,45 @@ export type IO_API = {
 	-- return the absolute form. Useful when you want to print or pass paths
 	-- to non-IO APIs.
 	getpath: (path: string) -> string,
+	-- System paths. All resolved per-OS using XDG conventions on Linux,
+	-- standard %APPDATA% / known-folders on Windows, and ~/Library on
+	-- macOS. Each can be `nil` if the OS doesn't expose that location
+	-- (rare). Read-only — these are snapshots taken when IO was first
+	-- imported.
+	-- User home directory (`~` on Linux/macOS, `C:\Users\<user>` on Windows).
+	Home: string?,
+	-- "My Documents" (Windows) / `~/Documents` (Linux/macOS).
+	Documents: string?,
+	Desktop: string?,
+	Downloads: string?,
+	Pictures: string?,
+	Videos: string?,
+	Music: string?,
+	-- Roaming app config:
+	--   Windows  %APPDATA%
+	--   Linux    $XDG_CONFIG_HOME or ~/.config
+	--   macOS    ~/Library/Application Support
+	AppData: string?,
+	-- Local (per-machine) app data:
+	--   Windows  %LOCALAPPDATA%
+	--   Linux    $XDG_DATA_HOME or ~/.local/share
+	--   macOS    ~/Library/Application Support
+	LocalAppData: string?,
+	-- Cache directory:
+	--   Windows  %LOCALAPPDATA%
+	--   Linux    $XDG_CACHE_HOME or ~/.cache
+	--   macOS    ~/Library/Caches
+	Cache: string?,
+	-- OS temp directory (always non-nil).
+	Temp: string,
+	-- The process's current working directory at the moment IO loaded.
+	WorkingDir: string,
+	-- Folder containing the running executable.
+	ExecutableDir: string,
+	-- Path separator: "\\" on Windows, "/" elsewhere.
+	Separator: string,
+	-- "windows" | "linux" | "macos" | "unknown".
+	Platform: ("windows" | "linux" | "macos" | "unknown"),
 }
 
 -- =============================================================================
@@ -3217,6 +3256,45 @@ declare class Video
 	function UnlinkPart(self, part: BasePart): ()
 end
 
+export type Task_API = {
+	-- Run `fn` once on the next engine tick (so the caller doesn't block).
+	-- Errors inside `fn` are caught and printed; they don't crash the engine.
+	-- No ID, no cancel — fire-and-forget.
+	Spawn: (fn: () -> ()) -> (),
+	-- Run `fn` once after `seconds` real time. Anonymous one-shot —
+	-- if you need to cancel, use Schedule with an ID instead.
+	Delay: (seconds: number, fn: () -> ()) -> (),
+	-- Run `fn` once after `seconds` real time, tagged with `id`. Pass
+	-- `nil` for `id` to auto-generate one. Returns the id string so
+	-- you can later Cancel / Reschedule. Re-using an existing id
+	-- replaces (and cancels) the previous schedule under that id.
+	Schedule: (id: string?, seconds: number, fn: () -> ()) -> string,
+	-- Reset the timer for an existing scheduled task to fire `seconds`
+	-- from now. Returns true if `id` existed (and was rescheduled),
+	-- false otherwise.
+	Reschedule: (id: string, seconds: number) -> boolean,
+	-- Run `fn` repeatedly every `interval` seconds. Pass `nil` for `id`
+	-- to auto-generate one. Returns the id. Re-using an existing id
+	-- replaces (and cancels) the previous repeat under that id.
+	-- Re-entry safe: a callback that throws prints the error and the
+	-- repeat continues firing.
+	Repeat: (id: string?, interval: number, fn: () -> ()) -> string,
+	-- Change the firing rate of an existing repeat. The next fire
+	-- happens `interval` seconds from now (i.e. the timer resets).
+	-- Returns true if `id` existed.
+	SetInterval: (id: string, interval: number) -> boolean,
+	-- Cancel a scheduled OR repeating task by id. Returns true if
+	-- something with that id was canceled. Safe to call on unknown
+	-- ids (returns false).
+	Cancel: (id: string) -> boolean,
+	-- True if a Schedule or Repeat with this id is currently active.
+	Exists: (id: string) -> boolean,
+	-- Seconds until the named task next fires, or nil if no task with
+	-- that id exists. For Repeat tasks, this is the time until the
+	-- next tick; for Schedule, the time until the (only) fire.
+	TimeLeft: (id: string) -> number?,
+}
+
 export type Register_API = {
 	-- Get (or create) the named register. First call with a given name
 	-- creates a fresh empty table; every subsequent call with the same
@@ -3257,6 +3335,7 @@ export type Imports = {
 	SFX: SFX_API,
 	Signal: Signal_API,
 	Steam: Steam_API,
+	Task: Task_API,
 	Voice: Voice_API,
 	VR: VR_API,
 	Window: Window_API,

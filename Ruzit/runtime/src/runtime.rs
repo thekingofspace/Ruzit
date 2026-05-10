@@ -1,6 +1,9 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::io::Write;
+use std::rc::Rc;
 
-use mlua::{Lua, MultiValue, Table, Value};
+use mlua::{Lua, MultiValue, RegistryKey, Table, Value};
 
 use crate::errors;
 use crate::heart;
@@ -143,49 +146,51 @@ fn install_dirname(env: &Table, fs: &Fs, owner: &str) -> mlua::Result<()> {
 fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<()> {
     let fs = fs.clone();
     let owner = owner.to_string();
+    let cache: Rc<RefCell<HashMap<String, RegistryKey>>> =
+        Rc::new(RefCell::new(HashMap::new()));
     let import = lua.create_function(move |lua, name: String| -> mlua::Result<Value> {
-        match name.as_str() {
-            "Actor" => Ok(Value::Table(libs::actor::create(
-                lua,
-                fs.clone(),
-                owner.clone(),
-            )?)),
-            "Asset" => Ok(Value::Table(libs::asset::create(
-                lua,
-                fs.clone(),
-                owner.clone(),
-            )?)),
-            "Debug" => Ok(Value::Table(libs::debug::create(lua)?)),
-            "DynImg" => Ok(Value::Table(libs::dynimg::create(lua)?)),
-            "DynMesh" => Ok(Value::Table(libs::dynmesh::create(lua)?)),
-            "Gamepad" => Ok(Value::Table(libs::gamepad::create(lua)?)),
-            "GPU" => Ok(Value::Table(libs::gpu::create(lua)?)),
-            "GUI" => Ok(Value::Table(libs::gui::create(lua)?)),
-            "IO" => Ok(Value::Table(libs::io::create(
-                lua,
-                fs.clone(),
-                owner.clone(),
-            )?)),
-            "Keyboard" => Ok(Value::Table(libs::keyboard::create(lua)?)),
-            "Managed" => Ok(Value::Table(libs::managed::create(lua, fs.clone())?)),
-            "Mouse" => Ok(Value::Table(libs::mouse::create(lua)?)),
-            "Net" => Ok(Value::Table(libs::net::create(lua)?)),
-            "Primitives" => Ok(Value::Table(libs::primitives::create(lua)?)),
-            "Process" => Ok(Value::Table(libs::process::create(lua)?)),
-            "Register" => Ok(Value::Table(libs::register::create(lua)?)),
-            "Renderable" => Ok(Value::Table(libs::renderable::create(lua)?)),
-            "Serde" => Ok(Value::Table(libs::serde::create(lua)?)),
-            "SFX" => Ok(Value::Table(libs::sfx::create(lua)?)),
-            "Signal" => Ok(Value::Table(libs::signal::class(lua)?)),
-            "Steam" => Ok(Value::Table(libs::steam::create(lua)?)),
-            "Voice" => Ok(Value::Table(libs::voice::create(lua)?)),
-            "VR" => Ok(Value::Table(libs::vr::create(lua)?)),
-            "Window" => Ok(Value::Table(libs::window::create(lua)?)),
-            other => Err(mlua::Error::RuntimeError(format!(
-                "import: unknown library '{other}' (called from {})",
-                describe_owner(&fs, &owner)
-            ))),
+        if let Some(key) = cache.borrow().get(&name) {
+            if let Ok(t) = lua.registry_value::<Table>(key) {
+                return Ok(Value::Table(t));
+            }
         }
+        let table = match name.as_str() {
+            "Actor" => libs::actor::create(lua, fs.clone(), owner.clone())?,
+            "Asset" => libs::asset::create(lua, fs.clone(), owner.clone())?,
+            "Debug" => libs::debug::create(lua)?,
+            "DynImg" => libs::dynimg::create(lua)?,
+            "DynMesh" => libs::dynmesh::create(lua)?,
+            "Gamepad" => libs::gamepad::create(lua)?,
+            "GPU" => libs::gpu::create(lua)?,
+            "GUI" => libs::gui::create(lua)?,
+            "IO" => libs::io::create(lua, fs.clone(), owner.clone())?,
+            "Keyboard" => libs::keyboard::create(lua)?,
+            "Managed" => libs::managed::create(lua, fs.clone())?,
+            "Mouse" => libs::mouse::create(lua)?,
+            "Net" => libs::net::create(lua)?,
+            "Primitives" => libs::primitives::create(lua)?,
+            "Process" => libs::process::create(lua)?,
+            "Register" => libs::register::create(lua)?,
+            "Renderable" => libs::renderable::create(lua)?,
+            "Serde" => libs::serde::create(lua)?,
+            "SFX" => libs::sfx::create(lua)?,
+            "Signal" => libs::signal::class(lua)?,
+            "Steam" => libs::steam::create(lua)?,
+            "Task" => libs::task::create(lua)?,
+            "Voice" => libs::voice::create(lua)?,
+            "VR" => libs::vr::create(lua)?,
+            "Window" => libs::window::create(lua)?,
+            other => {
+                return Err(mlua::Error::RuntimeError(format!(
+                    "import: unknown library '{other}' (called from {})",
+                    describe_owner(&fs, &owner)
+                )));
+            }
+        };
+        if let Ok(key) = lua.create_registry_value(table.clone()) {
+            cache.borrow_mut().insert(name, key);
+        }
+        Ok(Value::Table(table))
     })?;
     env.set("import", import)
 }

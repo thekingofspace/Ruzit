@@ -55,6 +55,7 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         last = now;
         crate::libs::debug::record_frame(dt * 1000.0);
 
+        crate::libs::task::pump(lua, dt);
         crate::libs::runservice::fire_render_stepped(lua, dt);
         crate::libs::renderable::tick_animations(lua, dt as f32);
         crate::libs::renderable::tick_distortion_boxes();

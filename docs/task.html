@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task - Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css?v=4.1">
+    <script src="theme.js?v=4.1"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=4.1" defer></script>
+
+<main>
+
+<h1>Task</h1>
+<p class="lede">
+    Time-driven scheduler. Defer one-shot work to a future tick, fire
+    callbacks at fixed intervals, or schedule a named task you can
+    later cancel or reschedule. All callbacks run on the engine's main
+    thread between heart ticks; errors are caught and printed without
+    crashing.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Task = <span class="hl-fn">import</span>(<span class="hl-str">"Task"</span>)
+
+<span class="hl-cmt">-- Fire-and-forget on next tick.</span>
+Task.<span class="hl-fn">Spawn</span>(<span class="hl-kw">function</span>() <span class="hl-fn">print</span>(<span class="hl-str">"hello"</span>) <span class="hl-kw">end</span>)
+
+<span class="hl-cmt">-- Fire once after 3 seconds.</span>
+Task.<span class="hl-fn">Delay</span>(<span class="hl-num">3</span>, <span class="hl-kw">function</span>() <span class="hl-fn">save_progress</span>() <span class="hl-kw">end</span>)
+
+<span class="hl-cmt">-- Repeating tick that we can later retune or cancel.</span>
+Task.<span class="hl-fn">Repeat</span>(<span class="hl-str">"autosave"</span>, <span class="hl-num">60</span>, <span class="hl-kw">function</span>() <span class="hl-fn">autosave</span>() <span class="hl-kw">end</span>)
+Task.<span class="hl-fn">SetInterval</span>(<span class="hl-str">"autosave"</span>, <span class="hl-num">10</span>) <span class="hl-cmt">-- now every 10s</span>
+Task.<span class="hl-fn">Cancel</span>(<span class="hl-str">"autosave"</span>)</code></pre>
+
+<h2 id="api">Task API</h2>
+
+<h3>Anonymous one-shots</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Task.Spawn(fn)</span>
+        </div>
+        <p class="member-desc">
+            Run <code>fn</code> once on the next engine tick. The caller
+            doesn't block; <code>fn</code> runs after the rest of the
+            current frame's work. Errors inside <code>fn</code> are
+            caught and printed; they don't crash the engine.
+            Fire-and-forget &mdash; no id, no cancel.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Task.Delay(seconds, fn)</span>
+        </div>
+        <p class="member-desc">
+            Run <code>fn</code> once after <code>seconds</code> real time
+            (clamped to &ge; 0). No id &mdash; if you need cancel /
+            reschedule, use <code>Schedule</code> with an id instead.
+        </p>
+    </div>
+</div>
+
+<h3 id="scheduled">Scheduled (named one-shots)</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Task.Schedule(id?, seconds, fn)</span>
+            <span class="member-type">→ string</span>
+        </div>
+        <p class="member-desc">
+            Run <code>fn</code> once after <code>seconds</code>. Pass
+            <code>nil</code> for <code>id</code> to auto-generate one.
+            Returns the id (whether you supplied it or not), so you
+            can hold onto it for <code>Reschedule</code> /
+            <code>Cancel</code>. <strong>Reusing an existing id replaces
+            and cancels the previous schedule under that id.</strong>
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Task.Reschedule(id, seconds)</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+        <p class="member-desc">
+            Reset the timer for an existing scheduled task to fire
+            <code>seconds</code> from now. Returns <code>true</code> if
+            <code>id</code> was an active schedule (and was successfully
+            rescheduled), <code>false</code> if no such id exists.
+        </p>
+    </div>
+</div>
+
+<h3 id="repeatable">Repeatable (named ticks)</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Task.Repeat(id?, interval, fn)</span>
+            <span class="member-type">→ string</span>
+        </div>
+        <p class="member-desc">
+            Run <code>fn</code> repeatedly every <code>interval</code>
+            seconds. Pass <code>nil</code> for <code>id</code> to
+            auto-generate one. Returns the id. <strong>Reusing an existing
+            id replaces and cancels the previous repeat under that id.</strong>
+            Errors inside <code>fn</code> are caught + logged; the repeat
+            keeps firing.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Task.SetInterval(id, interval)</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+        <p class="member-desc">
+            Change the firing rate of an existing repeat. The next fire
+            happens <code>interval</code> seconds from now (i.e. the
+            timer resets, you don't have to wait for the current cycle
+            to finish). Returns <code>true</code> if <code>id</code>
+            existed.
+        </p>
+    </div>
+</div>
+
+<h3 id="management">Management</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Task.Cancel(id)</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+        <p class="member-desc">
+            Cancel a Schedule OR Repeat by id. Returns <code>true</code>
+            if something with that id was active and got canceled.
+            Safe on unknown ids (returns <code>false</code>).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Task.Exists(id)</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+        <p class="member-desc">
+            True if a Schedule or Repeat with this id is currently
+            active.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Task.TimeLeft(id)</span>
+            <span class="member-type">→ number?</span>
+        </div>
+        <p class="member-desc">
+            Seconds until the named task next fires, or <code>nil</code>
+            if no task with that id exists. For Repeat, this is the
+            time until the next tick. Useful for HUD timers.
+        </p>
+    </div>
+</div>
+
+<div class="callout note">
+    <strong>Single id space.</strong>
+    <code>Schedule</code> and <code>Repeat</code> share one id namespace.
+    If you Schedule <code>"x"</code> and then Repeat <code>"x"</code>,
+    the schedule is canceled and replaced by the repeat (and vice
+    versa). <code>Cancel</code> / <code>Exists</code> /
+    <code>TimeLeft</code> all consult both sets.
+</div>
+
+<div class="callout note">
+    <strong>Tasks tick on the engine's heart pump.</strong>
+    Timing is "no-earlier-than" &mdash; if your frame loop stalls for
+    100&nbsp;ms, all due tasks fire on the first tick afterward.
+    Repeats catch up with one fire per pump (not many) so a stalled
+    repeat won't emit a burst when the loop recovers.
+</div>
+
+</main>
+
+</body>
+</html>

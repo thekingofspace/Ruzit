@@ -1,6 +1,6 @@
 [package]
 name = "ruzit"
-version = "4.0.0"
+version = "4.1.0"
 edition = "2024"
 
 [lib]
@@ -42,6 +42,7 @@ rodio = { version = "0.20", default-features = false, features = ["symphonia-all
 fontdue = "0.9"
 steamworks = "0.11"
 steamworks-sys = "0.11"
+dirs = "5"
 fbxcel-dom = "0.0.10"
 anyhow = "1"
 cpal = "0.15"

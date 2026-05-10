@@ -105,6 +105,56 @@ IO.write(<span class="hl-str">"saves/slot1.json"</span>, <span class="hl-fn">tos
     </div>
 </div>
 
+<h3 id="system-paths">System paths</h3>
+
+<p>
+    Read-only properties resolved per-OS at first import. Linux uses XDG
+    conventions (<code>$XDG_CONFIG_HOME</code>, <code>$XDG_DATA_HOME</code>,
+    <code>$XDG_CACHE_HOME</code>), Windows uses Known Folders, macOS uses
+    <code>~/Library</code>. Each can be <code>nil</code> if the OS doesn't
+    expose that location (rare); always nil-check before using.
+</p>
+
+<table>
+    <thead>
+        <tr><th>Property</th><th>Type</th><th>Windows</th><th>Linux</th><th>macOS</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>IO.Home</code></td><td>string?</td><td><code>%USERPROFILE%</code></td><td><code>$HOME</code></td><td><code>$HOME</code></td></tr>
+        <tr><td><code>IO.Documents</code></td><td>string?</td><td>My Documents</td><td><code>~/Documents</code></td><td><code>~/Documents</code></td></tr>
+        <tr><td><code>IO.Desktop</code></td><td>string?</td><td>Desktop</td><td><code>~/Desktop</code></td><td><code>~/Desktop</code></td></tr>
+        <tr><td><code>IO.Downloads</code></td><td>string?</td><td>Downloads</td><td><code>~/Downloads</code></td><td><code>~/Downloads</code></td></tr>
+        <tr><td><code>IO.Pictures</code></td><td>string?</td><td>Pictures</td><td><code>~/Pictures</code></td><td><code>~/Pictures</code></td></tr>
+        <tr><td><code>IO.Videos</code></td><td>string?</td><td>Videos</td><td><code>~/Videos</code></td><td><code>~/Movies</code></td></tr>
+        <tr><td><code>IO.Music</code></td><td>string?</td><td>Music</td><td><code>~/Music</code></td><td><code>~/Music</code></td></tr>
+        <tr><td><code>IO.AppData</code></td><td>string?</td><td><code>%APPDATA%</code> (roaming)</td><td><code>$XDG_CONFIG_HOME</code> or <code>~/.config</code></td><td><code>~/Library/Application Support</code></td></tr>
+        <tr><td><code>IO.LocalAppData</code></td><td>string?</td><td><code>%LOCALAPPDATA%</code></td><td><code>$XDG_DATA_HOME</code> or <code>~/.local/share</code></td><td><code>~/Library/Application Support</code></td></tr>
+        <tr><td><code>IO.Cache</code></td><td>string?</td><td><code>%LOCALAPPDATA%</code></td><td><code>$XDG_CACHE_HOME</code> or <code>~/.cache</code></td><td><code>~/Library/Caches</code></td></tr>
+        <tr><td><code>IO.Temp</code></td><td>string</td><td><code>%TEMP%</code></td><td><code>/tmp</code></td><td><code>/tmp</code> or <code>$TMPDIR</code></td></tr>
+        <tr><td><code>IO.WorkingDir</code></td><td>string</td><td colspan="3">Process CWD when IO loaded.</td></tr>
+        <tr><td><code>IO.ExecutableDir</code></td><td>string</td><td colspan="3">Folder containing the running EXE.</td></tr>
+        <tr><td><code>IO.Separator</code></td><td>string</td><td><code>"\\"</code></td><td><code>"/"</code></td><td><code>"/"</code></td></tr>
+        <tr><td><code>IO.Platform</code></td><td>string</td><td><code>"windows"</code></td><td><code>"linux"</code></td><td><code>"macos"</code></td></tr>
+    </tbody>
+</table>
+
+<pre><code><span class="hl-kw">local</span> IO = <span class="hl-fn">import</span>(<span class="hl-str">"IO"</span>)
+
+<span class="hl-cmt">-- Pick a save dir that respects the platform's conventions.</span>
+<span class="hl-kw">local</span> root = (IO.AppData <span class="hl-kw">or</span> IO.Home <span class="hl-kw">or</span> IO.Temp)
+    .. IO.Separator .. <span class="hl-str">"MyGame"</span>
+IO.<span class="hl-fn">mkdir</span>(root)
+IO.<span class="hl-fn">write</span>(root .. IO.Separator .. <span class="hl-str">"save.json"</span>, payload)</code></pre>
+
+<div class="callout note">
+    <strong>Don't write your save data to <code>IO.Documents</code>.</strong>
+    On Windows it's a synced folder (OneDrive / Documents Library) and
+    users will get sad when their saves grow large or sync slowly.
+    Use <code>IO.AppData</code> for game-managed state and
+    <code>IO.LocalAppData</code> for cache / large blobs that don't need
+    to roam between machines.
+</div>
+
 <h3>Streaming open</h3>
 
 <div class="member-list">

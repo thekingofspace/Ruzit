@@ -23,6 +23,7 @@ pub mod sfx;
 pub mod shader;
 pub mod signal;
 pub mod steam;
+pub mod task;
 pub mod video;
 pub mod voice;
 pub mod vr;

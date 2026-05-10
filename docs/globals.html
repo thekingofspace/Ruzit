@@ -62,13 +62,26 @@
     automatically once <code>types.d.luau</code> is in your project.
 </p>
 
+<div class="callout note">
+    <strong>Imports are cached.</strong>
+    The first <code>import("X")</code> in a given module builds the
+    library table; every subsequent call from the same module returns
+    that exact same table, so it's free to call repeatedly. Different
+    modules each get their own cache (since some libraries like Asset
+    / IO are owner-scoped), but within one script the table is a true
+    singleton &mdash; comparing references with <code>==</code> is
+    safe, and side-effects on the table (e.g. setting a field) persist
+    between calls.
+</div>
+
 <h3>Available libraries</h3>
 
 <p>
-    Twenty-four as of v3.8: Actor, Asset, Debug, DynMesh, Gamepad,
-    GPU, GUI, IO, Keyboard, Managed, Mouse, Net, Primitives, Process,
-    Register, Renderable, Serde, SFX, Signal, Steam, Video, Voice, VR,
-    Window. Each has its own page in the API Reference sidebar.
+    Twenty-six as of v4.1: Actor, Asset, Debug, DynImg, DynMesh, Drawable,
+    Gamepad, GPU, GUI, IO, Keyboard, Managed, Mouse, Net, Primitives,
+    Process, Register, Renderable, Serde, SFX, Signal, Steam, Task,
+    Video, Voice, VR, Window. Each has its own page in the API Reference
+    sidebar.
 </p>
 
 <!-- ─────────────────────────────────────────────────────────────────── -->

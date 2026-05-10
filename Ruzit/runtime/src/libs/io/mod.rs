@@ -22,8 +22,66 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
     install_list(lua, &t, &fs, &owner)?;
     install_open(lua, &t, &fs, &owner)?;
     install_getpath(lua, &t, &fs, &owner)?;
+    install_system_paths(&t)?;
 
     Ok(t)
+}
+
+fn path_to_string(p: Option<PathBuf>) -> Option<String> {
+    p.map(|pb| pb.to_string_lossy().into_owned())
+}
+
+fn install_system_paths(t: &Table) -> mlua::Result<()> {
+    t.set("Home", path_to_string(dirs::home_dir()))?;
+    t.set("Documents", path_to_string(dirs::document_dir()))?;
+    t.set("Desktop", path_to_string(dirs::desktop_dir()))?;
+    t.set("Downloads", path_to_string(dirs::download_dir()))?;
+    t.set("Pictures", path_to_string(dirs::picture_dir()))?;
+    t.set("Videos", path_to_string(dirs::video_dir()))?;
+    t.set("Music", path_to_string(dirs::audio_dir()))?;
+    // AppData (roaming on Windows, ~/.config on Linux,
+    // ~/Library/Application Support on macOS).
+    t.set("AppData", path_to_string(dirs::config_dir()))?;
+    // LocalAppData (~/.local/share on Linux, %LOCALAPPDATA% on Windows,
+    // ~/Library/Application Support on macOS).
+    t.set("LocalAppData", path_to_string(dirs::data_local_dir()))?;
+    // Cache (~/.cache on Linux, %LOCALAPPDATA% on Windows,
+    // ~/Library/Caches on macOS).
+    t.set("Cache", path_to_string(dirs::cache_dir()))?;
+    // Temp dir for the OS.
+    t.set(
+        "Temp",
+        std::env::temp_dir().to_string_lossy().into_owned(),
+    )?;
+    // Current working directory snapshot.
+    t.set(
+        "WorkingDir",
+        std::env::current_dir()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+    )?;
+    // Directory the running executable lives in.
+    t.set(
+        "ExecutableDir",
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.to_string_lossy().into_owned()))
+            .unwrap_or_default(),
+    )?;
+    // Path separator. "\\" on Windows, "/" elsewhere.
+    t.set("Separator", std::path::MAIN_SEPARATOR.to_string())?;
+    // Platform tag.
+    let platform = if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "linux") {
+        "linux"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        "unknown"
+    };
+    t.set("Platform", platform)?;
+    Ok(())
 }
 
 fn install_getpath(lua: &Lua, t: &Table, fs: &Fs, owner: &str) -> mlua::Result<()> {
