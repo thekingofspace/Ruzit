@@ -13,6 +13,7 @@ struct State {
     delays: Vec<DelayEntry>,
     scheduled: HashMap<String, ScheduleEntry>,
     repeatables: HashMap<String, RepeatEntry>,
+    deferred: Vec<RegistryKey>,
 }
 
 struct DelayEntry {
@@ -39,6 +40,7 @@ impl State {
             delays: Vec::new(),
             scheduled: HashMap::new(),
             repeatables: HashMap::new(),
+            deferred: Vec::new(),
         }
     }
 
@@ -59,6 +61,17 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 let mut state = s.borrow_mut();
                 let fire_at = state.clock;
                 state.delays.push(DelayEntry { fire_at, cb: key });
+            });
+            Ok(())
+        })?,
+    )?;
+
+    t.set(
+        "Defer",
+        lua.create_function(|lua, func: Function| -> mlua::Result<()> {
+            let key = lua.create_registry_value(func)?;
+            STATE.with(|s| {
+                s.borrow_mut().deferred.push(key);
             });
             Ok(())
         })?,
@@ -306,5 +319,16 @@ pub fn pump(lua: &Lua, dt: f64) {
                 eprintln!("[Task] Repeat '{id}' callback error: {e}");
             }
         }
+    }
+
+    let deferred: Vec<RegistryKey> =
+        STATE.with(|s| std::mem::take(&mut s.borrow_mut().deferred));
+    for cb_key in deferred {
+        if let Ok(func) = lua.registry_value::<Function>(&cb_key) {
+            if let Err(e) = func.call::<()>(()) {
+                eprintln!("[Task] Defer callback error: {e}");
+            }
+        }
+        let _ = lua.remove_registry_value(cb_key);
     }
 }

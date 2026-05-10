@@ -55,6 +55,23 @@ Task.<span class="hl-fn">Cancel</span>(<span class="hl-str">"autosave"</span>)</
     </div>
     <div class="member">
         <div class="member-header">
+            <span class="member-name">Task.Defer(fn)</span>
+        </div>
+        <p class="member-desc">
+            Run <code>fn</code> at the <em>end</em> of the current tick's
+            scheduler pass &mdash; after every Spawn / Delay / Schedule /
+            Repeat that's due this tick. Use it when you want to
+            schedule work that should observe everyone else's
+            this-tick mutations: mutate state in a signal handler,
+            then <code>Defer</code> the dependent recompute so other
+            handlers on the same signal still see pre-mutation state.
+            If a Defer'd callback calls Defer again, the new one runs
+            on the next tick (not the current one), so you can't
+            accidentally infinite-loop within a single frame.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
             <span class="member-name">Task.Delay(seconds, fn)</span>
         </div>
         <p class="member-desc">
@@ -63,6 +80,17 @@ Task.<span class="hl-fn">Cancel</span>(<span class="hl-str">"autosave"</span>)</
             reschedule, use <code>Schedule</code> with an id instead.
         </p>
     </div>
+</div>
+
+<div class="callout note">
+    <strong>Spawn vs Defer.</strong>
+    <code>Spawn</code> runs at the start of the next tick (its scheduled
+    time has already arrived). <code>Defer</code> runs at the end of the
+    current tick, AFTER every other due task has fired. So a Spawn'd
+    callback queued earlier this tick will run BEFORE a Defer'd one,
+    even though both effectively mean "soon." Pick Defer when ordering
+    against other reactive code matters (e.g. you want every observer
+    of an event to fire before your follow-up logic runs).
 </div>
 
 <h3 id="scheduled">Scheduled (named one-shots)</h3>

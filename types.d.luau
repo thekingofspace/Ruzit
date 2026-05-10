@@ -3261,6 +3261,16 @@ export type Task_API = {
 	-- Errors inside `fn` are caught and printed; they don't crash the engine.
 	-- No ID, no cancel — fire-and-forget.
 	Spawn: (fn: () -> ()) -> (),
+	-- Run `fn` at the END of the current tick's scheduler pass — after
+	-- every Spawn / Delay / Schedule / Repeat that is due this tick.
+	-- Useful when you want to schedule cleanup that should run AFTER
+	-- everyone else has had a chance to react to this frame's events
+	-- (e.g. mutate state in a signal handler, then Defer the dependent
+	-- recompute so other handlers on the same signal still see the
+	-- pre-mutation state). If a Defer'd callback calls Defer again,
+	-- the new one runs on the NEXT tick (not the current one) — so
+	-- you can't accidentally infinite-loop within a single frame.
+	Defer: (fn: () -> ()) -> (),
 	-- Run `fn` once after `seconds` real time. Anonymous one-shot —
 	-- if you need to cancel, use Schedule with an ID instead.
 	Delay: (seconds: number, fn: () -> ()) -> (),
