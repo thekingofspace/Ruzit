@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Primitives - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=4.3">
-    <script src="theme.js?v=4.3"></script>
+    <link rel="stylesheet" href="style.css?v=4.4">
+    <script src="theme.js?v=4.4"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=4.3" defer></script>
+<script src="sidebar.js?v=4.4" defer></script>
 
 <main>
 
@@ -505,14 +505,30 @@ camera.CFrame = CFrame.<span class="hl-fn">LookAt</span>(
     </div>
     <div class="member">
         <div class="member-header">
-            <span class="member-name">a == b, a &lt; b, a &lt;= b</span>
+            <span class="member-name">cf:FuzzyEq(other, epsilon?)</span>
             <span class="member-type">→ boolean</span>
+            <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
-            Component-wise comparisons across position AND rotation
-            (<code>true</code> only when every component of both Vectors
-            matches the relation).
+            <code>true</code> if every component (3 position + 3
+            rotation) is within <code>epsilon</code> of the matching
+            component on <code>other</code>. Default
+            <code>epsilon</code> is <code>1e-5</code>. Prefer this
+            over <code>==</code> for "is the part roughly at this
+            pose?" checks &mdash; direct equality on floats is brittle.
         </p>
+        <p class="member-desc">
+            <strong>Caveat:</strong> rotation is compared as raw Euler
+            radians, not angular distance, so two visually identical
+            rotations differing by a multiple of 2π will not
+            <code>FuzzyEq</code>. Wrap your bounds yourself if that
+            matters.
+        </p>
+        <pre><code><span class="hl-cmt">-- Snap an animated part once it's settled near the target pose.</span>
+<span class="hl-kw">if</span> part.CFrame:<span class="hl-fn">FuzzyEq</span>(targetCF, <span class="hl-num">0.01</span>) <span class="hl-kw">then</span>
+    part.CFrame = targetCF
+    <span class="hl-fn">stop_animating</span>()
+<span class="hl-kw">end</span></code></pre>
     </div>
 </div>
 

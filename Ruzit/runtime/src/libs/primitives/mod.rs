@@ -453,30 +453,21 @@ impl UserData for CFrame {
             },
         );
 
-        m.add_meta_function(
-            "__lt",
-            |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<bool> {
-                let a = a.borrow::<CFrame>()?;
-                let b = b.borrow::<CFrame>()?;
-                Ok(a.position.x < b.position.x
-                    && a.position.y < b.position.y
-                    && a.position.z < b.position.z
-                    && a.rotation.x < b.rotation.x
-                    && a.rotation.y < b.rotation.y
-                    && a.rotation.z < b.rotation.z)
-            },
-        );
-        m.add_meta_function(
-            "__le",
-            |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<bool> {
-                let a = a.borrow::<CFrame>()?;
-                let b = b.borrow::<CFrame>()?;
-                Ok(a.position.x <= b.position.x
-                    && a.position.y <= b.position.y
-                    && a.position.z <= b.position.z
-                    && a.rotation.x <= b.rotation.x
-                    && a.rotation.y <= b.rotation.y
-                    && a.rotation.z <= b.rotation.z)
+        m.add_method(
+            "FuzzyEq",
+            |_,
+             this,
+             (other, epsilon): (AnyUserData, Option<f32>)|
+             -> mlua::Result<bool> {
+                let o = *other.borrow::<CFrame>()?;
+                let eps = epsilon.unwrap_or(1e-5).max(0.0);
+                let close = |a: f32, b: f32| (a - b).abs() <= eps;
+                Ok(close(this.position.x, o.position.x)
+                    && close(this.position.y, o.position.y)
+                    && close(this.position.z, o.position.z)
+                    && close(this.rotation.x, o.rotation.x)
+                    && close(this.rotation.y, o.rotation.y)
+                    && close(this.rotation.z, o.rotation.z))
             },
         );
 

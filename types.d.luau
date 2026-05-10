@@ -1175,12 +1175,20 @@ declare class CFrame
 	function __mul(self, other: CFrame | Vector): CFrame
 	function __add(self, other: CFrame): CFrame
 	function __sub(self, other: CFrame): CFrame
-	-- Component-wise comparisons across position AND rotation. `==`,
-	-- `<`, `<=` return true only when every component of both Vectors
-	-- matches the relation.
+	-- Strict component-wise equality. Both position and rotation must
+	-- match exactly. For "are these CFrames close enough?" comparisons
+	-- prefer :FuzzyEq, since ordinary equality on floats is brittle.
 	function __eq(self, other: CFrame): boolean
-	function __lt(self, other: CFrame): boolean
-	function __le(self, other: CFrame): boolean
+	-- True if every component (3 position + 3 rotation) is within
+	-- `epsilon` of the corresponding component on `other`. Default
+	-- epsilon is 1e-5. Use this for "is the part roughly at this
+	-- pose?" checks where direct == would fail due to floating-point
+	-- jitter.
+	-- Note: rotation is compared as raw Euler radians, not as angular
+	-- distance — so two visually identical rotations that differ by a
+	-- multiple of 2π will NOT compare equal. Wrap your bounds yourself
+	-- if you care.
+	function FuzzyEq(self, other: CFrame, epsilon: number?): boolean
 end
 
 declare class UDim
