@@ -39,28 +39,25 @@ fn install_system_paths(t: &Table) -> mlua::Result<()> {
     t.set("Pictures", path_to_string(dirs::picture_dir()))?;
     t.set("Videos", path_to_string(dirs::video_dir()))?;
     t.set("Music", path_to_string(dirs::audio_dir()))?;
-    // AppData (roaming on Windows, ~/.config on Linux,
-    // ~/Library/Application Support on macOS).
-    t.set("AppData", path_to_string(dirs::config_dir()))?;
-    // LocalAppData (~/.local/share on Linux, %LOCALAPPDATA% on Windows,
-    // ~/Library/Application Support on macOS).
-    t.set("LocalAppData", path_to_string(dirs::data_local_dir()))?;
-    // Cache (~/.cache on Linux, %LOCALAPPDATA% on Windows,
-    // ~/Library/Caches on macOS).
-    t.set("Cache", path_to_string(dirs::cache_dir()))?;
-    // Temp dir for the OS.
+
+t.set("AppData", path_to_string(dirs::config_dir()))?;
+
+t.set("LocalAppData", path_to_string(dirs::data_local_dir()))?;
+
+t.set("Cache", path_to_string(dirs::cache_dir()))?;
+
     t.set(
         "Temp",
         std::env::temp_dir().to_string_lossy().into_owned(),
     )?;
-    // Current working directory snapshot.
+
     t.set(
         "WorkingDir",
         std::env::current_dir()
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_default(),
     )?;
-    // Directory the running executable lives in.
+
     t.set(
         "ExecutableDir",
         std::env::current_exe()
@@ -68,9 +65,9 @@ fn install_system_paths(t: &Table) -> mlua::Result<()> {
             .and_then(|p| p.parent().map(|d| d.to_string_lossy().into_owned()))
             .unwrap_or_default(),
     )?;
-    // Path separator. "\\" on Windows, "/" elsewhere.
+
     t.set("Separator", std::path::MAIN_SEPARATOR.to_string())?;
-    // Platform tag.
+
     let platform = if cfg!(target_os = "windows") {
         "windows"
     } else if cfg!(target_os = "linux") {
