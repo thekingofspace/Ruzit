@@ -1116,6 +1116,16 @@ declare class Vector
 	-- Cached euclidean length (sqrt(x^2 + y^2 + z^2)).
 	Magnitude: number
 	function Lerp(self, other: Vector, t: number): Vector
+	-- Dot product. Positive when vectors point similar directions,
+	-- negative when opposite, zero when perpendicular.
+	function Dot(self, other: Vector): number
+	-- Right-handed cross product, perpendicular to both inputs.
+	function Cross(self, other: Vector): Vector
+	-- Returns a unit-length copy. Returns the original if magnitude is
+	-- effectively zero.
+	function Normalized(self): Vector
+	-- Euclidean distance between two points.
+	function Distance(self, other: Vector): number
 	function __add(self, other: Vector): Vector
 	function __sub(self, other: Vector): Vector
 	-- Scalar multiply / divide / negate.
@@ -1149,6 +1159,23 @@ declare class CFrame
 	function __mul(self, other: CFrame | Vector): CFrame
 	function __add(self, other: CFrame): CFrame
 	function __sub(self, other: CFrame): CFrame
+end
+
+declare class UDim
+	-- Scale-based 2D component. Each axis is a fraction (typically 0..1)
+	-- of a parent dimension. Pair with a Dim parent to resolve to pixels
+	-- via :ToDim(parent).
+	X: number
+	Y: number
+	-- Multiply by a parent Dim to get the absolute Dim. e.g.
+	--   UDim.new(0.5, 0.25):ToDim(Dim.new(800, 600)) == Dim.new(400, 150)
+	function ToDim(self, parent: Dim): Dim
+	function Lerp(self, other: UDim, t: number): UDim
+	function __add(self, other: UDim): UDim
+	function __sub(self, other: UDim): UDim
+	function __mul(self, other: number): UDim
+	function __div(self, other: number): UDim
+	function __unm(self): UDim
 end
 
 export type Dim_API = {
@@ -1186,6 +1213,17 @@ export type CFrame_API = {
 	new: (position: Vector?, rotation: Vector?) -> CFrame,
 	-- Build a rotation-only CFrame from Euler angles (radians, applied X→Y→Z).
 	Angles: (rx: number, ry: number, rz: number) -> CFrame,
+	-- Build a CFrame at `eye`, oriented so its forward axis points at
+	-- `target`. `up` defaults to (0, 1, 0). The returned rotation is in
+	-- Euler form (radians); compose it with CFrame.new(pos) for movement.
+	LookAt: (eye: Vector, target: Vector, up: Vector?) -> CFrame,
+}
+
+export type UDim_API = {
+	-- UDim.new(x, y), each in scale units (0..1 maps to 0%..100% of parent).
+	new: ((x: number?, y: number?) -> UDim),
+	zero: () -> UDim,
+	one: () -> UDim,
 }
 
 export type Primitives_API = {
@@ -1193,6 +1231,7 @@ export type Primitives_API = {
 	Color3: Color3_API,
 	Vector: Vector_API,
 	CFrame: CFrame_API,
+	UDim: UDim_API,
 }
 
 -- =============================================================================

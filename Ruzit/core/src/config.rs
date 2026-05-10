@@ -44,6 +44,7 @@ pub struct BuildConfig {
     pub compress_scripts: bool,
     pub compress_assets: bool,
     pub shard_assets: bool,
+    pub compile_bytecode: bool,
 }
 
 impl Default for BuildConfig {
@@ -60,6 +61,7 @@ impl Default for BuildConfig {
             compress_scripts: false,
             compress_assets: false,
             shard_assets: false,
+            compile_bytecode: false,
         }
     }
 }
@@ -109,6 +111,12 @@ impl BuildConfig {
             }
             if let Some(b) = exe.get("shard_assets").and_then(|x| x.as_bool()) {
                 cfg.shard_assets = b;
+            }
+            if let Some(b) = exe.get("bytecode").and_then(|x| x.as_bool()) {
+                cfg.compile_bytecode = b;
+            }
+            if let Some(b) = exe.get("compile_bytecode").and_then(|x| x.as_bool()) {
+                cfg.compile_bytecode = b;
             }
         }
         if let Some(steam) = v.get("steam") {

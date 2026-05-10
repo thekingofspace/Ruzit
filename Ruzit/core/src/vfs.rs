@@ -21,6 +21,7 @@ pub struct Package {
     pub assets: HashMap<String, String>,
     pub scripts_compressed: bool,
     pub assets_compressed: bool,
+    pub scripts_bytecode: bool,
 }
 
 #[derive(Clone)]
@@ -129,7 +130,7 @@ pub fn init_anchor(inner_path: &str) -> String {
     }
 }
 
-pub fn read_module(fs: &Fs, key: &str) -> Option<String> {
+pub fn read_module(fs: &Fs, key: &str) -> Option<Vec<u8>> {
     match fs {
         Fs::Disk {
             packages,
@@ -141,7 +142,7 @@ pub fn read_module(fs: &Fs, key: &str) -> Option<String> {
                 let did = default_id.as_deref().unwrap_or("");
                 return read_from_packages(pkgs, did, key);
             }
-            fs::read_to_string(key).ok().map(strip_bom)
+            fs::read(key).ok().map(strip_bom_bytes)
         }
         Fs::Bundle {
             packages,
@@ -155,23 +156,40 @@ fn read_from_packages(
     packages: &HashMap<String, Arc<Package>>,
     default_id: &str,
     key: &str,
-) -> Option<String> {
+) -> Option<Vec<u8>> {
+    use base64::Engine;
     let (pkg_id, inner) = split_owner(key, default_id);
     let pkg = packages.get(pkg_id)?;
     let stored = pkg.files.get(inner)?;
     if pkg.scripts_compressed {
-        use base64::Engine;
         let compressed = base64::engine::general_purpose::STANDARD
             .decode(stored.as_bytes())
             .ok()?;
         let bytes = zstd::stream::decode_all(compressed.as_slice()).ok()?;
-        let s = String::from_utf8(bytes).ok()?;
-        Some(strip_bom(s))
+        Some(if pkg.scripts_bytecode {
+            bytes
+        } else {
+            strip_bom_bytes(bytes)
+        })
+    } else if pkg.scripts_bytecode {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(stored.as_bytes())
+            .ok()?;
+        Some(bytes)
     } else {
-        Some(stored.clone())
+        Some(strip_bom_bytes(stored.as_bytes().to_vec()))
     }
 }
 
+fn strip_bom_bytes(mut bytes: Vec<u8>) -> Vec<u8> {
+    const BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
+    if bytes.starts_with(&BOM) {
+        bytes.drain(..3);
+    }
+    bytes
+}
+
+#[allow(dead_code)]
 fn strip_bom(s: String) -> String {
     const BOM: &str = "\u{feff}";
     if s.starts_with(BOM) {

@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Primitives - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=3.8">
-    <script src="theme.js?v=3.8"></script>
+    <link rel="stylesheet" href="style.css?v=4.2">
+    <script src="theme.js?v=4.2"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=3.8" defer></script>
+<script src="sidebar.js?v=4.2" defer></script>
 
 <main>
 
@@ -130,6 +130,49 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
             Linear interpolation. <code>t = 0</code> returns
             <code>self</code>, <code>t = 1</code> returns <code>other</code>.
             Values outside <code>[0, 1]</code> extrapolate.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">v:Dot(other)</span>
+            <span class="member-type">→ number</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Dot product. Positive when the vectors face roughly the same
+            direction, negative when opposite, zero when perpendicular.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">v:Cross(other)</span>
+            <span class="member-type">→ Vector</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Right-handed cross product, perpendicular to both inputs.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">v:Normalized()</span>
+            <span class="member-type">→ Vector</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Returns a unit-length copy. If the magnitude is effectively
+            zero the original is returned (rather than NaN-ing).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">v:Distance(other)</span>
+            <span class="member-type">→ number</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Euclidean distance between two points. Equivalent to
+            <code>(v - other).Magnitude</code>.
         </p>
     </div>
     <div class="member">
@@ -348,6 +391,24 @@ CFrame.new(Vector.new(), Vector.new(<span class="hl-num">0</span>, math.pi, <spa
         </p>
         <pre><code>CFrame.Angles(<span class="hl-num">0</span>, math.pi / <span class="hl-num">4</span>, <span class="hl-num">0</span>)   <span class="hl-com">-- 45° yaw</span></code></pre>
     </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">CFrame.LookAt(eye, target, up?)</span>
+            <span class="tag tag-static">static</span>
+        </div>
+        <p class="member-desc">
+            Build a CFrame at <code>eye</code> oriented so its forward
+            axis points at <code>target</code>. <code>up</code> defaults
+            to <code>Vector.new(0, 1, 0)</code>. The returned rotation
+            is in Euler form, ready to drop into a part's
+            <code>CFrame</code> or a camera.
+        </p>
+        <pre><code><span class="hl-com">-- Camera looks from (5, 5, 10) at the origin.</span>
+camera.CFrame = CFrame.<span class="hl-fn">LookAt</span>(
+    Vector.<span class="hl-fn">new</span>(<span class="hl-num">5</span>, <span class="hl-num">5</span>, <span class="hl-num">10</span>),
+    Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>)
+)</code></pre>
+    </div>
 </div>
 
 <h3>Properties</h3>
@@ -526,6 +587,96 @@ hp.Position = centre - hp.Size / <span class="hl-num">2</span></code></pre>
     where these types fit. The other API tabs, Renderable, GUI,
     and friends, are coming soon.
 </div>
+
+<h2 id="udim">UDim</h2>
+
+<p>
+    Scale-based 2D component, the partner type to <code>Dim</code>.
+    Each axis is a fraction (typically 0..1) of a parent dimension.
+    Use it whenever you want a position or size to track its container
+    (centered button = <code>UDim.new(0.5, 0.5)</code>) instead of
+    living at fixed pixel coordinates.
+</p>
+
+<h3>Constructors</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">UDim.new(x?, y?)</span>
+            <span class="tag tag-static">static</span>
+        </div>
+        <p class="member-desc">Both arguments default to 0.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">UDim.zero()</span>
+            <span class="tag tag-static">static</span>
+        </div>
+        <p class="member-desc">Shorthand for <code>UDim.new(0, 0)</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">UDim.one()</span>
+            <span class="tag tag-static">static</span>
+        </div>
+        <p class="member-desc">Shorthand for <code>UDim.new(1, 1)</code> &mdash; full size of the parent.</p>
+    </div>
+</div>
+
+<h3>Methods &amp; operators</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">u:ToDim(parent)</span>
+            <span class="member-type">→ Dim</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Resolve to absolute pixels by multiplying each axis by the
+            corresponding component of <code>parent</code>.
+        </p>
+        <pre><code>UDim.<span class="hl-fn">new</span>(<span class="hl-num">0.5</span>, <span class="hl-num">0.25</span>):<span class="hl-fn">ToDim</span>(Dim.<span class="hl-fn">new</span>(<span class="hl-num">800</span>, <span class="hl-num">600</span>))
+<span class="hl-com">-- → Dim(400, 150)</span></code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">u:Lerp(other, t)</span>
+            <span class="member-type">→ UDim</span>
+            <span class="tag tag-method">method</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">a + b, a - b</span>
+            <span class="member-type">→ UDim</span>
+        </div>
+        <p class="member-desc">Component-wise addition / subtraction (combine offsets).</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">u * scalar, u / scalar, -u</span>
+            <span class="member-type">→ UDim</span>
+        </div>
+        <p class="member-desc">Scalar arithmetic and negation.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">a == b, a &lt; b, a &lt;= b</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+        <p class="member-desc">Component-wise comparisons (<code>true</code> only when BOTH axes match).</p>
+    </div>
+</div>
+
+<pre><code><span class="hl-kw">local</span> UDim = Primitives.UDim
+<span class="hl-kw">local</span> Dim  = Primitives.Dim
+
+<span class="hl-cmt">-- A button anchored to the right edge, 20% wide.</span>
+<span class="hl-kw">local</span> winSize  = Dim.<span class="hl-fn">new</span>(win:<span class="hl-fn">Width</span>(), win:<span class="hl-fn">Height</span>())
+<span class="hl-kw">local</span> btnScale = UDim.<span class="hl-fn">new</span>(<span class="hl-num">0.2</span>, <span class="hl-num">0.08</span>)
+btn.Size = btnScale:<span class="hl-fn">ToDim</span>(winSize)</code></pre>
 
 </main>
 

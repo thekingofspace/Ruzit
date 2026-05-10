@@ -96,6 +96,7 @@ fn run_disk_project(root: PathBuf, entry: Option<String>) -> Result<(), String> 
             assets: package::encode_assets_b64(def_assets),
             scripts_compressed: false,
             assets_compressed: false,
+            scripts_bytecode: false,
         }),
     );
 
@@ -122,6 +123,7 @@ fn run_disk_project(root: PathBuf, entry: Option<String>) -> Result<(), String> 
                 assets: package::encode_assets_b64(dlc_assets),
                 scripts_compressed: false,
                 assets_compressed: false,
+                scripts_bytecode: false,
             }),
         );
     }
@@ -158,6 +160,7 @@ fn run_disk_project(root: PathBuf, entry: Option<String>) -> Result<(), String> 
                     assets: lp.assets,
                     scripts_compressed: lp.scripts_compressed,
                     assets_compressed: lp.assets_compressed,
+                    scripts_bytecode: lp.scripts_bytecode,
                 }),
             );
         }
@@ -247,6 +250,7 @@ fn run_launcher(info: LauncherInfo) -> Result<(), String> {
                 assets: pkg.assets,
                 scripts_compressed: pkg.scripts_compressed,
                 assets_compressed: pkg.assets_compressed,
+                scripts_bytecode: pkg.scripts_bytecode,
             }),
         );
     }

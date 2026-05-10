@@ -64,7 +64,7 @@ fn actor_new(_lua: &Lua, args: MultiValue, _fs: &Fs, _owner: &str) -> mlua::Resu
     };
 
     let threads = parse_thread_arg("Actor.new", thread_arg)?;
-    spawn_actor("Actor.new", source, threads)
+    spawn_actor("Actor.new", source.into_bytes(), threads)
 }
 
 fn actor_from_file(
@@ -115,10 +115,18 @@ fn parse_thread_arg(api: &str, arg: Option<Value>) -> mlua::Result<usize> {
     }
 }
 
-fn spawn_actor(api: &str, source: String, threads: usize) -> mlua::Result<ActorHandle> {
-    let bytecode = Compiler::new()
-        .compile(&source)
-        .map_err(|e| mlua::Error::RuntimeError(format!("{api}: compile failed: {e}")))?;
+fn is_luau_bytecode(bytes: &[u8]) -> bool {
+    matches!(bytes.first(), Some(&b) if b < 0x20 && b != b'\n' && b != b'\r' && b != b'\t')
+}
+
+fn spawn_actor(api: &str, source: Vec<u8>, threads: usize) -> mlua::Result<ActorHandle> {
+    let bytecode = if is_luau_bytecode(&source) {
+        source
+    } else {
+        Compiler::new()
+            .compile(&source)
+            .map_err(|e| mlua::Error::RuntimeError(format!("{api}: compile failed: {e}")))?
+    };
 
     let (in_tx, in_rx) = mpsc::channel::<Vec<u8>>();
     let in_rx = Arc::new(Mutex::new(in_rx));

@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>build.toml - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=3.8">
-    <script src="theme.js?v=3.8"></script>
+    <link rel="stylesheet" href="style.css?v=4.2">
+    <script src="theme.js?v=4.2"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=3.8" defer></script>
+<script src="sidebar.js?v=4.2" defer></script>
 
 <main>
 
@@ -156,6 +156,39 @@ steam-app-id = <span class="hl-num">480</span></code></pre>
     </div>
     <div class="member">
         <div class="member-header">
+            <span class="member-name">bytecode</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">
+            Compile every <code>.luau</code> / <code>.lua</code> file
+            to Luau bytecode at build time and ship the bytecode in
+            place of source. Faster startup (no parse/compile at
+            runtime), smaller binary size, and source is no longer
+            recoverable from the <code>.scripts.managed</code> file.
+            Default <code>false</code>.
+        </p>
+        <p class="member-desc">
+            <strong>Trade-off &mdash; error messages.</strong> Runtime
+            errors still report line numbers (the engine compiles with
+            <code>debug_level&nbsp;=&nbsp;1</code> so backtraces work),
+            but the engine no longer has the source text on hand to
+            print the actual offending line in error output &mdash;
+            you'll see <code>Main.luau:42: ...</code> instead of the
+            full <code>local x = bad_thing &lt;-- here</code> snippet.
+            Keep this off during active development; flip it on for
+            release builds where size and load speed matter more than
+            in-the-loop debugging.
+        </p>
+        <p class="member-desc">
+            Mixing is fine: a bytecode-compiled package can
+            <code>require</code> a non-bytecode package (and vice
+            versa), and <code>load()</code> still works on
+            <code>.luau</code> source files dropped next to the exe.
+            Each chunk is decoded independently.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
             <span class="member-name">steam-app-id</span>
             <span class="member-type">number</span>
         </div>
@@ -187,6 +220,7 @@ steam-app-id = <span class="hl-num">480</span></code></pre>
         <tr><td>compress-scripts</td><td><code>true</code></td></tr>
         <tr><td>compress-assets</td><td><code>true</code></td></tr>
         <tr><td>shard-assets</td><td><code>false</code></td></tr>
+        <tr><td>bytecode</td><td><code>false</code></td></tr>
         <tr><td>steam-app-id</td><td>none (Steam features error if accessed)</td></tr>
     </tbody>
 </table>

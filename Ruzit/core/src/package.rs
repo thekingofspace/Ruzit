@@ -37,6 +37,7 @@ pub struct LoadedPackage {
     pub assets: HashMap<String, String>,
     pub scripts_compressed: bool,
     pub assets_compressed: bool,
+    pub scripts_bytecode: bool,
 }
 
 pub fn collect_project(
@@ -168,17 +169,21 @@ pub fn write_scripts_managed(
     creator: &str,
     entry: &str,
     file_type: FileType,
-    files: &HashMap<String, String>,
+    files: &HashMap<String, Vec<u8>>,
     compress: bool,
+    bytecode: bool,
 ) -> Result<(), String> {
     let mut json_files = serde_json::Map::new();
     for (k, v) in files {
         let value = if compress {
-            let compressed = zstd::stream::encode_all(v.as_bytes(), 3)
+            let compressed = zstd::stream::encode_all(v.as_slice(), 3)
                 .map_err(|e| format!("compress {k}: {e}"))?;
             B64.encode(&compressed)
+        } else if bytecode {
+            B64.encode(v.as_slice())
         } else {
-            v.clone()
+            String::from_utf8(v.clone())
+                .map_err(|_| format!("script {k} contains non-UTF-8 bytes; enable compress or bytecode"))?
         };
         json_files.insert(k.clone(), JsonValue::String(value));
     }
@@ -191,6 +196,7 @@ pub fn write_scripts_managed(
         "entry": entry,
         "file_type": file_type.as_str(),
         "compressed": compress,
+        "bytecode": bytecode,
         "files": json_files,
     });
     let plain = serde_json::to_vec(&body).map_err(|e| e.to_string())?;
@@ -343,9 +349,14 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
             assets: HashMap::new(),
             scripts_compressed: false,
             assets_compressed: false,
+            scripts_bytecode: false,
         });
         let header_compressed = parsed
             .get("compressed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let header_bytecode = parsed
+            .get("bytecode")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
@@ -362,6 +373,7 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
         match kind {
             "scripts" => {
                 pkg.scripts_compressed = header_compressed;
+                pkg.scripts_bytecode = header_bytecode;
                 if let Some(s) = parsed.get("entry").and_then(|v| v.as_str()) {
                     pkg.entry = s.to_string();
                 }
@@ -373,7 +385,7 @@ pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, St
                 if let Some(obj) = parsed.get("files").and_then(|v| v.as_object()) {
                     for (k, v) in obj {
                         if let Some(s) = v.as_str() {
-                            let stored = if header_compressed {
+                            let stored = if header_compressed || header_bytecode {
                                 s.to_string()
                             } else {
                                 strip_bom(s.to_string())

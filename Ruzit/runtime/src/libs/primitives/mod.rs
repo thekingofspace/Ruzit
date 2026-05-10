@@ -205,6 +205,34 @@ impl Vector {
     pub fn magnitude(&self) -> f32 {
         (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
     }
+
+    pub fn dot(&self, o: &Vector) -> f32 {
+        self.x * o.x + self.y * o.y + self.z * o.z
+    }
+
+    pub fn cross(&self, o: &Vector) -> Vector {
+        Vector::new(
+            self.y * o.z - self.z * o.y,
+            self.z * o.x - self.x * o.z,
+            self.x * o.y - self.y * o.x,
+        )
+    }
+
+    pub fn normalized(&self) -> Vector {
+        let m = self.magnitude();
+        if m <= 1e-6 {
+            *self
+        } else {
+            Vector::new(self.x / m, self.y / m, self.z / m)
+        }
+    }
+
+    pub fn distance(&self, o: &Vector) -> f32 {
+        let dx = self.x - o.x;
+        let dy = self.y - o.y;
+        let dz = self.z - o.z;
+        (dx * dx + dy * dy + dz * dz).sqrt()
+    }
 }
 
 impl UserData for Vector {
@@ -225,6 +253,27 @@ impl UserData for Vector {
                     lerp_f(this.y, o.y, t),
                     lerp_f(this.z, o.z, t),
                 ))
+            },
+        );
+        m.add_method("Dot", |_, this, other: AnyUserData| -> mlua::Result<f32> {
+            let o = *other.borrow::<Vector>()?;
+            Ok(this.dot(&o))
+        });
+        m.add_method(
+            "Cross",
+            |_, this, other: AnyUserData| -> mlua::Result<Vector> {
+                let o = *other.borrow::<Vector>()?;
+                Ok(this.cross(&o))
+            },
+        );
+        m.add_method("Normalized", |_, this, _: ()| -> mlua::Result<Vector> {
+            Ok(this.normalized())
+        });
+        m.add_method(
+            "Distance",
+            |_, this, other: AnyUserData| -> mlua::Result<f32> {
+                let o = *other.borrow::<Vector>()?;
+                Ok(this.distance(&o))
             },
         );
 
@@ -636,7 +685,150 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
             ))
         })?,
     )?;
+    cframe_class.set(
+        "LookAt",
+        lua.create_function(
+            |_,
+             (eye_ud, target_ud, up_ud): (
+                AnyUserData,
+                AnyUserData,
+                Option<AnyUserData>,
+            )|
+             -> mlua::Result<CFrame> {
+                let eye = *eye_ud.borrow::<Vector>()?;
+                let target = *target_ud.borrow::<Vector>()?;
+                let up = match up_ud {
+                    Some(ud) => *ud.borrow::<Vector>()?,
+                    None => Vector::new(0.0, 1.0, 0.0),
+                };
+                let forward = Vector::new(
+                    target.x - eye.x,
+                    target.y - eye.y,
+                    target.z - eye.z,
+                )
+                .normalized();
+                let right = forward.cross(&up).normalized();
+                let new_up = right.cross(&forward).normalized();
+                let mat: Mat3 = [
+                    [right.x, new_up.x, forward.x],
+                    [right.y, new_up.y, forward.y],
+                    [right.z, new_up.z, forward.z],
+                ];
+                Ok(CFrame::new(eye, matrix_to_euler(mat)))
+            },
+        )?,
+    )?;
     t.set("CFrame", cframe_class)?;
 
+    let udim_class = lua.create_table()?;
+    udim_class.set(
+        "new",
+        lua.create_function(|_, (x, y): (Option<f32>, Option<f32>)| -> mlua::Result<UDim> {
+            Ok(UDim::new(x.unwrap_or(0.0), y.unwrap_or(0.0)))
+        })?,
+    )?;
+    udim_class.set(
+        "zero",
+        lua.create_function(|_, _: ()| Ok(UDim::new(0.0, 0.0)))?,
+    )?;
+    udim_class.set(
+        "one",
+        lua.create_function(|_, _: ()| Ok(UDim::new(1.0, 1.0)))?,
+    )?;
+    t.set("UDim", udim_class)?;
+
     Ok(t)
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct UDim {
+    pub x: f32,
+    pub y: f32,
+}
+
+impl UDim {
+    pub fn new(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
+}
+
+impl UserData for UDim {
+    fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
+        f.add_field_method_get("X", |_, this| Ok(this.x));
+        f.add_field_method_get("Y", |_, this| Ok(this.y));
+    }
+
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method(
+            "ToDim",
+            |_, this, parent: AnyUserData| -> mlua::Result<Dim> {
+                let p = *parent.borrow::<Dim>()?;
+                Ok(Dim::new(this.x * p.x, this.y * p.y))
+            },
+        );
+        m.add_method(
+            "Lerp",
+            |_, this, (other, t): (AnyUserData, f32)| -> mlua::Result<UDim> {
+                let o = *other.borrow::<UDim>()?;
+                Ok(UDim::new(lerp_f(this.x, o.x, t), lerp_f(this.y, o.y, t)))
+            },
+        );
+
+        m.add_meta_method("__tostring", |_, this, _: ()| {
+            Ok(format!("UDim({}, {})", this.x, this.y))
+        });
+
+        m.add_meta_function(
+            "__add",
+            |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<UDim> {
+                let a = *a.borrow::<UDim>()?;
+                let b = *b.borrow::<UDim>()?;
+                Ok(UDim::new(a.x + b.x, a.y + b.y))
+            },
+        );
+        m.add_meta_function(
+            "__sub",
+            |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<UDim> {
+                let a = *a.borrow::<UDim>()?;
+                let b = *b.borrow::<UDim>()?;
+                Ok(UDim::new(a.x - b.x, a.y - b.y))
+            },
+        );
+        m.add_meta_function("__mul", |_, (a, b): (Value, Value)| -> mlua::Result<UDim> {
+            let (u, s) = pair_with_scalar::<UDim>(&a, &b, "UDim * expects (UDim, number)")?;
+            Ok(UDim::new(u.x * s, u.y * s))
+        });
+        m.add_meta_function("__div", |_, (a, b): (Value, Value)| -> mlua::Result<UDim> {
+            let (u, s) = pair_with_scalar::<UDim>(&a, &b, "UDim / expects (UDim, number)")?;
+            Ok(UDim::new(u.x / s, u.y / s))
+        });
+        m.add_meta_function("__unm", |_, ud: AnyUserData| -> mlua::Result<UDim> {
+            let u = *ud.borrow::<UDim>()?;
+            Ok(UDim::new(-u.x, -u.y))
+        });
+        m.add_meta_function(
+            "__eq",
+            |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<bool> {
+                let a = a.borrow::<UDim>()?;
+                let b = b.borrow::<UDim>()?;
+                Ok(a.x == b.x && a.y == b.y)
+            },
+        );
+        m.add_meta_function(
+            "__lt",
+            |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<bool> {
+                let a = a.borrow::<UDim>()?;
+                let b = b.borrow::<UDim>()?;
+                Ok(a.x < b.x && a.y < b.y)
+            },
+        );
+        m.add_meta_function(
+            "__le",
+            |_, (a, b): (AnyUserData, AnyUserData)| -> mlua::Result<bool> {
+                let a = a.borrow::<UDim>()?;
+                let b = b.borrow::<UDim>()?;
+                Ok(a.x <= b.x && a.y <= b.y)
+            },
+        );
+    }
 }

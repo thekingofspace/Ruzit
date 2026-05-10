@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6,6 +7,33 @@ use ruzit_core::config::{BuildConfig, ManagedInfo};
 use ruzit_core::package;
 
 use crate::templates;
+
+fn prepare_script_bytes(
+    sources: &HashMap<String, String>,
+    compile_bytecode: bool,
+) -> Result<HashMap<String, Vec<u8>>, String> {
+    let mut out = HashMap::with_capacity(sources.len());
+    if !compile_bytecode {
+        for (k, v) in sources {
+            out.insert(k.clone(), v.as_bytes().to_vec());
+        }
+        return Ok(out);
+    }
+    let compiler = mlua::Compiler::new()
+        .set_optimization_level(2)
+        .set_debug_level(1);
+    for (k, v) in sources {
+        if k.ends_with(".luau") || k.ends_with(".lua") {
+            let bytecode = compiler
+                .compile(v.as_bytes())
+                .map_err(|e| format!("compile {k}: {e}"))?;
+            out.insert(k.clone(), bytecode);
+        } else {
+            out.insert(k.clone(), v.as_bytes().to_vec());
+        }
+    }
+    Ok(out)
+}
 
 pub fn cmd_test(arg: Option<&String>) -> Result<(), String> {
     let entry = resolve_entry_arg(arg)?;
@@ -169,6 +197,7 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
     copy_steam_redist(&generated_dir);
 
     let scripts_path = managed_dir.join(format!("{pkg_id}.scripts.managed"));
+    let script_bytes = prepare_script_bytes(&files, config.compile_bytecode)?;
     package::write_scripts_managed(
         &scripts_path,
         &pkg_id,
@@ -177,8 +206,9 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         &config.creator,
         &entry_rel,
         config.file_type,
-        &files,
+        &script_bytes,
         config.compress_scripts,
+        config.compile_bytecode,
     )?;
 
     let assets_path = managed_dir.join(format!("{pkg_id}.assets.managed"));
@@ -315,6 +345,7 @@ fn build_dlc(
         ));
     }
     let scripts_path = managed_dir.join(format!("{}.scripts.managed", info.id));
+    let script_bytes = prepare_script_bytes(&files, false)?;
     package::write_scripts_managed(
         &scripts_path,
         &info.id,
@@ -323,8 +354,9 @@ fn build_dlc(
         &info.creator,
         &info.entry,
         info.file_type,
-        &files,
+        &script_bytes,
         compress_scripts,
+        false,
     )?;
     let assets_path = managed_dir.join(format!("{}.assets.managed", info.id));
     if !assets.is_empty() {
@@ -388,6 +420,7 @@ pub fn cmd_package(arg: Option<&String>, output: Option<&String>) -> Result<(), 
     fs::create_dir_all(&out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
 
     let scripts_path = out_dir.join(format!("{}.scripts.managed", info.id));
+    let script_bytes = prepare_script_bytes(&files, false)?;
     package::write_scripts_managed(
         &scripts_path,
         &info.id,
@@ -396,7 +429,8 @@ pub fn cmd_package(arg: Option<&String>, output: Option<&String>) -> Result<(), 
         &info.creator,
         &info.entry,
         info.file_type,
-        &files,
+        &script_bytes,
+        false,
         false,
     )?;
 
