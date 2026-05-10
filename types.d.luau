@@ -2878,9 +2878,14 @@ export type GPU_API = {
 	-- Returns a RaycastHit for the first accepted intersection, or nil if
 	-- nothing within range passed the filter.
 	--
-	-- Geometry: cubes/models are tested as oriented bounding boxes derived
-	-- from the part's CFrame + Size. Spheres are tested as ellipsoids with
-	-- the same CFrame + Size. Parts with Render = false are skipped.
+	-- Geometry: dispatched on the GPU as a compute pass, one thread per
+	-- part. Cubes are tested as oriented bounding boxes (CFrame + Size).
+	-- Spheres are tested as ellipsoids (CFrame + Size). Models with mesh
+	-- data are tested per-triangle via Möller-Trumbore in part-local
+	-- space, so corners and concavities hit precisely instead of the
+	-- bounding box. Models without mesh data fall back to OBB. Parts
+	-- with Render = false or IgnoreInRaycast = true are skipped. Falls
+	-- back to a CPU loop if the GPU is not yet initialized.
 	--
 	-- Example, pick a part under the mouse, ignoring red ones:
 	--   local Mouse = import("Mouse")
@@ -2995,6 +3000,36 @@ export type GPU_API = {
 	-- Render = false. Honors deformed / animated meshes and DynMesh
 	-- offsets.
 	CheckArea: (center: Vector, size: Vector, quality: number?) -> { BasePart },
+	-- GPU-accelerated sphere overlap query. One compute thread per part
+	-- tests the part's world AABB against the sphere; matches are written
+	-- to a packed atomic-counter buffer and read back. Optional filter
+	-- function runs on each candidate (return true to accept). Returns
+	-- the parts whose bounds intersect the sphere. Skips parts with
+	-- Render = false.
+	OverlapSphere: (center: Vector, radius: number, filter: ((BasePart) -> boolean)?) -> { BasePart },
+	-- GPU-accelerated oriented-box overlap query. `rotation` is an Euler
+	-- Vector in radians (defaults to no rotation). Test is conservative
+	-- AABB-vs-OBB-AABB on the GPU, so a rotated thin box may include a
+	-- few false positives near the corners; tighten with the filter
+	-- function if you need exact OBB-OBB on a small candidate set.
+	OverlapBox: (center: Vector, size: Vector, rotation: Vector?, filter: ((BasePart) -> boolean)?) -> { BasePart },
+	-- GPU-accelerated frustum cull against the current camera. Returns
+	-- every part whose AABB is inside or intersects the camera's view
+	-- frustum (uses Renderable.Camera CFrame, FOV, Near and Far). Useful
+	-- as a fast first pass for "what would be drawn this frame" or for
+	-- area-of-interest streaming.
+	OverlapFrustum: (filter: ((BasePart) -> boolean)?) -> { BasePart },
+	-- GPU-accelerated, mesh-precise zone query. Returns every BasePart
+	-- whose geometry intersects the oriented zone defined by `cframe`
+	-- and `size` (full extents along the zone's local X/Y/Z). Each
+	-- part's eight world-space corners are tested, then for models
+	-- their actual mesh vertices (deformed verts when present, falling
+	-- back to the source mesh) are transformed and tested too, so a
+	-- spike sticking out of a model registers even if the body's
+	-- bounding box doesn't reach the zone. Also catches the case where
+	-- the zone is fully inside a large part. Optional filter callback,
+	-- same shape as the other Overlap queries.
+	GetItemsInZone: (cframe: CFrame, size: Vector, filter: ((BasePart) -> boolean)?) -> { BasePart },
 }
 
 declare class GPUBuffer

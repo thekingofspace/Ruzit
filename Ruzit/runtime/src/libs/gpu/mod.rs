@@ -3,6 +3,8 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+mod spatial;
+
 use mlua::{AnyUserData, Lua, MultiValue, Table, UserData, UserDataMethods, Value};
 
 use crate::libs::gui::render::{GPU_DEVICE, GPU_META, GPU_QUEUE, GpuMeta};
@@ -69,6 +71,10 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     t.set("ClearBuffer", lua.create_function(clear_buffer)?)?;
     t.set("GetBounds", lua.create_function(get_bounds)?)?;
     t.set("CheckArea", lua.create_function(check_area)?)?;
+    t.set("OverlapSphere", lua.create_function(overlap_sphere)?)?;
+    t.set("OverlapBox", lua.create_function(overlap_box)?)?;
+    t.set("OverlapFrustum", lua.create_function(overlap_frustum)?)?;
+    t.set("GetItemsInZone", lua.create_function(get_items_in_zone)?)?;
     t.set(
         "SetMaxFrameRate",
         lua.create_function(|_, fps: Option<f64>| -> mlua::Result<()> {
@@ -222,6 +228,193 @@ fn check_area(lua: &Lua, args: MultiValue) -> mlua::Result<Table> {
         }
     }
     Ok(out)
+}
+
+fn collect_overlap_results(
+    lua: &Lua,
+    parts: Vec<Arc<Mutex<PartState>>>,
+    filter: Option<mlua::Function>,
+) -> mlua::Result<Table> {
+    let out = lua.create_table()?;
+    let mut idx = 1;
+    for state_arc in parts {
+        let part = lua.create_userdata(PartHandle::from_state(state_arc))?;
+        let accept = match &filter {
+            None => true,
+            Some(f) => match f.call::<Value>(part.clone())? {
+                Value::Boolean(b) => b,
+                Value::Nil => false,
+                _ => true,
+            },
+        };
+        if accept {
+            out.set(idx, part)?;
+            idx += 1;
+        }
+    }
+    Ok(out)
+}
+
+fn overlap_sphere(lua: &Lua, args: MultiValue) -> mlua::Result<Table> {
+    let mut iter = args.into_iter();
+    let center_v = iter.next().ok_or_else(|| {
+        mlua::Error::RuntimeError("GPU.OverlapSphere: missing center (Vector)".into())
+    })?;
+    let radius_v = iter.next().ok_or_else(|| {
+        mlua::Error::RuntimeError("GPU.OverlapSphere: missing radius (number)".into())
+    })?;
+    let filter = match iter.next() {
+        None | Some(Value::Nil) => None,
+        Some(Value::Function(f)) => Some(f),
+        Some(other) => {
+            return Err(mlua::Error::RuntimeError(format!(
+                "GPU.OverlapSphere: filter must be a function or nil (got {})",
+                other.type_name()
+            )));
+        }
+    };
+
+    let center = vector_from_value(&center_v, "GPU.OverlapSphere: center")?;
+    let radius = match radius_v {
+        Value::Integer(n) => n as f32,
+        Value::Number(n) => n as f32,
+        _ => {
+            return Err(mlua::Error::RuntimeError(
+                "GPU.OverlapSphere: radius must be a number".into(),
+            ));
+        }
+    };
+    if radius <= 0.0 {
+        return Err(mlua::Error::RuntimeError(
+            "GPU.OverlapSphere: radius must be > 0".into(),
+        ));
+    }
+
+    let parts = spatial::gpu_overlap(spatial::OverlapShape::Sphere { center, radius })
+        .ok_or_else(|| {
+            mlua::Error::RuntimeError(
+                "GPU.OverlapSphere: GPU not initialized (open a window first)".into(),
+            )
+        })?;
+    collect_overlap_results(lua, parts, filter)
+}
+
+fn overlap_box(lua: &Lua, args: MultiValue) -> mlua::Result<Table> {
+    let mut iter = args.into_iter();
+    let center_v = iter.next().ok_or_else(|| {
+        mlua::Error::RuntimeError("GPU.OverlapBox: missing center (Vector)".into())
+    })?;
+    let size_v = iter.next().ok_or_else(|| {
+        mlua::Error::RuntimeError("GPU.OverlapBox: missing size (Vector)".into())
+    })?;
+    let rot_v = iter.next().unwrap_or(Value::Nil);
+    let filter = match iter.next() {
+        None | Some(Value::Nil) => None,
+        Some(Value::Function(f)) => Some(f),
+        Some(other) => {
+            return Err(mlua::Error::RuntimeError(format!(
+                "GPU.OverlapBox: filter must be a function or nil (got {})",
+                other.type_name()
+            )));
+        }
+    };
+
+    let center = vector_from_value(&center_v, "GPU.OverlapBox: center")?;
+    let size = vector_from_value(&size_v, "GPU.OverlapBox: size")?;
+    let rotation = match rot_v {
+        Value::Nil => Vector::new(0.0, 0.0, 0.0),
+        v => vector_from_value(&v, "GPU.OverlapBox: rotation")?,
+    };
+
+    let parts = spatial::gpu_overlap(spatial::OverlapShape::Box {
+        center,
+        size,
+        rotation,
+    })
+    .ok_or_else(|| {
+        mlua::Error::RuntimeError(
+            "GPU.OverlapBox: GPU not initialized (open a window first)".into(),
+        )
+    })?;
+    collect_overlap_results(lua, parts, filter)
+}
+
+fn overlap_frustum(lua: &Lua, args: MultiValue) -> mlua::Result<Table> {
+    let mut iter = args.into_iter();
+    let filter = match iter.next() {
+        None | Some(Value::Nil) => None,
+        Some(Value::Function(f)) => Some(f),
+        Some(other) => {
+            return Err(mlua::Error::RuntimeError(format!(
+                "GPU.OverlapFrustum: filter must be a function or nil (got {})",
+                other.type_name()
+            )));
+        }
+    };
+
+    let cam = renderable::camera_snapshot();
+    let (w, h) = window_size();
+    let aspect = if h > 0 { w as f32 / h as f32 } else { 1.0 };
+    let planes = spatial::frustum_planes_from_camera(
+        cam.cframe.position,
+        cam.cframe.rotation,
+        cam.fov_deg,
+        aspect,
+        cam.near,
+        cam.far,
+    );
+
+    let parts = spatial::gpu_overlap(spatial::OverlapShape::Frustum { planes })
+        .ok_or_else(|| {
+            mlua::Error::RuntimeError(
+                "GPU.OverlapFrustum: GPU not initialized (open a window first)".into(),
+            )
+        })?;
+    collect_overlap_results(lua, parts, filter)
+}
+
+fn get_items_in_zone(lua: &Lua, args: MultiValue) -> mlua::Result<Table> {
+    let mut iter = args.into_iter();
+    let cf_v = iter.next().ok_or_else(|| {
+        mlua::Error::RuntimeError("GPU.GetItemsInZone: missing first argument (CFrame)".into())
+    })?;
+    let size_v = iter.next().ok_or_else(|| {
+        mlua::Error::RuntimeError("GPU.GetItemsInZone: missing second argument (Vector size)".into())
+    })?;
+    let filter = match iter.next() {
+        None | Some(Value::Nil) => None,
+        Some(Value::Function(f)) => Some(f),
+        Some(other) => {
+            return Err(mlua::Error::RuntimeError(format!(
+                "GPU.GetItemsInZone: filter must be a function or nil (got {})",
+                other.type_name()
+            )));
+        }
+    };
+
+    let zone_cf = match &cf_v {
+        Value::UserData(ud) => *ud.borrow::<CFrame>().map_err(|_| {
+            mlua::Error::RuntimeError("GPU.GetItemsInZone: first argument must be a CFrame".into())
+        })?,
+        _ => {
+            return Err(mlua::Error::RuntimeError(
+                "GPU.GetItemsInZone: first argument must be a CFrame".into(),
+            ));
+        }
+    };
+    let zone_size = vector_from_value(&size_v, "GPU.GetItemsInZone: size")?;
+    if zone_size.x <= 0.0 || zone_size.y <= 0.0 || zone_size.z <= 0.0 {
+        return Err(mlua::Error::RuntimeError(
+            "GPU.GetItemsInZone: size components must be > 0".into(),
+        ));
+    }
+
+    let parts = spatial::gpu_zone_query(zone_cf, zone_size).ok_or_else(|| {
+        mlua::Error::RuntimeError(
+            "GPU.GetItemsInZone: GPU not initialized (open a window first)".into(),
+        )
+    })?;
+    collect_overlap_results(lua, parts, filter)
 }
 
 fn part_state_from_value(v: &Value) -> mlua::Result<Arc<Mutex<PartState>>> {
@@ -570,34 +763,49 @@ fn raycast(lua: &Lua, args: MultiValue) -> mlua::Result<Value> {
     };
 
     let mut hits: Vec<Hit> = Vec::new();
-    for state_arc in renderable::list_part_states() {
-        let snap = {
-            let s = state_arc.lock().unwrap();
-            if !s.alive || !s.render || s.ignore_raycast {
-                continue;
-            }
-            (s.shape, s.cframe, s.size)
-        };
-        if let Some((dist, world_pos, world_normal)) =
-            intersect_part(snap.0, snap.1, snap.2, origin, direction)
-        {
-            if dist > max_dist {
+    if let Some(gpu_hits) = spatial::gpu_raycast(origin, direction, max_dist) {
+        for h in gpu_hits {
+            let ignore = h.state.lock().map(|s| s.ignore_raycast).unwrap_or(true);
+            if ignore {
                 continue;
             }
             hits.push(Hit {
-                state: state_arc,
-                distance: dist,
-                position: world_pos,
-                normal: world_normal,
+                state: h.state,
+                distance: h.distance,
+                position: h.position,
+                normal: h.normal,
             });
         }
-    }
+    } else {
+        for state_arc in renderable::list_part_states() {
+            let snap = {
+                let s = state_arc.lock().unwrap();
+                if !s.alive || !s.render || s.ignore_raycast {
+                    continue;
+                }
+                (s.shape, s.cframe, s.size)
+            };
+            if let Some((dist, world_pos, world_normal)) =
+                intersect_part(snap.0, snap.1, snap.2, origin, direction)
+            {
+                if dist > max_dist {
+                    continue;
+                }
+                hits.push(Hit {
+                    state: state_arc,
+                    distance: dist,
+                    position: world_pos,
+                    normal: world_normal,
+                });
+            }
+        }
 
-    hits.sort_by(|a, b| {
-        a.distance
-            .partial_cmp(&b.distance)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+        hits.sort_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
 
     for hit in hits {
         let part = lua.create_userdata(PartHandle::from_state(hit.state))?;

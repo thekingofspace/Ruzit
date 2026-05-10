@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GPU - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.1.2">
-    <script src="theme.js?v=1.1.2"></script>
+    <link rel="stylesheet" href="style.css?v=1.1.3">
+    <script src="theme.js?v=1.1.3"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.1.2" defer></script>
+<script src="sidebar.js?v=1.1.3" defer></script>
 
 <main>
 
@@ -70,11 +70,17 @@
             <span class="member-type">→ RaycastHit?</span>
         </div>
         <p class="member-desc">
-            CPU-side ray test against every renderable BasePart. Cubes
-            and models test as oriented bounding boxes derived from
-            CFrame + Size; spheres as ellipsoids with the same. Parts
-            with <code>Render = false</code> or
-            <code>IgnoreInRaycast = true</code> are skipped.
+            GPU-dispatched ray test against every renderable BasePart.
+            One compute thread per part runs in parallel: cubes test as
+            oriented bounding boxes (CFrame + Size), spheres as
+            ellipsoids (CFrame + Size), and <strong>models with mesh
+            data test per-triangle</strong> via Möller-Trumbore in
+            part-local space, so corners and concavities hit precisely
+            instead of bounding boxes. Models without mesh data fall
+            back to OBB. Parts with <code>Render = false</code> or
+            <code>IgnoreInRaycast = true</code> are skipped. Falls back
+            to a CPU loop only if the GPU has not been initialized
+            (i.e. no window opened yet).
         </p>
     </div>
 </div>
@@ -306,6 +312,87 @@
             <code>center</code> with full extents <code>size</code>.
             Skips parts with <code>Render = false</code>. Honors
             deformed / animated meshes and DynMesh offsets.
+        </p>
+    </div>
+</div>
+
+<h2 id="overlap">GPU spatial queries</h2>
+
+<p>
+    These run as a compute pass on the GPU: one thread per part tests the
+    part's world-space AABB against the query shape, matches are written
+    to a packed atomic-counter buffer, then the index list is read back
+    and resolved to BaseParts. Skips parts with <code>Render = false</code>.
+    Filter functions (when provided) run on the CPU after the GPU returns
+    candidates, so they're only invoked on hits.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.OverlapSphere(center, radius, filter?)</span>
+            <span class="member-type">→ { BasePart }</span>
+        </div>
+        <p class="member-desc">
+            Return every part whose AABB intersects the sphere centered
+            at <code>center</code> with the given <code>radius</code>.
+            Filter is optional <code>(BasePart) -&gt; boolean</code>;
+            return true to keep, false / nil to drop.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.OverlapBox(center, size, rotation?, filter?)</span>
+            <span class="member-type">→ { BasePart }</span>
+        </div>
+        <p class="member-desc">
+            Return every part whose AABB intersects the oriented box at
+            <code>center</code> with full extents <code>size</code>,
+            rotated by an Euler <code>rotation</code> (radians, defaults
+            to no rotation). The GPU test is conservative
+            (AABB-vs-OBB-AABB), so a heavily rotated thin box may
+            include a few false positives near the corners. Tighten
+            with the filter callback if you need exact OBB-OBB on a
+            small candidate set.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.OverlapFrustum(filter?)</span>
+            <span class="member-type">→ { BasePart }</span>
+        </div>
+        <p class="member-desc">
+            Return every part whose AABB is inside or intersects the
+            current camera's view frustum. Uses
+            <code>Renderable.Camera</code>'s CFrame, FOV, near and far
+            plus the window's aspect ratio. Useful as a fast first pass
+            for "what would be drawn this frame" or for area-of-interest
+            streaming around the player.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.GetItemsInZone(cframe, size, filter?)</span>
+            <span class="member-type">→ { BasePart }</span>
+        </div>
+        <p class="member-desc">
+            Mesh-precise oriented-zone query. <code>cframe</code> places
+            and rotates the zone, <code>size</code> is its full extents
+            along the zone's local X / Y / Z. The compute shader tests
+            each part's eight world-space corners against the zone OBB,
+            and for parts with mesh data (Models) it additionally
+            transforms the actual triangle vertices and tests each one,
+            so a spike sticking out of a body still registers even when
+            the body's bounding box doesn't reach the zone. Honors
+            deformed meshes (uses the live deformed verts when
+            <code>DynMesh</code> or animations are active, otherwise
+            the source mesh). Also catches the inverse case where the
+            zone is fully inside a large part.
+        </p>
+        <p class="member-desc">
+            Like the other Overlap queries this runs as one compute
+            thread per part with an atomic-counter index list, then the
+            CPU reads back only the matched indices.
         </p>
     </div>
 </div>
