@@ -1,0 +1,9 @@
+Name = "PhysicsTest"
+Version = "0.1.0"
+Creator = ""
+
+[configs]
+"File Type" = "Relative"
+
+[exe]
+windowed = true

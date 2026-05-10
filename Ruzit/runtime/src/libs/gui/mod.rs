@@ -30,6 +30,8 @@ pub enum Shape {
     Image,
 
     Text,
+
+    Clippable,
 }
 
 impl Shape {
@@ -40,6 +42,7 @@ impl Shape {
             Self::Triangle => 2,
             Self::Image => 3,
             Self::Text => 4,
+            Self::Clippable => 5,
         }
     }
 }
@@ -84,6 +87,10 @@ pub struct PrimitiveState {
     pub text: Option<TextState>,
 
     pub dyn_img_owner: Option<u64>,
+
+    pub prop_signals: HashMap<String, Table>,
+
+    pub clip_parent: Option<Arc<Mutex<PrimitiveState>>>,
 }
 
 pub struct TextState {
@@ -113,6 +120,8 @@ pub struct RenderItem {
 
     pub active_shader: Option<AttachedShader>,
     pub image: Option<Arc<ImageRef>>,
+
+    pub clip_rect: Option<(f32, f32, f32, f32)>,
 }
 
 pub fn purge_image(lua: &Lua, asset_id: u64) {
@@ -213,6 +222,9 @@ fn build_snapshot() -> Vec<RenderItem> {
                 if !s.visible || s.dyn_img_owner.is_some() {
                     return None;
                 }
+                if matches!(s.shape, Shape::Clippable) {
+                    return None;
+                }
 
                 let (image, size) = if matches!(s.shape, Shape::Text) {
                     let baked = bake_text_if_dirty(&mut s);
@@ -224,6 +236,15 @@ fn build_snapshot() -> Vec<RenderItem> {
                 } else {
                     (s.image.clone(), s.size)
                 };
+
+                let clip_rect = s.clip_parent.as_ref().and_then(|parent_arc| {
+                    let parent = parent_arc.lock().ok()?;
+                    if !parent.alive {
+                        return None;
+                    }
+                    Some((parent.position.x, parent.position.y, parent.size.x, parent.size.y))
+                });
+
                 Some(RenderItem {
                     shape: s.shape,
                     size,
@@ -233,6 +254,7 @@ fn build_snapshot() -> Vec<RenderItem> {
                     z_index: s.z_index,
                     active_shader: s.attached.last().cloned(),
                     image,
+                    clip_rect,
                 })
             })
             .collect();
@@ -381,6 +403,8 @@ impl GuiPrimitive {
             image,
             text,
             dyn_img_owner: None,
+            prop_signals: HashMap::new(),
+            clip_parent: None,
         }));
         REGISTRY.with(|cell| cell.borrow_mut().push(state.clone()));
         bump_dirty();
@@ -403,6 +427,27 @@ fn fire_changed(lua: &Lua, signal_table: Table, prop: &str) -> mlua::Result<()> 
     let mut args = MultiValue::new();
     args.push_back(Value::String(lua.create_string(prop)?));
     signal::fire(lua, &signal_table, args)
+}
+
+fn fire_prop_changed(lua: &Lua, prop_sig: Option<Table>, value: Value) {
+    if let Some(sig) = prop_sig {
+        let mut args = MultiValue::new();
+        args.push_back(value);
+        let _ = signal::fire(lua, &sig, args);
+    }
+}
+
+fn ensure_prop_signal(
+    lua: &Lua,
+    state: &mut PrimitiveState,
+    prop: &str,
+) -> mlua::Result<Table> {
+    if let Some(sig) = state.prop_signals.get(prop) {
+        return Ok(sig.clone());
+    }
+    let sig = signal::new_instance(lua)?;
+    state.prop_signals.insert(prop.to_string(), sig.clone());
+    Ok(sig)
 }
 
 static GUI_VERSION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -484,12 +529,17 @@ impl UserData for GuiPrimitive {
             let dim = *value
                 .borrow::<Dim>()
                 .map_err(|_| mlua::Error::RuntimeError("Size expects a Primitives.Dim".into()))?;
-            let signal_table = {
+            let (signal_table, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
                 s.size = dim;
-                s.changed_signal.clone()
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("Size").cloned(),
+                )
             };
-            fire_changed(lua, signal_table, "Size")
+            fire_changed(lua, signal_table, "Size")?;
+            fire_prop_changed(lua, prop_sig, Value::UserData(lua.create_userdata(dim)?));
+            Ok(())
         });
         f.add_field_method_get("Position", |_, this| {
             Ok(this.state.lock().unwrap().position)
@@ -499,12 +549,17 @@ impl UserData for GuiPrimitive {
             let dim = *value.borrow::<Dim>().map_err(|_| {
                 mlua::Error::RuntimeError("Position expects a Primitives.Dim".into())
             })?;
-            let signal_table = {
+            let (signal_table, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
                 s.position = dim;
-                s.changed_signal.clone()
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("Position").cloned(),
+                )
             };
-            fire_changed(lua, signal_table, "Position")
+            fire_changed(lua, signal_table, "Position")?;
+            fire_prop_changed(lua, prop_sig, Value::UserData(lua.create_userdata(dim)?));
+            Ok(())
         });
         f.add_field_method_get("Color", |_, this| Ok(this.state.lock().unwrap().color));
         f.add_field_method_set("Color", |lua, this, value: AnyUserData| {
@@ -512,46 +567,68 @@ impl UserData for GuiPrimitive {
             let color = *value.borrow::<Color3>().map_err(|_| {
                 mlua::Error::RuntimeError("Color expects a Primitives.Color3".into())
             })?;
-            let signal_table = {
+            let (signal_table, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
                 s.color = color;
-                s.changed_signal.clone()
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("Color").cloned(),
+                )
             };
-            fire_changed(lua, signal_table, "Color")
+            fire_changed(lua, signal_table, "Color")?;
+            fire_prop_changed(lua, prop_sig, Value::UserData(lua.create_userdata(color)?));
+            Ok(())
         });
         f.add_field_method_get("Transparency", |_, this| {
             Ok(this.state.lock().unwrap().transparency)
         });
         f.add_field_method_set("Transparency", |lua, this, value: f32| {
             this.ensure_alive("set Transparency")?;
-            let signal_table = {
+            let clamped = value.clamp(0.0, 1.0);
+            let (signal_table, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
-                s.transparency = value.clamp(0.0, 1.0);
-                s.changed_signal.clone()
+                s.transparency = clamped;
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("Transparency").cloned(),
+                )
             };
-            fire_changed(lua, signal_table, "Transparency")
+            fire_changed(lua, signal_table, "Transparency")?;
+            fire_prop_changed(lua, prop_sig, Value::Number(clamped as f64));
+            Ok(())
         });
         f.add_field_method_get("ZIndex", |_, this| {
             Ok(this.state.lock().unwrap().z_index as i64)
         });
         f.add_field_method_set("ZIndex", |lua, this, value: i64| {
             this.ensure_alive("set ZIndex")?;
-            let signal_table = {
+            let clamped = value.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+            let (signal_table, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
-                s.z_index = value.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
-                s.changed_signal.clone()
+                s.z_index = clamped;
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("ZIndex").cloned(),
+                )
             };
-            fire_changed(lua, signal_table, "ZIndex")
+            fire_changed(lua, signal_table, "ZIndex")?;
+            fire_prop_changed(lua, prop_sig, Value::Integer(clamped));
+            Ok(())
         });
         f.add_field_method_get("Visible", |_, this| Ok(this.state.lock().unwrap().visible));
         f.add_field_method_set("Visible", |lua, this, value: bool| {
             this.ensure_alive("set Visible")?;
-            let signal_table = {
+            let (signal_table, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
                 s.visible = value;
-                s.changed_signal.clone()
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("Visible").cloned(),
+                )
             };
-            fire_changed(lua, signal_table, "Visible")
+            fire_changed(lua, signal_table, "Visible")?;
+            fire_prop_changed(lua, prop_sig, Value::Boolean(value));
+            Ok(())
         });
         f.add_field_method_get("Shape", |_, this| {
             Ok(match this.state.lock().unwrap().shape {
@@ -560,6 +637,7 @@ impl UserData for GuiPrimitive {
                 Shape::Triangle => "Triangle",
                 Shape::Image => "Image",
                 Shape::Text => "Text",
+                Shape::Clippable => "Clippable",
             })
         });
 
@@ -572,7 +650,8 @@ impl UserData for GuiPrimitive {
         });
         f.add_field_method_set("Text", |lua, this, value: String| {
             this.ensure_alive("set Text")?;
-            let signal_table = {
+            let new_value = value.clone();
+            let (signal_table, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
                 let ts = s.text.as_mut().ok_or_else(|| {
                     mlua::Error::RuntimeError("Text is only valid on Font primitives".into())
@@ -581,9 +660,14 @@ impl UserData for GuiPrimitive {
                     ts.content = value;
                     ts.invalidate();
                 }
-                s.changed_signal.clone()
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("Text").cloned(),
+                )
             };
-            fire_changed(lua, signal_table, "Text")
+            fire_changed(lua, signal_table, "Text")?;
+            fire_prop_changed(lua, prop_sig, Value::String(lua.create_string(&new_value)?));
+            Ok(())
         });
         f.add_field_method_get("TextSize", |_, this| -> mlua::Result<f32> {
             let s = this.state.lock().unwrap();
@@ -591,19 +675,24 @@ impl UserData for GuiPrimitive {
         });
         f.add_field_method_set("TextSize", |lua, this, value: f32| {
             this.ensure_alive("set TextSize")?;
-            let signal_table = {
+            let new_size = value.clamp(1.0, 1024.0);
+            let (signal_table, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
                 let ts = s.text.as_mut().ok_or_else(|| {
                     mlua::Error::RuntimeError("TextSize is only valid on Font primitives".into())
                 })?;
-                let new_size = value.clamp(1.0, 1024.0);
                 if ts.size_px != new_size {
                     ts.size_px = new_size;
                     ts.invalidate();
                 }
-                s.changed_signal.clone()
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("TextSize").cloned(),
+                )
             };
-            fire_changed(lua, signal_table, "TextSize")
+            fire_changed(lua, signal_table, "TextSize")?;
+            fire_prop_changed(lua, prop_sig, Value::Number(new_size as f64));
+            Ok(())
         });
         f.add_field_method_get("TextColor", |_, this| -> mlua::Result<Color3> {
             let s = this.state.lock().unwrap();
@@ -617,7 +706,7 @@ impl UserData for GuiPrimitive {
             let color = *value.borrow::<Color3>().map_err(|_| {
                 mlua::Error::RuntimeError("TextColor expects a Primitives.Color3".into())
             })?;
-            let signal_table = {
+            let (signal_table, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
                 let ts = s.text.as_mut().ok_or_else(|| {
                     mlua::Error::RuntimeError("TextColor is only valid on Font primitives".into())
@@ -626,13 +715,74 @@ impl UserData for GuiPrimitive {
                     ts.color = color;
                     ts.invalidate();
                 }
-                s.changed_signal.clone()
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("TextColor").cloned(),
+                )
             };
-            fire_changed(lua, signal_table, "TextColor")
+            fire_changed(lua, signal_table, "TextColor")?;
+            fire_prop_changed(lua, prop_sig, Value::UserData(lua.create_userdata(color)?));
+            Ok(())
         });
     }
 
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method(
+            "GetPropertyChanged",
+            |lua, this, prop: String| -> mlua::Result<Table> {
+                let mut s = this.state.lock().unwrap();
+                ensure_prop_signal(lua, &mut s, &prop)
+            },
+        );
+
+        m.add_method(
+            "AddClippable",
+            |_, this, child_ud: AnyUserData| -> mlua::Result<()> {
+                this.ensure_alive("AddClippable")?;
+                {
+                    let s = this.state.lock().unwrap();
+                    if !matches!(s.shape, Shape::Clippable) {
+                        return Err(mlua::Error::RuntimeError(
+                            "AddClippable: only valid on a GUI.Basic.Clippable container"
+                                .into(),
+                        ));
+                    }
+                }
+                let child = child_ud.borrow::<GuiPrimitive>().map_err(|_| {
+                    mlua::Error::RuntimeError(
+                        "AddClippable expects a GUI primitive as the child".into(),
+                    )
+                })?;
+                if Arc::ptr_eq(&this.state, &child.state) {
+                    return Err(mlua::Error::RuntimeError(
+                        "AddClippable: a Clippable cannot clip itself".into(),
+                    ));
+                }
+                child.state.lock().unwrap().clip_parent = Some(this.state.clone());
+                bump_dirty();
+                Ok(())
+            },
+        );
+
+        m.add_method(
+            "RemoveClippable",
+            |_, this, child_ud: AnyUserData| -> mlua::Result<()> {
+                let child = child_ud.borrow::<GuiPrimitive>().map_err(|_| {
+                    mlua::Error::RuntimeError(
+                        "RemoveClippable expects a GUI primitive as the child".into(),
+                    )
+                })?;
+                let mut s = child.state.lock().unwrap();
+                if let Some(parent) = &s.clip_parent {
+                    if Arc::ptr_eq(parent, &this.state) {
+                        s.clip_parent = None;
+                        bump_dirty();
+                    }
+                }
+                Ok(())
+            },
+        );
+
         m.add_method("Destroy", |lua, this, _: ()| -> mlua::Result<()> {
             let signal_table = {
                 let mut s = this.state.lock().unwrap();
@@ -844,6 +994,10 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     basic.set(
         "Triangle",
         lua.create_function(|lua, _: ()| GuiPrimitive::new(lua, Shape::Triangle))?,
+    )?;
+    basic.set(
+        "Clippable",
+        lua.create_function(|lua, _: ()| GuiPrimitive::new(lua, Shape::Clippable))?,
     )?;
     basic.set(
         "Image",

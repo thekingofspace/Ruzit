@@ -1,6 +1,6 @@
 [package]
 name = "ruzit"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 
 [lib]
@@ -48,6 +48,9 @@ anyhow = "1"
 cpal = "0.15"
 opus = "0.3"
 gilrs = "0.10"
+rayon = "1"
+rapier3d = "0.22"
+nalgebra = "0.33"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

@@ -184,6 +184,7 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             "Managed" => libs::managed::create(lua, fs.clone())?,
             "Mouse" => libs::mouse::create(lua)?,
             "Net" => libs::net::create(lua)?,
+            "PhysicsService" => libs::physics::create(lua)?,
             "Primitives" => libs::primitives::create(lua)?,
             "Process" => libs::process::create(lua)?,
             "Register" => libs::register::create(lua)?,

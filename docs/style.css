@@ -421,8 +421,10 @@ main td pre code {
 .tag-readonly { background: rgba(231, 169, 30, 0.18); color: #b88204; }
 .tag-static { background: var(--accent-soft); color: var(--accent); }
 .tag-method { background: var(--accent-soft); color: var(--accent); }
+.tag-new { background: rgba(56, 178, 76, 0.18); color: #237b39; }
 
 :root[data-theme="dark"] .tag-readonly { color: #f3c25c; }
+:root[data-theme="dark"] .tag-new { color: #6cd082; }
 
 .member-desc { color: var(--fg-soft); font-size: 14px; margin: 6px 0 0 0; }
 

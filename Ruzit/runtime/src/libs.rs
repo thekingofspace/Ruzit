@@ -13,6 +13,7 @@ pub mod keyboard;
 pub mod managed;
 pub mod mouse;
 pub mod net;
+pub mod physics;
 pub mod primitives;
 pub mod process;
 pub mod register;

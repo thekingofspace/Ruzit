@@ -1332,6 +1332,17 @@ declare class BasePart
 	-- "Color", "Render", "Texture", "CastShadow", "ReceiveShadow",
 	-- "IgnoreInRaycast", "Destroyed".
 	Changed: Signal<string>
+	-- Per-property signal that fires with the new value as the only
+	-- argument every time `propName` changes. Lazily created — properties
+	-- nobody listens to cost zero per tick. Useful for reactive code that
+	-- only cares about one specific field instead of filtering Changed by
+	-- name. For PhysicsService-driven parts the "CFrame" signal also
+	-- fires each frame the simulation moves the part (skipped
+	-- automatically when nobody is listening).
+	-- Examples:
+	--   part:GetPropertyChanged("CFrame"):Connect(function(cf) ... end)
+	--   part:GetPropertyChanged("Color"):Connect(function(c) ... end)
+	function GetPropertyChanged(self, propName: string): Signal<any>
 	-- Remove the part from the scene. Connections to Changed still receive
 	-- one final "Destroyed" fire.
 	function Destroy(self): ()
@@ -1536,8 +1547,10 @@ end
 
 declare class Primitive
 	-- Geometry / kind. The set is fixed at creation; switch by destroying
-	-- and rebuilding via the appropriate GUI.Basic factory.
-	Shape: "Square" | "Circle" | "Triangle" | "Image" | "Text"
+	-- and rebuilding via the appropriate GUI.Basic factory. "Clippable"
+	-- is a special invisible container that clips its `:AddClippable`
+	-- children to its Position+Size rect.
+	Shape: "Square" | "Circle" | "Triangle" | "Image" | "Text" | "Clippable"
 	-- Pixel-space size. For Text this is (0,0), text size is .TextSize.
 	Size: Dim
 	-- Top-left position in screen coords (origin at the top-left of the window).
@@ -1562,6 +1575,11 @@ declare class Primitive
 	-- Glyph color. Color (above) tints the box itself; TextColor tints
 	-- letters specifically.
 	TextColor: Color3
+	-- Per-property change signal. Fires with the new value as the only
+	-- argument every time `propName` changes — `Position` fires with a
+	-- Dim, `Color` with a Color3, `Transparency` with a number, etc.
+	-- Lazy: properties no one listens to cost zero.
+	function GetPropertyChanged(self, propName: string): Signal<any>
 	-- Remove from the scene. Fires "Destroyed" on Changed first.
 	function Destroy(self): ()
 	-- Custom shader hooks for this primitive's draw call.
@@ -1570,6 +1588,18 @@ declare class Primitive
 	function ClearShaders(self): ()
 	function SetData(self, asset: ShaderAsset | FragmentAsset, name: string, value: number): ()
 	function GetData(self, asset: ShaderAsset | FragmentAsset, name: string): number?
+
+	-- ── ClippableUI methods (only valid when Shape == "Clippable") ───────
+	-- Register `child` to be clipped to this Clippable's current
+	-- Position+Size every frame. Pixels of `child` outside this rect are
+	-- cut at the wgpu scissor stage. Reading the Clippable's Size /
+	-- Position retroactively re-clips every child on the next snapshot —
+	-- you don't need to re-add them. Children added to the wrong shape
+	-- raise an error. Last-add-wins for multi-parenting.
+	function AddClippable(self, child: Primitive): ()
+	-- Remove `child` from this Clippable so it renders unclipped again.
+	-- No-op if `child` wasn't added to this specific Clippable.
+	function RemoveClippable(self, child: Primitive): ()
 end
 
 -- A shader handle bound to either the skybox slot or the post-effect slot.
@@ -1731,6 +1761,17 @@ export type GUI_API = {
 		-- Text label. Uses the FontAsset to rasterize glyphs at runtime
 		-- (sized by .TextSize / colored by .TextColor).
 		Font: (asset: FontAsset) -> Primitive,
+		-- Invisible clip container with a pixel-space Position+Size.
+		-- Doesn't render itself — its purpose is to be a parent for
+		-- children added via `:AddClippable(child)`. Anything inside
+		-- those children that falls outside the Clippable's rect is
+		-- cut at the GPU scissor stage. Resizing or moving the
+		-- Clippable retroactively re-clips every child the next frame,
+		-- so it works as a scrolling viewport, masked overlay, draggable
+		-- panel, etc. Works on every other primitive type — including
+		-- DynImg-backed Image primitives, since they're already a
+		-- single textured rectangle by the time clipping runs.
+		Clippable: () -> Primitive,
 	},
 
 	-- ── DrawableImg / CanvasBuffer ────────────────────────────────────
@@ -3429,6 +3470,256 @@ export type Register_API = {
 	Names: () -> { string },
 }
 
+-- =============================================================================
+-- PhysicsService — Rust-side rigid-body simulation that wraps existing
+-- `Renderable.BasePart`s. All state and integration live in Rust; the only
+-- Lua-side cost is a single field read or method call. Each `PhysicsPlane`
+-- can run on its own rayon thread pool (set via the `Threads` option) and
+-- writes simulated CFrames into a per-part override cell so the heavy
+-- `BasePart` mutex is never locked per-tick.
+-- =============================================================================
+
+export type PhysicsPlaneOptions = {
+	-- Default acceleration applied to every non-anchored object (units/sec²).
+	-- Defaults to Vector(0, -50, 0) which feels like Earth gravity at game scale.
+	Gravity: Vector?,
+	-- Number of rayon worker threads to spin up for this plane's simulation
+	-- step. Defaults to 1 (no thread pool, single-threaded inline). Set to
+	-- the number of CPU cores you want to dedicate. Object integration and
+	-- physics→part commits parallelize across this pool when the plane has
+	-- enough objects (≥ 64) to make the dispatch overhead worth it.
+	Threads: number?,
+	-- Per-second linear velocity damping. Each tick:
+	-- `velocity *= max(0, 1 - LinearDamping * dt)`. Default 0.10. Higher
+	-- values make objects come to rest faster (think air drag).
+	LinearDamping: number?,
+	-- Same as LinearDamping but for angular velocity. Default 0.30 — kills
+	-- tumbling fairly quickly so stacked piles settle visually.
+	AngularDamping: number?,
+	-- Velocity-along-collision-normal threshold below which a colliding
+	-- object's normal-axis velocity snaps to zero instead of bouncing.
+	-- Default 0.5 (units/sec). This is what makes piles actually settle:
+	-- without it, gravity and Bounciness oscillate forever and stacks
+	-- look like floating soup. Set to 0 to disable (every collision
+	-- always reflects with Bounciness, even at near-zero speeds).
+	RestThreshold: number?,
+	-- Number of constraint-solver iterations rapier runs each tick.
+	-- Default 4. Bump to 8–16 for tall stacks or dense piles where
+	-- residual penetration shows up; clamped to [1, 64]. When
+	-- `LoopSolver` is true this is ignored (rapier runs at the high
+	-- internal cap).
+	SolverIterations: number?,
+	-- When true, the solver is pinned to a high fixed iteration count
+	-- (64) so any reasonable scene reaches the residual below which
+	-- rapier's Projected Gauss-Seidel solver does negligible work per
+	-- pass — effectively "iterate until stable" with the safety of a
+	-- hard upper bound. Trades a modest extra per-tick CPU cost for
+	-- visibly stable stacks. Use it when you don't want to manually
+	-- tune `SolverIterations` for the worst pile in your scene.
+	LoopSolver: boolean?,
+	-- Pick the simulation backend.
+	--   • `false` (default) — runs rapier3d on the CPU. Real rigid-body
+	--     physics: proper OBB collision, contact manifolds, sleeping
+	--     islands, friction + restitution that obey Coulomb / restitution
+	--     laws, stable stacking, no floating soup. Use this for accurate
+	--     scenes (player movement, vehicles, balanced piles).
+	--   • `true` — runs the wgpu compute shader I wrote earlier. Each
+	--     frame the buffer is packed CPU→GPU, two compute dispatches run
+	--     (integrate, then collide) ping-ponging between storage buffers,
+	--     and the result is mapped back. **Faster for bulk scenes** —
+	--     N²-on-GPU still beats CPU rayon for thousands of independent
+	--     objects — **but contact resolution is coarser**: AABB-only
+	--     collision, single-point contacts, no Baumgarte stabilisation,
+	--     no sleeping. Corners can clip slightly, stacks are less stable,
+	--     and rotation is locked for non-Sphere shapes. Use it when you
+	--     need throughput more than accuracy: particle showers, debris
+	--     fields, decoration that physically interacts but doesn't need
+	--     to be load-bearing.
+	-- Requires the wgpu device to be initialised (a Window has been
+	-- opened) — set it on a plane created before the window and the
+	-- first tick after the device exists will pick up the GPU path.
+	DeferGpu: boolean?,
+}
+
+declare class PhysicsObject
+	-- Pose (Position + Rotation) as a single CFrame, mirroring BasePart's
+	-- API. Writing teleports the object instantly. Use `cf.Position` /
+	-- `cf.Rotation` on the read side if you only care about one component.
+	CFrame: CFrame
+	-- Linear velocity (units/sec).
+	Velocity: Vector
+	-- Angular velocity per axis (rad/sec).
+	AngularVelocity: Vector
+	-- Persistent per-tick acceleration applied on top of the plane's gravity.
+	-- Useful for thrusters / wind / steady-state forces. Set to zero to clear.
+	ImpulseDirection: Vector
+	-- Total mass (kg). Drives `:ApplyImpulse` (heavier = smaller velocity
+	-- change for the same impulse). When set, the simulator picks a
+	-- collider density of `Weight ÷ volume`.
+	Weight: number
+	-- Material density (kg / unit³). Lets you specify "this part is
+	-- iron, that part is balsa wood" without computing volumes by hand.
+	-- When set non-zero, density wins over Weight: rapier rebuilds the
+	-- collider's mass and inertia tensor as `density × volume`. Setting
+	-- it to 0 reverts to the Weight-driven path. Reading Density always
+	-- returns the effective density rapier is using right now (either
+	-- the explicit value, or `Weight / current volume`).
+	Density: number
+	-- Restitution coefficient used in collisions (0 = absorb, 1 = elastic).
+	Bounciness: number
+	-- Coulomb friction coefficient, [0, 1]. The pair coefficient used when
+	-- two objects touch is `sqrt(Friction_a * Friction_b)`. Drives both
+	-- static (parts at rest don't slide off each other under gravity)
+	-- and kinetic (sliding parts decelerate naturally) friction. Default
+	-- 0.5 — feels like wood-on-wood. Set close to 0 for ice / smooth
+	-- surfaces, close to 1 for rubber / grippy surfaces.
+	Friction: number
+	-- When true, the object doesn't integrate (no gravity, no velocity step).
+	-- Other objects still collide with it. Setting Anchored = true clears
+	-- the current velocity + angular velocity.
+	Anchored: boolean
+	-- When true, this object participates in collision resolution against
+	-- other CanCollide objects in the same plane.
+	CanCollide: boolean
+	-- Simulation-fidelity dial for this object (clamped 1–32, default 1).
+	-- Two behaviours stack as it rises:
+	--  • **Sub-stepping.** The plane sub-steps the whole simulation at
+	--    `max(HitBoxQuality)` across its objects, so finer integration
+	--    means smoother gravity, less velocity drift, and fast-moving
+	--    parts don't tunnel through thin walls. Friction also integrates
+	--    more accurately (less per-tick slip), so things stick where
+	--    they should.
+	--  • **Contact-driven rotation.** Collision detection is AABB-only
+	--    (axis-aligned bounding box) and doesn't follow rotated
+	--    geometry, so contact impulses produce rotation ONLY on Spheres
+	--    at `HitBoxQuality > 1`. Cubes, models, and low-quality spheres
+	--    are treated as having infinite rotational inertia for contacts
+	--    — they translate but don't spin from collisions, which
+	--    prevents the visually-broken "spinning in place while sliding"
+	--    artifact you'd otherwise get on a flat AABB cube. Direct
+	--    rotation (writing `AngularVelocity`, calling `RotateTo`,
+	--    assigning a rotated CFrame) still works on every shape.
+	-- The plane sub-steps at `max(HitBoxQuality)`, so one high-quality
+	-- object lifts the cost for everyone — keep it on the parts that
+	-- need precision (the player's ball, the bullet, the falling crate)
+	-- and leave static props at 1.
+	HitBoxQuality: number
+	-- Read-through to the wrapped BasePart's Size. Setting also resizes the
+	-- BasePart and fires its Changed signal (Size affects collision AABB).
+	Size: Vector
+	-- Body-local center-of-mass offset from the BasePart's origin. Default
+	-- `Vector(0, 0, 0)` (CoM coincides with origin → balanced object,
+	-- no contact-driven rotation). When set non-zero, the simulator
+	-- switches the object to real rotational inertia, and contact
+	-- patches that don't sit under the CoM produce tipping torque
+	-- under gravity. This is the knob for "weld a heavy part to one
+	-- side and watch it tip" — set it to wherever the welded mass sits
+	-- relative to your part's origin (e.g. `Vector(0, 0, 1)` for a
+	-- weight stuck to the +Z face), or call
+	-- `:RecalculateCenterOfMass()` to derive it from the BasePart's
+	-- mesh vertices automatically (works for DynMesh / Deformed
+	-- meshes whose geometry is asymmetric).
+	CenterOfMass: Vector
+	-- True until the object is `:Unlink`ed, `:Destroy`ed, or its plane is
+	-- destroyed.
+	Alive: boolean
+
+	-- Velocity-space impulse: velocity += vector / Weight. Anchored objects
+	-- absorb impulses without moving.
+	function ApplyImpulse(self, vector: Vector): ()
+
+	-- Constrain which axes the object is allowed to move / rotate around.
+	-- Pass any subset of the lock flags; unspecified flags are left as-is.
+	-- Useful for top-down 2.5D games (lock Y), conveyor parts (lock X+Z),
+	-- doors (lock everything except one rotation axis), etc.
+	function FieldRestraint(self, opts: {
+		LockX: boolean?,    LockY: boolean?,    LockZ: boolean?,
+		LockRotX: boolean?, LockRotY: boolean?, LockRotZ: boolean?,
+	}): ()
+
+	-- Drive the object's angular velocity toward `target` (Euler radians)
+	-- using a proportional controller. Higher `strength` snaps faster.
+	-- Pair with `LockRot*` flags via FieldRestraint to clamp specific axes.
+	function RotateTo(self, target: Vector, strength: number?): ()
+	-- Stop trying to rotate toward a target. Existing angular velocity stays.
+	function StopRotateTo(self): ()
+
+	-- Walks the wrapped BasePart's mesh and writes the vertex centroid
+	-- into `CenterOfMass`. Picks the deformed mesh first (if `Deform`
+	-- is active) and falls back to the source model. Useful after a
+	-- DynMesh / Deform mutation that asymmetrically reshapes the part —
+	-- call this to refresh the CoM so physics tipping behaviour matches
+	-- the new mass distribution. No-op for parts without a model
+	-- (set `CenterOfMass` directly in that case).
+	function RecalculateCenterOfMass(self): ()
+
+	-- Returns the underlying Renderable.BasePart this object wraps.
+	function BasePart(self): BasePart
+
+	-- Detach from the plane WITHOUT destroying the BasePart. The part keeps
+	-- its last simulated CFrame (frozen in place). Use when you want to
+	-- hand the part back to manual control.
+	function Unlink(self): ()
+	-- Detach AND destroy the wrapped BasePart. After this both the physics
+	-- object and the BasePart are gone.
+	function Destroy(self): ()
+end
+
+declare class PhysicsPlane
+	-- Acceleration applied to every non-anchored object every tick.
+	Gravity: Vector
+	-- When false, the plane skips integration + collision (objects freeze).
+	-- BasePart CFrames stay where they last were.
+	Enabled: boolean
+	-- Number of rayon threads simulating this plane (read-only).
+	Threads: number
+	-- Per-second linear / angular velocity damping (read/write, see
+	-- PhysicsPlaneOptions). Tune at runtime to adjust how quickly objects
+	-- come to rest in this plane.
+	LinearDamping: number
+	AngularDamping: number
+	-- Velocity threshold below which a colliding normal-axis velocity is
+	-- snapped to zero instead of bouncing. Required for stable piles.
+	RestThreshold: number
+	-- Number of constraint-solver iterations rapier runs per tick
+	-- (1–64). Higher = better convergence on dense piles, more CPU.
+	-- Default 4. Ignored when LoopSolver is true.
+	SolverIterations: number
+	-- Pin solver iterations at a high fixed cap (functionally
+	-- "iterate until stopped"). See PhysicsPlaneOptions.LoopSolver.
+	LoopSolver: boolean
+	-- Toggle the GPU compute physics path on/off at runtime. When true,
+	-- integration + collision run as wgpu compute dispatches; when false,
+	-- the rayon CPU path runs. See PhysicsPlaneOptions.DeferGpu.
+	DeferGpu: boolean
+	-- True until `:Destroy` is called.
+	Alive: boolean
+	-- Live count of physics objects in this plane.
+	ObjectCount: number
+
+	-- Wrap a BasePart with physics. Returns a PhysicsObject. The part's
+	-- CFrame becomes lazily driven by the simulation — the heavy BasePart
+	-- mutex is never locked per-tick; only a small Mutex<CFrame> override
+	-- is updated. Reading `part.CFrame` from Lua transparently returns the
+	-- simulated value.
+	function Add(self, part: BasePart): PhysicsObject
+	-- Toggle `Enabled` (matches the field setter).
+	function SetEnabled(self, on: boolean): ()
+	-- Manually advance the simulation by `dt` seconds. Mostly useful when
+	-- you've disabled the auto-tick or want sub-stepping. Does nothing if
+	-- the plane is destroyed or disabled.
+	function Step(self, dt: number): ()
+	-- Destroy the plane: every PhysicsObject is removed and its wrapped
+	-- BasePart is left frozen at its last simulated CFrame (BaseParts are
+	-- NOT destroyed — only the physics goes away).
+	function Destroy(self): ()
+end
+
+export type PhysicsService_API = {
+	-- Spin up a new physics plane with optional gravity + thread count.
+	New: (opts: PhysicsPlaneOptions?) -> PhysicsPlane,
+}
+
 export type Imports = {
 	Actor: Actor_API,
 	Asset: Asset_API,
@@ -3443,6 +3734,7 @@ export type Imports = {
 	Managed: Managed_API,
 	Mouse: Mouse_API,
 	Net: Net_API,
+	PhysicsService: PhysicsService_API,
 	Primitives: Primitives_API,
 	Process: Process_API,
 	Register: Register_API,

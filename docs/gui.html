@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GUI - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.0.0">
-    <script src="theme.js?v=1.0.0"></script>
+    <link rel="stylesheet" href="style.css?v=1.1.0">
+    <script src="theme.js?v=1.1.0"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.0.0" defer></script>
+<script src="sidebar.js?v=1.1.0" defer></script>
 
 <main>
 
@@ -85,6 +85,39 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
             rasterised at runtime sized by <code>.TextSize</code>.
         </p>
     </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.Basic.Clippable()</span>
+            <span class="member-type">→ Primitive</span>
+            <span class="tag tag-new">new in 1.1</span>
+        </div>
+        <p class="member-desc">
+            Invisible clip container with a pixel-space
+            <code>.Position</code> and <code>.Size</code>. Doesn't
+            render anything itself &mdash; its job is to be a parent
+            for children added via
+            <code>:AddClippable(child)</code>. Anything inside those
+            children that falls outside the Clippable's rect is cut
+            at the GPU scissor stage. Resizing or moving the
+            Clippable retroactively re-clips every child the next
+            frame, so it works as a scrolling viewport, masked
+            overlay, or draggable panel without having to re-add
+            children. Works on every other primitive type &mdash;
+            including DynImg-backed Image primitives, since by the
+            time clipping runs they're a single textured rectangle.
+        </p>
+        <pre><code><span class="hl-kw">local</span> mask = GUI.Basic.<span class="hl-fn">Clippable</span>()
+mask.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">100</span>, <span class="hl-num">100</span>)
+mask.Size     = Dim.<span class="hl-fn">new</span>(<span class="hl-num">400</span>, <span class="hl-num">300</span>)
+
+<span class="hl-kw">local</span> img = GUI.Basic.<span class="hl-fn">Image</span>(asset)
+img.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">80</span>, <span class="hl-num">90</span>)     <span class="hl-com">-- partly outside the mask</span>
+img.Size     = Dim.<span class="hl-fn">new</span>(<span class="hl-num">500</span>, <span class="hl-num">500</span>)
+mask:<span class="hl-fn">AddClippable</span>(img)              <span class="hl-com">-- pixels outside (100,100,400,300) are cut</span>
+
+<span class="hl-com">-- Move the mask -- the image gets re-clipped automatically.</span>
+mask.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</span>, <span class="hl-num">100</span>)</code></pre>
+    </div>
 </div>
 
 <h2 id="primitive">Primitive</h2>
@@ -99,7 +132,7 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
 
 <div class="member-list">
     <div class="member">
-        <div class="member-header"><span class="member-name">.Shape</span><span class="member-type">"Square" | "Circle" | "Triangle" | "Image" | "Text"</span><span class="tag tag-readonly">read-only</span></div>
+        <div class="member-header"><span class="member-name">.Shape</span><span class="member-type">"Square" | "Circle" | "Triangle" | "Image" | "Text" | "Clippable"</span><span class="tag tag-readonly">read-only</span></div>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">.Size</span><span class="member-type">Dim</span></div>
@@ -151,6 +184,57 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
 <h3>Methods</h3>
 
 <div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">prim:GetPropertyChanged(propName)</span>
+            <span class="member-type">→ Signal&lt;any&gt;</span>
+            <span class="tag tag-method">method</span>
+            <span class="tag tag-new">new in 1.1</span>
+        </div>
+        <p class="member-desc">
+            Per-property change signal. Fires with the <strong>new
+            value</strong> as its only argument every time
+            <code>propName</code> is set &mdash;
+            <code>"Position"</code> fires with a <code>Dim</code>,
+            <code>"Color"</code> with a <code>Color3</code>,
+            <code>"Transparency"</code> with a number, etc. Lazily
+            created: properties no one listens to cost zero. When the
+            last connection disconnects the engine stops firing it
+            entirely.
+        </p>
+        <pre><code>square:<span class="hl-fn">GetPropertyChanged</span>(<span class="hl-str">"Position"</span>):<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(p)
+    <span class="hl-fn">print</span>(p.x, p.y)
+<span class="hl-kw">end</span>)</code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">prim:AddClippable(child)</span>
+            <span class="tag tag-method">method</span>
+            <span class="tag tag-new">new in 1.1</span>
+        </div>
+        <p class="member-desc">
+            <em>Only valid on <code>Shape == "Clippable"</code>
+            primitives.</em> Register <code>child</code> to be
+            scissored to this primitive's current Position+Size every
+            frame. Pixels of <code>child</code> outside this rect are
+            cut. Reading the Clippable's Size or Position retroactively
+            re-clips every child on the next snapshot &mdash; no need
+            to re-add. Last-add-wins for re-parenting.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">prim:RemoveClippable(child)</span>
+            <span class="tag tag-method">method</span>
+            <span class="tag tag-new">new in 1.1</span>
+        </div>
+        <p class="member-desc">
+            Detach a child added via <code>:AddClippable</code>. The
+            child resumes rendering unclipped. Idempotent if
+            <code>child</code> wasn't added to this specific
+            Clippable.
+        </p>
+    </div>
     <div class="member">
         <div class="member-header"><span class="member-name">prim:Destroy()</span><span class="tag tag-method">method</span></div>
     </div>

@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Renderable - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.0.0">
-    <script src="theme.js?v=1.0.0"></script>
+    <link rel="stylesheet" href="style.css?v=1.1.0">
+    <script src="theme.js?v=1.1.0"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.0.0" defer></script>
+<script src="sidebar.js?v=1.1.0" defer></script>
 <main>
 
 <h1>Renderable</h1>
@@ -402,6 +402,40 @@ lid_l.Size = Vector.<span class="hl-fn">new</span>(<span class="hl-num">0.08</sp
 <h3>Methods</h3>
 
 <div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">part:GetPropertyChanged(propName)</span>
+            <span class="member-type">→ Signal&lt;any&gt;</span>
+            <span class="tag tag-method">method</span>
+            <span class="tag tag-new">new in 1.1</span>
+        </div>
+        <p class="member-desc">
+            Per-property change signal. Fires with the <strong>new
+            value</strong> as its only argument every time
+            <code>propName</code> is set &mdash; <code>"CFrame"</code>
+            fires with a CFrame, <code>"Color"</code> with a Color3,
+            <code>"Render"</code> / <code>"CastShadow"</code> /
+            <code>"ReceiveShadow"</code> /
+            <code>"IgnoreInRaycast"</code> with booleans, etc. Lazily
+            created: properties no one listens to cost zero. When the
+            last connection disconnects, per-tick firing stops
+            entirely.
+        </p>
+        <p class="member-desc">
+            For parts wrapped by <a href="physics.html">PhysicsService</a>,
+            the <code>"CFrame"</code> signal also fires each frame the
+            simulation moves the part &mdash; same lazy listener-count
+            gating, so unobserved physics objects don't pay any
+            Lua-side cost per tick. (BasePart only exposes
+            <code>.CFrame</code>, not separate <code>Position</code> or
+            <code>Rotation</code> &mdash; if you want to react to one
+            axis of motion, decompose <code>cf.Position</code> /
+            <code>cf.Rotation</code> inside your handler.)
+        </p>
+        <pre><code>part:<span class="hl-fn">GetPropertyChanged</span>(<span class="hl-str">"CFrame"</span>):<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(cf)
+    <span class="hl-fn">print</span>(<span class="hl-str">"moved to"</span>, cf.Position)
+<span class="hl-kw">end</span>)</code></pre>
+    </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">part:Destroy()</span>

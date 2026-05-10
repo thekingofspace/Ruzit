@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PhysicsService - Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css?v=1.1.0">
+    <script src="theme.js?v=1.1.0"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=1.1.0" defer></script>
+
+<main>
+
+<h1>PhysicsService</h1>
+<p class="lede">
+    Rust-side rigid-body simulation that wraps existing
+    <code>Renderable.BasePart</code>s. Every plane runs integration,
+    collision, and CFrame writeback entirely in Rust on its own optional
+    rayon thread pool, so the only Lua-side cost per frame is reading
+    or assigning values you actually care about.
+</p>
+
+<pre><code><span class="hl-kw">local</span> PhysicsService = <span class="hl-fn">import</span>(<span class="hl-str">"PhysicsService"</span>)
+<span class="hl-kw">local</span> Renderable     = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
+<span class="hl-kw">local</span> Primitives     = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>)
+
+<span class="hl-kw">local</span> world = PhysicsService.<span class="hl-fn">New</span>({
+    Gravity = Primitives.Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, -<span class="hl-num">50</span>, <span class="hl-num">0</span>),
+    Threads = <span class="hl-num">4</span>,
+})
+
+<span class="hl-kw">local</span> ball = Renderable.<span class="hl-fn">BasePart</span>(<span class="hl-str">"Sphere"</span>)
+ball.CFrame = Primitives.CFrame.<span class="hl-fn">new</span>(Primitives.Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">10</span>, <span class="hl-num">0</span>), Primitives.Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>))
+
+<span class="hl-kw">local</span> obj = world:<span class="hl-fn">Add</span>(ball)
+obj.Bounciness    = <span class="hl-num">0.7</span>
+obj.HitBoxQuality = <span class="hl-num">4</span>     <span class="hl-com">-- finer-grained sub-stepping for fast-falling parts</span>
+
+obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">12</span>))</code></pre>
+
+<h2 id="api">PhysicsService API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">PhysicsService.New(opts)</span>
+            <span class="member-type">→ PhysicsPlane</span>
+        </div>
+        <p class="member-desc">
+            Spin up a new physics plane. Every wrapped BasePart in this
+            plane shares the plane's gravity and (optionally) its rayon
+            thread pool. Multiple planes can coexist for things like
+            "main world", "rigid body debris", "puzzle subsystem", etc.
+            &mdash; they don't interact.
+        </p>
+        <p class="member-desc">
+            <code>opts</code> is an optional table:
+        </p>
+        <ul>
+            <li><code>Gravity</code> &mdash; <code>Vector</code> applied as
+                acceleration to every non-anchored object (units/sec²).
+                Defaults to <code>Vector(0, -50, 0)</code>, roughly
+                Earth-gravity at game scale.</li>
+            <li><code>Threads</code> &mdash; integer 1+. When &gt; 1 the
+                plane builds a rayon thread pool of this size and uses
+                it to parallelize integration and CFrame commits across
+                objects. Defaults to <code>1</code> (single-threaded
+                inline). The cost of dispatching to the pool only pays
+                off above ~64 objects, so leave it at 1 for small
+                scenes.</li>
+            <li><code>LinearDamping</code> &mdash; per-second velocity
+                drag. Each tick the engine does
+                <code>velocity *= max(0, 1 - LinearDamping * dt)</code>.
+                Default <code>0.10</code>. Higher values make objects
+                slow down sooner (think air resistance).</li>
+            <li><code>AngularDamping</code> &mdash; same idea for
+                rotation. Default <code>0.30</code> &mdash; kills
+                tumbling fairly quickly so visually a stacked pile
+                doesn't look like it's vibrating.</li>
+            <li><code>RestThreshold</code> &mdash; velocity-along-collision-normal
+                threshold below which a colliding object's normal-axis
+                velocity is set to zero instead of being reflected by
+                <code>Bounciness</code>. Default <code>0.5</code>
+                (units/sec). <strong>This is the mechanism that lets
+                piles actually settle</strong> &mdash; without it, the
+                tug-of-war between gravity and bounciness keeps every
+                cube oscillating forever, and a "settled" stack looks
+                like floating soup. Set to 0 to disable and always
+                reflect (rare, useful for billiard-ball-style
+                simulations where you really want every contact to
+                bounce).</li>
+            <li><code>SolverIterations</code> &mdash; integer 1–64,
+                default <code>4</code>. Number of constraint-solver
+                iterations rapier runs each tick. Higher = better
+                convergence on dense piles, more CPU. Ignored when
+                <code>LoopSolver</code> is true.</li>
+            <li><code>LoopSolver</code> &mdash; boolean, default
+                <code>false</code>. When true, the solver is pinned at
+                a high fixed cap (64) so any reasonable scene
+                converges. Effectively "iterate until the body stops"
+                with a safety bound. Skip the per-scene tuning of
+                <code>SolverIterations</code>; pay a modest extra
+                per-tick cost in exchange.</li>
+            <li><code>DeferGpu</code> &mdash; <em>boolean, default
+                <code>false</code>.</em> Picks the simulation backend.
+                <strong>False</strong> runs rapier3d on the CPU &mdash;
+                real rigid-body physics with OBB collision, contact
+                manifolds, sleeping islands, Coulomb friction, stable
+                stacks. <strong>True</strong> runs the wgpu compute
+                shader: integration + AABB-only collision, ping-ponging
+                between two storage buffers each frame, mapped back to
+                CPU.
+                <ul>
+                    <li><strong>The CPU/rapier path is the accurate
+                    option.</strong> Use it for anything load-bearing
+                    &mdash; players, vehicles, structures, balanced
+                    piles. Stacks settle correctly, corners don't clip,
+                    OBB rotation is real.</li>
+                    <li><strong>The GPU path is the fast option, but
+                    less accurate.</strong> AABB-only collision means
+                    rotated cubes still test against their axis-aligned
+                    box, contacts are single-point (no manifolds), and
+                    there's no Baumgarte stabilisation or sleeping.
+                    Corners can sink slightly into neighbours, stacks
+                    are less stable, rotation is suppressed for
+                    non-Sphere shapes. Use it when you need
+                    <em>throughput over accuracy</em>: particle showers,
+                    confetti, debris fields, decorative scenes with
+                    thousands of small bodies that interact but don't
+                    have to be physically perfect.</li>
+                </ul>
+                Requires the wgpu device to be initialised (a Window
+                has been opened). Collision in the shader is O(N²); a
+                GPU spatial-hash broadphase isn't built yet.</li>
+        </ul>
+    </div>
+</div>
+
+<h2 id="plane">PhysicsPlane</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.Gravity</span>
+            <span class="member-type">Vector</span>
+        </div>
+        <p class="member-desc">
+            Acceleration applied to every non-anchored object every tick.
+            Setting it takes effect on the next tick.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.Enabled</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">
+            When false, the plane skips integration + collision &mdash;
+            objects freeze in place, BaseParts hold their current CFrame.
+            Defaults to true.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.Threads</span>
+            <span class="member-type">number (read-only)</span>
+        </div>
+        <p class="member-desc">
+            Number of rayon threads simulating this plane (the value
+            you passed in <code>opts.Threads</code>, or 1 if omitted).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.LinearDamping</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Per-second drag applied to every non-anchored object's
+            velocity. Default <code>0.10</code>. Tune up if your
+            scene's objects feel too lively / float around; tune down
+            for low-friction air sims (snowflakes, bubbles).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.AngularDamping</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Same idea for angular velocity. Default <code>0.30</code>.
+            Mostly affects how quickly tumbling parts come to a still
+            orientation when they're sitting on something.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.RestThreshold</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Below this collision-normal speed (units/sec), a contact
+            zeroes the normal velocity instead of reflecting it. The
+            knob that controls how quickly piles settle vs. how bouncy
+            low-energy contacts feel. Default <code>0.5</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.SolverIterations</span>
+            <span class="member-type">number</span>
+            <span class="tag tag-new">new in 1.1</span>
+        </div>
+        <p class="member-desc">
+            Number of constraint-solver iterations rapier runs per
+            tick. The solver is iterative Projected Gauss-Seidel &mdash;
+            one pass resolves each contact once but constraints
+            between many touching objects (tall stacks, dense piles)
+            stay under-resolved. Iterating more converges toward the
+            correct equilibrium. Default <code>4</code>; clamped to
+            <code>[1, 64]</code>. <strong>Ignored when LoopSolver is
+            true.</strong>
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.LoopSolver</span>
+            <span class="member-type">boolean</span>
+            <span class="tag tag-new">new in 1.1</span>
+        </div>
+        <p class="member-desc">
+            When <code>true</code>, the solver is pinned to a high
+            fixed cap (<code>64</code>) so any reasonable scene
+            reaches the residual below which rapier's PGS solver does
+            negligible work per pass &mdash; effectively "iterate
+            until the body stops" with a hard upper bound for safety.
+            Trades a modest per-tick CPU cost for stack stability.
+            Use it when you'd rather not hand-tune
+            <code>SolverIterations</code> for the worst pile in your
+            scene. Default <code>false</code>.
+        </p>
+        <p class="member-desc">
+            <em>Why not actually unbounded?</em> Rapier's solver is
+            fixed-iteration Projected Gauss-Seidel — it doesn't
+            expose a residual-based termination hook, so "loop until
+            converged" isn't a thing it natively supports. But its
+            per-iteration correction decays toward zero once
+            constraints are stable, so a high cap is functionally
+            equivalent: extra iterations after convergence cost very
+            little. 64 is far past the convergence point for any
+            stack you can build with thousands of bodies.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.DeferGpu</span>
+            <span class="member-type">boolean</span>
+            <span class="tag tag-new">new in 1.1</span>
+        </div>
+        <p class="member-desc">
+            Backend toggle. <code>false</code> (default) runs rapier3d on
+            CPU &mdash; accurate OBB physics, stable stacks, sleeping.
+            <code>true</code> runs the wgpu compute path &mdash; faster
+            for bulk scenes, but contacts are AABB-only and
+            single-point so corners can clip slightly into neighbours
+            and stacks are less stable. <strong>Pick CPU/rapier for
+            accuracy, GPU for throughput.</strong> Safe to flip at
+            runtime &mdash; the next tick picks up the new path.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.Alive</span>
+            <span class="member-type">boolean (read-only)</span>
+        </div>
+        <p class="member-desc">
+            False after <code>:Destroy()</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.ObjectCount</span>
+            <span class="member-type">number (read-only)</span>
+        </div>
+        <p class="member-desc">
+            Live count of <code>PhysicsObject</code>s in this plane.
+            Drops on <code>:Unlink()</code>, <code>:Destroy()</code>, or
+            when a wrapped BasePart is destroyed externally.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane:Add(part)</span>
+            <span class="member-type">→ PhysicsObject</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Wrap a BasePart with physics. The part's CFrame becomes
+            lazily driven by the simulation &mdash; the heavy
+            <code>PartState</code> mutex is never locked per-tick;
+            instead, the physics loop writes to a small
+            <code>Arc&lt;Mutex&lt;CFrame&gt;&gt;</code> override cell on
+            the part, and reading <code>part.CFrame</code> from Lua
+            transparently returns the simulated value.
+        </p>
+        <p class="member-desc">
+            Initial position + rotation come from the BasePart's current
+            CFrame, so there's no first-tick teleport. <code>Velocity</code>
+            and <code>AngularVelocity</code> start at zero.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane:SetEnabled(on)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Equivalent to setting <code>plane.Enabled = on</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane:Step(dt)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Manually advance the simulation by <code>dt</code> seconds.
+            The auto-tick already runs every frame in
+            <code>heart::run_loop</code>, so this is mostly useful for
+            sub-stepping in custom loops or for deterministic replays.
+            No-op when the plane is destroyed or disabled.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane:Destroy()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Tear down the plane. Every <code>PhysicsObject</code> in it
+            is removed and its wrapped BasePart is left frozen at its
+            last simulated CFrame &mdash; <strong>BaseParts are NOT
+            destroyed.</strong> Use this to dispose of a physics
+            subsystem without killing the parts themselves.
+        </p>
+    </div>
+</div>
+
+<h2 id="object">PhysicsObject</h2>
+
+<p>
+    Each <code>plane:Add(part)</code> returns a PhysicsObject. The
+    object holds simulation state (position, velocity, mass, etc.)
+    in Rust; field reads and writes go through one mutex lock + a
+    HashMap lookup, no per-property userdata allocation.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.CFrame</span>
+            <span class="member-type">CFrame</span>
+        </div>
+        <p class="member-desc">
+            Combined pose (Position + Rotation), mirroring
+            <code>BasePart.CFrame</code>. Writing teleports the object
+            instantly &mdash; next tick will integrate from the new
+            pose. Use <code>cf.Position</code> / <code>cf.Rotation</code>
+            on the read side if you only care about one component.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.Velocity</span>
+            <span class="member-type">Vector</span>
+        </div>
+        <p class="member-desc">Linear velocity (units/sec).</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.AngularVelocity</span>
+            <span class="member-type">Vector</span>
+        </div>
+        <p class="member-desc">Angular velocity per axis (rad/sec).</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.ImpulseDirection</span>
+            <span class="member-type">Vector</span>
+        </div>
+        <p class="member-desc">
+            Persistent per-tick acceleration applied on top of the
+            plane's gravity. Useful for thrusters, wind, or steady-state
+            forces. Set to zero to clear.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.Weight</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Inverse mass scaling for <code>:ApplyImpulse</code>. Higher
+            = heavier (smaller velocity change for the same impulse).
+            Doesn't affect free-fall (every object accelerates equally
+            under gravity, as in the real world).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.Density</span>
+            <span class="member-type">number</span>
+            <span class="tag tag-new">new in 1.1</span>
+        </div>
+        <p class="member-desc">
+            Material density in <code>kg / unit³</code>. When set
+            non-zero, rapier rebuilds the collider's mass and inertia
+            tensor as <code>density × volume</code> on the next tick &mdash;
+            density wins over <code>Weight</code>. Setting it back to
+            <code>0</code> reverts to the Weight-driven path. Reading
+            always returns the effective density rapier is using right
+            now (either the explicit value, or
+            <code>Weight ÷ current volume</code>). This lets you build
+            "iron part next to balsa-wood part" scenes without computing
+            volumes by hand.
+        </p>
+        <pre><code><span class="hl-com">-- Heavy iron block</span>
+crate.Density = <span class="hl-num">7800</span>     <span class="hl-com">-- iron</span>
+<span class="hl-com">-- ...next to a styrofoam crate</span>
+foam.Density = <span class="hl-num">30</span>        <span class="hl-com">-- styrofoam</span>
+<span class="hl-com">-- The two will behave very differently in collision now.</span></code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.Bounciness</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Restitution coefficient used in collisions, clamped to
+            <code>[0, 1]</code>. 0 = absorb (objects stick), 1 = elastic
+            (full reflection). The collision pair uses the higher of
+            the two participants' values.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.Friction</span>
+            <span class="member-type">number</span>
+            <span class="tag tag-new">new in 1.1</span>
+        </div>
+        <p class="member-desc">
+            Coulomb friction coefficient, <code>[0, 1]</code>. The pair
+            coefficient used when two objects touch is
+            <code>sqrt(Friction<sub>a</sub> · Friction<sub>b</sub>)</code>,
+            and the resulting tangential impulse is clamped to
+            <code>μ · |j<sub>n</sub>|</code> (the Coulomb cone).
+            Default <code>0.5</code> — wood-on-wood. Lower toward 0 for
+            slick / icy surfaces; raise toward 1 for grippy rubbery
+            surfaces. <strong>This is the knob that stops parts from
+            sliding around when they should be at rest.</strong>
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.Anchored</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">
+            When true, the object doesn't integrate (no gravity, no
+            velocity step). Other objects still collide with it &mdash;
+            it acts as static geometry. Setting <code>Anchored = true</code>
+            zeroes the current Velocity and AngularVelocity so the
+            object doesn't keep its inertia from before.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.CanCollide</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">
+            When true, this object participates in collision resolution
+            against other CanCollide objects in the same plane. Set
+            false for ghost / trigger / fx-only physics objects that
+            should fall under gravity but pass through everything.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.HitBoxQuality</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Simulation-fidelity dial for this object, clamped to
+            <code>[1, 32]</code>, default <code>1</code>. Drives two
+            things that stack as it rises:
+        </p>
+        <ul>
+            <li><strong>Sub-stepping.</strong> The plane sub-steps the
+                whole simulation at <code>max(HitBoxQuality)</code>
+                across its objects. Finer integration = smoother gravity,
+                less drift, less tunneling through thin walls,
+                <em>and</em> friction integrates more accurately so
+                things slide less when they should be at rest.</li>
+            <li><strong>Contact-driven rotation.</strong> The collider
+                is axis-aligned (AABB) — it doesn't track rotated
+                geometry, so letting cubes accumulate angular velocity
+                from off-center contacts produces visually-broken
+                "spin in place while sliding." To match player
+                expectations, contact impulses produce rotation
+                <strong>only on Spheres at HitBoxQuality &gt; 1</strong>;
+                everything else (cubes, models, low-quality spheres)
+                is treated as having infinite rotational inertia for
+                collision purposes — they translate but don't spin
+                from contacts. Spheres at quality &gt; 1 use the
+                proper <code>I = ²⁄₅ m r²</code> tensor and roll
+                naturally under friction.</li>
+        </ul>
+        <p class="member-desc">
+            <em>Direct rotation always works.</em> Setting
+            <code>obj.AngularVelocity</code> from Lua, calling
+            <code>:RotateTo</code>, or assigning a rotated
+            <code>obj.CFrame</code> integrates through
+            <code>AngularDamping</code> just like before — only the
+            collision-impulse path is blocked for non-rolling shapes.
+        </p>
+        <p class="member-desc">
+            Reserve high values for the few parts that actually need
+            precision (the player's ball, a bullet, a falling crate);
+            leave static props at <code>1</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.Size</span>
+            <span class="member-type">Vector</span>
+        </div>
+        <p class="member-desc">
+            Read-through to the wrapped BasePart's Size. Setting this
+            also resizes the BasePart and fires its Changed signal
+            (Size affects the AABB used for collision).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.CenterOfMass</span>
+            <span class="member-type">Vector</span>
+            <span class="tag tag-new">new in 1.1</span>
+        </div>
+        <p class="member-desc">
+            Body-local center-of-mass offset from the BasePart's origin.
+            Default <code>Vector(0, 0, 0)</code> &mdash; CoM coincides
+            with the origin, the object is balanced, and contact-driven
+            rotation stays suppressed (no spurious rolling). When set
+            <strong>non-zero</strong>, the simulator switches this
+            object to its real box / sphere inertia tensor, and contact
+            patches that don't sit under the CoM produce tipping torque
+            under gravity-loaded contact normals.
+        </p>
+        <p class="member-desc">
+            This is how "weld a heavy part to one side and watch it
+            tip" works in an AABB-only simulation: gravity pulls the
+            CoM down, but the floor pushes back up at the bottom of
+            the AABB which is no longer aligned with the CoM
+            horizontally &mdash; the resulting offset force pair
+            generates a proper tipping torque around the support edge.
+        </p>
+        <pre><code><span class="hl-com">-- Manual: weld a 1-unit-out chunk on the +Z face</span>
+crate.CenterOfMass = Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">1</span>)
+
+<span class="hl-com">-- Auto: derive from the wrapped BasePart's mesh vertices.</span>
+<span class="hl-com">-- Useful after a Deform / DynMesh mutation that bulges geometry</span>
+<span class="hl-com">-- to one side. Reads vertices, takes the centroid, writes back.</span>
+crate:<span class="hl-fn">RecalculateCenterOfMass</span>()</code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.Alive</span>
+            <span class="member-type">boolean (read-only)</span>
+        </div>
+        <p class="member-desc">
+            True until the object is <code>:Unlink</code>ed,
+            <code>:Destroy</code>ed, or its plane / wrapped BasePart is
+            destroyed.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj:ApplyImpulse(vector)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Velocity-space impulse: <code>velocity += vector / Weight</code>.
+            Anchored objects absorb impulses without moving. Locked
+            axes (see <code>:FieldRestraint</code>) are skipped.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj:FieldRestraint(opts)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Constrain which axes the object is allowed to move / rotate
+            around. Pass any subset of the lock flags &mdash; unspecified
+            flags are left as-is. Useful for top-down 2.5D games (lock
+            Y), conveyor parts (lock X+Z), doors (lock everything except
+            one rotation axis), etc.
+        </p>
+        <pre><code>obj:<span class="hl-fn">FieldRestraint</span>({
+    LockY    = <span class="hl-kw">true</span>,    <span class="hl-com">-- pin to current Y</span>
+    LockRotX = <span class="hl-kw">true</span>,    <span class="hl-com">-- no tumbling forward</span>
+    LockRotZ = <span class="hl-kw">true</span>,    <span class="hl-com">-- no rolling sideways</span>
+})</code></pre>
+        <p class="member-desc">
+            Available flags:
+            <code>LockX</code>, <code>LockY</code>, <code>LockZ</code>,
+            <code>LockRotX</code>, <code>LockRotY</code>, <code>LockRotZ</code>
+            &mdash; all booleans.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj:RotateTo(target, strength)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Drive the object's angular velocity toward <code>target</code>
+            (Euler radians) using a proportional controller. Higher
+            <code>strength</code> snaps faster (default <code>8.0</code>).
+            Pair with <code>LockRot*</code> flags to clamp specific
+            rotation axes that you don't want fighting the controller.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj:StopRotateTo()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Cancel a previously-started <code>:RotateTo</code>. Existing
+            angular velocity is left as-is &mdash; the controller just
+            stops correcting.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj:RecalculateCenterOfMass()</span>
+            <span class="tag tag-method">method</span>
+            <span class="tag tag-new">new in 1.1</span>
+        </div>
+        <p class="member-desc">
+            Walks the wrapped BasePart's mesh and writes the vertex
+            centroid into <code>CenterOfMass</code>. Prefers the
+            deformed mesh (if a <code>:Deform</code> call is active)
+            and falls back to the source model. Vertex positions are
+            stored body-local, so the centroid is the body-local CoM
+            under uniform vertex density. Call this after a DynMesh /
+            <code>Deform</code> mutation that asymmetrically reshapes
+            the part &mdash; physics tipping behaviour will then match
+            the new mass distribution. No-op for primitive Cube /
+            Sphere parts that don't carry a model; for those, set
+            <code>CenterOfMass</code> directly.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj:BasePart()</span>
+            <span class="member-type">→ BasePart</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Returns the underlying Renderable.BasePart this object
+            wraps. Useful for grabbing back the visual handle after
+            you've kept only the PhysicsObject reference.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj:Unlink()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Detach from the plane <strong>without</strong> destroying
+            the BasePart. The part keeps its last simulated CFrame
+            (frozen in place) and resumes manual control. Use this
+            when you want to hand a part back to script-driven
+            animation after physics finishes a phase.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj:Destroy()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Detach AND destroy the wrapped BasePart. After this, both
+            the physics object and the BasePart are gone.
+        </p>
+    </div>
+</div>
+
+<h2 id="lifecycle">Lifecycle &amp; teardown</h2>
+
+<ul>
+    <li><strong>BasePart destroyed externally</strong> &mdash; next physics
+        tick we detect <code>!part.alive</code>, drop the
+        PhysicsObject, and continue. No dangling refs.</li>
+    <li><strong>PhysicsObject:Destroy()</strong> &mdash; removes the object
+        from the plane <em>and</em> destroys the wrapped BasePart.
+        Lua references to the BasePart raise on access after this.</li>
+    <li><strong>PhysicsObject:Unlink()</strong> &mdash; same as Destroy
+        but leaves the BasePart alive at its last simulated CFrame.
+        The PhysicsObject userdata becomes inert.</li>
+    <li><strong>PhysicsPlane:Destroy()</strong> &mdash; clears every
+        physics override and drops the plane. Wrapped BaseParts
+        freeze at their last simulated CFrame, untouched otherwise.</li>
+</ul>
+
+<h2 id="threads">Multithreading</h2>
+
+<p>
+    Every plane has its own optional <code>rayon::ThreadPool</code>
+    sized by <code>opts.Threads</code>. Inside a single tick, the work
+    splits into three phases:
+</p>
+
+<ol>
+    <li><strong>Bookkeeping</strong> &mdash; reap dead objects, refresh
+        per-object <code>cached_size</code> + <code>part_alive</code>
+        flags. Single-threaded under the plane lock.</li>
+    <li><strong>Integration + collision</strong> &mdash; sub-stepped at
+        <code>max(HitBoxQuality)</code>. Integration parallelizes
+        across objects via the rayon pool when there are ≥ 64 objects;
+        collision resolution stays single-threaded (cheap pairwise
+        AABB sweep).</li>
+    <li><strong>Commit</strong> &mdash; every override cell is updated
+        from its object's final position+rotation. Parallelizes
+        across the rayon pool too.</li>
+</ol>
+
+<p>
+    Multiple planes run sequentially in the heart loop, so two planes
+    don't share threads &mdash; if you want parallel <em>planes</em>,
+    give each its own pool and they'll pipeline work onto distinct
+    cores.
+</p>
+
+<h2 id="patterns">Patterns</h2>
+
+<h3>Listening to physics-driven CFrame changes</h3>
+
+<p>
+    The post-tick pass fires per-property change signals on every
+    wrapped BasePart, but only when listeners exist (probed via
+    <code>signal._conns</code>). So a plain
+    <code>part:GetPropertyChanged("CFrame")</code> works from any
+    Lua-side script without further setup:
+</p>
+
+<pre><code><span class="hl-kw">local</span> obj = world:<span class="hl-fn">Add</span>(ball)
+
+ball:<span class="hl-fn">GetPropertyChanged</span>(<span class="hl-str">"CFrame"</span>):<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(cf)
+    <span class="hl-fn">print</span>(<span class="hl-str">"ball at"</span>, cf.Position)
+<span class="hl-kw">end</span>)</code></pre>
+
+<p>
+    When the last connection disconnects, the per-tick fire drops to
+    a fast empty-listener probe and pays no Lua-side cost.
+</p>
+
+<h3>Mixed-mode parts (physics + manual)</h3>
+
+<p>
+    Toggle <code>obj.Anchored</code> on a part to freeze its physics
+    while you animate it from script (e.g. for a pickup tween), then
+    flip back to false and the simulation resumes from the new
+    position. <code>:Unlink()</code> + manual control is an
+    alternative if you don't expect to re-physics that part.
+</p>
+
+<div class="callout note">
+    <strong>Collision shapes.</strong>
+    The current solver only handles AABB collisions derived from each
+    BasePart's <code>Size</code>. Spheres are treated as their bounding
+    box. For a more capable collider system (capsules, OBBs, mesh
+    triangles) keep an eye on future releases.
+</div>
+
+</main>
+
+</body>
+</html>

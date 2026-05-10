@@ -87,6 +87,21 @@ pub struct PartState {
     pub tracks: Vec<TrackRef>,
 
     pub source_animations: Option<Arc<Vec<mesh::FbxAnimClip>>>,
+
+    pub physics_override: Option<Arc<Mutex<CFrame>>>,
+
+    pub prop_signals: HashMap<String, Table>,
+}
+
+impl PartState {
+    pub fn current_cframe(&self) -> CFrame {
+        if let Some(o) = &self.physics_override {
+            if let Ok(g) = o.lock() {
+                return *g;
+            }
+        }
+        self.cframe
+    }
 }
 
 thread_local! {
@@ -469,7 +484,7 @@ fn build_parts_snapshot() -> Vec<PartRender> {
                 }
                 Some(PartRender {
                     shape: s.shape,
-                    cframe: s.cframe,
+                    cframe: s.current_cframe(),
                     size: s.size,
                     color: s.color,
                     active_shader: s.attached.last().cloned(),
@@ -524,6 +539,8 @@ impl PartHandle {
             ignore_raycast: false,
             tracks: Vec::new(),
             source_animations,
+            physics_override: None,
+            prop_signals: HashMap::new(),
         }));
         PARTS.with(|cell| cell.borrow_mut().push(state.clone()));
         bump_parts_dirty();
@@ -545,6 +562,43 @@ fn fire_changed(lua: &Lua, signal_table: Table, prop: &str) -> mlua::Result<()> 
     let mut args = MultiValue::new();
     args.push_back(Value::String(lua.create_string(prop)?));
     signal::fire(lua, &signal_table, args)
+}
+
+fn fire_prop_changed(lua: &Lua, prop_sig: Option<Table>, value: Value) {
+    if let Some(sig) = prop_sig {
+        let mut args = MultiValue::new();
+        args.push_back(value);
+        let _ = signal::fire(lua, &sig, args);
+    }
+}
+
+pub fn signal_has_listeners(signal: &Table) -> bool {
+    if let Ok(conns) = signal.get::<Table>("_conns") {
+        for pair in conns.pairs::<Value, Value>() {
+            if pair.is_ok() {
+                return true;
+            }
+        }
+    }
+    if let Ok(waiting) = signal.get::<Table>("_waiting") {
+        if waiting.len().unwrap_or(0) > 0 {
+            return true;
+        }
+    }
+    false
+}
+
+fn ensure_prop_signal(
+    lua: &Lua,
+    state: &mut PartState,
+    prop: &str,
+) -> mlua::Result<Table> {
+    if let Some(sig) = state.prop_signals.get(prop) {
+        return Ok(sig.clone());
+    }
+    let sig = signal::new_instance(lua)?;
+    state.prop_signals.insert(prop.to_string(), sig.clone());
+    Ok(sig)
 }
 
 static PARTS_VERSION: AtomicU64 = AtomicU64::new(1);
@@ -716,29 +770,46 @@ impl UserData for PartHandle {
             })
         });
 
-        f.add_field_method_get("CFrame", |_, this| Ok(this.state.lock().unwrap().cframe));
+        f.add_field_method_get("CFrame", |_, this| {
+            Ok(this.state.lock().unwrap().current_cframe())
+        });
         f.add_field_method_set("CFrame", |lua, this, value: AnyUserData| {
             this.ensure_alive("set CFrame")?;
             let cf = *value
                 .borrow::<CFrame>()
                 .map_err(|_| mlua::Error::RuntimeError("CFrame expects a CFrame".into()))?;
-            let sig = {
+            let (sig, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
                 s.cframe = cf;
-                s.changed_signal.clone()
+                if let Some(o) = &s.physics_override {
+                    if let Ok(mut g) = o.lock() {
+                        *g = cf;
+                    }
+                }
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("CFrame").cloned(),
+                )
             };
-            fire_changed(lua, sig, "CFrame")
+            fire_changed(lua, sig, "CFrame")?;
+            fire_prop_changed(lua, prop_sig, Value::UserData(lua.create_userdata(cf)?));
+            Ok(())
         });
 
         f.add_field_method_get("Size", |_, this| Ok(this.state.lock().unwrap().size));
         f.add_field_method_set("Size", |lua, this, v: Vector| {
             this.ensure_alive("set Size")?;
-            let sig = {
+            let (sig, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
                 s.size = v;
-                s.changed_signal.clone()
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("Size").cloned(),
+                )
             };
-            fire_changed(lua, sig, "Size")
+            fire_changed(lua, sig, "Size")?;
+            fire_prop_changed(lua, prop_sig, Value::UserData(lua.create_userdata(v)?));
+            Ok(())
         });
 
         f.add_field_method_get("Color", |_, this| Ok(this.state.lock().unwrap().color));
@@ -747,23 +818,33 @@ impl UserData for PartHandle {
             let c = *value
                 .borrow::<Color3>()
                 .map_err(|_| mlua::Error::RuntimeError("Color expects a Color3".into()))?;
-            let sig = {
+            let (sig, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
                 s.color = c;
-                s.changed_signal.clone()
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("Color").cloned(),
+                )
             };
-            fire_changed(lua, sig, "Color")
+            fire_changed(lua, sig, "Color")?;
+            fire_prop_changed(lua, prop_sig, Value::UserData(lua.create_userdata(c)?));
+            Ok(())
         });
 
         f.add_field_method_get("Render", |_, this| Ok(this.state.lock().unwrap().render));
         f.add_field_method_set("Render", |lua, this, value: bool| {
             this.ensure_alive("set Render")?;
-            let sig = {
+            let (sig, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
                 s.render = value;
-                s.changed_signal.clone()
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("Render").cloned(),
+                )
             };
-            fire_changed(lua, sig, "Render")
+            fire_changed(lua, sig, "Render")?;
+            fire_prop_changed(lua, prop_sig, Value::Boolean(value));
+            Ok(())
         });
 
         f.add_field_method_get("CastShadow", |_, this| {
@@ -771,12 +852,17 @@ impl UserData for PartHandle {
         });
         f.add_field_method_set("CastShadow", |lua, this, value: bool| {
             this.ensure_alive("set CastShadow")?;
-            let sig = {
+            let (sig, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
                 s.cast_shadow = value;
-                s.changed_signal.clone()
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("CastShadow").cloned(),
+                )
             };
-            fire_changed(lua, sig, "CastShadow")
+            fire_changed(lua, sig, "CastShadow")?;
+            fire_prop_changed(lua, prop_sig, Value::Boolean(value));
+            Ok(())
         });
 
         f.add_field_method_get("ReceiveShadow", |_, this| {
@@ -784,12 +870,17 @@ impl UserData for PartHandle {
         });
         f.add_field_method_set("ReceiveShadow", |lua, this, value: bool| {
             this.ensure_alive("set ReceiveShadow")?;
-            let sig = {
+            let (sig, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
                 s.receive_shadow = value;
-                s.changed_signal.clone()
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("ReceiveShadow").cloned(),
+                )
             };
-            fire_changed(lua, sig, "ReceiveShadow")
+            fire_changed(lua, sig, "ReceiveShadow")?;
+            fire_prop_changed(lua, prop_sig, Value::Boolean(value));
+            Ok(())
         });
 
         f.add_field_method_get("IgnoreInRaycast", |_, this| {
@@ -797,12 +888,17 @@ impl UserData for PartHandle {
         });
         f.add_field_method_set("IgnoreInRaycast", |lua, this, value: bool| {
             this.ensure_alive("set IgnoreInRaycast")?;
-            let sig = {
+            let (sig, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
                 s.ignore_raycast = value;
-                s.changed_signal.clone()
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("IgnoreInRaycast").cloned(),
+                )
             };
-            fire_changed(lua, sig, "IgnoreInRaycast")
+            fire_changed(lua, sig, "IgnoreInRaycast")?;
+            fire_prop_changed(lua, prop_sig, Value::Boolean(value));
+            Ok(())
         });
 
         f.add_field_method_get("Texture", |lua, this| -> mlua::Result<Value> {
@@ -859,6 +955,14 @@ impl UserData for PartHandle {
     }
 
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method(
+            "GetPropertyChanged",
+            |lua, this, prop: String| -> mlua::Result<Table> {
+                let mut s = this.state.lock().unwrap();
+                ensure_prop_signal(lua, &mut s, &prop)
+            },
+        );
+
         m.add_method("Destroy", |lua, this, _: ()| -> mlua::Result<()> {
             let sig = {
                 let mut s = this.state.lock().unwrap();

@@ -13,6 +13,46 @@ use crate::libs::renderable::{self, render as r3d};
 static VSYNC_ON: AtomicBool = AtomicBool::new(false);
 static PRESENT_MODE_DIRTY: AtomicBool = AtomicBool::new(false);
 
+fn clamp_scissor(
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    fb_w: u32,
+    fb_h: u32,
+) -> Option<(u32, u32, u32, u32)> {
+    let mut x = x;
+    let mut y = y;
+    let mut w = w;
+    let mut h = h;
+    if x < 0.0 {
+        w += x;
+        x = 0.0;
+    }
+    if y < 0.0 {
+        h += y;
+        y = 0.0;
+    }
+    if w <= 0.0 || h <= 0.0 {
+        return None;
+    }
+    let fb_w_f = fb_w as f32;
+    let fb_h_f = fb_h as f32;
+    if x >= fb_w_f || y >= fb_h_f {
+        return None;
+    }
+    let xi = x as u32;
+    let yi = y as u32;
+    let max_w = fb_w.saturating_sub(xi);
+    let max_h = fb_h.saturating_sub(yi);
+    let wi = (w as u32).min(max_w);
+    let hi = (h as u32).min(max_h);
+    if wi == 0 || hi == 0 {
+        return None;
+    }
+    Some((xi, yi, wi, hi))
+}
+
 pub fn set_vsync(on: bool) {
     let prev = VSYNC_ON.swap(on, Ordering::Relaxed);
     if prev != on {
@@ -1595,7 +1635,25 @@ impl GpuState {
                 rpass.draw_indexed(0..idx_count, 0, 0..1);
             }
 
+            let win_w = self.config.width;
+            let win_h = self.config.height;
+            let full_scissor = (0u32, 0u32, win_w, win_h);
+            let mut current_scissor = full_scissor;
+            rpass.set_scissor_rect(0, 0, win_w, win_h);
+
             for (i, item) in items.iter().enumerate() {
+                let want = match item.clip_rect {
+                    Some((x, y, w, h)) => clamp_scissor(x, y, w, h, win_w, win_h),
+                    None => Some(full_scissor),
+                };
+                let scissor = match want {
+                    Some(s) => s,
+                    None => continue,
+                };
+                if scissor != current_scissor {
+                    rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
+                    current_scissor = scissor;
+                }
                 let pipeline = match &item.active_shader {
                     Some(sh) => self.pipelines.get(&sh.id).unwrap_or(&self.default_pipeline),
                     None => &self.default_pipeline,
