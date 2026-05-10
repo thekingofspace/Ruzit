@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Primitives - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=4.2">
-    <script src="theme.js?v=4.2"></script>
+    <link rel="stylesheet" href="style.css?v=4.3">
+    <script src="theme.js?v=4.3"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=4.2" defer></script>
+<script src="sidebar.js?v=4.3" defer></script>
 
 <main>
 
@@ -210,6 +210,18 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
         </div>
         <p class="member-desc">Negation. Equivalent to <code>v * -1</code>.</p>
     </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">a == b, a &lt; b, a &lt;= b</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+        <p class="member-desc">
+            Component-wise comparisons (<code>true</code> only when ALL
+            THREE axes match). Note <code>&lt;</code> is partial-order,
+            not magnitude-based &mdash; for length comparisons read
+            <code>.Magnitude</code> directly.
+        </p>
+    </div>
 </div>
 
 <h4>Example</h4>
@@ -333,6 +345,16 @@ Color3.FromHex(<span class="hl-str">"ff0"</span>)        <span class="hl-com">--
             <span class="member-type">→ Color3</span>
         </div>
         <p class="member-desc">Channel-wise subtract. Clamped at <code>0</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">a == b, a &lt; b, a &lt;= b</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+        <p class="member-desc">
+            Component-wise comparisons (<code>true</code> only when ALL
+            THREE channels match the relation).
+        </p>
     </div>
 </div>
 
@@ -481,6 +503,17 @@ camera.CFrame = CFrame.<span class="hl-fn">LookAt</span>(
             blend independently.
         </p>
     </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">a == b, a &lt; b, a &lt;= b</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+        <p class="member-desc">
+            Component-wise comparisons across position AND rotation
+            (<code>true</code> only when every component of both Vectors
+            matches the relation).
+        </p>
+    </div>
 </div>
 
 <h4>Example</h4>
@@ -566,6 +599,16 @@ part.CFrame = CFrame.new(Vector.new(<span class="hl-num">0</span>, <span class="
         </div>
         <p class="member-desc">Scalar multiply / divide / negate.</p>
     </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">a == b, a &lt; b, a &lt;= b</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+        <p class="member-desc">
+            Component-wise comparisons (<code>true</code> only when BOTH
+            axes match the relation).
+        </p>
+    </div>
 </div>
 
 <h4>Example</h4>
@@ -621,6 +664,22 @@ hp.Position = centre - hp.Size / <span class="hl-num">2</span></code></pre>
             <span class="tag tag-static">static</span>
         </div>
         <p class="member-desc">Shorthand for <code>UDim.new(1, 1)</code> &mdash; full size of the parent.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">UDim.FromDim(scaleX, scaleY, parent)</span>
+            <span class="member-type">→ Dim</span>
+            <span class="tag tag-static">static</span>
+        </div>
+        <p class="member-desc">
+            One-shot scale-to-pixels. Equivalent to
+            <code>UDim.new(scaleX, scaleY):ToDim(parent)</code> but reads
+            more naturally when the scale values are constants. Use it
+            for sizing a button or tile to a fraction of a container
+            without first constructing a <code>UDim</code> value.
+        </p>
+        <pre><code><span class="hl-com">-- 20% × 20% of the parent.</span>
+btn.Size = UDim.<span class="hl-fn">FromDim</span>(<span class="hl-num">0.2</span>, <span class="hl-num">0.2</span>, parentSize)</code></pre>
     </div>
 </div>
 

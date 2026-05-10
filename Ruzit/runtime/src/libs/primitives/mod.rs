@@ -735,6 +735,15 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         "one",
         lua.create_function(|_, _: ()| Ok(UDim::new(1.0, 1.0)))?,
     )?;
+    udim_class.set(
+        "FromDim",
+        lua.create_function(
+            |_, (sx, sy, parent_ud): (f32, f32, AnyUserData)| -> mlua::Result<Dim> {
+                let parent = *parent_ud.borrow::<Dim>()?;
+                Ok(Dim::new(parent.x * sx, parent.y * sy))
+            },
+        )?,
+    )?;
     t.set("UDim", udim_class)?;
 
     Ok(t)

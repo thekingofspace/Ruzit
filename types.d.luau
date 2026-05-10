@@ -1092,6 +1092,11 @@ declare class Dim
 	function __mul(self, other: number): Dim
 	function __div(self, other: number): Dim
 	function __unm(self): Dim
+	-- Component-wise comparisons. `==`, `<`, `<=` return true only when
+	-- BOTH axes match the relation (so `<` is partial-order, not total).
+	function __eq(self, other: Dim): boolean
+	function __lt(self, other: Dim): boolean
+	function __le(self, other: Dim): boolean
 end
 
 declare class Color3
@@ -1106,6 +1111,11 @@ declare class Color3
 	-- Channel-wise add / subtract. Result is clamped to 0..1.
 	function __add(self, other: Color3): Color3
 	function __sub(self, other: Color3): Color3
+	-- Component-wise comparisons. `==`, `<`, `<=` return true only when
+	-- ALL THREE channels match the relation.
+	function __eq(self, other: Color3): boolean
+	function __lt(self, other: Color3): boolean
+	function __le(self, other: Color3): boolean
 end
 
 declare class Vector
@@ -1132,6 +1142,12 @@ declare class Vector
 	function __mul(self, other: number): Vector
 	function __div(self, other: number): Vector
 	function __unm(self): Vector
+	-- Component-wise comparisons. `==`, `<`, `<=` return true only when
+	-- ALL THREE axes match the relation (so `<` is partial-order, not
+	-- magnitude-based — use `.Magnitude` for length comparisons).
+	function __eq(self, other: Vector): boolean
+	function __lt(self, other: Vector): boolean
+	function __le(self, other: Vector): boolean
 end
 
 declare class ModelAsset
@@ -1159,6 +1175,12 @@ declare class CFrame
 	function __mul(self, other: CFrame | Vector): CFrame
 	function __add(self, other: CFrame): CFrame
 	function __sub(self, other: CFrame): CFrame
+	-- Component-wise comparisons across position AND rotation. `==`,
+	-- `<`, `<=` return true only when every component of both Vectors
+	-- matches the relation.
+	function __eq(self, other: CFrame): boolean
+	function __lt(self, other: CFrame): boolean
+	function __le(self, other: CFrame): boolean
 end
 
 declare class UDim
@@ -1176,6 +1198,11 @@ declare class UDim
 	function __mul(self, other: number): UDim
 	function __div(self, other: number): UDim
 	function __unm(self): UDim
+	-- Component-wise comparisons. `==`, `<`, `<=` return true only when
+	-- BOTH axes match the relation.
+	function __eq(self, other: UDim): boolean
+	function __lt(self, other: UDim): boolean
+	function __le(self, other: UDim): boolean
 end
 
 export type Dim_API = {
@@ -1224,6 +1251,14 @@ export type UDim_API = {
 	new: ((x: number?, y: number?) -> UDim),
 	zero: () -> UDim,
 	one: () -> UDim,
+	-- One-shot scale-to-pixels. Equivalent to
+	-- UDim.new(scaleX, scaleY):ToDim(parent), but reads more naturally
+	-- when the scale values are constants:
+	--     UDim.FromDim(0.2, 0.2, parentDim)
+	-- means "give me a Dim that's 20% of parentDim on each axis."
+	-- Use it for sizing buttons or tiles relative to a container
+	-- without first constructing a UDim value.
+	FromDim: (scaleX: number, scaleY: number, parent: Dim) -> Dim,
 }
 
 export type Primitives_API = {
