@@ -27,6 +27,15 @@ Creator = ""
                             # that actually changed, huge win for content updates
                             # over Steam Pipe / CDNs without drowning the OS in
                             # thousands of tiny files.
+# bytecode = true           # compile every .luau / .lua to Luau bytecode at build
+                            # time and ship the bytecode in place of source. Faster
+                            # startup (no parse/compile at runtime), smaller
+                            # `.scripts.managed`, and the original source is no
+                            # longer recoverable from the bundle. Runtime errors
+                            # still report file:line, but the engine no longer has
+                            # the source text to print the offending line snippet.
+                            # Keep off during active development, flip on for
+                            # release builds. Default false.
 
 [steam]
 # app_id = 480        # Steam app id used by `import("Steam")`. 480 is Spacewar
