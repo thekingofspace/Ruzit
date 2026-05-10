@@ -32,26 +32,32 @@
 <h2 id="present">Steam.SteamPresent</h2>
 
 <p>
-    Boolean. True if <em>all three</em> conditions hold:
+    Boolean. <strong>True if the Steam SDK redistributable
+    (<code>steam_api64.dll</code> / <code>libsteam_api.so</code> /
+    <code>libsteam_api.dylib</code>) is present alongside the
+    executable.</strong> That's the only thing it checks. Use
+    <code>ruzit fetch-deps</code> to drop the DLL in.
 </p>
 
-<ul>
-    <li>The Steam SDK redistributable
-        (<code>steam_api64.dll</code> / <code>libsteam_api.so</code> /
-        <code>libsteam_api.dylib</code>) is present alongside the
-        executable. Use <code>ruzit fetch-deps</code> to drop
-        it in.</li>
-    <li>The process was launched through Steam (the Steam client
-        sets <code>SteamAppId</code> / <code>SteamGameId</code> in
-        the env when it spawns a game) <strong>or</strong> we're
-        running under <code>ruzit test</code> (i.e. not via a
-        built launcher).</li>
-    <li>(Implicit) the Steam client is actually running and
-        accepted the init handshake. If init fails, the
-        <code>SteamPresent</code> field stays computed at the
-        first two conditions, but Steam APIs called past it will
-        still error.</li>
-</ul>
+<p>
+    To make built games work standalone (no Steam launch required),
+    the runtime briefly writes <code>steam_appid.txt</code> next to the
+    exe at SDK init, lets Steam read it, then immediately deletes it.
+    The AppID is pulled from your build.toml <code>[steam]</code>
+    table, falling back to <code>480</code> (Spacewar) if unset.
+    The file appears for a few milliseconds during startup and never
+    lingers afterward — the AppID is effectively baked into the
+    runtime binary. The user's Steam client must still be running and
+    logged in for actual Steam API calls to succeed; if init fails,
+    individual Steam calls return / error accordingly.
+</p>
+
+<p>
+    If a <code>steam_appid.txt</code> is already present next to the
+    exe when the runtime starts (e.g., one you placed manually for
+    testing), the runtime leaves it alone — your file wins, and it
+    won't be deleted on shutdown.
+</p>
 
 <p>
     Importing <code>Steam</code> never fails on its own anymore, so
@@ -121,6 +127,21 @@
             given up and you should surface the error to the user.
         </p>
     </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnLobbyJoinRequested</span><span class="member-type">Signal&lt;string, string&gt;</span></div>
+        <p class="member-desc">
+            Fires with <code>(lobbyId, friendId)</code> when a friend
+            accepts a Steam invite to your game while it's already running
+            (typically by clicking <em>Join Game</em> in the Steam overlay).
+            Steam doesn't auto-join — you decide what to do. The usual
+            handler is to call <code>Steam.Lobby.Join(lobbyId)</code> and
+            switch your UI to the lobby/match flow. For cold launches
+            (game wasn't running when the invite was clicked), Steam puts
+            <code>+connect_lobby &lt;id&gt;</code> in the launch command
+            line — read it at startup via
+            <code>Steam.Launch.GetQueryParam("connect_lobby")</code>.
+        </p>
+    </div>
 </div>
 
 <p>
@@ -129,6 +150,18 @@
     distinguishes <code>"Disconnected"</code> from <code>"Kicked"</code> /
     <code>"Banned"</code>, and only fires for that lobby.
 </p>
+
+<pre><code><span class="hl-kw">local</span> Steam = <span class="hl-fn">import</span>(<span class="hl-str">"Steam"</span>)
+
+Steam.OnLobbyJoinRequested:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(lobbyId, friendId)
+    Steam.Lobby.<span class="hl-fn">Join</span>(lobbyId):<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(lobby, err)
+        <span class="hl-kw">if</span> lobby <span class="hl-kw">then</span> <span class="hl-fn">enter_match_with</span>(lobby) <span class="hl-kw">end</span>
+    <span class="hl-kw">end</span>)
+<span class="hl-kw">end</span>)
+
+<span class="hl-cmt">-- Cold launch: game was offline when the invite was clicked.</span>
+<span class="hl-kw">local</span> pending = Steam.Launch.<span class="hl-fn">GetQueryParam</span>(<span class="hl-str">"connect_lobby"</span>)
+<span class="hl-kw">if</span> pending <span class="hl-kw">then</span> Steam.Lobby.<span class="hl-fn">Join</span>(pending):<span class="hl-fn">Connect</span>(...) <span class="hl-kw">end</span></code></pre>
 
 <pre><code><span class="hl-kw">local</span> Steam = <span class="hl-fn">import</span>(<span class="hl-str">"Steam"</span>)
 

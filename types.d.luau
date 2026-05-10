@@ -2078,7 +2078,22 @@ export type SteamOverlayStoreMode = "None" | "AddToCart" | "AddToCartAndShow"
 export type SteamNotificationPosition = "TopLeft" | "TopRight" | "BottomLeft" | "BottomRight"
 
 export type SteamFriend = { ID: string, Name: string, State: SteamPersonaState }
-export type SteamLobbyInfo = { ID: string, MemberCount: number?, Name: string? }
+export type SteamLobbyInfo = {
+	ID: string,
+	-- Live member count (0 means lobby ended).
+	MemberCount: number?,
+	-- Owner's Steam id. Useful for filtering Lobby.List results to
+	-- friends-only by intersecting with Steam.User.GetFriends().
+	Owner: string?,
+	-- Convenience read of lobby data key "name" (set via SetData("name", ...)).
+	-- Use a unique value (e.g. your game id) to filter your lobbies out
+	-- of public AppID test traffic.
+	Name: string?,
+	-- Full lobby-wide key/value snapshot, minus engine-reserved
+	-- "_ruzit_*" keys. Use this to read whatever metadata the host set
+	-- (e.g. host_id, map, mode) without having to actually Join.
+	Data: { [string]: string }?,
+}
 
 export type SteamServerOptions = {
 	-- Game-server port. Default Valve recommendation is 27015.
@@ -2105,12 +2120,20 @@ export type SteamFriendInfo = {
 }
 
 export type Steam_API = {
-	-- True if the Steam SDK is loadable AND we were either launched
-	-- through Steam (SteamAppId / SteamGameId in env) OR are running in
-	-- a test environment (`ruzit-cli test`). False in any other case
-	-- — DLL missing, run via the launcher EXE outside Steam, etc.
-	-- Reading is free; gate every Steam API behind this flag so the
-	-- game still runs cleanly when Steam isn't available:
+	-- True if the Steam SDK redistributable (steam_api64.dll on Windows,
+	-- libsteam_api.so on Linux, libsteam_api.dylib on macOS) is sitting
+	-- next to the executable. Use `ruzit fetch-deps` to drop it in.
+	-- The AppID (from your build.toml [steam] table, or 480 if unset)
+	-- is baked into the runtime — at SDK init the runtime briefly
+	-- writes `steam_appid.txt` next to the exe, lets Steam SDK read
+	-- it, then immediately deletes it, so the game can boot without
+	-- being launched through the Steam client and without leaving
+	-- a file on disk. The user's Steam client must still be running
+	-- and logged in. Actual Steam API calls may still fail (Steam not
+	-- running, user doesn't own the AppID, etc.); each API call
+	-- returns / errors accordingly.
+	-- Reading is free; gate every Steam call behind this flag so the
+	-- game still runs cleanly when the DLL is absent:
 	--   if Steam.SteamPresent then
 	--       Steam.RichPresence.Set(...)
 	--   end
@@ -2134,6 +2157,19 @@ export type Steam_API = {
 	-- abrupt exit (os.exit, panic, etc.) and want clean Steam teardown
 	-- with no "sockets still open" warnings.
 	Shutdown: () -> (),
+	-- Fires with (lobbyId: string, friendId: string) when a friend
+	-- accepts a Steam invite to YOUR game while you're already running.
+	-- Steam doesn't auto-join — you decide what to do (auto-join, prompt
+	-- the user, etc.). Typical handler:
+	--     Steam.OnLobbyJoinRequested:Connect(function(lobbyId)
+	--         Steam.Lobby.Join(lobbyId):Connect(function(lobby)
+	--             -- ...switch to lobby UI / start match...
+	--         end)
+	--     end)
+	-- For cold launches (game wasn't running when the invite was clicked),
+	-- Steam puts "+connect_lobby <id>" in the launch command line — read it
+	-- via Steam.Launch.GetQueryParam("connect_lobby") at startup.
+	OnLobbyJoinRequested: Signal<string, string>,
 	-- Bring up Valve's relay-network for P2P (cross-NAT punch-through,
 	-- relay fallback when direct fails). Call ONCE at startup if your
 	-- game ships to players on different networks. Skip it for local

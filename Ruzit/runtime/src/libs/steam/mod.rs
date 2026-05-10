@@ -10,12 +10,37 @@ use steamworks::networking_types::{
     ListenSocketEvent, NetConnectionEnd, NetworkingIdentity, SendFlags,
 };
 use steamworks::{
-    AppId, ChatMemberStateChange, Client, ClientManager, FriendFlags, FriendState,
-    LobbyChatUpdate, LobbyDataUpdate, LobbyId, LobbyType, NotificationPosition,
-    OverlayToStoreFlag, PersonaStateChange, Server, ServerMode, SingleClient, SteamError,
-    SteamId, SteamServerConnectFailure, SteamServersConnected, SteamServersDisconnected,
-    ValidateAuthTicketResponse,
+    AppId, Callback, ChatMemberStateChange, Client, ClientManager, FriendFlags, FriendState,
+    GameLobbyJoinRequested, LobbyChatUpdate, LobbyDataUpdate, LobbyId, LobbyType,
+    NotificationPosition, OverlayToStoreFlag, PersonaStateChange, Server, ServerMode,
+    SingleClient, SteamError, SteamId, SteamServerConnectFailure, SteamServersConnected,
+    SteamServersDisconnected, ValidateAuthTicketResponse,
 };
+use std::os::raw::c_void;
+
+#[derive(Clone, Debug)]
+struct RichPresenceJoinRequested {
+    connect: String,
+}
+
+unsafe impl Callback for RichPresenceJoinRequested {
+    const ID: i32 = 337;
+    const SIZE: i32 = std::mem::size_of::<steamworks_sys::GameRichPresenceJoinRequested_t>() as i32;
+
+    unsafe fn from_raw(raw: *mut c_void) -> Self {
+        let val =
+            unsafe { &*(raw as *const steamworks_sys::GameRichPresenceJoinRequested_t) };
+        let bytes = val
+            .m_rgchConnect
+            .iter()
+            .take_while(|b| **b != 0)
+            .map(|b| *b as u8)
+            .collect::<Vec<u8>>();
+        RichPresenceJoinRequested {
+            connect: String::from_utf8_lossy(&bytes).into_owned(),
+        }
+    }
+}
 
 use crate::libs::signal;
 
@@ -72,6 +97,7 @@ struct GlobalSignals {
     disconnected: Table,
     connected: Table,
     connect_failure: Table,
+    lobby_join_requested: Table,
 }
 
 #[derive(Default)]
@@ -89,6 +115,7 @@ struct EventQueue {
     server_disconnected: Vec<String>,
     server_connected: Vec<()>,
     server_connect_failure: Vec<(String, bool)>,
+    lobby_join_requested: Vec<(u64, u64)>,
 }
 
 fn steam_error_string(err: &SteamError) -> String {
@@ -310,6 +337,7 @@ fn close_orphan_connections() {
         let socket = LISTEN_SOCKET.with(|cell| cell.borrow_mut().take());
         drop(socket);
         pump_steam_callbacks(2);
+        clear_lobby_rich_presence_if_no_lobbies();
     }
 }
 
@@ -370,39 +398,21 @@ fn events() -> Arc<Mutex<EventQueue>> {
 }
 
 pub fn is_present() -> bool {
-    if !steam_lib_alongside_exe() {
-        return false;
-    }
-    let launched_via_steam = std::env::var("SteamAppId").is_ok()
-        || std::env::var("SteamGameId").is_ok()
-        || std::env::var("STEAM_RUNTIME").is_ok();
-    let in_test = crate::package::try_self_launcher().is_none();
-    let configured_app_id = std::env::var("RUZIT_STEAM_APPID")
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(DEFAULT_APP_ID);
-    let is_test_appid = configured_app_id == DEFAULT_APP_ID;
-    launched_via_steam || in_test || is_test_appid
+    steam_lib_alongside_exe()
 }
 
-fn maybe_write_steam_appid(app_id: u32) {
-    if app_id != DEFAULT_APP_ID {
-        return;
-    }
+fn maybe_write_steam_appid(app_id: u32) -> Option<std::path::PathBuf> {
     if std::env::var("SteamAppId").is_ok() || std::env::var("SteamGameId").is_ok() {
-        return;
+        return None;
     }
-    let Ok(exe) = std::env::current_exe() else {
-        return;
-    };
-    let Some(dir) = exe.parent() else {
-        return;
-    };
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
     let path = dir.join("steam_appid.txt");
     if path.exists() {
-        return;
+        return None;
     }
-    let _ = std::fs::write(&path, app_id.to_string());
+    std::fs::write(&path, app_id.to_string()).ok()?;
+    Some(path)
 }
 
 fn steam_lib_alongside_exe() -> bool {
@@ -444,8 +454,12 @@ fn ensure_client() -> mlua::Result<&'static Client> {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(DEFAULT_APP_ID);
-    maybe_write_steam_appid(app_id);
-    let (client, single) = Client::init_app(AppId(app_id)).map_err(|e| {
+    let appid_path = maybe_write_steam_appid(app_id);
+    let init_result = Client::init_app(AppId(app_id));
+    if let Some(p) = appid_path {
+        let _ = std::fs::remove_file(p);
+    }
+    let (client, single) = init_result.map_err(|e| {
         mlua::Error::RuntimeError(format!(
             "Steam init failed (app id {app_id}): {e}. Is the Steam client running?"
         ))
@@ -497,6 +511,47 @@ fn register_client_callbacks(client: &Client) {
             .client_connect_failure
             .push((steam_error_string(&ev.reason), ev.still_retrying));
     });
+
+    let q = evq.clone();
+    let _ = client.register_callback(move |ev: GameLobbyJoinRequested| {
+        q.lock()
+            .unwrap()
+            .lobby_join_requested
+            .push((ev.lobby_steam_id.raw(), ev.friend_steam_id.raw()));
+    });
+
+    let q = evq.clone();
+    let _ = client.register_callback(move |ev: RichPresenceJoinRequested| {
+        if let Some(id) = parse_lobby_id_from_connect(&ev.connect) {
+            q.lock().unwrap().lobby_join_requested.push((id, 0));
+        }
+    });
+}
+
+fn parse_lobby_id_from_connect(connect: &str) -> Option<u64> {
+    let mut iter = connect.split_whitespace();
+    while let Some(tok) = iter.next() {
+        if tok.eq_ignore_ascii_case("+connect_lobby") {
+            if let Some(v) = iter.next() {
+                return v.parse().ok();
+            }
+        }
+    }
+    connect.trim().parse().ok()
+}
+
+fn set_lobby_rich_presence(client: &Client, lobby_id: u64) {
+    let connect = format!("+connect_lobby {lobby_id}");
+    client.friends().set_rich_presence("connect", Some(&connect));
+}
+
+fn clear_lobby_rich_presence_if_no_lobbies() {
+    if !LOBBY_SIGNALS.with(|m| m.borrow().is_empty()) {
+        return;
+    }
+    if let Some(c) = CLIENT.get() {
+        c.friends().set_rich_presence("connect", None);
+    }
 }
 
 fn register_server_callbacks(server: &Server) {
@@ -611,9 +666,20 @@ fn drain_events(lua: &Lua) -> mlua::Result<()> {
                         let mm = client.matchmaking();
                         let lid = LobbyId::from_raw(id);
                         info.set("MemberCount", mm.lobby_member_count(lid) as i64)?;
+                        info.set("Owner", mm.lobby_owner(lid).raw().to_string())?;
                         if let Some(name) = mm.lobby_data(lid, "name") {
                             info.set("Name", name.to_string())?;
                         }
+                        let data_table = lua.create_table()?;
+                        let count = mm.lobby_data_count(lid);
+                        for idx in 0..count {
+                            if let Some((k, v)) = mm.lobby_data_by_index(lid, idx) {
+                                if !k.starts_with("_ruzit_") {
+                                    data_table.set(k, v)?;
+                                }
+                            }
+                        }
+                        info.set("Data", data_table)?;
                     }
                     arr.set(i + 1, info)?;
                 }
@@ -815,6 +881,17 @@ fn drain_events(lua: &Lua) -> mlua::Result<()> {
         }
     }
 
+    for (lobby_id, friend_id) in drained.lobby_join_requested {
+        let sig_opt = GLOBAL_SIGNALS
+            .with(|s| s.borrow().as_ref().map(|s| s.lobby_join_requested.clone()));
+        if let Some(sig) = sig_opt {
+            let mut args = MultiValue::new();
+            args.push_back(Value::String(lua.create_string(&lobby_id.to_string())?));
+            args.push_back(Value::String(lua.create_string(&friend_id.to_string())?));
+            signal::fire(lua, &sig, args)?;
+        }
+    }
+
     Ok(())
 }
 
@@ -842,6 +919,7 @@ fn make_lobby_userdata(lua: &Lua, raw: u64) -> mlua::Result<AnyUserData> {
     });
     if let Some(c) = CLIENT.get() {
         let _ = ensure_listen_socket(c);
+        set_lobby_rich_presence(c, raw);
     }
     let lobby = LobbyHandle {
         id: raw,
@@ -1247,16 +1325,19 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     let on_disconnected = signal::new_instance(lua)?;
     let on_connected = signal::new_instance(lua)?;
     let on_connect_failure = signal::new_instance(lua)?;
+    let on_lobby_join_requested = signal::new_instance(lua)?;
     GLOBAL_SIGNALS.with(|s| {
         *s.borrow_mut() = Some(GlobalSignals {
             disconnected: on_disconnected.clone(),
             connected: on_connected.clone(),
             connect_failure: on_connect_failure.clone(),
+            lobby_join_requested: on_lobby_join_requested.clone(),
         });
     });
     t.set("OnDisconnected", on_disconnected)?;
     t.set("OnConnected", on_connected)?;
     t.set("OnConnectFailure", on_connect_failure)?;
+    t.set("OnLobbyJoinRequested", on_lobby_join_requested)?;
     t.set(
         "Shutdown",
         lua.create_function(|_, _: ()| -> mlua::Result<()> {
