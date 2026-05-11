@@ -256,81 +256,26 @@ mask.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</spa
     </div>
 </div>
 
-<h2 id="skybox">Skybox</h2>
-
-<div class="member-list">
-    <div class="member">
-        <div class="member-header">
-            <span class="member-name">GUI.SetSkybox(asset)</span>
-            <span class="member-type">→ SceneShader</span>
-        </div>
-        <p class="member-desc">
-            Run a fragment shader on a fullscreen quad before the 3D scene.
-            Replaces the flat clear colour with whatever the shader produces.
-            See <a href="shaders.html#skybox">Shaders &gt; Skybox</a>.
-        </p>
-    </div>
-    <div class="member">
-        <div class="member-header"><span class="member-name">GUI.ClearSkybox()</span></div>
-    </div>
-</div>
-
-<h2 id="post">Post effects</h2>
-
-<div class="member-list">
-    <div class="member">
-        <div class="member-header">
-            <span class="member-name">GUI.SetPostEffect(asset)</span>
-            <span class="member-type">→ SceneShader</span>
-        </div>
-        <p class="member-desc">
-            Final-pass fragment shader. The rendered scene is bound as
-            <code>IMG</code>; sample it via
-            <code>textureSample(IMG, IMG_SAMP, in.uv)</code>. Used for
-            color grading, vignette, CRT, bloom, etc.
-        </p>
-    </div>
-    <div class="member">
-        <div class="member-header"><span class="member-name">GUI.ClearPostEffect()</span></div>
-    </div>
-</div>
-
-<h3>SceneShader</h3>
+<h2 id="skybox-moved">Skybox &amp; post effects</h2>
 
 <p>
-    Returned by <code>SetSkybox</code> and <code>SetPostEffect</code>.
-    Lifetime ties to the slot, let it drop or call
-    <code>:Destroy()</code> to remove the shader.
+    <strong>Moved as of 1.2.1.</strong> <code>SetSkybox</code>,
+    <code>ClearSkybox</code>, <code>SetPostEffect</code> and
+    <code>ClearPostEffect</code> now live on
+    <a href="lighting.html">LightingService</a>. The signatures and
+    semantics are unchanged &mdash; they still return a
+    <code>SceneShader</code> handle &mdash; the only thing that moved
+    is the namespace.
 </p>
 
-<table>
-    <tbody>
-        <tr><td><code>scene:SetData(name, value)</code></td><td>Set a <code>@ruzit param</code> slot.</td></tr>
-        <tr><td><code>scene:GetData(name)</code></td><td>Read it back.</td></tr>
-        <tr><td><code>scene:Destroy()</code></td><td>Clear the slot.</td></tr>
-    </tbody>
-</table>
+<pre><code><span class="hl-com">-- old (1.2.0 and earlier):  removed</span>
+<span class="hl-com">-- GUI.SetSkybox(asset)</span>
+<span class="hl-com">-- GUI.SetPostEffect(asset)</span>
 
-<h3>Worked example: damage flash</h3>
-
-<pre><code><span class="hl-kw">local</span> grade = GUI.SetPostEffect(Asset.GetAsset(<span class="hl-str">"Fragment"</span>, <span class="hl-str">"damage.frag"</span>))
-grade:SetData(<span class="hl-str">"strength"</span>, <span class="hl-num">0.0</span>)
-
-<span class="hl-kw">function</span> on_player_hit()
-    <span class="hl-kw">local</span> Process = <span class="hl-fn">import</span>(<span class="hl-str">"Process"</span>)
-    <span class="hl-kw">local</span> elapsed = <span class="hl-num">0</span>
-    <span class="hl-kw">local</span> conn
-    conn = Process.Heartbeat:Connect(<span class="hl-kw">function</span>(dt)
-        elapsed += dt
-        <span class="hl-kw">local</span> t = elapsed / <span class="hl-num">0.4</span>
-        <span class="hl-kw">if</span> t &gt;= <span class="hl-num">1</span> <span class="hl-kw">then</span>
-            grade:SetData(<span class="hl-str">"strength"</span>, <span class="hl-num">0</span>)
-            conn:Disconnect()
-        <span class="hl-kw">else</span>
-            grade:SetData(<span class="hl-str">"strength"</span>, <span class="hl-num">1</span> - t)
-        <span class="hl-kw">end</span>
-    <span class="hl-kw">end</span>)
-<span class="hl-kw">end</span></code></pre>
+<span class="hl-com">-- new (1.2.1+):</span>
+<span class="hl-kw">local</span> LightingService = <span class="hl-fn">import</span>(<span class="hl-str">"LightingService"</span>)
+<span class="hl-kw">local</span> sky    = LightingService.SetSkybox(Asset.GetAsset(<span class="hl-str">"Fragment"</span>, <span class="hl-str">"sky.frag"</span>))
+<span class="hl-kw">local</span> grade  = LightingService.SetPostEffect(Asset.GetAsset(<span class="hl-str">"Fragment"</span>, <span class="hl-str">"damage.frag"</span>))</code></pre>
 
 <h2 id="drawableimg">DrawableImg &amp; CanvasBuffer</h2>
 

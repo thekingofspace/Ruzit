@@ -397,6 +397,125 @@
     </div>
 </div>
 
+<h2 id="shadows">Shadow configuration</h2>
+
+<p>
+    Knobs the default 3D shader reads each frame to decide how the sun
+    terminator behaves and how dark receivers get on their unlit side.
+    Real depth-map sampling (per-light render passes, comparison
+    samplers, cascade splits) is scaffolded for a future pass &mdash;
+    this API ships now so you can author lighting against it already.
+</p>
+
+<p>
+    When <code>SetShadowsEnabled(true)</code> the default shader stops
+    using a soft half-Lambert and instead does a smoothstep at the
+    light terminator (sharper, more "shadowy" look). Receivers darken
+    proportional to <code>MapQuality</code>, the <code>PCF</code> knob
+    widens the smoothstep band to simulate softness, and
+    <code>ShadowDistance</code> fades the term back into half-Lambert
+    past that camera distance.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.SetShadowsEnabled(on)</span>
+            <span class="tag tag-new">new in 1.2.1</span>
+        </div>
+        <p class="member-desc">
+            Toggle the shadow term in the default 3D shader. Default
+            <code>false</code>. Custom <code>Frag3D</code> shaders can
+            read the same value via <code>F.shadow_enabled</code>
+            (f32, 0.0 or 1.0) and choose to use it or ignore it.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.GetShadowsEnabled()</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.SetShadowMapQuality(size)</span>
+            <span class="tag tag-new">new in 1.2.1</span>
+        </div>
+        <p class="member-desc">
+            Texture resolution future shadow maps will be rendered at.
+            Clamped to <code>[64, 8192]</code> and rounded to the next
+            power of two. Today the value also drives the strength of
+            the stylized shadow floor in the default shader (higher =
+            more contrasty receive-shadow darkening). Default
+            <code>1024</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.GetShadowMapQuality()</span>
+            <span class="member-type">→ number</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.SetShadowDistance(distance)</span>
+            <span class="tag tag-new">new in 1.2.1</span>
+        </div>
+        <p class="member-desc">
+            World-space radius (from the camera) beyond which the
+            shadow term fades back to the regular half-Lambert. Set to
+            <code>0</code> to disable distance fade. Default
+            <code>80</code>. Surfaced as
+            <code>F.shadow_distance</code> in user shaders.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.GetShadowDistance()</span>
+            <span class="member-type">→ number</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.SetShadowBias(bias)</span>
+            <span class="tag tag-new">new in 1.2.1</span>
+        </div>
+        <p class="member-desc">
+            Depth comparison bias for future shadow-map sampling.
+            Stored in the GPU module state and forwarded to the Frame
+            uniform so user shaders can read it now. Default
+            <code>0.0015</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.GetShadowBias()</span>
+            <span class="member-type">→ number</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.SetShadowPCF(taps)</span>
+            <span class="tag tag-new">new in 1.2.1</span>
+        </div>
+        <p class="member-desc">
+            Percentage-Closer-Filtering tap count, clamped to
+            <code>[1, 9]</code>. <code>1</code> is hard shadows;
+            <code>3</code> / <code>5</code> / <code>9</code> are
+            progressively softer. Today this widens the smoothstep
+            band of the default shader's stylized terminator; once
+            real depth-map sampling lands the same value will drive
+            the actual PCF kernel. Default <code>1</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GPU.GetShadowPCF()</span>
+            <span class="member-type">→ number</span>
+        </div>
+    </div>
+</div>
+
 <h2 id="gpu-buffer">GPUBuffer</h2>
 
 <p>Returned by <code>GPU.NewBuffer</code>.</p>
