@@ -899,7 +899,7 @@ pub fn post_effect_snapshot() -> Option<Arc<SceneShaderState>> {
     POST_EFFECT.with(|c| c.borrow().as_ref().cloned())
 }
 
-fn build_scene_shader(asset: &AnyUserData) -> mlua::Result<Arc<SceneShaderState>> {
+pub fn build_scene_shader(asset: &AnyUserData) -> mlua::Result<Arc<SceneShaderState>> {
     let (id, code) = if let Ok(s) = asset.borrow::<ShaderAsset>() {
         (s.id, s.code.clone())
     } else if let Ok(f) = asset.borrow::<FragmentAsset>() {
@@ -922,8 +922,8 @@ fn build_scene_shader(asset: &AnyUserData) -> mlua::Result<Arc<SceneShaderState>
 }
 
 pub struct SceneShader {
-    slot: SceneSlot,
-    state: Arc<SceneShaderState>,
+    pub slot: SceneSlot,
+    pub state: Arc<SceneShaderState>,
 }
 
 impl SceneShader {
@@ -972,10 +972,17 @@ impl UserData for SceneShader {
     }
 }
 
-fn install_scene_shader(slot: SceneSlot, state: Arc<SceneShaderState>) {
+pub fn install_scene_shader(slot: SceneSlot, state: Arc<SceneShaderState>) {
     match slot {
         SceneSlot::Skybox => SKYBOX.with(|c| *c.borrow_mut() = Some(state)),
         SceneSlot::PostEffect => POST_EFFECT.with(|c| *c.borrow_mut() = Some(state)),
+    }
+}
+
+pub fn clear_scene_shader(slot: SceneSlot) {
+    match slot {
+        SceneSlot::Skybox => SKYBOX.with(|c| *c.borrow_mut() = None),
+        SceneSlot::PostEffect => POST_EFFECT.with(|c| *c.borrow_mut() = None),
     }
 }
 
@@ -1050,43 +1057,6 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 lua.create_userdata(crate::libs::drawable::CanvasBufferHandle { inner: state })
             },
         )?,
-    )?;
-
-    t.set(
-        "SetSkybox",
-        lua.create_function(|_, asset: AnyUserData| -> mlua::Result<SceneShader> {
-            let state = build_scene_shader(&asset)?;
-            install_scene_shader(SceneSlot::Skybox, state.clone());
-            Ok(SceneShader {
-                slot: SceneSlot::Skybox,
-                state,
-            })
-        })?,
-    )?;
-    t.set(
-        "ClearSkybox",
-        lua.create_function(|_, _: ()| -> mlua::Result<()> {
-            SKYBOX.with(|c| *c.borrow_mut() = None);
-            Ok(())
-        })?,
-    )?;
-    t.set(
-        "SetPostEffect",
-        lua.create_function(|_, asset: AnyUserData| -> mlua::Result<SceneShader> {
-            let state = build_scene_shader(&asset)?;
-            install_scene_shader(SceneSlot::PostEffect, state.clone());
-            Ok(SceneShader {
-                slot: SceneSlot::PostEffect,
-                state,
-            })
-        })?,
-    )?;
-    t.set(
-        "ClearPostEffect",
-        lua.create_function(|_, _: ()| -> mlua::Result<()> {
-            POST_EFFECT.with(|c| *c.borrow_mut() = None);
-            Ok(())
-        })?,
     )?;
 
     Ok(t)

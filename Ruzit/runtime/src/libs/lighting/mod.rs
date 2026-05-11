@@ -113,6 +113,52 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         })?,
     )?;
     t.set(
+        "SetSkybox",
+        lua.create_function(
+            |_, asset: AnyUserData| -> mlua::Result<crate::libs::gui::SceneShader> {
+                let state = crate::libs::gui::build_scene_shader(&asset)?;
+                crate::libs::gui::install_scene_shader(
+                    crate::libs::gui::SceneSlot::Skybox,
+                    state.clone(),
+                );
+                Ok(crate::libs::gui::SceneShader {
+                    slot: crate::libs::gui::SceneSlot::Skybox,
+                    state,
+                })
+            },
+        )?,
+    )?;
+    t.set(
+        "ClearSkybox",
+        lua.create_function(|_, _: ()| -> mlua::Result<()> {
+            crate::libs::gui::clear_scene_shader(crate::libs::gui::SceneSlot::Skybox);
+            Ok(())
+        })?,
+    )?;
+    t.set(
+        "SetPostEffect",
+        lua.create_function(
+            |_, asset: AnyUserData| -> mlua::Result<crate::libs::gui::SceneShader> {
+                let state = crate::libs::gui::build_scene_shader(&asset)?;
+                crate::libs::gui::install_scene_shader(
+                    crate::libs::gui::SceneSlot::PostEffect,
+                    state.clone(),
+                );
+                Ok(crate::libs::gui::SceneShader {
+                    slot: crate::libs::gui::SceneSlot::PostEffect,
+                    state,
+                })
+            },
+        )?,
+    )?;
+    t.set(
+        "ClearPostEffect",
+        lua.create_function(|_, _: ()| -> mlua::Result<()> {
+            crate::libs::gui::clear_scene_shader(crate::libs::gui::SceneSlot::PostEffect);
+            Ok(())
+        })?,
+    )?;
+    t.set(
         "GenerateLightSource",
         lua.create_function(lights::generate_light_source)?,
     )?;

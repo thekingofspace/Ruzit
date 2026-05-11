@@ -1800,6 +1800,9 @@ export type GUI_API = {
 	-- when you're rebuilding a complex sprite, you stage into the
 	-- buffer, then commit in one shot.
 	CanvasBuffer: (width: number, height: number) -> CanvasBuffer,
+}
+
+type _GuiLegacyMoved_ = {
 
 	-- ── Skybox ────────────────────────────────────────────────────────
 	-- Install a fragment shader that runs across the whole window before
@@ -2051,6 +2054,25 @@ export type LightingService_API = {
 	RemoveObject: (self: LightingService_API, part: BasePart) -> (),
 	-- Whether the part is currently in engine-managed lighting.
 	IsObjectManaged: (self: LightingService_API, part: BasePart) -> boolean,
+	-- ── Skybox ─────────────────────────────────────────────────────────
+	-- Install a fragment shader that runs across the whole window before
+	-- the 3D scene draws. Replaces the flat clear color with whatever the
+	-- shader produces (gradient sky, procedural stars, animated clouds,
+	-- screenspace ray-march, etc.). The 3D scene draws on top of it.
+	-- Returns a SceneShader you keep a reference to so you can update
+	-- params at runtime. Calling ClearSkybox or letting the handle drop
+	-- both remove the skybox.
+	SetSkybox: (asset: ShaderAsset | FragmentAsset) -> SceneShader,
+	-- Remove the active skybox; reverts to the flat clear color.
+	ClearSkybox: () -> (),
+	-- ── Post-processing ────────────────────────────────────────────────
+	-- Install a fragment shader that runs ONCE per frame as the final
+	-- pass. The composited scene is bound as IMG; sample via
+	-- textureSample(IMG, IMG_SAMP, in.uv). Used for color grading,
+	-- vignette, CRT, bloom, etc.
+	SetPostEffect: (asset: ShaderAsset | FragmentAsset) -> SceneShader,
+	-- Remove the active post effect.
+	ClearPostEffect: () -> (),
 	-- Spawn a new LightSource and add it to the active light registry.
 	-- `kind` is "PointLight" or "Spotlight". `opts` is a table of
 	-- LightSourceOptions. The returned LightSource is mutable —
@@ -3263,6 +3285,43 @@ export type GPU_API = {
 	-- the zone is fully inside a large part. Optional filter callback,
 	-- same shape as the other Overlap queries.
 	GetItemsInZone: (cframe: CFrame, size: Vector, filter: ((BasePart) -> boolean)?) -> { BasePart },
+	-- ── Shadow configuration ─────────────────────────────────────────
+	-- The default 3D shader reads these values from the Frame uniform
+	-- and adjusts its terminator + receive-shadow behavior. With
+	-- shadows enabled, the lambert term becomes a smoothstep at the
+	-- light terminator (sharper, more "shadowy" look), receivers get a
+	-- darker self-shadow floor proportional to MapQuality, the PCF
+	-- knob widens the smoothstep band to simulate softness, and
+	-- ShadowDistance fades shadow term into the default half-Lambert
+	-- past that distance.
+	--
+	-- Real depth-map sampling (per-light render passes, comparison
+	-- samplers, cascade splits) is scaffolded for a future pass — this
+	-- API ships now so games can author their lighting against it
+	-- already.
+	SetShadowsEnabled: (on: boolean) -> (),
+	GetShadowsEnabled: () -> boolean,
+	-- Texture resolution that future shadow maps will be rendered at.
+	-- Clamped to [64, 8192] and rounded to the next power of two.
+	-- Today the value also affects the stylized shadow term in the
+	-- default shader (higher = more contrasty receive-shadow floor).
+	-- Default 1024.
+	SetShadowMapQuality: (size: number) -> (),
+	GetShadowMapQuality: () -> number,
+	-- World-space radius (from the camera) beyond which the shadow
+	-- term is faded out and replaced by the regular half-Lambert. Set
+	-- to 0 to disable distance fade. Default 80.
+	SetShadowDistance: (distance: number) -> (),
+	GetShadowDistance: () -> number,
+	-- Depth comparison bias for future shadow-map sampling. Already
+	-- packed into the Frame uniform so user shaders can read it.
+	SetShadowBias: (bias: number) -> (),
+	GetShadowBias: () -> number,
+	-- PCF (Percentage Closer Filtering) tap count. 1 = hard shadows,
+	-- 3 / 5 / 9 = progressively softer. Today the value drives the
+	-- softness of the default shader's stylized terminator.
+	SetShadowPCF: (taps: number) -> (),
+	GetShadowPCF: () -> number,
 }
 
 declare class GPUBuffer

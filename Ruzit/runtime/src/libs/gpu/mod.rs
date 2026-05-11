@@ -27,6 +27,41 @@ pub fn current_storage_version() -> u64 {
     STORAGE_VERSION.load(AtomicOrdering::SeqCst)
 }
 
+pub struct ShadowConfig {
+    pub enabled: bool,
+    pub quality: u32,
+    pub distance: f32,
+    pub bias: f32,
+    pub pcf: u32,
+}
+
+static SHADOW_CONFIG: Mutex<ShadowConfig> = Mutex::new(ShadowConfig {
+    enabled: false,
+    quality: 1024,
+    distance: 80.0,
+    bias: 0.0015,
+    pcf: 1,
+});
+static SHADOW_VERSION: AtomicU64 = AtomicU64::new(0);
+
+pub fn shadow_config() -> ShadowConfig {
+    let c = SHADOW_CONFIG.lock().unwrap();
+    ShadowConfig {
+        enabled: c.enabled,
+        quality: c.quality,
+        distance: c.distance,
+        bias: c.bias,
+        pcf: c.pcf,
+    }
+}
+pub fn shadow_config_version() -> u64 {
+    SHADOW_VERSION.load(AtomicOrdering::SeqCst)
+}
+
+fn bump_shadow_version() {
+    SHADOW_VERSION.fetch_add(1, AtomicOrdering::SeqCst);
+}
+
 struct FrameTracker {
     last_tick: Option<Instant>,
     smoothed_dt: f32,
@@ -75,6 +110,79 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     t.set("OverlapBox", lua.create_function(overlap_box)?)?;
     t.set("OverlapFrustum", lua.create_function(overlap_frustum)?)?;
     t.set("GetItemsInZone", lua.create_function(get_items_in_zone)?)?;
+    t.set(
+        "SetShadowsEnabled",
+        lua.create_function(|_, on: bool| -> mlua::Result<()> {
+            SHADOW_CONFIG.lock().unwrap().enabled = on;
+            bump_shadow_version();
+            Ok(())
+        })?,
+    )?;
+    t.set(
+        "GetShadowsEnabled",
+        lua.create_function(|_, _: ()| -> mlua::Result<bool> {
+            Ok(SHADOW_CONFIG.lock().unwrap().enabled)
+        })?,
+    )?;
+    t.set(
+        "SetShadowMapQuality",
+        lua.create_function(|_, size: i64| -> mlua::Result<()> {
+            let clamped = size.clamp(64, 8192) as u32;
+            let pow2 = clamped.next_power_of_two();
+            SHADOW_CONFIG.lock().unwrap().quality = pow2;
+            bump_shadow_version();
+            Ok(())
+        })?,
+    )?;
+    t.set(
+        "GetShadowMapQuality",
+        lua.create_function(|_, _: ()| -> mlua::Result<i64> {
+            Ok(SHADOW_CONFIG.lock().unwrap().quality as i64)
+        })?,
+    )?;
+    t.set(
+        "SetShadowDistance",
+        lua.create_function(|_, d: f32| -> mlua::Result<()> {
+            SHADOW_CONFIG.lock().unwrap().distance = d.max(0.0);
+            bump_shadow_version();
+            Ok(())
+        })?,
+    )?;
+    t.set(
+        "GetShadowDistance",
+        lua.create_function(|_, _: ()| -> mlua::Result<f32> {
+            Ok(SHADOW_CONFIG.lock().unwrap().distance)
+        })?,
+    )?;
+    t.set(
+        "SetShadowBias",
+        lua.create_function(|_, b: f32| -> mlua::Result<()> {
+            SHADOW_CONFIG.lock().unwrap().bias = b.max(0.0);
+            bump_shadow_version();
+            Ok(())
+        })?,
+    )?;
+    t.set(
+        "GetShadowBias",
+        lua.create_function(|_, _: ()| -> mlua::Result<f32> {
+            Ok(SHADOW_CONFIG.lock().unwrap().bias)
+        })?,
+    )?;
+    t.set(
+        "SetShadowPCF",
+        lua.create_function(|_, taps: i64| -> mlua::Result<()> {
+            let v = taps.clamp(1, 9) as u32;
+            SHADOW_CONFIG.lock().unwrap().pcf = v;
+            bump_shadow_version();
+            Ok(())
+        })?,
+    )?;
+    t.set(
+        "GetShadowPCF",
+        lua.create_function(|_, _: ()| -> mlua::Result<i64> {
+            Ok(SHADOW_CONFIG.lock().unwrap().pcf as i64)
+        })?,
+    )?;
     t.set(
         "SetMaxFrameRate",
         lua.create_function(|_, fps: Option<f64>| -> mlua::Result<()> {

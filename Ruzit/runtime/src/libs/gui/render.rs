@@ -1372,11 +1372,23 @@ impl GpuState {
                 lighting.sun_color.g,
                 lighting.sun_color.b,
             ],
-            _pad0: 0.0,
+            shadow_enabled: {
+                let cfg = crate::libs::gpu::shadow_config();
+                if cfg.enabled { 1.0 } else { 0.0 }
+            },
             ambient: [lighting.ambient.r, lighting.ambient.g, lighting.ambient.b],
-            _pad1: 0.0,
+            shadow_strength: {
+                let cfg = crate::libs::gpu::shadow_config();
+                if cfg.enabled { (cfg.quality as f32 / 4096.0).clamp(0.3, 0.85) } else { 0.0 }
+            },
             viewport: [self.size.0 as f32, self.size.1 as f32],
-            _pad2: [0.0, 0.0],
+            shadow_softness: {
+                let cfg = crate::libs::gpu::shadow_config();
+                let base = 0.05_f32;
+                let pcf = (cfg.pcf as f32 - 1.0).max(0.0);
+                base * (1.0 + pcf * 0.8)
+            },
+            shadow_distance: crate::libs::gpu::shadow_config().distance.max(0.0),
         };
         self.queue
             .write_buffer(&self.frame_uniform, 0, bytemuck::bytes_of(&frame));

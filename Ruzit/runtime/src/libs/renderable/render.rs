@@ -9,11 +9,12 @@ pub struct FrameUniform3D {
     pub camera_pos: [f32; 3],
     pub frame_index: u32,
     pub sun_color: [f32; 3],
-    pub _pad0: f32,
+    pub shadow_enabled: f32,
     pub ambient: [f32; 3],
-    pub _pad1: f32,
+    pub shadow_strength: f32,
     pub viewport: [f32; 2],
-    pub _pad2: [f32; 2],
+    pub shadow_softness: f32,
+    pub shadow_distance: f32,
 }
 
 #[repr(C)]
@@ -72,11 +73,12 @@ struct Frame {
     camera_pos: vec3<f32>,
     frame_index: u32,
     sun_color: vec3<f32>,
-    _pad0: f32,
+    shadow_enabled: f32,
     ambient: vec3<f32>,
-    _pad1: f32,
+    shadow_strength: f32,
     viewport: vec2<f32>,
-    _pad2: vec2<f32>,
+    shadow_softness: f32,
+    shadow_distance: f32,
 };
 
 struct Instance {
@@ -182,11 +184,12 @@ struct Frame {
     camera_pos: vec3<f32>,
     frame_index: u32,
     sun_color: vec3<f32>,
-    _pad0: f32,
+    shadow_enabled: f32,
     ambient: vec3<f32>,
-    _pad1: f32,
+    shadow_strength: f32,
     viewport: vec2<f32>,
-    _pad2: vec2<f32>,
+    shadow_softness: f32,
+    shadow_distance: f32,
 };
 
 struct Instance {
@@ -238,9 +241,36 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         return vec4<f32>(base, I.color.a);
     }
     let n = normalize(in.world_normal);
-    let nl = dot(n, -F.light_dir);
-    let lambert = nl * 0.5 + 0.5;
-    let lit_amt = F.ambient + F.sun_color * lambert;
+    let raw = dot(n, -F.light_dir);
+
+    let shadows_on = F.shadow_enabled > 0.5;
+    let receive = I.receive_shadow != 0u;
+    let cast_self = I.cast_shadow != 0u;
+
+    var shading: f32;
+    if (shadows_on) {
+        let strength = clamp(F.shadow_strength, 0.0, 1.0);
+        let softness = max(F.shadow_softness, 0.0001);
+        let lit = smoothstep(-softness, softness, raw);
+        let floor_term = mix(1.0, 1.0 - strength, select(0.0, 1.0, receive));
+        shading = mix(floor_term, 1.0, lit);
+        if (cast_self) {
+            let back = clamp(-raw, 0.0, 1.0);
+            shading = shading * (1.0 - back * strength * 0.5);
+        }
+    } else {
+        shading = raw * 0.5 + 0.5;
+    }
+
+    let dist_falloff = select(
+        1.0,
+        smoothstep(F.shadow_distance, F.shadow_distance * 0.5,
+            distance(in.world_pos, F.camera_pos)),
+        shadows_on && F.shadow_distance > 0.0,
+    );
+    let attenuated = mix(raw * 0.5 + 0.5, shading, dist_falloff);
+
+    let lit_amt = F.ambient + F.sun_color * attenuated;
     return vec4<f32>(base * lit_amt, I.color.a);
 }
 "#;
