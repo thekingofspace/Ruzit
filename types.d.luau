@@ -3838,6 +3838,12 @@ export type PhysicsPlaneOptions = {
 	-- and higher to "they float up"). Negative values pull down harder
 	-- than gravity. Default 0.0 (off).
 	Buoyancy: number?,
+	-- Constant world-space force applied to every non-anchored body in
+	-- the plane each tick, on top of gravity / drag / buoyancy. Units
+	-- are force (mass·units/sec²), so a heavier body accelerates less
+	-- from the same value. Useful for global wind, conveyor pushes,
+	-- magnetic fields, etc. Defaults to Vector(0, 0, 0).
+	ConstantForce: Vector?,
 	-- Velocity-along-collision-normal threshold below which a colliding
 	-- object's normal-axis velocity snaps to zero instead of bouncing.
 	-- Default 0.5 (units/sec). This is what makes piles actually settle:
@@ -3907,6 +3913,14 @@ declare class PhysicsObject
 	-- Persistent per-tick acceleration applied on top of the plane's gravity.
 	-- Useful for thrusters / wind / steady-state forces. Set to zero to clear.
 	ImpulseDirection: Vector
+	-- World-space force applied just to this object each tick, on top of
+	-- the plane's ConstantForce and the object's ImpulseDirection. Where
+	-- `ImpulseDirection` is per-tick acceleration (mass-independent),
+	-- `ConstantForce` is a true force, so a heavier object accelerates
+	-- less from the same value. Useful for per-object wind catch (a
+	-- sail-shaped part with stronger pull than a rock), thruster jets,
+	-- magnetic pulls on a single body. Defaults to Vector(0, 0, 0).
+	ConstantForce: Vector
 	-- Total mass (kg). Drives `:ApplyImpulse` (heavier = smaller velocity
 	-- change for the same impulse). When set, the simulator picks a
 	-- collider density of `Weight ÷ volume`.
@@ -4036,6 +4050,11 @@ declare class PhysicsPlane
 	Drag: number
 	-- Constant upward acceleration term. See PhysicsPlaneOptions.Buoyancy.
 	Buoyancy: number
+	-- World-space force applied to every non-anchored body in this plane
+	-- each tick. See PhysicsPlaneOptions.ConstantForce. Writable, live;
+	-- e.g. ramp this from `Vector(0, 0, 0)` to `Vector(15, 0, 0)` over a
+	-- few seconds to "turn on the wind".
+	ConstantForce: Vector
 	-- Velocity threshold below which a colliding normal-axis velocity is
 	-- snapped to zero instead of bouncing. Required for stable piles.
 	RestThreshold: number

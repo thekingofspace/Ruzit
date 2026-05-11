@@ -35,6 +35,7 @@ pub struct PlaneState {
     pub angular_damping: f32,
     pub drag: f32,
     pub buoyancy: f32,
+    pub constant_force: Vector,
     pub rest_threshold: f32,
     pub solver_iterations: u32,
     pub loop_solver: bool,
@@ -86,6 +87,7 @@ pub struct ObjectState {
     pub rotation: Vector,
     pub angular_velocity: Vector,
     pub impulse_direction: Vector,
+    pub constant_force: Vector,
     pub mass: f32,
     pub bounciness: f32,
     pub friction: f32,
@@ -115,6 +117,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
             let mut angular_damping: f32 = 0.30;
             let mut drag: f32 = 0.0;
             let mut buoyancy: f32 = 0.0;
+            let mut constant_force: Vector = Vector::new(0.0, 0.0, 0.0);
             let mut rest_threshold: f32 = 0.5;
             let mut solver_iterations: u32 = 4;
             let mut loop_solver: bool = false;
@@ -138,6 +141,9 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 }
                 if let Ok(v) = opts.get::<f32>("Buoyancy") {
                     buoyancy = v;
+                }
+                if let Ok(v) = opts.get::<Vector>("ConstantForce") {
+                    constant_force = v;
                 }
                 if let Ok(v) = opts.get::<f32>("RestThreshold") {
                     rest_threshold = v.max(0.0);
@@ -178,6 +184,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 angular_damping,
                 drag,
                 buoyancy,
+                constant_force,
                 rest_threshold,
                 solver_iterations,
                 loop_solver,
@@ -308,6 +315,7 @@ fn step_plane(plane_arc: &Arc<Mutex<PlaneState>>, dt: f32) {
     let lin_damp = plane.linear_damping;
     let ang_damp = plane.angular_damping;
     let drag_coef = plane.drag;
+    let plane_force = plane.constant_force;
     let buoyancy = plane.buoyancy;
     let never_sleep = plane.never_sleep;
     let base_solver = if plane.loop_solver {
@@ -352,7 +360,7 @@ fn step_plane(plane_arc: &Arc<Mutex<PlaneState>>, dt: f32) {
                 Some(o) => o,
                 None => continue,
             };
-            sync_obj_to_rapier(obj, rapier, lin_damp, ang_damp, drag_coef, buoyancy, never_sleep);
+            sync_obj_to_rapier(obj, rapier, lin_damp, ang_damp, drag_coef, buoyancy, plane_force, never_sleep);
         }
 
         let gravity = NaVec3::new(plane_gravity.x, plane_gravity.y, plane_gravity.z);
@@ -396,6 +404,7 @@ fn sync_obj_to_rapier(
     ang_damp: f32,
     drag: f32,
     buoyancy: f32,
+    plane_force: Vector,
     never_sleep: bool,
 ) {
     let half = NaVec3::new(
@@ -605,6 +614,14 @@ fn sync_obj_to_rapier(
         fy += buoyancy * mass_now;
     }
 
+    fx += plane_force.x;
+    fy += plane_force.y;
+    fz += plane_force.z;
+
+    fx += obj.constant_force.x;
+    fy += obj.constant_force.y;
+    fz += obj.constant_force.z;
+
     let force = NaVec3::new(fx, fy, fz);
     body.reset_forces(true);
     body.add_force(force, true);
@@ -697,6 +714,14 @@ impl UserData for PlaneHandle {
             this.state.lock().unwrap().buoyancy = v;
             Ok(())
         });
+        f.add_field_method_get("ConstantForce", |_, this| {
+            Ok(this.state.lock().unwrap().constant_force)
+        });
+        f.add_field_method_set("ConstantForce", |_, this, v: Vector| {
+            this.ensure_alive("set ConstantForce")?;
+            this.state.lock().unwrap().constant_force = v;
+            Ok(())
+        });
         f.add_field_method_get("RestThreshold", |_, this| {
             Ok(this.state.lock().unwrap().rest_threshold)
         });
@@ -783,6 +808,7 @@ impl UserData for PlaneHandle {
                 rotation: initial_rot,
                 angular_velocity: Vector::new(0.0, 0.0, 0.0),
                 impulse_direction: Vector::new(0.0, 0.0, 0.0),
+                constant_force: Vector::new(0.0, 0.0, 0.0),
                 mass: 1.0,
                 bounciness: 0.0,
                 friction: 0.5,
@@ -923,6 +949,13 @@ impl UserData for ObjectHandle {
         });
         f.add_field_method_set("ImpulseDirection", |_, this, v: Vector| {
             this.with_obj_mut("set ImpulseDirection", |o| o.impulse_direction = v)
+        });
+
+        f.add_field_method_get("ConstantForce", |_, this| {
+            this.with_obj("get ConstantForce", |o| o.constant_force)
+        });
+        f.add_field_method_set("ConstantForce", |_, this, v: Vector| {
+            this.with_obj_mut("set ConstantForce", |o| o.constant_force = v)
         });
 
         f.add_field_method_get("Weight", |_, this| this.with_obj("get Weight", |o| o.mass));

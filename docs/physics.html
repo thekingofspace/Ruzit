@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PhysicsService - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.1">
-    <script src="theme.js?v=1.2.1"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.2">
+    <script src="theme.js?v=1.2.2"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.1" defer></script>
+<script src="sidebar.js?v=1.2.2" defer></script>
 
 <main>
 
@@ -99,6 +99,15 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
                 "weighed-down sinking"; higher and things rise).
                 Negative values pull down harder than gravity. Default
                 <code>0.0</code>.</li>
+            <li><code>ConstantForce</code> &mdash; <code>Vector</code>,
+                world-space force applied to every non-anchored body in
+                the plane each tick on top of gravity / drag /
+                buoyancy. <em>Force, not acceleration</em> &mdash; a
+                heavier body accelerates less from the same value, so
+                a feather drifts in wind that a boulder shrugs off.
+                Perfect for global wind, conveyor pushes, magnetic
+                fields, etc. Default <code>Vector(0, 0, 0)</code>.
+                Tween between values to ramp wind in and out.</li>
             <li><code>RestThreshold</code> &mdash; velocity-along-collision-normal
                 threshold below which a colliding object's normal-axis
                 velocity is set to zero instead of being reflected by
@@ -250,6 +259,23 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
             body each tick. Positive values float bodies up, negative
             pulls them down faster than gravity, <code>0</code>
             disables. Default <code>0.0</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.ConstantForce</span>
+            <span class="member-type">Vector</span>
+            <span class="tag tag-new">new in 1.2.2</span>
+        </div>
+        <p class="member-desc">
+            World-space force applied to every non-anchored body in the
+            plane each tick, on top of gravity / drag / buoyancy. Force
+            (not acceleration), so heavier bodies feel less of it.
+            Useful for global wind, conveyor pushes, magnetic fields.
+            Default <code>Vector(0, 0, 0)</code>. Live-editable, so you
+            can tween or animate it directly &mdash; ramp from zero to
+            <code>Vector(15, 0, 0)</code> over a few seconds for a
+            "wind kicks up" beat.
         </p>
     </div>
     <div class="member">
@@ -464,6 +490,24 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
             Persistent per-tick acceleration applied on top of the
             plane's gravity. Useful for thrusters, wind, or steady-state
             forces. Set to zero to clear.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.ConstantForce</span>
+            <span class="member-type">Vector</span>
+            <span class="tag tag-new">new in 1.2.2</span>
+        </div>
+        <p class="member-desc">
+            World-space force applied just to this object each tick, on
+            top of the plane's <code>ConstantForce</code> and the
+            object's <code>ImpulseDirection</code>. Where
+            <code>ImpulseDirection</code> is per-tick acceleration
+            (mass-independent), <code>ConstantForce</code> is a true
+            force, so a heavier object accelerates less from the same
+            value. Use for per-object wind catch (a sail catches more
+            than a brick), thruster jets, magnetic pull on a single
+            body. Default <code>Vector(0, 0, 0)</code>.
         </p>
     </div>
     <div class="member">
