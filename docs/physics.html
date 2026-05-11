@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PhysicsService - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.1.3">
-    <script src="theme.js?v=1.1.3"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.0">
+    <script src="theme.js?v=1.2.0"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.1.3" defer></script>
+<script src="sidebar.js?v=1.2.0" defer></script>
 
 <main>
 
@@ -80,6 +80,25 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
                 rotation. Default <code>0.30</code> &mdash; kills
                 tumbling fairly quickly so visually a stacked pile
                 doesn't look like it's vibrating.</li>
+            <li><code>Drag</code> &mdash; <em>quadratic</em> drag
+                coefficient. Each tick, every non-anchored body has
+                <code>F = -Drag * |v| * v</code> applied as an extra
+                force on top of the normal integration. Unlike
+                <code>LinearDamping</code> (which scales with v),
+                quadratic drag scales with v² so at low speed it barely
+                matters but at high speed it dominates. Perfect for the
+                "feels like underwater" pitch: small impulses barely
+                move, big shoves still travel a long way, things never
+                quite stop the way they do in air. Default <code>0.0</code>.
+                Reasonable underwater values are around
+                <code>1.0</code>–<code>4.0</code>.</li>
+            <li><code>Buoyancy</code> &mdash; constant upward
+                acceleration applied per non-anchored body each tick.
+                Positive values counteract gravity (set to about
+                <code>-Gravity.Y</code> for neutral float; lower for
+                "weighed-down sinking"; higher and things rise).
+                Negative values pull down harder than gravity. Default
+                <code>0.0</code>.</li>
             <li><code>RestThreshold</code> &mdash; velocity-along-collision-normal
                 threshold below which a colliding object's normal-axis
                 velocity is set to zero instead of being reflected by
@@ -204,6 +223,33 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
             Same idea for angular velocity. Default <code>0.30</code>.
             Mostly affects how quickly tumbling parts come to a still
             orientation when they're sitting on something.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.Drag</span>
+            <span class="member-type">number</span>
+            <span class="tag tag-new">new in 1.2</span>
+        </div>
+        <p class="member-desc">
+            Quadratic drag coefficient applied as an extra per-body
+            force <code>F = -Drag * |v| * v</code> each tick. Stacks on
+            top of <code>LinearDamping</code>. Default <code>0.0</code>.
+            Bump to <code>1.0</code>–<code>4.0</code> for underwater
+            feel.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.Buoyancy</span>
+            <span class="member-type">number</span>
+            <span class="tag tag-new">new in 1.2</span>
+        </div>
+        <p class="member-desc">
+            Constant upward acceleration term applied per non-anchored
+            body each tick. Positive values float bodies up, negative
+            pulls them down faster than gravity, <code>0</code>
+            disables. Default <code>0.0</code>.
         </p>
     </div>
     <div class="member">

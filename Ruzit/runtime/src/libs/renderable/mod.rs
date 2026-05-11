@@ -83,6 +83,7 @@ pub struct PartState {
     pub cast_shadow: bool,
     pub receive_shadow: bool,
     pub ignore_raycast: bool,
+    pub lit: bool,
 
     pub tracks: Vec<TrackRef>,
 
@@ -334,6 +335,27 @@ impl Default for LightingState {
     }
 }
 
+pub fn set_sun(direction: Vector, color: Option<Color3>) {
+    LIGHTING.with(|cell| {
+        let mut s = cell.borrow_mut();
+        s.sun_direction = direction;
+        if let Some(c) = color {
+            s.sun_color = c;
+        }
+    });
+    bump_lighting_dirty();
+}
+
+pub fn set_sun_color(color: Color3) {
+    LIGHTING.with(|cell| cell.borrow_mut().sun_color = color);
+    bump_lighting_dirty();
+}
+
+pub fn set_ambient(color: Color3) {
+    LIGHTING.with(|cell| cell.borrow_mut().ambient = color);
+    bump_lighting_dirty();
+}
+
 pub fn lighting_snapshot() -> LightingState {
     let mut snap = LIGHTING.with(|c| *c.borrow());
     snap.frame_index = FRAME_INDEX.with(|f| {
@@ -444,6 +466,7 @@ pub struct PartRender {
     pub texture: Option<PartTextureRef>,
     pub cast_shadow: bool,
     pub receive_shadow: bool,
+    pub lit: bool,
 }
 
 thread_local! {
@@ -493,6 +516,7 @@ fn build_parts_snapshot() -> Vec<PartRender> {
                     texture: s.texture.clone(),
                     cast_shadow: s.cast_shadow,
                     receive_shadow: s.receive_shadow,
+                    lit: s.lit,
                 })
             })
             .collect()
@@ -537,6 +561,7 @@ impl PartHandle {
             cast_shadow: true,
             receive_shadow: true,
             ignore_raycast: false,
+            lit: false,
             tracks: Vec::new(),
             source_animations,
             physics_override: None,
@@ -897,6 +922,23 @@ impl UserData for PartHandle {
                 )
             };
             fire_changed(lua, sig, "IgnoreInRaycast")?;
+            fire_prop_changed(lua, prop_sig, Value::Boolean(value));
+            Ok(())
+        });
+
+        f.add_field_method_get("Lit", |_, this| Ok(this.state.lock().unwrap().lit));
+        f.add_field_method_set("Lit", |lua, this, value: bool| {
+            this.ensure_alive("set Lit")?;
+            let (sig, prop_sig) = {
+                let mut s = this.state.lock().unwrap();
+                s.lit = value;
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("Lit").cloned(),
+                )
+            };
+            bump_parts_dirty();
+            fire_changed(lua, sig, "Lit")?;
             fire_prop_changed(lua, prop_sig, Value::Boolean(value));
             Ok(())
         });
@@ -1715,56 +1757,6 @@ animations: ma.animations.clone(),
                 lua.create_userdata(new_asset)
             },
         )?,
-    )?;
-
-    t.set(
-        "SetSun",
-        lua.create_function(
-            |_, (d, color): (Vector, Option<AnyUserData>)| -> mlua::Result<()> {
-                let c = match color {
-                    Some(ud) => Some(*ud.borrow::<Color3>()?),
-                    None => None,
-                };
-                LIGHTING.with(|cell| {
-                    let mut s = cell.borrow_mut();
-                    s.sun_direction = d;
-                    if let Some(c) = c {
-                        s.sun_color = c;
-                    }
-                });
-                bump_lighting_dirty();
-                Ok(())
-            },
-        )?,
-    )?;
-    t.set(
-        "SetSunColor",
-        lua.create_function(|_, color: AnyUserData| -> mlua::Result<()> {
-            let c = *color.borrow::<Color3>()?;
-            LIGHTING.with(|cell| cell.borrow_mut().sun_color = c);
-            bump_lighting_dirty();
-            Ok(())
-        })?,
-    )?;
-    t.set(
-        "SetAmbient",
-        lua.create_function(|_, color: AnyUserData| -> mlua::Result<()> {
-            let c = *color.borrow::<Color3>()?;
-            LIGHTING.with(|cell| cell.borrow_mut().ambient = c);
-            bump_lighting_dirty();
-            Ok(())
-        })?,
-    )?;
-    t.set(
-        "GetLighting",
-        lua.create_function(|lua, _: ()| -> mlua::Result<Table> {
-            let snap = LIGHTING.with(|c| *c.borrow());
-            let out = lua.create_table()?;
-            out.set("SunDirection", snap.sun_direction)?;
-            out.set("SunColor", snap.sun_color)?;
-            out.set("Ambient", snap.ambient)?;
-            Ok(out)
-        })?,
     )?;
 
     Ok(t)

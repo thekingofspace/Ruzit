@@ -551,6 +551,15 @@ pub struct GPUBuffer {
     floats: usize,
 }
 
+impl GPUBuffer {
+    pub fn floats(&self) -> usize {
+        self.floats
+    }
+    pub fn raw(&self) -> &wgpu::Buffer {
+        &self.buffer
+    }
+}
+
 impl UserData for GPUBuffer {
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
         m.add_method("Size", |_, this, _: ()| Ok(this.floats as i64));

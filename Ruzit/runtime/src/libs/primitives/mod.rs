@@ -46,6 +46,26 @@ impl UserData for Dim {
             },
         );
 
+        m.add_method(
+            "Scale",
+            |_,
+             this,
+             (reference, target, maintain): (AnyUserData, AnyUserData, Option<bool>)|
+             -> mlua::Result<Dim> {
+                let r = *reference.borrow::<Dim>()?;
+                let t = *target.borrow::<Dim>()?;
+                let rx = if r.x.abs() > 1e-6 { t.x / r.x } else { 1.0 };
+                let ry = if r.y.abs() > 1e-6 { t.y / r.y } else { 1.0 };
+                let (sx, sy) = if maintain.unwrap_or(false) {
+                    let s = rx.min(ry);
+                    (s, s)
+                } else {
+                    (rx, ry)
+                };
+                Ok(Dim::new(this.x * sx, this.y * sy))
+            },
+        );
+
         m.add_meta_method("__tostring", |_, this, _: ()| {
             Ok(format!("Dim({}, {})", this.x, this.y))
         });

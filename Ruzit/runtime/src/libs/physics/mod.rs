@@ -33,6 +33,8 @@ pub struct PlaneState {
     pub pool: Option<Arc<ThreadPool>>,
     pub linear_damping: f32,
     pub angular_damping: f32,
+    pub drag: f32,
+    pub buoyancy: f32,
     pub rest_threshold: f32,
     pub solver_iterations: u32,
     pub loop_solver: bool,
@@ -111,6 +113,8 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
             let mut threads: usize = 1;
             let mut linear_damping: f32 = 0.10;
             let mut angular_damping: f32 = 0.30;
+            let mut drag: f32 = 0.0;
+            let mut buoyancy: f32 = 0.0;
             let mut rest_threshold: f32 = 0.5;
             let mut solver_iterations: u32 = 4;
             let mut loop_solver: bool = false;
@@ -128,6 +132,12 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 }
                 if let Ok(v) = opts.get::<f32>("AngularDamping") {
                     angular_damping = v.max(0.0);
+                }
+                if let Ok(v) = opts.get::<f32>("Drag") {
+                    drag = v.max(0.0);
+                }
+                if let Ok(v) = opts.get::<f32>("Buoyancy") {
+                    buoyancy = v;
                 }
                 if let Ok(v) = opts.get::<f32>("RestThreshold") {
                     rest_threshold = v.max(0.0);
@@ -166,6 +176,8 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 pool,
                 linear_damping,
                 angular_damping,
+                drag,
+                buoyancy,
                 rest_threshold,
                 solver_iterations,
                 loop_solver,
@@ -237,7 +249,6 @@ fn fire_prop_signals(lua: &Lua, plane_arc: &Arc<Mutex<PlaneState>>) {
     }
 }
 
-
 fn step_plane(plane_arc: &Arc<Mutex<PlaneState>>, dt: f32) {
     let mut plane = plane_arc.lock().unwrap();
     if !plane.alive || !plane.enabled {
@@ -296,6 +307,8 @@ fn step_plane(plane_arc: &Arc<Mutex<PlaneState>>, dt: f32) {
     let plane_gravity = plane.gravity;
     let lin_damp = plane.linear_damping;
     let ang_damp = plane.angular_damping;
+    let drag_coef = plane.drag;
+    let buoyancy = plane.buoyancy;
     let never_sleep = plane.never_sleep;
     let base_solver = if plane.loop_solver {
         64u32
@@ -339,7 +352,7 @@ fn step_plane(plane_arc: &Arc<Mutex<PlaneState>>, dt: f32) {
                 Some(o) => o,
                 None => continue,
             };
-            sync_obj_to_rapier(obj, rapier, lin_damp, ang_damp, never_sleep);
+            sync_obj_to_rapier(obj, rapier, lin_damp, ang_damp, drag_coef, buoyancy, never_sleep);
         }
 
         let gravity = NaVec3::new(plane_gravity.x, plane_gravity.y, plane_gravity.z);
@@ -381,6 +394,8 @@ fn sync_obj_to_rapier(
     rapier: &mut RapierPlane,
     lin_damp: f32,
     ang_damp: f32,
+    drag: f32,
+    buoyancy: f32,
     never_sleep: bool,
 ) {
     let half = NaVec3::new(
@@ -572,11 +587,25 @@ fn sync_obj_to_rapier(
     }
 
     let mass_now = body.mass().max(0.0001);
-    let force = NaVec3::new(
-        obj.impulse_direction.x * mass_now,
-        obj.impulse_direction.y * mass_now,
-        obj.impulse_direction.z * mass_now,
-    );
+    let mut fx = obj.impulse_direction.x * mass_now;
+    let mut fy = obj.impulse_direction.y * mass_now;
+    let mut fz = obj.impulse_direction.z * mass_now;
+
+    if drag > 0.0 {
+        let v = body.linvel();
+        let speed = (v.x * v.x + v.y * v.y + v.z * v.z).sqrt();
+        if speed > 1e-6 {
+            let k = drag * speed;
+            fx -= k * v.x;
+            fy -= k * v.y;
+            fz -= k * v.z;
+        }
+    }
+    if buoyancy != 0.0 {
+        fy += buoyancy * mass_now;
+    }
+
+    let force = NaVec3::new(fx, fy, fz);
     body.reset_forces(true);
     body.add_force(force, true);
 }
@@ -603,7 +632,6 @@ fn sync_rapier_to_obj(obj: &mut ObjectState, rapier: &RapierPlane) {
     let av = body.angvel();
     obj.angular_velocity = Vector::new(av.x, av.y, av.z);
 }
-
 
 pub struct PlaneHandle {
     pub state: Arc<Mutex<PlaneState>>,
@@ -655,6 +683,18 @@ impl UserData for PlaneHandle {
         f.add_field_method_set("AngularDamping", |_, this, v: f32| {
             this.ensure_alive("set AngularDamping")?;
             this.state.lock().unwrap().angular_damping = v.max(0.0);
+            Ok(())
+        });
+        f.add_field_method_get("Drag", |_, this| Ok(this.state.lock().unwrap().drag));
+        f.add_field_method_set("Drag", |_, this, v: f32| {
+            this.ensure_alive("set Drag")?;
+            this.state.lock().unwrap().drag = v.max(0.0);
+            Ok(())
+        });
+        f.add_field_method_get("Buoyancy", |_, this| Ok(this.state.lock().unwrap().buoyancy));
+        f.add_field_method_set("Buoyancy", |_, this, v: f32| {
+            this.ensure_alive("set Buoyancy")?;
+            this.state.lock().unwrap().buoyancy = v;
             Ok(())
         });
         f.add_field_method_get("RestThreshold", |_, this| {
@@ -817,7 +857,6 @@ fn rapier_drop_body(plane: &mut PlaneState, handle: Option<RigidBodyHandle>) {
         true,
     );
 }
-
 
 pub struct ObjectHandle {
     pub plane: Arc<Mutex<PlaneState>>,
@@ -1305,8 +1344,6 @@ fn collide(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     let half_a = abs(o.size) * 0.5;
     let inv_m_a = select(0.0, 1.0 / max(o.mass, 0.0001), !anchored_a);
-    // inv_i_a is gravity-alignment-dependent now, so it's computed
-    // inside the per-pair loop once we know the contact normal.
 
     for (var j: u32 = 0u; j < params.count; j = j + 1u) {
         if (j == idx) { continue; }
@@ -1386,7 +1423,6 @@ fn collide(@builtin(global_invocation_id) gid: vec3<u32>) {
         let dl = cross(r_a, impulse);
         o.omega = o.omega + dl * inv_i_a;
 
-        // Coulomb friction: tangent impulse, capped by mu * |j_n|.
         let mu = sqrt(max(o.friction, 0.0) * max(other.friction, 0.0));
         if (mu > 0.0) {
             let v_rel = (o.vel + cross(o.omega, r_a)) - (other.vel + cross(other.omega, r_b));

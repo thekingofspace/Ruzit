@@ -180,9 +180,6 @@ struct RuzitUni {
 
 @group(0) @binding(0) var<uniform> U: RuzitUni;
 
-// Linear-index getter for the params block. Hides the `vec4 → channel`
-// math so user shaders can write `let rate = p(0u);` after declaring
-// `// @ruzit param rate`.
 fn p(idx: u32) -> f32 {
     let v = U.params[idx >> 2u];
     let c = idx & 3u;
@@ -192,16 +189,9 @@ fn p(idx: u32) -> f32 {
     return v.w;
 }
 
-// IMG / IMG_SAMP are bound for every primitive. For shape primitives the
-// engine binds a 1×1 white texture so `textureSample(IMG, IMG_SAMP, uv)`
-// returns (1,1,1,1) — a no-op multiplier. For Shape::Image primitives this
-// is the actual asset, so user shaders can sample the image at `in.uv`.
 @group(0) @binding(1) var IMG: texture_2d<f32>;
 @group(0) @binding(2) var IMG_SAMP: sampler;
 
-// Built-in shape mask. Returns true if the pixel at `uv` ∈ [0,1]² lies inside
-// the primitive's geometry. Shape::Image (3) is a full quad — alpha clipping
-// is the texture's job.
 fn ruzit_inside_shape(uv: vec2<f32>, shape: u32) -> bool {
     if (shape == 0u) {
         return true;
@@ -217,8 +207,6 @@ fn ruzit_inside_shape(uv: vec2<f32>, shape: u32) -> bool {
     return true;
 }
 
-// Common helper for user shaders that want to honor the engine's
-// transparency value without re-implementing the alpha math.
 fn ruzit_apply_alpha(color: vec3<f32>) -> vec4<f32> {
     return vec4<f32>(color, U.color.a);
 }
@@ -244,7 +232,6 @@ struct RuzitUni {
 
 @vertex
 fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
-    // Two triangles forming a unit quad in [0,1]².
     var quad = array<vec2<f32>, 6>(
         vec2<f32>(0.0, 0.0),
         vec2<f32>(1.0, 0.0),
@@ -255,7 +242,6 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
     );
     let q = quad[vid];
     let world = U.pos + q * U.size;
-    // Pixel space (origin top-left, y down) → clip space.
     let x = (world.x / U.resolution.x) * 2.0 - 1.0;
     let y = 1.0 - (world.y / U.resolution.y) * 2.0;
     var out: VsOut;
@@ -296,7 +282,6 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
     let q = quad[vid];
     var out: VsOut;
     out.clip = vec4<f32>(q.x, q.y, 0.0, 1.0);
-    // Top-left origin, matches the primitive uv convention.
     out.uv = vec2<f32>((q.x + 1.0) * 0.5, 1.0 - (q.y + 1.0) * 0.5);
     return out;
 }
@@ -308,9 +293,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     if (!ruzit_inside_shape(in.uv, U.shape)) {
         discard;
     }
-    // Shape primitives bind a 1×1 white texture so `tex` is (1,1,1,1) and
-    // the result reduces to U.color. Image primitives bind the asset, so
-    // U.color acts as a tint + alpha multiplier.
     let tex = textureSample(IMG, IMG_SAMP, in.uv);
     return tex * U.color;
 }
@@ -1437,7 +1419,7 @@ impl GpuState {
                     flags: [
                         if part.cast_shadow { 1 } else { 0 },
                         if part.receive_shadow { 1 } else { 0 },
-                        0,
+                        if part.lit { 1 } else { 0 },
                         0,
                     ],
                 };

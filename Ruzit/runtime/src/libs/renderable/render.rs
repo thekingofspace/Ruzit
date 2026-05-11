@@ -83,10 +83,9 @@ struct Instance {
     model: mat4x4<f32>,
     color: vec4<f32>,
     params: array<vec4<f32>, 4>,
-    // Render-hint flags. Each is 0 or 1.
     cast_shadow: u32,
     receive_shadow: u32,
-    _flag2: u32,
+    lit: u32,
     _flag3: u32,
 };
 
@@ -95,18 +94,8 @@ struct Instance {
 @group(0) @binding(2) var IMG: texture_2d<f32>;
 @group(0) @binding(3) var IMG_SAMP: sampler;
 
-// Optional read-only storage buffer. The default binding is a 1-float
-// stub; populate via Lua's GPU.NewBuffer + GPU.SetBuffer to ship up to
-// max_storage_buffer_binding_size floats (typically >= 128 MB).
-// Useful for LUTs, particle data, custom per-vertex/per-instance lookups.
-//
-//     let r = SDATA[0u];
-//     let g = SDATA[1u];
-//     let b = SDATA[2u];
 @group(0) @binding(4) var<storage, read> SDATA: array<f32>;
 
-// Read one of your declared `// @ruzit param` floats (slot order = decl
-// order, 0-based, packed across the four vec4s of I.params).
 fn p(idx: u32) -> f32 {
     let v = I.params[idx >> 2u];
     let c = idx & 3u;
@@ -116,19 +105,10 @@ fn p(idx: u32) -> f32 {
     return v.w;
 }
 
-// ─── Engine-provided WGSL helpers (3D) ───────────────────────────────────
-// All available unconditionally — call from any user fragment shader.
-
-// View direction at a world-space point: normalized vector FROM the pixel
-// TOWARD the camera. Useful for fresnel + specular.
 fn view_dir(world_pos: vec3<f32>) -> vec3<f32> {
     return normalize(F.camera_pos - world_pos);
 }
 
-// Build a cheap orthonormal tangent frame from a world-space normal.
-// Returns mat3x3 with columns (T, B, N). Approximation — not derived from
-// UV partial derivatives, so it's stable across the surface but won't
-// align perfectly with a baked normal map. Plenty for stylized work.
 fn tangent_basis(n: vec3<f32>) -> mat3x3<f32> {
     let nn = normalize(n);
     var ref_axis = vec3<f32>(0.0, 1.0, 0.0);
@@ -138,20 +118,12 @@ fn tangent_basis(n: vec3<f32>) -> mat3x3<f32> {
     return mat3x3<f32>(t, b, nn);
 }
 
-// Schlick approximation of Fresnel reflectance. Pass cos_theta = dot(N, V)
-// (use max(dot(N, V), 0.0)) and the surface's reflectance at normal
-// incidence (F0). For dielectrics, F0 ≈ vec3(0.04); for metals it's the
-// metal's albedo.
 fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
     let m = clamp(1.0 - cos_theta, 0.0, 1.0);
     let m2 = m * m;
     return F0 + (vec3<f32>(1.0) - F0) * (m2 * m2 * m);
 }
 
-// Project a world-space point to 0..1 screen-space UV. Returns (uv, z)
-// where uv has top-left origin and z is the linear-ish view-space depth.
-// Useful for billboards, world-anchored UI overlays in fragment shaders,
-// or hand-rolled effects that need the screen position.
 fn to_screen_uv(world_pos: vec3<f32>) -> vec3<f32> {
     let clip = F.view_proj * vec4<f32>(world_pos, 1.0);
     if (clip.w <= 0.0) { return vec3<f32>(-1.0, -1.0, -1.0); }
@@ -160,17 +132,11 @@ fn to_screen_uv(world_pos: vec3<f32>) -> vec3<f32> {
     return vec3<f32>(uv, ndc.z);
 }
 
-// Convert a depth-buffer value (0..1, non-linear) to linear view-space
-// distance. Useful when sampling depth in a post-effect pass.
 fn linearize_depth(d: f32, near: f32, far: f32) -> f32 {
     let z = d * 2.0 - 1.0;
     return (2.0 * near * far) / (far + near - z * (far - near));
 }
 
-// sRGB ↔ linear. The swap-chain format is sRGB so the compositor handles
-// the gamma curve, but if you're authoring colors in linear space and
-// want to push them as sRGB (or vice-versa), these are the standard
-// approximations.
 fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
     let cutoff = step(c, vec3<f32>(0.04045));
     let lower = c / 12.92;
@@ -184,10 +150,6 @@ fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
     return mix(upper, lower, cutoff);
 }
 
-// Cheap stable hash of three integer-ish components → vec3<f32> in [0,1].
-// Use it for stylized noise patterns or seeding from world position
-// (multiply pos by a scale first). Not cryptographic, deterministic per
-// inputs.
 fn hash3(p: vec3<f32>) -> vec3<f32> {
     var q = vec3<f32>(
         dot(p, vec3<f32>(127.1, 311.7, 74.7)),
@@ -231,10 +193,9 @@ struct Instance {
     model: mat4x4<f32>,
     color: vec4<f32>,
     params: array<vec4<f32>, 4>,
-    // Render-hint flags. Each is 0 or 1.
     cast_shadow: u32,
     receive_shadow: u32,
-    _flag2: u32,
+    lit: u32,
     _flag3: u32,
 };
 
@@ -271,14 +232,16 @@ fn vs_main(in: VsIn) -> VsOut {
 pub const DEFAULT_FRAGMENT_WGSL_3D: &str = r#"
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    let tex = textureSample(IMG, IMG_SAMP, in.uv);
+    let base = I.color.rgb * tex.rgb;
+    if (I.lit == 0u) {
+        return vec4<f32>(base, I.color.a);
+    }
     let n = normalize(in.world_normal);
-    // Half-Lambert avoids the harsh terminator of pure max(0, n·l).
     let nl = dot(n, -F.light_dir);
     let lambert = nl * 0.5 + 0.5;
-    let ambient = 0.25;
-    let lit = ambient + (1.0 - ambient) * lambert;
-    let tex = textureSample(IMG, IMG_SAMP, in.uv);
-    return vec4<f32>(I.color.rgb * tex.rgb * lit, I.color.a);
+    let lit_amt = F.ambient + F.sun_color * lambert;
+    return vec4<f32>(base * lit_amt, I.color.a);
 }
 "#;
 

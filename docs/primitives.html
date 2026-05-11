@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Primitives - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.1.3">
-    <script src="theme.js?v=1.1.3"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.0">
+    <script src="theme.js?v=1.2.0"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.1.3" defer></script>
+<script src="sidebar.js?v=1.2.0" defer></script>
 
 <main>
 
@@ -656,6 +656,31 @@ part.CFrame = CFrame.new(Vector.new(<span class="hl-num">0</span>, <span class="
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">Linear interpolation, same shape as Vector.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">d:Scale(reference, target, maintainRatio?)</span>
+            <span class="member-type">→ Dim</span>
+            <span class="tag tag-method">method</span>
+            <span class="tag tag-new">new in 1.2</span>
+        </div>
+        <p class="member-desc">
+            Rescale this Dim from one reference size to another. Designed
+            for prebuilt UI: lay your panels out against a fixed reference
+            (say <code>Dim.new(400, 400)</code>) at design time, then at
+            runtime call <code>:Scale(reference, Window.GetSize())</code>
+            to map them onto the actual window.
+        </p>
+        <ul>
+            <li><code>reference</code> &mdash; the design-time size the
+                dim was authored against.</li>
+            <li><code>target</code> &mdash; the runtime size to map into
+                (e.g. <code>Window.GetSize()</code>).</li>
+            <li><code>maintainRatio</code> &mdash; when <code>true</code>,
+                both axes use the smaller of the two scale factors so
+                the aspect ratio is preserved (good for letter-boxed
+                UI). Default <code>false</code>.</li>
+        </ul>
     </div>
     <div class="member">
         <div class="member-header">

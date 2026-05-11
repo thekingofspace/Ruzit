@@ -445,14 +445,14 @@ end
 --   struct Frame {
 --       view_proj: mat4x4<f32>,
 --       light_dir: vec3<f32>, // sun direction (engine or
---                                    // Renderable.SetSun)
+--                                    // LightingService.SetSun)
 --       time: f32, // seconds since window opened
 --       camera_pos: vec3<f32>,
 --       frame_index: u32, // increments every drawn frame,
 --                                    // useful for hash seeds, TAA jitter,
 --                                    // ping-pong patterns
---       sun_color: vec3<f32>, // engine or Renderable.SetSunColor
---       ambient: vec3<f32>, // engine or Renderable.SetAmbient
+--       sun_color: vec3<f32>, // engine or LightingService.SetSunColor
+--       ambient: vec3<f32>, // engine or LightingService.SetAmbient
 --       viewport: vec2<f32>, // window inner pixel size
 --   };
 --
@@ -1086,6 +1086,16 @@ declare class Dim
 	Y: number
 	-- Linearly interpolate between self and other. t=0 → self, t=1 → other.
 	function Lerp(self, other: Dim, t: number): Dim
+	-- Rescale this Dim from one reference size to another. Useful for
+	-- prebuilt UI: design at a fixed reference (say 400x400), then call
+	-- `:Scale(reference, target)` at runtime to map the layout to the
+	-- current window size.
+	--   reference   — the design-time size the dim was authored against.
+	--   target      — the runtime size to map into (e.g. Window.GetSize()).
+	--   maintainRatio — when true, both axes use the smaller of the two
+	--                   scale factors so the aspect ratio is preserved
+	--                   (good for letter-boxed UI). Default false.
+	function Scale(self, reference: Dim, target: Dim, maintainRatio: boolean?): Dim
 	function __add(self, other: Dim): Dim
 	function __sub(self, other: Dim): Dim
 	-- Scalar multiply / divide / negate.
@@ -1328,9 +1338,17 @@ declare class BasePart
 	-- mechanically, grouped here because it's the third in the family
 	-- of render-hint toggles.
 	IgnoreInRaycast: boolean
+	-- When true, the default 3D shader applies the engine sun + ambient
+	-- term to this part. When false (the default for newly-spawned
+	-- BaseParts), the default shader outputs flat color so you can wire
+	-- your own lighting (custom Frag3D shader, LightSources via SDATA,
+	-- etc.). Also surfaced inside user shaders as `I.lit` (u32 0/1).
+	-- The cleaner way to toggle this in bulk is
+	-- `LightingService:AddObject(part)` / `:RemoveObject(part)`.
+	Lit: boolean
 	-- Property-change signal. Fires with one of: "CFrame", "Size",
 	-- "Color", "Render", "Texture", "CastShadow", "ReceiveShadow",
-	-- "IgnoreInRaycast", "Destroyed".
+	-- "IgnoreInRaycast", "Lit", "Destroyed".
 	Changed: Signal<string>
 	-- Per-property signal that fires with the new value as the only
 	-- argument every time `propName` changes. Lazily created — properties
@@ -1455,21 +1473,6 @@ export type Renderable_API = {
 	-- The active 3D camera. Same instance the window uses; mutate it to move
 	-- the view. Also exposed as WindowHandle:GetViewport().
 	Camera: Camera,
-	-- Set the directional sun. `direction` points FROM the sun toward the
-	-- scene (the engine's default is roughly Vector.new(-0.4, -1.0, -0.3),
-	-- a top-down-front angle). `color` is optional, if omitted the
-	-- existing sun color is preserved. Reflects in every 3D shader's
-	-- F.light_dir / F.sun_color.
-	SetSun: (direction: Vector, color: Color3?) -> (),
-	-- Tint the sun without changing direction.
-	SetSunColor: (color: Color3) -> (),
-	-- Set the ambient light term added to every lit pixel before the sun
-	-- contribution. Default is Color3.new(0.25, 0.25, 0.25). Reflects in
-	-- every 3D shader's F.ambient.
-	SetAmbient: (color: Color3) -> (),
-	-- Snapshot the current lighting state. Useful for debug overlays or
-	-- saving to a level file.
-	GetLighting: () -> { SunDirection: Vector, SunColor: Color3, Ambient: Color3 },
 
 	-- Polygon reduction (level-of-detail). Returns a NEW ModelAsset whose
 	-- geometry is a quantization-clustered LOD of the input. `ratio` is a
@@ -1929,6 +1932,236 @@ export type Mouse_API = {
 -- =============================================================================
 -- Keyboard, InputChanged signal + IsKeyDown query.
 -- =============================================================================
+
+-- =============================================================================
+-- LightingService — thin wrapper around the engine's directional sun + ambient
+-- term, plus an opt-in registry for which parts get that lighting applied.
+--
+-- New BaseParts default to `obj.Lit = false` (flat colored output). Call
+-- `LightingService:AddObject(part)` to include a part in engine-managed
+-- lighting; the default 3D shader will then apply the sun + ambient term to
+-- it. This way, parts that you want to light yourself (custom Frag3D shader,
+-- LightSources via SDATA, etc.) aren't fighting the built-in sun.
+--
+-- Shadow-cast flags are opt-in per BasePart via `obj.CastShadow` and
+-- `obj.ReceiveShadow` (both default true). They surface inside user 3D shaders
+-- as `I.cast_shadow` / `I.receive_shadow` (u32, 0 or 1) so you can branch on
+-- them. The "lit" hint is also exposed as `I.lit` for custom shaders.
+-- =============================================================================
+
+-- Live light source created by `LightingService.GenerateLightSource`. Edit
+-- the fields freely between frames; the next `UploadLights` call will pick
+-- up the changes. Spotlight-only fields are tagged below.
+export type LightSource = {
+	-- Read-only. "PointLight" or "Spotlight".
+	Kind: string,
+	-- World pose. The light shines from CFrame.Position. For a Spotlight,
+	-- the rotation determines the cone direction (forward = -Z of the
+	-- CFrame, same convention as Renderable.Camera).
+	CFrame: CFrame,
+	-- RGB color of emitted light. Combined with Brightness to produce
+	-- the final per-pixel contribution.
+	Color: Color3,
+	-- Intensity multiplier. 1.0 is roughly "bright office bulb at 1m".
+	-- 0 disables the light.
+	Brightness: number,
+	-- Maximum reach. Pixels beyond Range receive zero contribution.
+	Range: number,
+	-- Hint flag for shadow casting. Read by shaders as a 0/1 value via
+	-- the packed light buffer. The default 3D shader doesn't act on
+	-- this yet — custom shaders can.
+	CastShadow: boolean,
+	-- Distance attenuation exponent. 2.0 is physical inverse-square in
+	-- the demo shader (built on `(1 - d / Range)^Falloff`). Lower
+	-- values give a softer falloff.
+	Falloff: number,
+	-- Spotlight-only. Inner cone angle in radians: at angles smaller
+	-- than this the light is at full intensity.
+	ConeInner: number,
+	-- Spotlight-only. Outer cone angle in radians: at angles larger
+	-- than this the light is zero. The smoothstep between Inner and
+	-- Outer is what gives a soft cone edge.
+	ConeOuter: number,
+	-- Read-only. False after `:Destroy()` was called.
+	Alive: boolean,
+	-- Free the light and remove it from the active registry. Next
+	-- `UploadLights` won't include it.
+	Destroy: (self: LightSource) -> (),
+	-- Attach a custom Frag3D shader asset. The shader id is stored on
+	-- the light and exposed to user code that wants to render with
+	-- per-light shader variants. The default pipeline doesn't dispatch
+	-- it — this is data you can read from your own shader / Lua code.
+	AttachShader: (self: LightSource, shader: any) -> (),
+	-- Remove a previously attached shader.
+	DetachShader: (self: LightSource) -> (),
+	-- Write one of the light's 16 shader-param floats. Slot is clamped
+	-- to 0..15. Read alongside the light data from custom shaders.
+	SetShaderParam: (self: LightSource, slot: number, value: number) -> (),
+	-- Convenience: world-space forward vector derived from CFrame.Rotation.
+	-- For a Spotlight this is the cone's pointing direction.
+	Direction: (self: LightSource) -> Vector,
+}
+
+-- Options table accepted by `LightingService.GenerateLightSource`. Every
+-- field is optional — the defaults give you a white point light at the
+-- origin with brightness 1 and range 16.
+export type LightSourceOptions = {
+	CFrame: CFrame?,
+	Color: Color3?,
+	Brightness: number?,
+	Range: number?,
+	CastShadow: boolean?,
+	Falloff: number?,
+	-- Spotlight-only. Ignored for "PointLight".
+	ConeInner: number?,
+	-- Spotlight-only. Ignored for "PointLight".
+	ConeOuter: number?,
+}
+
+export type LightingService_API = {
+	-- Set the directional sun vector. `direction` points FROM the sun
+	-- TOWARD the scene (so (0, -1, 0) means sun straight overhead).
+	-- Optional color tints the sun; pass nil to leave it unchanged.
+	SetSun: (direction: Vector, color: Color3?) -> (),
+	-- Update sun direction only (keeps current color).
+	SetSunDirection: (direction: Vector) -> (),
+	-- Update sun color only (keeps current direction).
+	SetSunColor: (color: Color3) -> (),
+	-- Set the ambient light term added to every lit pixel before the sun
+	-- contribution. Default Color3.new(0.25, 0.25, 0.25).
+	SetAmbient: (color: Color3) -> (),
+	-- Current sun direction.
+	GetSunDirection: () -> Vector,
+	-- Current sun color.
+	GetSunColor: () -> Color3,
+	-- Current ambient term.
+	GetAmbient: () -> Color3,
+	-- Snapshot all three at once. Useful for debug HUDs or saving / loading
+	-- a level's lighting state.
+	Get: () -> { SunDirection: Vector, SunColor: Color3, Ambient: Color3 },
+	-- Mark a BasePart as participating in engine-managed lighting. After
+	-- this call, the default 3D shader applies sun + ambient to the part.
+	-- New parts default to NOT lit, so you have to opt in explicitly
+	-- (this lets you build your own lighting on parts you don't add).
+	-- Equivalent to setting `part.Lit = true`.
+	AddObject: (self: LightingService_API, part: BasePart) -> (),
+	-- Remove a previously-added BasePart from engine-managed lighting.
+	-- The default shader will output flat color again. Equivalent to
+	-- setting `part.Lit = false`.
+	RemoveObject: (self: LightingService_API, part: BasePart) -> (),
+	-- Whether the part is currently in engine-managed lighting.
+	IsObjectManaged: (self: LightingService_API, part: BasePart) -> boolean,
+	-- Spawn a new LightSource and add it to the active light registry.
+	-- `kind` is "PointLight" or "Spotlight". `opts` is a table of
+	-- LightSourceOptions. The returned LightSource is mutable —
+	-- assign to .CFrame / .Color / .Brightness etc. between frames
+	-- and the next UploadLights call picks up the changes.
+	GenerateLightSource: (kind: "PointLight" | "Spotlight", opts: LightSourceOptions?) -> LightSource,
+	-- Every alive LightSource as a Lua array.
+	GetActiveLights: () -> { LightSource },
+	-- Count of alive LightSources. Cheap.
+	GetLightCount: () -> number,
+	-- Pack the current set of LightSources into a GPU storage buffer.
+	-- Returns the number of lights written. Buffer layout (floats):
+	--   [0]    bitcast<u32> of light_count
+	--   [1..3] padding
+	--   [4 + i*16 .. 4 + (i+1)*16 - 1]  16 floats per light:
+	--     +0..2  position.xyz       +3   kind (0 = point, 1 = spot)
+	--     +4..6  direction.xyz      +7   brightness
+	--     +8..10 color.rgb          +11  range
+	--     +12    cos(cone_inner)    +13  cos(cone_outer)
+	--     +14    falloff            +15  cast_shadow (0/1)
+	-- Errors if the buffer is too small. Allocate at least
+	-- `4 + maxLights * 16` floats via `GPU.NewBuffer`.
+	UploadLights: (buffer: GPUBuffer) -> number,
+}
+
+-- =============================================================================
+-- TweenService — Rust-side tween/interpolation engine. Tweens are created
+-- once from Lua then stepped entirely on the Rust heart loop, so the per-frame
+-- interpolation never crosses the Lua VM. The Lua VM only re-enters when a
+-- tween's `Completed` signal fires (once per tween, not per frame).
+-- =============================================================================
+
+-- Easing family. Pick one of: "Linear", "Sine", "Quad", "Cubic", "Quart",
+-- "Quint", "Expo", "Circ", "Back", "Elastic", "Bounce".
+export type TweenStyle = string
+-- Easing direction. "Out" is the default if omitted / nil.
+export type TweenDirection = "In" | "Out" | "InOut"
+
+export type Tween = {
+	-- Signal fired when the tween reaches its end. Does not fire when the
+	-- tween is :Cancel()'d. Fires inside the heart loop, on the main Lua
+	-- thread.
+	Completed: Signal<>,
+	-- Current state machine label: "Idle", "Playing", "Paused",
+	-- "Completed", or "Cancelled".
+	State: string,
+	-- Seconds elapsed in the current play cycle. Resets when :Play() is
+	-- called on a Completed / Cancelled / Idle tween.
+	Elapsed: number,
+	-- The duration the tween was created with, in seconds.
+	Duration: number,
+	-- Begin playing. If the tween was previously Completed or Cancelled,
+	-- this re-snapshots the target's current property values as the new
+	-- start state and runs the easing again. Calling :Play() on a
+	-- Playing tween is a no-op.
+	Play: (self: Tween) -> (),
+	-- Pause stops advancing time but keeps the tween registered. Resume
+	-- continues from the same elapsed time.
+	Pause: (self: Tween) -> (),
+	Resume: (self: Tween) -> (),
+	-- Cancel marks the tween as Cancelled. The target's properties stay
+	-- wherever they were when Cancel was called (no snap to start or
+	-- end). Completed does NOT fire. Calling :Play() afterward re-runs
+	-- from the current state.
+	Cancel: (self: Tween) -> (),
+	-- Block the current coroutine until the tween's Completed signal
+	-- fires. If the tween is already Completed or Cancelled, returns
+	-- immediately. Must be called from inside a coroutine.
+	Wait: (self: Tween) -> (),
+}
+
+export type TweenService_API = {
+	-- Create a tween. `target` is a tweenable userdata. `duration` is
+	-- in seconds. `style` is the easing family ("Linear", "Bounce",
+	-- "Cubic", …) and `direction` is the direction prefix ("In", "Out",
+	-- "InOut") — both are separate so you don't have to concatenate
+	-- them. `direction` defaults to `"Out"` if omitted or nil.
+	-- `properties` is a table of `{ propertyName = goalValue }`.
+	--
+	-- Supported targets and properties:
+	--   BasePart        — CFrame (CFrame), Color (Color3), Size (Vector)
+	--   GUI primitive   — Position (Dim), Size (Dim), Color (Color3),
+	--                     Transparency (number), ZIndex (number)
+	--
+	-- The returned Tween starts in "Idle". Call `:Play()` to begin.
+	-- Start values are snapshotted at Play time, not at construction
+	-- time, so you can build the tween early and play it later from
+	-- wherever the target currently is.
+	new: (
+		target: any,
+		duration: number,
+		style: TweenStyle,
+		direction: TweenDirection?,
+		properties: { [string]: any }
+	) -> Tween,
+	-- Alias for `new` (Roblox-style spelling).
+	Create: (
+		target: any,
+		duration: number,
+		style: TweenStyle,
+		direction: TweenDirection?,
+		properties: { [string]: any }
+	) -> Tween,
+	-- Single-shot interpolation with an easing curve. Same easing
+	-- families as `new` but applied to a one-off `(start, goal, alpha)`
+	-- and a value is returned, no Tween object is created. Supported
+	-- value types: `number`, `Vector`, `Color3`, `CFrame`, `Dim`. Both
+	-- start and goal must be the same type. `style` defaults to
+	-- `"Linear"`, `direction` defaults to `"Out"`.
+	Lerp: (start: any, goal: any, alpha: number, style: TweenStyle?, direction: TweenDirection?) -> any,
+}
 
 export type Keyboard_API = {
 	-- Fires with (id: number, name: string, pressed: boolean). `name` is the
@@ -3531,6 +3764,21 @@ export type PhysicsPlaneOptions = {
 	-- Same as LinearDamping but for angular velocity. Default 0.30 — kills
 	-- tumbling fairly quickly so stacked piles settle visually.
 	AngularDamping: number?,
+	-- Quadratic drag coefficient. Each tick, every non-anchored body has
+	-- `F = -Drag * |v| * v` applied as an additional force. Unlike the
+	-- linear `LinearDamping` term, drag scales with v² so at low speed it
+	-- barely matters but at high speed it dominates — exactly what you
+	-- want for "feels like underwater": small impulses barely move, big
+	-- impulses still travel a long way, things never quite stop the same
+	-- way they do in air. Default 0.0 (off). Reasonable underwater values
+	-- are around 1.0 – 4.0.
+	Drag: number?,
+	-- Constant upward acceleration applied per non-anchored body each
+	-- tick. Positive values counteract gravity (set to about `-Gravity.Y`
+	-- to make objects float neutrally; lower to "weighed-down sinking"
+	-- and higher to "they float up"). Negative values pull down harder
+	-- than gravity. Default 0.0 (off).
+	Buoyancy: number?,
 	-- Velocity-along-collision-normal threshold below which a colliding
 	-- object's normal-axis velocity snaps to zero instead of bouncing.
 	-- Default 0.5 (units/sec). This is what makes piles actually settle:
@@ -3725,6 +3973,10 @@ declare class PhysicsPlane
 	-- come to rest in this plane.
 	LinearDamping: number
 	AngularDamping: number
+	-- Quadratic drag coefficient. See PhysicsPlaneOptions.Drag.
+	Drag: number
+	-- Constant upward acceleration term. See PhysicsPlaneOptions.Buoyancy.
+	Buoyancy: number
 	-- Velocity threshold below which a colliding normal-axis velocity is
 	-- snapped to zero instead of bouncing. Required for stable piles.
 	RestThreshold: number
@@ -3781,6 +4033,7 @@ export type Imports = {
 	GUI: GUI_API,
 	IO: IO_API,
 	Keyboard: Keyboard_API,
+	LightingService: LightingService_API,
 	Managed: Managed_API,
 	Mouse: Mouse_API,
 	Net: Net_API,
@@ -3794,6 +4047,7 @@ export type Imports = {
 	Signal: Signal_API,
 	Steam: Steam_API,
 	Task: Task_API,
+	TweenService: TweenService_API,
 	Voice: Voice_API,
 	VR: VR_API,
 	Window: Window_API,

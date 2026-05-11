@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LightingService - Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css?v=1.2.0">
+    <script src="theme.js?v=1.2.0"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=1.2.0" defer></script>
+
+<main>
+
+<h1>LightingService</h1>
+<p class="lede">
+    Thin wrapper around the engine's directional sun + ambient term, plus an
+    opt-in registry for which parts get that lighting applied and a
+    <code>LightSource</code> data model you can plug into your own shaders.
+</p>
+
+<pre><code><span class="hl-kw">local</span> LightingService = <span class="hl-fn">import</span>(<span class="hl-str">"LightingService"</span>)
+<span class="hl-kw">local</span> Primitives      = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>)
+<span class="hl-kw">local</span> CFrame, Color3, Vector = Primitives.CFrame, Primitives.Color3, Primitives.Vector
+
+LightingService.<span class="hl-fn">SetSun</span>(Vector.<span class="hl-fn">new</span>(-<span class="hl-num">0.3</span>, -<span class="hl-num">1.0</span>, -<span class="hl-num">0.4</span>), Color3.<span class="hl-fn">fromRGB</span>(<span class="hl-num">255</span>, <span class="hl-num">250</span>, <span class="hl-num">235</span>))
+LightingService.<span class="hl-fn">SetAmbient</span>(Color3.<span class="hl-fn">fromRGB</span>(<span class="hl-num">30</span>, <span class="hl-num">35</span>, <span class="hl-num">45</span>))
+
+<span class="hl-com">-- Parts default to Lit = false. Add them explicitly to opt in.</span>
+LightingService:<span class="hl-fn">AddObject</span>(somePart)
+
+<span class="hl-kw">local</span> lamp = LightingService.<span class="hl-fn">GenerateLightSource</span>(<span class="hl-str">"PointLight"</span>, {
+    CFrame     = CFrame.<span class="hl-fn">new</span>(Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">4</span>, <span class="hl-num">0</span>), Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>)),
+    Color      = Color3.<span class="hl-fn">fromRGB</span>(<span class="hl-num">255</span>, <span class="hl-num">120</span>, <span class="hl-num">80</span>),
+    Brightness = <span class="hl-num">4.0</span>,
+    Range      = <span class="hl-num">12.0</span>,
+})</code></pre>
+
+<h2 id="model">Lighting model</h2>
+
+<p>
+    The default 3D shader applies <code>F.ambient + F.sun_color * lambert</code>
+    to any part whose <code>Lit</code> flag is on, and outputs flat colored
+    pixels for everything else. The flag defaults to <strong>false</strong>
+    on a newly-spawned <code>Renderable.BasePart</code> so that parts you
+    intend to light yourself (custom <code>Frag3D</code> shader, light
+    sources via <code>SDATA</code>, etc.) aren't fighting the built-in sun.
+</p>
+<p>
+    Toggle it with any of:
+</p>
+<ul>
+    <li><code>LightingService:AddObject(part)</code> / <code>:RemoveObject(part)</code></li>
+    <li><code>part.Lit = true</code> / <code>part.Lit = false</code></li>
+    <li>Or just attach your own <code>Frag3D</code> shader to that part &mdash; the
+        attached shader replaces the default fragment stage entirely, so
+        the flag is moot there.</li>
+</ul>
+
+<p>
+    Shadow-cast hints (<code>CastShadow</code>, <code>ReceiveShadow</code>) are
+    separately exposed as <code>I.cast_shadow</code> /
+    <code>I.receive_shadow</code> in user shaders. The <code>Lit</code> flag
+    is exposed as <code>I.lit</code> (u32 0/1) for shaders that want to
+    branch on it.
+</p>
+
+<h2 id="api">LightingService API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService.SetSun(direction, color?)</span>
+        </div>
+        <p class="member-desc">
+            Set the directional sun. <code>direction</code> points FROM the
+            sun TOWARD the scene. Optional <code>color</code> tints the
+            sun; pass <code>nil</code> to keep the current color. The
+            <code>direction</code> doesn't need to be normalized.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService.SetSunDirection(direction)</span>
+        </div>
+        <p class="member-desc">
+            Update the sun direction only; color stays unchanged.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService.SetSunColor(color)</span>
+        </div>
+        <p class="member-desc">
+            Tint the sun. Surfaced as <code>F.sun_color</code> in every 3D
+            shader.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService.SetAmbient(color)</span>
+        </div>
+        <p class="member-desc">
+            Ambient term added to every lit pixel before the sun contribution.
+            Default <code>Color3.new(0.25, 0.25, 0.25)</code>. Surfaced as
+            <code>F.ambient</code> in 3D shaders.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService.GetSunDirection()</span>
+            <span class="member-type">→ Vector</span>
+        </div>
+        <p class="member-desc">Current sun direction.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService.GetSunColor()</span>
+            <span class="member-type">→ Color3</span>
+        </div>
+        <p class="member-desc">Current sun color.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService.GetAmbient()</span>
+            <span class="member-type">→ Color3</span>
+        </div>
+        <p class="member-desc">Current ambient term.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService.Get()</span>
+            <span class="member-type">→ { SunDirection, SunColor, Ambient }</span>
+        </div>
+        <p class="member-desc">
+            Snapshot all three at once. Handy for debug HUDs and
+            save / load.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService:AddObject(part)</span>
+        </div>
+        <p class="member-desc">
+            Mark a <code>BasePart</code> as participating in engine-managed
+            lighting. Equivalent to <code>part.Lit = true</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService:RemoveObject(part)</span>
+        </div>
+        <p class="member-desc">
+            Remove a part from engine-managed lighting (it goes back to
+            flat-colored output through the default shader). Equivalent
+            to <code>part.Lit = false</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService:IsObjectManaged(part)</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+        <p class="member-desc">
+            Whether the part's <code>Lit</code> flag is currently on.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService.GenerateLightSource(kind, opts?)</span>
+            <span class="member-type">→ LightSource</span>
+        </div>
+        <p class="member-desc">
+            Spawn a new <code>LightSource</code> and add it to the active
+            registry. <code>kind</code> is the string <code>"PointLight"</code>
+            or <code>"Spotlight"</code>. Every field in <code>opts</code> is
+            optional &mdash; the defaults give you a white point light at the
+            origin with brightness <code>1</code> and range <code>16</code>.
+            Spotlight-only fields (<code>ConeInner</code>,
+            <code>ConeOuter</code>) are ignored on a PointLight.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService.GetActiveLights()</span>
+            <span class="member-type">→ { LightSource }</span>
+        </div>
+        <p class="member-desc">
+            Every alive LightSource as a Lua array.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService.GetLightCount()</span>
+            <span class="member-type">→ number</span>
+        </div>
+        <p class="member-desc">
+            How many LightSources are currently alive. Cheap.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService.UploadLights(buffer)</span>
+            <span class="member-type">→ number</span>
+        </div>
+        <p class="member-desc">
+            Pack the current set of LightSources into a GPU storage buffer
+            (allocated via <code>GPU.NewBuffer</code>). After uploading,
+            bind the same buffer as the active SDATA via
+            <code>GPU.SetBuffer(buffer)</code> and your 3D shaders can
+            read the lights through <code>SDATA</code>. Returns the
+            number of lights written. Errors if the buffer is too small.
+        </p>
+        <p class="member-desc">
+            Buffer layout (floats):
+        </p>
+<pre><code>[0]    bitcast&lt;u32&gt; of light_count
+[1..3] padding
+[4 + i*16 .. 4 + (i+1)*16 - 1]  16 floats per light:
+  +0..2   position.xyz       +3   kind (0 = point, 1 = spot)
+  +4..6   direction.xyz      +7   brightness
+  +8..10  color.rgb          +11  range
+  +12     cos(cone_inner)    +13  cos(cone_outer)
+  +14     falloff            +15  cast_shadow (0/1)</code></pre>
+        <p class="member-desc">
+            Allocate at least <code>4 + maxLights * 16</code> floats.
+        </p>
+    </div>
+</div>
+
+<h2 id="light-source">LightSource</h2>
+
+<p>
+    Returned by <code>LightingService.GenerateLightSource</code>. Edit the
+    fields freely; the next <code>UploadLights</code> call picks up the
+    changes. Spotlight-only fields error when set on a PointLight.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Kind</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            <code>"PointLight"</code> or <code>"Spotlight"</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.CFrame</span><span class="member-type">CFrame</span></div>
+        <p class="member-desc">
+            World pose. For a Spotlight, the rotation determines the cone
+            direction (forward = -Z, same convention as
+            <code>Renderable.Camera</code>).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Color</span><span class="member-type">Color3</span></div>
+        <p class="member-desc">
+            RGB color. Multiplied by <code>Brightness</code> at the pixel
+            level.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Brightness</span><span class="member-type">number</span></div>
+        <p class="member-desc">
+            Intensity multiplier. <code>0</code> disables the light;
+            <code>1</code> is "bright office bulb at 1m" in the demo
+            shader.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Range</span><span class="member-type">number</span></div>
+        <p class="member-desc">
+            Maximum reach in world units. Pixels beyond Range receive
+            zero contribution in the demo falloff.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Falloff</span><span class="member-type">number</span></div>
+        <p class="member-desc">
+            Distance attenuation exponent for the demo shader's
+            <code>(1 - d / Range)^Falloff</code> term. <code>2.0</code> is
+            roughly physical inverse-square; lower values are softer.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.CastShadow</span><span class="member-type">boolean</span></div>
+        <p class="member-desc">
+            Hint flag for shadow casting. Packed into the buffer as 0/1
+            for shaders to read. The default pipeline doesn't act on it
+            yet &mdash; custom shaders can.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.ConeInner</span><span class="member-type">number</span><span class="tag">Spotlight only</span></div>
+        <p class="member-desc">
+            Inner cone half-angle in radians. Inside this cone the light is
+            at full intensity. <code>cos(ConeInner)</code> is what gets
+            packed into the buffer.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.ConeOuter</span><span class="member-type">number</span><span class="tag">Spotlight only</span></div>
+        <p class="member-desc">
+            Outer cone half-angle in radians. Past this the light is zero.
+            The smoothstep between Inner and Outer gives soft cone edges.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Alive</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            False once <code>:Destroy()</code> has been called.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">:Destroy()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Free the light. Removes it from the active registry so the
+            next <code>UploadLights</code> won't include it.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">:AttachShader(asset)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Attach a <code>Frag3D</code> shader asset to this light. The
+            shader id is stored on the light and exposed to user code
+            that wants per-light shader variants. The default pipeline
+            doesn't dispatch it &mdash; this is data you can read from
+            your own shader or Lua side.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">:DetachShader()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Drop the attached shader.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">:SetShaderParam(slot, value)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Write one of the light's 16 shader-param floats. Slot is
+            clamped to <code>0..15</code>. Read alongside the light data
+            from custom shaders.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">:Direction()</span><span class="member-type">→ Vector</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            World-space forward derived from <code>CFrame.Rotation</code>.
+            For a Spotlight this is the cone direction.
+        </p>
+    </div>
+</div>
+
+<h2 id="example">Example: custom shader reading the lights</h2>
+
+<p>
+    See <code>examples/custom_lighting.luau</code> and
+    <code>examples/lighting_shader.wgsl</code> in the repo for a working
+    demo. The short version: allocate a buffer, upload each frame, bind
+    as SDATA, write a Frag3D shader that decodes the layout and does
+    Lambert + falloff + spot-cone per light.
+</p>
+
+</main>
+
+</body>
+</html>

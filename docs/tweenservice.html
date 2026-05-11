@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TweenService - Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css?v=1.2.0">
+    <script src="theme.js?v=1.2.0"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=1.2.0" defer></script>
+
+<main>
+
+<h1>TweenService</h1>
+<p class="lede">
+    Rust-side interpolation engine. Tweens are created once from Lua then
+    stepped entirely on the Rust heart loop, so the per-frame
+    interpolation never crosses the Lua VM. The VM only re-enters when a
+    tween's <code>Completed</code> signal fires (once per tween, not per
+    frame).
+</p>
+
+<pre><code><span class="hl-kw">local</span> TweenService = <span class="hl-fn">import</span>(<span class="hl-str">"TweenService"</span>)
+<span class="hl-kw">local</span> Primitives   = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>)
+<span class="hl-kw">local</span> CFrame, Vector, Color3 = Primitives.CFrame, Primitives.Vector, Primitives.Color3
+
+<span class="hl-kw">local</span> tw = TweenService.<span class="hl-fn">new</span>(part, <span class="hl-num">1.5</span>, <span class="hl-str">"Bounce"</span>, <span class="hl-str">"Out"</span>, {
+    CFrame = CFrame.<span class="hl-fn">new</span>(Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">10</span>, <span class="hl-num">0</span>), Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>)),
+    Color  = Color3.<span class="hl-fn">fromRGB</span>(<span class="hl-num">255</span>, <span class="hl-num">80</span>, <span class="hl-num">80</span>),
+})
+tw:<span class="hl-fn">Play</span>()
+tw.Completed:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>() <span class="hl-fn">print</span>(<span class="hl-str">"done"</span>) <span class="hl-kw">end</span>)
+
+<span class="hl-com">-- Pure math, no tween object:</span>
+<span class="hl-kw">local</span> v = TweenService.<span class="hl-fn">Lerp</span>(<span class="hl-num">0</span>, <span class="hl-num">100</span>, <span class="hl-num">0.5</span>, <span class="hl-str">"Bounce"</span>, <span class="hl-str">"Out"</span>)</code></pre>
+
+<h2 id="styles">Easing styles and directions</h2>
+
+<p>
+    Style and direction are <strong>separate strings</strong>. You don't
+    concatenate them. Direction is optional and defaults to
+    <code>"Out"</code>.
+</p>
+
+<table>
+    <thead>
+        <tr><th>Style</th><th>Curve</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>Linear</code></td><td>No easing &mdash; pure lerp.</td></tr>
+        <tr><td><code>Sine</code></td><td>Half a sine wave. Gentle.</td></tr>
+        <tr><td><code>Quad</code> / <code>Cubic</code> / <code>Quart</code> / <code>Quint</code></td><td>Polynomial. Higher = sharper.</td></tr>
+        <tr><td><code>Expo</code></td><td>Exponential. Very sudden.</td></tr>
+        <tr><td><code>Circ</code></td><td>Quarter-circle.</td></tr>
+        <tr><td><code>Back</code></td><td>Overshoots before settling.</td></tr>
+        <tr><td><code>Elastic</code></td><td>Damped oscillation around the goal.</td></tr>
+        <tr><td><code>Bounce</code></td><td>Settles like a ball hitting the floor.</td></tr>
+    </tbody>
+</table>
+
+<table>
+    <thead>
+        <tr><th>Direction</th><th>Effect</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>In</code></td><td>Eases in. Slow start, fast end.</td></tr>
+        <tr><td><code>Out</code> (default)</td><td>Eases out. Fast start, slow end.</td></tr>
+        <tr><td><code>InOut</code></td><td>Eases at both ends. Slow start, slow end, fast middle.</td></tr>
+    </tbody>
+</table>
+
+<p>
+    All values are case-insensitive. You can also pass <code>nil</code> for
+    either and get the defaults (<code>"Linear"</code> /
+    <code>"Out"</code>).
+</p>
+
+<h2 id="api">TweenService API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">TweenService.new(target, duration, style, direction?, properties)</span>
+            <span class="member-type">→ Tween</span>
+        </div>
+        <p class="member-desc">
+            Create a tween. <code>target</code> is a tweenable userdata.
+            <code>duration</code> is in seconds. <code>properties</code> is
+            a table of <code>{ propertyName = goalValue }</code>.
+        </p>
+        <p class="member-desc">
+            Supported targets and properties:
+        </p>
+        <ul>
+            <li><strong>BasePart</strong>
+                <ul>
+                    <li><code>CFrame</code> &mdash; goal is a <code>CFrame</code></li>
+                    <li><code>Color</code> &mdash; goal is a <code>Color3</code></li>
+                    <li><code>Size</code> &mdash; goal is a <code>Vector</code></li>
+                </ul>
+            </li>
+            <li><strong>GUI primitive</strong> (Square, Image, Font, etc.)
+                <ul>
+                    <li><code>Position</code> &mdash; goal is a <code>Dim</code></li>
+                    <li><code>Size</code> &mdash; goal is a <code>Dim</code></li>
+                    <li><code>Color</code> &mdash; goal is a <code>Color3</code></li>
+                    <li><code>Transparency</code> &mdash; goal is a <code>number</code> (0..1)</li>
+                    <li><code>ZIndex</code> &mdash; goal is a <code>number</code> (rounded each tick)</li>
+                </ul>
+            </li>
+        </ul>
+        <p class="member-desc">
+            The returned Tween starts in <code>"Idle"</code>. Call
+            <code>:Play()</code> to begin. <strong>Start values are
+            snapshotted at <code>:Play()</code></strong>, not at
+            construction time, so you can build the tween early and play
+            it later from wherever the target is then. Re-playing after
+            <code>:Cancel()</code> or completion also re-snapshots, so
+            you can chain easily.
+        </p>
+        <p class="member-desc">
+            <code>direction</code> is optional and may be omitted &mdash;
+            the call <code>(target, duration, style, properties)</code>
+            also works.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">TweenService.Create(target, duration, style, direction?, properties)</span>
+            <span class="member-type">→ Tween</span>
+        </div>
+        <p class="member-desc">
+            Alias for <code>new</code> (Roblox-style spelling).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">TweenService.Lerp(start, goal, alpha, style?, direction?)</span>
+            <span class="member-type">→ same type as start / goal</span>
+        </div>
+        <p class="member-desc">
+            Single-shot eased interpolation. Same families and directions
+            as <code>new</code>, but applied to a one-off triple and
+            returned. No Tween object is created. Supported value types:
+            <code>number</code>, <code>Vector</code>, <code>Color3</code>,
+            <code>CFrame</code>, <code>Dim</code>. Both start and goal
+            must be the same type.
+        </p>
+    </div>
+</div>
+
+<h2 id="tween">Tween</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Completed</span><span class="member-type">Signal</span></div>
+        <p class="member-desc">
+            Fires when the tween reaches its end. Does <em>not</em> fire
+            on <code>:Cancel()</code>. Fires inside the heart loop, on
+            the main Lua thread.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.State</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            One of <code>"Idle"</code>, <code>"Playing"</code>,
+            <code>"Paused"</code>, <code>"Completed"</code>, or
+            <code>"Cancelled"</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Elapsed</span><span class="member-type">number</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Seconds elapsed in the current play cycle. Resets when
+            <code>:Play()</code> is called on a Completed / Cancelled /
+            Idle tween.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Duration</span><span class="member-type">number</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            The duration the tween was created with, in seconds.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">:Play()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Begin playing. If the tween was previously Completed or
+            Cancelled, this re-snapshots the target's current property
+            values as the new start state and runs the easing again.
+            Calling on a Playing tween is a no-op.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">:Pause()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Stop advancing time but keep the tween registered.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">:Resume()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Continue from the same elapsed time after <code>:Pause()</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">:Cancel()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Mark the tween as Cancelled. The target's properties stay
+            wherever they were when Cancel was called (no snap to start
+            or end). <code>Completed</code> does NOT fire.
+            <code>:Play()</code> afterward re-runs from the current state.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">:Wait()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Yield the current coroutine until the tween's
+            <code>Completed</code> signal fires. Returns immediately if
+            already Completed or Cancelled. Must be called from a
+            coroutine.
+        </p>
+    </div>
+</div>
+
+<h2 id="why-rust">Why is it Rust-side?</h2>
+
+<p>
+    Tweening one value per frame is cheap. Tweening a thousand objects per
+    frame through the Lua VM is not. TweenService stores all the active
+    tweens as Rust structs and steps them on the same heart loop that
+    drives physics. Each tick we lock the target's
+    <code>Arc&lt;Mutex&lt;PartState&gt;&gt;</code> directly and write the
+    interpolated <code>CFrame</code> / <code>Color</code> / <code>Size</code>,
+    no Lua call needed.
+</p>
+<p>
+    The VM re-enters exactly once per tween, when <code>Completed</code>
+    fires. Everything in between &mdash; including the eased math &mdash;
+    is pure Rust.
+</p>
+
+</main>
+
+</body>
+</html>

@@ -4,19 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Renderable - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.1.3">
-    <script src="theme.js?v=1.1.3"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.0">
+    <script src="theme.js?v=1.2.0"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.1.3" defer></script>
+<script src="sidebar.js?v=1.2.0" defer></script>
 <main>
 
 <h1>Renderable</h1>
 <p class="lede">
-    The 3D scene. Parts and models, the camera, sun and ambient lighting,
-    LOD, mesh deformation, and animation tracks.
+    The 3D scene. Parts and models, the camera, LOD, mesh deformation, and
+    animation tracks. Sun and ambient lighting now live on
+    <a href="lighting.html">LightingService</a>.
 </p>
 
 <pre><code><span class="hl-kw">local</span> Renderable = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
@@ -59,44 +60,6 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
             (<code>Renderable.Camera.CFrame = ...</code>); same instance
             the window references via
             <code>WindowHandle:GetViewport()</code>.
-        </p>
-    </div>
-    <div class="member">
-        <div class="member-header">
-            <span class="member-name">Renderable.SetSun(direction, color?)</span>
-        </div>
-        <p class="member-desc">
-            Set the directional sun. <code>direction</code> points from
-            the sun toward the scene. Engine default is
-            <code>Vector.new(-0.4, -1.0, -0.3)</code>.
-        </p>
-    </div>
-    <div class="member">
-        <div class="member-header">
-            <span class="member-name">Renderable.SetSunColor(color)</span>
-        </div>
-        <p class="member-desc">
-            Tint the sun without changing direction. Reflects in every 3D
-            shader's <code>F.sun_color</code>.
-        </p>
-    </div>
-    <div class="member">
-        <div class="member-header">
-            <span class="member-name">Renderable.SetAmbient(color)</span>
-        </div>
-        <p class="member-desc">
-            Ambient light term added to every lit pixel before the sun
-            contribution. Default <code>Color3.new(0.25, 0.25, 0.25)</code>.
-        </p>
-    </div>
-    <div class="member">
-        <div class="member-header">
-            <span class="member-name">Renderable.GetLighting()</span>
-            <span class="member-type">→ { SunDirection: Vector, SunColor: Color3, Ambient: Color3 }</span>
-        </div>
-        <p class="member-desc">
-            Snapshot the current lighting state. Useful for debug overlays
-            or saving to a level file.
         </p>
     </div>
     <div class="member">
