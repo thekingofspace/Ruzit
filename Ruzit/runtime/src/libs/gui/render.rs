@@ -1374,7 +1374,7 @@ impl GpuState {
             ],
             shadow_enabled: {
                 let cfg = crate::libs::gpu::shadow_config();
-                if cfg.enabled { 1.0 } else { 0.0 }
+                if cfg.enabled { 1 } else { 0 }
             },
             ambient: [lighting.ambient.r, lighting.ambient.g, lighting.ambient.b],
             shadow_strength: {
@@ -1389,6 +1389,10 @@ impl GpuState {
                 base * (1.0 + pcf * 0.8)
             },
             shadow_distance: crate::libs::gpu::shadow_config().distance.max(0.0),
+            shadow_pcf: crate::libs::gpu::shadow_config().pcf,
+            shadow_bias: crate::libs::gpu::shadow_config().bias,
+            shadow_quality: crate::libs::gpu::shadow_config().quality,
+            _shadow_pad: 0.0,
         };
         self.queue
             .write_buffer(&self.frame_uniform, 0, bytemuck::bytes_of(&frame));

@@ -9,12 +9,16 @@ pub struct FrameUniform3D {
     pub camera_pos: [f32; 3],
     pub frame_index: u32,
     pub sun_color: [f32; 3],
-    pub shadow_enabled: f32,
+    pub shadow_enabled: u32,
     pub ambient: [f32; 3],
     pub shadow_strength: f32,
     pub viewport: [f32; 2],
     pub shadow_softness: f32,
     pub shadow_distance: f32,
+    pub shadow_pcf: u32,
+    pub shadow_bias: f32,
+    pub shadow_quality: u32,
+    pub _shadow_pad: f32,
 }
 
 #[repr(C)]
@@ -73,12 +77,16 @@ struct Frame {
     camera_pos: vec3<f32>,
     frame_index: u32,
     sun_color: vec3<f32>,
-    shadow_enabled: f32,
+    shadow_enabled: u32,
     ambient: vec3<f32>,
     shadow_strength: f32,
     viewport: vec2<f32>,
     shadow_softness: f32,
     shadow_distance: f32,
+    shadow_pcf: u32,
+    shadow_bias: f32,
+    shadow_quality: u32,
+    _shadow_pad: f32,
 };
 
 struct Instance {
@@ -184,12 +192,16 @@ struct Frame {
     camera_pos: vec3<f32>,
     frame_index: u32,
     sun_color: vec3<f32>,
-    shadow_enabled: f32,
+    shadow_enabled: u32,
     ambient: vec3<f32>,
     shadow_strength: f32,
     viewport: vec2<f32>,
     shadow_softness: f32,
     shadow_distance: f32,
+    shadow_pcf: u32,
+    shadow_bias: f32,
+    shadow_quality: u32,
+    _shadow_pad: f32,
 };
 
 struct Instance {
@@ -243,7 +255,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let n = normalize(in.world_normal);
     let raw = dot(n, -F.light_dir);
 
-    let shadows_on = F.shadow_enabled > 0.5;
+    let shadows_on = F.shadow_enabled != 0u;
     let receive = I.receive_shadow != 0u;
     let cast_self = I.cast_shadow != 0u;
 
