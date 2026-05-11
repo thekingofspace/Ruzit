@@ -67,6 +67,22 @@ LightingService:<span class="hl-fn">AddObject</span>(somePart)
     branch on it.
 </p>
 
+<p>
+    <strong>Shadows.</strong> The shadow term in the default 3D shader is
+    driven by knobs on <a href="gpu.html#shadows">GPU</a> &mdash;
+    <code>GPU.SetShadowsEnabled</code>, <code>SetShadowMapQuality</code>,
+    <code>SetShadowDistance</code>, <code>SetShadowBias</code>,
+    <code>SetShadowPCF</code>. When enabled, the lambert term becomes a
+    smoothstep at the light terminator (sharper, more "shadowy" look),
+    receivers darken proportional to <code>MapQuality</code>,
+    <code>PCF</code> widens the smoothstep band to simulate softness, and
+    <code>ShadowDistance</code> fades the term back into half-Lambert
+    past that camera distance. Custom <code>Frag3D</code> shaders can
+    read the same values directly via <code>F.shadow_enabled</code>,
+    <code>F.shadow_strength</code>, <code>F.shadow_softness</code> and
+    <code>F.shadow_distance</code>.
+</p>
+
 <h2 id="api">LightingService API</h2>
 
 <div class="member-list">
@@ -229,6 +245,96 @@ LightingService:<span class="hl-fn">AddObject</span>(somePart)
         </p>
     </div>
 </div>
+
+<h2 id="skybox">Skybox &amp; post-processing</h2>
+
+<p>
+    Moved here from <code>GUI</code> in 1.2.1. Same signatures and
+    semantics as before &mdash; the only thing that changed is the
+    namespace. Both functions return a <code>SceneShader</code> handle
+    you keep around to drive runtime params or clear the slot.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService.SetSkybox(asset)</span>
+            <span class="member-type">→ SceneShader</span>
+        </div>
+        <p class="member-desc">
+            Run a fragment shader on a fullscreen quad before the 3D
+            scene draws. Replaces the flat clear colour with whatever
+            the shader produces &mdash; gradient sky, procedural stars,
+            animated clouds, screenspace ray-march, anything. The 3D
+            scene draws on top of it, so opaque parts naturally occlude
+            it. Same FragmentAsset shape as a 2D primitive shader, with
+            <code>U.resolution</code>, <code>U.time</code>, and
+            <code>p(idx)</code> available.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService.ClearSkybox()</span>
+        </div>
+        <p class="member-desc">
+            Remove the active skybox; reverts to the flat clear colour.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService.SetPostEffect(asset)</span>
+            <span class="member-type">→ SceneShader</span>
+        </div>
+        <p class="member-desc">
+            Install a fragment shader that runs ONCE per frame as the
+            final pass. Every cube, model, GUI primitive, skybox, and
+            shader is composited into a single 2D image first, then
+            your post shader transforms it and writes the result to
+            the swapchain. <code>IMG</code> is bound to the composited
+            scene &mdash; sample via
+            <code>textureSample(IMG, IMG_SAMP, in.uv)</code>. Used for
+            color grading, vignette, CRT, bloom, damage flashes, etc.
+            A no-op shader is literally:
+        </p>
+<pre><code>return textureSample(IMG, IMG_SAMP, in.uv);</code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">LightingService.ClearPostEffect()</span>
+        </div>
+        <p class="member-desc">
+            Remove the active post effect; the rendered scene goes
+            straight to the swapchain again.
+        </p>
+    </div>
+</div>
+
+<h3 id="scene-shader">SceneShader</h3>
+
+<p>
+    Returned by <code>SetSkybox</code> and <code>SetPostEffect</code>.
+    Lifetime ties to the slot &mdash; let it drop or call
+    <code>:Destroy()</code> to remove the shader.
+</p>
+
+<table>
+    <tbody>
+        <tr><td><code>scene:SetData(name, value)</code></td><td>Set a <code>@ruzit param</code> slot.</td></tr>
+        <tr><td><code>scene:GetData(name)</code></td><td>Read it back.</td></tr>
+        <tr><td><code>scene:Destroy()</code></td><td>Clear the slot.</td></tr>
+    </tbody>
+</table>
+
+<h3>Migration from 1.2.0</h3>
+
+<pre><code><span class="hl-com">-- old (removed):</span>
+<span class="hl-com">-- GUI.SetSkybox(asset)</span>
+<span class="hl-com">-- GUI.SetPostEffect(asset)</span>
+
+<span class="hl-com">-- new:</span>
+<span class="hl-kw">local</span> LightingService = <span class="hl-fn">import</span>(<span class="hl-str">"LightingService"</span>)
+<span class="hl-kw">local</span> sky   = LightingService.SetSkybox(Asset.GetAsset(<span class="hl-str">"Fragment"</span>, <span class="hl-str">"sky.frag"</span>))
+<span class="hl-kw">local</span> grade = LightingService.SetPostEffect(Asset.GetAsset(<span class="hl-str">"Fragment"</span>, <span class="hl-str">"damage.frag"</span>))</code></pre>
 
 <h2 id="light-source">LightSource</h2>
 
