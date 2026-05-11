@@ -77,10 +77,33 @@ LightingService:<span class="hl-fn">AddObject</span>(somePart)
     receivers darken proportional to <code>MapQuality</code>,
     <code>PCF</code> widens the smoothstep band to simulate softness, and
     <code>ShadowDistance</code> fades the term back into half-Lambert
-    past that camera distance. Custom <code>Frag3D</code> shaders can
-    read the same values directly via <code>F.shadow_enabled</code>,
-    <code>F.shadow_strength</code>, <code>F.shadow_softness</code> and
-    <code>F.shadow_distance</code>.
+    past that camera distance.
+</p>
+
+<p>
+    Every <code>GPU.SetShadow*</code> knob is mirrored into the engine
+    Frame uniform that every <code>Frag3D</code> shader already has, so
+    you can read the same values directly inside your own shaders and
+    build your own shadow logic on top:
+</p>
+
+<table>
+    <tbody>
+        <tr><td><code>F.shadow_enabled</code></td><td><code>u32</code></td><td>0 or 1.</td></tr>
+        <tr><td><code>F.shadow_quality</code></td><td><code>u32</code></td><td>Pixel size from <code>SetShadowMapQuality</code>.</td></tr>
+        <tr><td><code>F.shadow_distance</code></td><td><code>f32</code></td><td>World-space fade distance.</td></tr>
+        <tr><td><code>F.shadow_bias</code></td><td><code>f32</code></td><td>Surface-normal offset for shadow rays.</td></tr>
+        <tr><td><code>F.shadow_pcf</code></td><td><code>u32</code></td><td>Tap count, 1/3/5/9.</td></tr>
+        <tr><td><code>F.shadow_strength</code></td><td><code>f32</code></td><td>Receiver darkening 0..1 (engine-derived).</td></tr>
+        <tr><td><code>F.shadow_softness</code></td><td><code>f32</code></td><td>Terminator smoothstep band (engine-derived).</td></tr>
+    </tbody>
+</table>
+
+<p>
+    See <a href="gpu.html#shadows-shaders">GPU &gt; Reading shadow
+    state from your own shaders</a> for the full table, a worked
+    soft-shadow example, and the caster-buffer layout that ships with
+    the floor / per-part example shaders.
 </p>
 
 <h2 id="api">LightingService API</h2>

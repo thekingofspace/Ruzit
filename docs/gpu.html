@@ -427,7 +427,7 @@
             Toggle the shadow term in the default 3D shader. Default
             <code>false</code>. Custom <code>Frag3D</code> shaders can
             read the same value via <code>F.shadow_enabled</code>
-            (f32, 0.0 or 1.0) and choose to use it or ignore it.
+            (u32, 0 or 1) and choose to use it or ignore it.
         </p>
     </div>
     <div class="member">
@@ -515,6 +515,93 @@
         </div>
     </div>
 </div>
+
+<h3 id="shadows-shaders">Reading shadow state from your own shaders</h3>
+
+<p>
+    Every <code>GPU.SetShadow*</code> knob is mirrored into the
+    <code>F</code> uniform that every <code>Frag3D</code> shader already
+    sees. You don't bind anything extra &mdash; just read these from
+    inside your <code>fs_main</code>:
+</p>
+
+<table>
+    <thead>
+        <tr><th>Lua call</th><th>WGSL field</th><th>Type</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>GPU.SetShadowsEnabled(on)</code></td><td><code>F.shadow_enabled</code></td><td><code>u32</code></td><td>Branch with <code>if (F.shadow_enabled == 0u) { ... }</code>.</td></tr>
+        <tr><td><code>GPU.SetShadowMapQuality(size)</code></td><td><code>F.shadow_quality</code></td><td><code>u32</code></td><td>Power-of-two pixel size. Use as the kernel resolution if you ever bind a real shadow texture.</td></tr>
+        <tr><td><code>GPU.SetShadowDistance(d)</code></td><td><code>F.shadow_distance</code></td><td><code>f32</code></td><td>World units. Fade your shadow term to zero past this.</td></tr>
+        <tr><td><code>GPU.SetShadowBias(b)</code></td><td><code>F.shadow_bias</code></td><td><code>f32</code></td><td>Offset the shadow-ray origin along the surface normal to avoid self-shadowing.</td></tr>
+        <tr><td><code>GPU.SetShadowPCF(taps)</code></td><td><code>F.shadow_pcf</code></td><td><code>u32</code></td><td>1, 3, 5, or 9. Use as your tap count for jittered shadow samples.</td></tr>
+        <tr><td>&mdash; derived &mdash;</td><td><code>F.shadow_strength</code></td><td><code>f32</code></td><td>How dark a receiver gets on its unlit side. Engine-derived (0.3..0.85) from MapQuality.</td></tr>
+        <tr><td>&mdash; derived &mdash;</td><td><code>F.shadow_softness</code></td><td><code>f32</code></td><td>Smoothstep band width at the light terminator. Engine-derived from PCF.</td></tr>
+    </tbody>
+</table>
+
+<p>
+    <code>I.cast_shadow</code> and <code>I.receive_shadow</code> are also
+    available per-part (u32, 0 or 1) so a shader can skip the shadow
+    test on parts that have opted out:
+</p>
+
+<pre><code><span class="hl-com">// Skip the work entirely on non-receivers.</span>
+<span class="hl-kw">var</span> sun_mask = <span class="hl-num">1.0</span>;
+<span class="hl-kw">if</span> (I.receive_shadow != <span class="hl-num">0u</span> && F.shadow_enabled != <span class="hl-num">0u</span> && ndl &gt; <span class="hl-num">0.0</span>) {
+    sun_mask = compute_shadow(in.world_pos, n, l);
+}</code></pre>
+
+<p>
+    A real working ray-traced soft-shadow shader living on the floor
+    plus per-part variant that shadow each other lives in
+    <code>examples/shadow_floor.frag</code> and
+    <code>examples/shadow_part.frag</code>. The short version: read
+    your caster list from <code>SDATA</code>, do a tangent-space jitter
+    using <code>F.shadow_pcf</code> taps and the engine's
+    <code>hash3</code> helper, offset the ray origin by
+    <code>n * F.shadow_bias</code>, and fade with
+    <code>smoothstep(F.shadow_distance * 0.7, F.shadow_distance, d)</code>.
+</p>
+
+<pre><code><span class="hl-kw">fn</span> compute_shadow(world_pos: vec3&lt;f32&gt;, n: vec3&lt;f32&gt;, l: vec3&lt;f32&gt;) -&gt; f32 {
+    <span class="hl-kw">if</span> (F.shadow_enabled == <span class="hl-num">0u</span>) { <span class="hl-kw">return</span> <span class="hl-num">1.0</span>; }
+
+    <span class="hl-kw">let</span> tb     = tangent_basis(l);
+    <span class="hl-kw">let</span> taps   = max(F.shadow_pcf, <span class="hl-num">1u</span>);
+    <span class="hl-kw">let</span> spread = <span class="hl-num">0.015</span> * f32(taps);
+    <span class="hl-kw">let</span> ro     = world_pos + n * max(F.shadow_bias, <span class="hl-num">0.0001</span>);
+
+    <span class="hl-kw">var</span> occ_sum = <span class="hl-num">0.0</span>;
+    <span class="hl-kw">for</span> (<span class="hl-kw">var</span> s: u32 = <span class="hl-num">0u</span>; s &lt; taps; s = s + <span class="hl-num">1u</span>) {
+        <span class="hl-kw">let</span> hv = hash3(world_pos * <span class="hl-num">137.7</span> + vec3&lt;f32&gt;(f32(s), f32(s)*<span class="hl-num">1.3</span>, f32(s)*<span class="hl-num">2.7</span>));
+        <span class="hl-kw">let</span> ox = (hv.x - <span class="hl-num">0.5</span>) * spread * <span class="hl-num">2.0</span>;
+        <span class="hl-kw">let</span> oy = (hv.y - <span class="hl-num">0.5</span>) * spread * <span class="hl-num">2.0</span>;
+        <span class="hl-kw">let</span> rd = normalize(l + tb[<span class="hl-num">0</span>] * ox + tb[<span class="hl-num">1</span>] * oy);
+        occ_sum = occ_sum + occluded(ro, rd);
+    }
+    <span class="hl-kw">var</span> occ = occ_sum / f32(taps);
+
+    <span class="hl-kw">if</span> (F.shadow_distance &gt; <span class="hl-num">0.0</span>) {
+        <span class="hl-kw">let</span> d = distance(world_pos, F.camera_pos);
+        <span class="hl-kw">let</span> fade = smoothstep(F.shadow_distance * <span class="hl-num">0.7</span>, F.shadow_distance, d);
+        occ = occ * (<span class="hl-num">1.0</span> - fade);
+    }
+    <span class="hl-kw">return</span> <span class="hl-num">1.0</span> - clamp(occ * <span class="hl-num">0.95</span>, <span class="hl-num">0.0</span>, <span class="hl-num">1.0</span>);
+}</code></pre>
+
+<p>
+    <strong>Caster list.</strong> The <code>occluded()</code> helper
+    above walks the <code>SDATA</code> storage buffer for caster
+    geometry. That buffer is the same general-purpose slot
+    <code>GPU.SetBuffer</code> binds, so you populate it from Lua:
+    allocate via <code>GPU.NewBuffer</code>, pack <code>4</code> header
+    floats followed by <code>8</code> floats per caster
+    (<code>kind</code> then padding then center+half-extents), and
+    rebind on every frame the casters move. The engine does not
+    auto-populate this &mdash; the shape of the caster layout is
+    entirely up to you.
+</p>
 
 <h2 id="gpu-buffer">GPUBuffer</h2>
 

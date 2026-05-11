@@ -81,21 +81,69 @@
 
 <h3>3D part fragment</h3>
 
-<pre><code><span class="hl-com">// Frame uniform: view_proj, time, light_dir, sun_color, ambient, viewport, ...</span>
-<span class="hl-com">// Instance uniform: model, color, params[16], cast_shadow, receive_shadow</span>
-<span class="hl-com">// Storage @group(0) @binding(4): user data via GPU.NewBuffer / SetBuffer</span>
+<p>
+    The <code>F</code> (Frame) uniform exposes everything the engine knows
+    about the current frame &mdash; camera, time, sun, ambient, and the
+    full set of <a href="gpu.html#shadows-shaders">shadow knobs</a>
+    pushed by <code>GPU.SetShadow*</code>. Your shader can branch on any
+    of them without binding anything extra:
+</p>
 
-@fragment
+<table>
+    <thead>
+        <tr><th>Field</th><th>Type</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>F.view_proj</code></td><td><code>mat4x4&lt;f32&gt;</code></td><td>Combined view+projection matrix.</td></tr>
+        <tr><td><code>F.camera_pos</code></td><td><code>vec3&lt;f32&gt;</code></td><td>World-space camera position.</td></tr>
+        <tr><td><code>F.time</code></td><td><code>f32</code></td><td>Seconds since window opened.</td></tr>
+        <tr><td><code>F.frame_index</code></td><td><code>u32</code></td><td>Frame counter.</td></tr>
+        <tr><td><code>F.viewport</code></td><td><code>vec2&lt;f32&gt;</code></td><td>Pixel size of the window.</td></tr>
+        <tr><td><code>F.light_dir</code></td><td><code>vec3&lt;f32&gt;</code></td><td>Sun direction (from <code>LightingService.SetSun</code>).</td></tr>
+        <tr><td><code>F.sun_color</code></td><td><code>vec3&lt;f32&gt;</code></td><td>Sun tint.</td></tr>
+        <tr><td><code>F.ambient</code></td><td><code>vec3&lt;f32&gt;</code></td><td>Ambient term.</td></tr>
+        <tr><td><code>F.shadow_enabled</code></td><td><code>u32</code></td><td>0/1, from <code>GPU.SetShadowsEnabled</code>.</td></tr>
+        <tr><td><code>F.shadow_quality</code></td><td><code>u32</code></td><td>Pixel size, from <code>SetShadowMapQuality</code>.</td></tr>
+        <tr><td><code>F.shadow_distance</code></td><td><code>f32</code></td><td>Fade distance, from <code>SetShadowDistance</code>.</td></tr>
+        <tr><td><code>F.shadow_bias</code></td><td><code>f32</code></td><td>Normal-offset bias, from <code>SetShadowBias</code>.</td></tr>
+        <tr><td><code>F.shadow_pcf</code></td><td><code>u32</code></td><td>Tap count (1/3/5/9), from <code>SetShadowPCF</code>.</td></tr>
+        <tr><td><code>F.shadow_strength</code></td><td><code>f32</code></td><td>Engine-derived receiver darkening.</td></tr>
+        <tr><td><code>F.shadow_softness</code></td><td><code>f32</code></td><td>Engine-derived terminator band width.</td></tr>
+    </tbody>
+</table>
+
+<p>
+    The <code>I</code> (Instance) uniform is per-part:
+    <code>I.model</code> (mat4), <code>I.color</code> (vec4),
+    <code>I.params[16]</code>, plus the per-part flags
+    <code>I.cast_shadow</code>, <code>I.receive_shadow</code>, and
+    <code>I.lit</code> (all <code>u32</code>, 0 or 1). Storage at
+    <code>@group(0) @binding(4)</code> is user data via
+    <code>GPU.NewBuffer</code> + <code>GPU.SetBuffer</code>.
+</p>
+
+<pre><code>@fragment
 <span class="hl-kw">fn</span> fs_main(in: VsOut) -&gt; @location(<span class="hl-num">0</span>) vec4&lt;f32&gt; {
-    <span class="hl-kw">if</span> (I.receive_shadow == <span class="hl-num">0u</span>) {
-        <span class="hl-kw">return</span> vec4&lt;f32&gt;(I.color.rgb, <span class="hl-num">1.0</span>);
-    }
     <span class="hl-kw">let</span> N = normalize(in.world_normal);
     <span class="hl-kw">let</span> L = normalize(-F.light_dir);
     <span class="hl-kw">let</span> diffuse = max(dot(N, L), <span class="hl-num">0.0</span>);
-    <span class="hl-kw">let</span> lit = F.ambient + F.sun_color * diffuse;
+
+    <span class="hl-com">// Branch on the live GPU.SetShadow* state.</span>
+    <span class="hl-kw">var</span> mask = <span class="hl-num">1.0</span>;
+    <span class="hl-kw">if</span> (F.shadow_enabled != <span class="hl-num">0u</span> && I.receive_shadow != <span class="hl-num">0u</span> && diffuse &gt; <span class="hl-num">0.0</span>) {
+        mask = compute_shadow(in.world_pos, N, L);
+    }
+
+    <span class="hl-kw">let</span> lit = F.ambient + F.sun_color * diffuse * mask;
     <span class="hl-kw">return</span> vec4&lt;f32&gt;(I.color.rgb * lit, <span class="hl-num">1.0</span>);
 }</code></pre>
+
+<p>
+    For a complete ray-traced soft-shadow implementation that reads a
+    caster list from SDATA and jitters by <code>F.shadow_pcf</code>
+    taps, see <a href="gpu.html#shadows-shaders">GPU &gt; Reading shadow
+    state from your own shaders</a>.
+</p>
 
 <h2 id="params">@ruzit param, runtime parameters</h2>
 
