@@ -198,6 +198,12 @@ enum TweenProp {
     VoicePosition { start: Vector, end_: Vector },
     VoiceMinFalloff { start: f32, end_: f32 },
     VoiceMaxFalloff { start: f32, end_: f32 },
+    MovableCFrame { start: CFrame, end_: CFrame },
+    MovablePosition2D { start: Dim, end_: Dim },
+    SizableSize3D { start: Vector, end_: Vector },
+    SizableSize2D { start: Dim, end_: Dim },
+    BillboardPosition { start: Vector, end_: Vector },
+    BillboardSize { start: Dim, end_: Dim },
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -221,6 +227,9 @@ enum TweenTarget {
         shaders: Arc<Mutex<Vec<crate::libs::voice::VoiceShader>>>,
         position: Arc<Mutex<(f32, f32, f32)>>,
     },
+    Movable(Arc<Mutex<crate::libs::objects::MovableInner>>),
+    Sizable(Arc<Mutex<crate::libs::objects::SizableInner>>),
+    Billboard(Arc<Mutex<crate::libs::gui::BillboardInner>>),
 }
 
 struct GoalSpec {
@@ -428,6 +437,69 @@ fn snapshot_start_values(inner: &mut TweenInner) -> mlua::Result<()> {
                 inner.properties.push(prop);
             }
         }
+        TweenTarget::Movable(arc) => {
+            let s = arc.lock().unwrap();
+            for g in &inner.goals {
+                let prop = match (g.property.as_str(), &g.value) {
+                    ("CFrame", GoalValue::CFrame(end_)) => TweenProp::MovableCFrame {
+                        start: s.cframe,
+                        end_: *end_,
+                    },
+                    ("Position", GoalValue::Dim(end_)) => TweenProp::MovablePosition2D {
+                        start: s.position,
+                        end_: *end_,
+                    },
+                    (name, _) => {
+                        return Err(mlua::Error::RuntimeError(format!(
+                            "TweenService: Movable has no tweenable property '{name}' (supported: CFrame for 3D mode, Position for 2D mode)"
+                        )));
+                    }
+                };
+                inner.properties.push(prop);
+            }
+        }
+        TweenTarget::Sizable(arc) => {
+            let s = arc.lock().unwrap();
+            for g in &inner.goals {
+                let prop = match (g.property.as_str(), &g.value) {
+                    ("Size", GoalValue::Vector(end_)) => TweenProp::SizableSize3D {
+                        start: s.size_v,
+                        end_: *end_,
+                    },
+                    ("Size", GoalValue::Dim(end_)) => TweenProp::SizableSize2D {
+                        start: s.size_d,
+                        end_: *end_,
+                    },
+                    (name, _) => {
+                        return Err(mlua::Error::RuntimeError(format!(
+                            "TweenService: Sizable has no tweenable property '{name}' (supported: Size — Vector for 3D, Dim for 2D)"
+                        )));
+                    }
+                };
+                inner.properties.push(prop);
+            }
+        }
+        TweenTarget::Billboard(arc) => {
+            let s = arc.lock().unwrap();
+            for g in &inner.goals {
+                let prop = match (g.property.as_str(), &g.value) {
+                    ("Position", GoalValue::Vector(end_)) => TweenProp::BillboardPosition {
+                        start: s.position,
+                        end_: *end_,
+                    },
+                    ("Size", GoalValue::Dim(end_)) => TweenProp::BillboardSize {
+                        start: s.size,
+                        end_: *end_,
+                    },
+                    (name, _) => {
+                        return Err(mlua::Error::RuntimeError(format!(
+                            "TweenService: Billboard has no tweenable property '{name}' (supported: Position as Vector, Size as Dim)"
+                        )));
+                    }
+                };
+                inner.properties.push(prop);
+            }
+        }
     }
     Ok(())
 }
@@ -608,6 +680,50 @@ fn apply_progress(inner: &TweenInner, t: f32) {
                             VoiceShader::Spatial { x, y, z, min_falloff: new_min, max_falloff: v },
                         );
                         *position.lock().unwrap() = (x, y, z);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        TweenTarget::Movable(arc) => {
+            for prop in &inner.properties {
+                match prop {
+                    TweenProp::MovableCFrame { start, end_ } => {
+                        let cur = lerp_cframe(*start, *end_, eased);
+                        crate::libs::objects::movable_tween_set_cframe(arc, cur);
+                    }
+                    TweenProp::MovablePosition2D { start, end_ } => {
+                        let cur = lerp_dim(*start, *end_, eased);
+                        crate::libs::objects::movable_tween_set_position(arc, cur);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        TweenTarget::Sizable(arc) => {
+            for prop in &inner.properties {
+                match prop {
+                    TweenProp::SizableSize3D { start, end_ } => {
+                        let cur = lerp_vec(*start, *end_, eased);
+                        crate::libs::objects::sizable_tween_set_size_3d(arc, cur);
+                    }
+                    TweenProp::SizableSize2D { start, end_ } => {
+                        let cur = lerp_dim(*start, *end_, eased);
+                        crate::libs::objects::sizable_tween_set_size_2d(arc, cur);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        TweenTarget::Billboard(arc) => {
+            let mut s = arc.lock().unwrap();
+            for prop in &inner.properties {
+                match prop {
+                    TweenProp::BillboardPosition { start, end_ } => {
+                        s.position = lerp_vec(*start, *end_, eased);
+                    }
+                    TweenProp::BillboardSize { start, end_ } => {
+                        s.size = lerp_dim(*start, *end_, eased);
                     }
                     _ => {}
                 }
@@ -842,15 +958,21 @@ fn create_tween(
                     shaders: vc.shaders.clone(),
                     position: vc.position.clone(),
                 }
+            } else if let Ok(mv) = ud.borrow::<crate::libs::objects::Movable>() {
+                TweenTarget::Movable(mv.inner.clone())
+            } else if let Ok(sz) = ud.borrow::<crate::libs::objects::Sizable>() {
+                TweenTarget::Sizable(sz.inner.clone())
+            } else if let Ok(bb) = ud.borrow::<crate::libs::objects::Billboard>() {
+                TweenTarget::Billboard(bb.inner.clone())
             } else {
                 return Err(mlua::Error::RuntimeError(
-                    "TweenService.new: target must be a BasePart, DistortionBox, GUI primitive, Sound, or VoiceChannel".into(),
+                    "TweenService.new: target must be a BasePart, DistortionBox, GUI primitive, Sound, VoiceChannel, Movable, Sizable, or Billboard".into(),
                 ));
             }
         }
         _ => {
             return Err(mlua::Error::RuntimeError(
-                "TweenService.new: target must be a userdata (BasePart, DistortionBox, GUI primitive, Sound, or VoiceChannel)".into(),
+                "TweenService.new: target must be a userdata (BasePart, DistortionBox, GUI primitive, Sound, VoiceChannel, Movable, Sizable, or Billboard)".into(),
             ));
         }
     };

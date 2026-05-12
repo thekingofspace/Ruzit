@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GUI - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.4">
-    <script src="theme.js?v=1.2.4"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.5">
+    <script src="theme.js?v=1.2.5"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.4" defer></script>
+<script src="sidebar.js?v=1.2.5" defer></script>
 
 <main>
 
@@ -820,6 +820,90 @@ scratch:<span class="hl-fn">Apply</span>(board)        <span class="hl-com">-- s
         <tr><td>Best when</td><td>You want the result on screen</td><td>You want to batch many writes before committing</td></tr>
     </tbody>
 </table>
+
+<h2 id="uieffectvolume">UIEffectVolume</h2>
+
+<p>
+    2D analog of <a href="renderable.html#effectvolume">Renderable.EffectVolume</a>.
+    Spawns sprite particles in screen-space at the configured
+    <code>Position</code> / <code>Size</code> (a 2D Dim region in
+    pixels). Same property surface as the 3D version, minus 3D-only
+    bits: positions and velocities live in 2D pixel space and
+    <code>EmissionDirection</code> is a 2D vector. Particles render in
+    the GUI pass with a <code>ZIndex</code>.
+</p>
+
+<pre><code><span class="hl-kw">local</span> GUI = <span class="hl-fn">import</span>(<span class="hl-str">"GUI"</span>)
+<span class="hl-kw">local</span> Asset = <span class="hl-fn">import</span>(<span class="hl-str">"Asset"</span>)
+<span class="hl-kw">local</span> Dim = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Dim
+
+<span class="hl-kw">local</span> star  = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"Image"</span>, <span class="hl-str">"ui.star"</span>)
+<span class="hl-kw">local</span> burst = GUI.<span class="hl-fn">UIEffectVolume</span>(star)
+burst.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">640</span>, <span class="hl-num">360</span>)         <span class="hl-com">-- center, pixels</span>
+burst.Size     = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</span>, <span class="hl-num">10</span>)          <span class="hl-com">-- spawn box</span>
+burst.Rate     = <span class="hl-num">40</span>
+burst.Speed    = { Min = <span class="hl-num">120</span>, Max = <span class="hl-num">240</span> }
+burst.Acceleration = { X = <span class="hl-num">0</span>, Y = <span class="hl-num">300</span> }   <span class="hl-com">-- gravity</span>
+burst.TimeScaleColor = { [<span class="hl-num">0</span>] = white, [<span class="hl-num">1</span>] = orange }
+burst.TimeScaleTransparency = { [<span class="hl-num">0</span>] = <span class="hl-num">0</span>, [<span class="hl-num">1</span>] = <span class="hl-num">1</span> }</code></pre>
+
+<h3>Properties</h3>
+
+<table>
+    <thead><tr><th>Property</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead>
+    <tbody>
+        <tr><td><code>Position</code></td><td>Dim</td><td>(0.5, 0)</td><td>Emitter center in pixels.</td></tr>
+        <tr><td><code>Size</code></td><td>Dim</td><td>(0, 100)</td><td>Full extent of the spawn box.</td></tr>
+        <tr><td><code>ZIndex</code></td><td>number</td><td>0</td><td>Order against other GUI primitives.</td></tr>
+        <tr><td><code>Image</code></td><td>ImageAsset / DynImg / DrawableImg?</td><td>—</td><td>Sprite texture.</td></tr>
+        <tr><td><code>Enabled</code></td><td>boolean</td><td>true</td><td>Disable to stop spawning.</td></tr>
+        <tr><td><code>Rate</code></td><td>number</td><td>20</td><td>Particles/sec.</td></tr>
+        <tr><td><code>MaxParticles</code></td><td>number</td><td>1024</td><td>Hard cap.</td></tr>
+        <tr><td><code>Lifetime</code></td><td>{ Min, Max }</td><td>1..2 s</td><td>Per-particle lifetime range.</td></tr>
+        <tr><td><code>Speed</code></td><td>{ Min, Max }</td><td>80..160</td><td>Pixels/sec.</td></tr>
+        <tr><td><code>ParticleSize</code></td><td>{ Min, Max }</td><td>16..16</td><td>Base sprite size in pixels.</td></tr>
+        <tr><td><code>Rotation</code> / <code>RotSpeed</code></td><td>{ Min, Max }</td><td>0..0</td><td>Per-particle.</td></tr>
+        <tr><td><code>Acceleration</code></td><td>Vec2 / Dim / { X, Y }</td><td>(0, 200)</td><td>2D pixel-space force.</td></tr>
+        <tr><td><code>Drag</code></td><td>number</td><td>0</td><td>Velocity damping per second.</td></tr>
+        <tr><td><code>Spread</code></td><td>number</td><td>0</td><td>Cone half-angle in degrees.</td></tr>
+        <tr><td><code>EmissionDirection</code></td><td>Vec2 / Dim / { X, Y }</td><td>(0, -1)</td><td>Initial velocity direction.</td></tr>
+        <tr><td><code>Color</code> / <code>TimeScaleColor</code></td><td>Color3 or sequence</td><td>white</td><td>See <a href="renderable.html#effectvolume">EffectVolume</a> for input formats.</td></tr>
+        <tr><td><code>Transparency</code> / <code>TimeScaleTransparency</code></td><td>number or sequence</td><td>0</td><td>Aliases.</td></tr>
+        <tr><td><code>SizeOverLife</code></td><td>number or sequence</td><td>1</td><td>Multiplier on <code>ParticleSize</code>.</td></tr>
+    </tbody>
+</table>
+
+<h3>Methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">emitter:Emit(n?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Force-spawn <code>n</code> particles now (default 1).</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">emitter:Clear()</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">emitter:Destroy()</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">emitter:AttachShader / DetachShader / ClearShaders / SetData / GetData</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Same particle WGSL contract as the 3D
+            <a href="renderable.html#effectvolume">EffectVolume</a> —
+            see <a href="renderable.html#particle-shaders">Particle
+            shaders</a> for the binding layout and the
+            <code>VsOut</code> inputs. Both 2D and 3D particles use the
+            <strong>same shader shape</strong>; the only difference is
+            <code>in.life_t</code> is always 0 on 2D particles and the
+            time field is <code>F.resolution.z</code> instead of
+            <code>F.viewport.z</code>.
+        </p>
+    </div>
+</div>
 
 </main>
 

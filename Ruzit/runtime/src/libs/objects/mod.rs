@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -9,7 +8,7 @@ use mlua::{
 };
 
 use crate::libs::gui::{
-    AttachedShader, GuiPrimitive, PrimitiveState, Shape as GuiShape, TextState,
+    AttachedShader, BillboardInner, GuiPrimitive, PrimitiveState, Shape as GuiShape, TextState,
 };
 use crate::libs::primitives::{CFrame, Dim, Vector, value_to_vector_opt};
 use crate::libs::renderable::{
@@ -21,9 +20,9 @@ use crate::libs::renderable::{
 enum ChildRef {
     Part(Arc<Mutex<PartState>>),
     Gui(Arc<Mutex<PrimitiveState>>),
-    Movable(Rc<RefCell<MovableInner>>),
-    Sizable(Rc<RefCell<SizableInner>>),
-    Clonable(Rc<RefCell<ClonableInner>>),
+    Movable(Arc<Mutex<MovableInner>>),
+    Sizable(Arc<Mutex<SizableInner>>),
+    Clonable(Arc<Mutex<ClonableInner>>),
 }
 
 impl ChildRef {
@@ -31,9 +30,9 @@ impl ChildRef {
         match self {
             ChildRef::Part(s) => s.lock().map(|g| g.alive).unwrap_or(false),
             ChildRef::Gui(s) => s.lock().map(|g| g.alive).unwrap_or(false),
-            ChildRef::Movable(r) => r.borrow().alive,
-            ChildRef::Sizable(r) => r.borrow().alive,
-            ChildRef::Clonable(r) => r.borrow().alive,
+            ChildRef::Movable(r) => r.lock().unwrap().alive,
+            ChildRef::Sizable(r) => r.lock().unwrap().alive,
+            ChildRef::Clonable(r) => r.lock().unwrap().alive,
         }
     }
 }
@@ -93,7 +92,7 @@ fn propagate_pos_3d(child: &ChildRef, dp: Vector, dr: Vector) {
         }
         ChildRef::Gui(_) => {}
         ChildRef::Movable(rc) => {
-            let mut inner = rc.borrow_mut();
+            let mut inner = rc.lock().unwrap();
             if inner.mode == MovableMode::ThreeD {
                 inner.cframe = CFrame::new(
                     Vector::new(
@@ -117,14 +116,14 @@ fn propagate_pos_3d(child: &ChildRef, dp: Vector, dr: Vector) {
         }
         ChildRef::Sizable(rc) => {
             let kids: Vec<ChildRef> =
-                rc.borrow().children.iter().map(|c| c.inner.clone()).collect();
+                rc.lock().unwrap().children.iter().map(|c| c.inner.clone()).collect();
             for c in &kids {
                 propagate_pos_3d(c, dp, dr);
             }
         }
         ChildRef::Clonable(rc) => {
             let kids: Vec<ChildRef> =
-                rc.borrow().children.iter().map(|c| c.inner.clone()).collect();
+                rc.lock().unwrap().children.iter().map(|c| c.inner.clone()).collect();
             for c in &kids {
                 propagate_pos_3d(c, dp, dr);
             }
@@ -140,7 +139,7 @@ fn propagate_pos_2d(child: &ChildRef, dx: f32, dy: f32) {
             g.position = Dim::new(g.position.x + dx, g.position.y + dy);
         }
         ChildRef::Movable(rc) => {
-            let mut inner = rc.borrow_mut();
+            let mut inner = rc.lock().unwrap();
             if inner.mode == MovableMode::TwoD {
                 inner.position = Dim::new(inner.position.x + dx, inner.position.y + dy);
             }
@@ -153,14 +152,14 @@ fn propagate_pos_2d(child: &ChildRef, dx: f32, dy: f32) {
         }
         ChildRef::Sizable(rc) => {
             let kids: Vec<ChildRef> =
-                rc.borrow().children.iter().map(|c| c.inner.clone()).collect();
+                rc.lock().unwrap().children.iter().map(|c| c.inner.clone()).collect();
             for c in &kids {
                 propagate_pos_2d(c, dx, dy);
             }
         }
         ChildRef::Clonable(rc) => {
             let kids: Vec<ChildRef> =
-                rc.borrow().children.iter().map(|c| c.inner.clone()).collect();
+                rc.lock().unwrap().children.iter().map(|c| c.inner.clone()).collect();
             for c in &kids {
                 propagate_pos_2d(c, dx, dy);
             }
@@ -176,7 +175,7 @@ fn propagate_size_3d(child: &ChildRef, rx: f32, ry: f32, rz: f32) {
         }
         ChildRef::Gui(_) => {}
         ChildRef::Sizable(rc) => {
-            let mut inner = rc.borrow_mut();
+            let mut inner = rc.lock().unwrap();
             if inner.mode == SizableMode::ThreeD {
                 inner.size_v = Vector::new(
                     inner.size_v.x * rx,
@@ -193,14 +192,14 @@ fn propagate_size_3d(child: &ChildRef, rx: f32, ry: f32, rz: f32) {
         }
         ChildRef::Movable(rc) => {
             let kids: Vec<ChildRef> =
-                rc.borrow().children.iter().map(|c| c.inner.clone()).collect();
+                rc.lock().unwrap().children.iter().map(|c| c.inner.clone()).collect();
             for c in &kids {
                 propagate_size_3d(c, rx, ry, rz);
             }
         }
         ChildRef::Clonable(rc) => {
             let kids: Vec<ChildRef> =
-                rc.borrow().children.iter().map(|c| c.inner.clone()).collect();
+                rc.lock().unwrap().children.iter().map(|c| c.inner.clone()).collect();
             for c in &kids {
                 propagate_size_3d(c, rx, ry, rz);
             }
@@ -216,7 +215,7 @@ fn propagate_size_2d(child: &ChildRef, rx: f32, ry: f32) {
             g.size = Dim::new(g.size.x * rx, g.size.y * ry);
         }
         ChildRef::Sizable(rc) => {
-            let mut inner = rc.borrow_mut();
+            let mut inner = rc.lock().unwrap();
             if inner.mode == SizableMode::TwoD {
                 inner.size_d = Dim::new(inner.size_d.x * rx, inner.size_d.y * ry);
             }
@@ -229,14 +228,14 @@ fn propagate_size_2d(child: &ChildRef, rx: f32, ry: f32) {
         }
         ChildRef::Movable(rc) => {
             let kids: Vec<ChildRef> =
-                rc.borrow().children.iter().map(|c| c.inner.clone()).collect();
+                rc.lock().unwrap().children.iter().map(|c| c.inner.clone()).collect();
             for c in &kids {
                 propagate_size_2d(c, rx, ry);
             }
         }
         ChildRef::Clonable(rc) => {
             let kids: Vec<ChildRef> =
-                rc.borrow().children.iter().map(|c| c.inner.clone()).collect();
+                rc.lock().unwrap().children.iter().map(|c| c.inner.clone()).collect();
             for c in &kids {
                 propagate_size_2d(c, rx, ry);
             }
@@ -251,7 +250,7 @@ fn run_remove_callback(lua: &Lua, key: &RegistryKey, child_ud: AnyUserData) {
 }
 
 pub struct ClonableContainer {
-    inner: Rc<RefCell<ClonableInner>>,
+    inner: Arc<Mutex<ClonableInner>>,
 }
 
 struct ClonableInner {
@@ -262,7 +261,7 @@ struct ClonableInner {
 impl ClonableContainer {
     fn new() -> Self {
         Self {
-            inner: Rc::new(RefCell::new(ClonableInner {
+            inner: Arc::new(Mutex::new(ClonableInner {
                 children: Vec::new(),
                 alive: true,
             })),
@@ -272,9 +271,9 @@ impl ClonableContainer {
 
 impl UserData for ClonableContainer {
     fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
-        f.add_field_method_get("Alive", |_, this| Ok(this.inner.borrow().alive));
+        f.add_field_method_get("Alive", |_, this| Ok(this.inner.lock().unwrap().alive));
         f.add_field_method_get("ChildCount", |_, this| {
-            Ok(this.inner.borrow().children.len() as i64)
+            Ok(this.inner.lock().unwrap().children.len() as i64)
         });
     }
 
@@ -313,7 +312,7 @@ impl UserData for ClonableContainer {
                         ));
                     }
                 };
-                this.inner.borrow_mut().children.push(empty_entry(cref, key));
+                this.inner.lock().unwrap().children.push(empty_entry(cref, key));
                 Ok(())
             },
         );
@@ -322,7 +321,7 @@ impl UserData for ClonableContainer {
             "RemoveChild",
             |lua, this, target: AnyUserData| -> mlua::Result<bool> {
                 let target_ref = child_ref_from_userdata(&target)?;
-                let mut inner = this.inner.borrow_mut();
+                let mut inner = this.inner.lock().unwrap();
                 let pos = inner
                     .children
                     .iter()
@@ -344,7 +343,7 @@ impl UserData for ClonableContainer {
         );
 
         m.add_method("GetChildren", |lua, this, _: ()| -> mlua::Result<Table> {
-            let inner = this.inner.borrow();
+            let inner = this.inner.lock().unwrap();
             let out = lua.create_table()?;
             let mut i = 1;
             for c in &inner.children {
@@ -357,11 +356,11 @@ impl UserData for ClonableContainer {
         });
 
         m.add_method("Clone", |lua, this, _: ()| -> mlua::Result<ClonableContainer> {
-            let src = this.inner.borrow();
+            let src = this.inner.lock().unwrap();
             let dst = ClonableContainer::new();
             let mut ctx = CloneContext::new();
             {
-                let mut dst_inner = dst.inner.borrow_mut();
+                let mut dst_inner = dst.inner.lock().unwrap();
                 for c in &src.children {
                     if !c.inner.alive() {
                         continue;
@@ -375,7 +374,7 @@ impl UserData for ClonableContainer {
         });
 
         m.add_method("Destroy", |lua, this, _: ()| -> mlua::Result<()> {
-            destroy_inner(lua, &mut this.inner.borrow_mut());
+            destroy_inner(lua, &mut this.inner.lock().unwrap());
             Ok(())
         });
     }
@@ -389,9 +388,9 @@ fn same_ref(a: &ChildRef, b: &ChildRef) -> bool {
     match (a, b) {
         (ChildRef::Part(x), ChildRef::Part(y)) => Arc::ptr_eq(x, y),
         (ChildRef::Gui(x), ChildRef::Gui(y)) => Arc::ptr_eq(x, y),
-        (ChildRef::Movable(x), ChildRef::Movable(y)) => Rc::ptr_eq(x, y),
-        (ChildRef::Sizable(x), ChildRef::Sizable(y)) => Rc::ptr_eq(x, y),
-        (ChildRef::Clonable(x), ChildRef::Clonable(y)) => Rc::ptr_eq(x, y),
+        (ChildRef::Movable(x), ChildRef::Movable(y)) => Arc::ptr_eq(x, y),
+        (ChildRef::Sizable(x), ChildRef::Sizable(y)) => Arc::ptr_eq(x, y),
+        (ChildRef::Clonable(x), ChildRef::Clonable(y)) => Arc::ptr_eq(x, y),
         _ => false,
     }
 }
@@ -400,7 +399,7 @@ fn inherit_movable_cframe(c: &ChildRef) -> Option<CFrame> {
     match c {
         ChildRef::Part(s) => Some(s.lock().unwrap().cframe),
         ChildRef::Movable(rc) => {
-            let inner = rc.borrow();
+            let inner = rc.lock().unwrap();
             if inner.mode == MovableMode::ThreeD {
                 Some(inner.cframe)
             } else {
@@ -415,7 +414,7 @@ fn inherit_movable_position(c: &ChildRef) -> Option<Dim> {
     match c {
         ChildRef::Gui(s) => Some(s.lock().unwrap().position),
         ChildRef::Movable(rc) => {
-            let inner = rc.borrow();
+            let inner = rc.lock().unwrap();
             if inner.mode == MovableMode::TwoD {
                 Some(inner.position)
             } else {
@@ -430,7 +429,7 @@ fn inherit_sizable_vector(c: &ChildRef) -> Option<Vector> {
     match c {
         ChildRef::Part(s) => Some(s.lock().unwrap().size),
         ChildRef::Sizable(rc) => {
-            let inner = rc.borrow();
+            let inner = rc.lock().unwrap();
             if inner.mode == SizableMode::ThreeD {
                 Some(inner.size_v)
             } else {
@@ -445,7 +444,7 @@ fn inherit_sizable_dim(c: &ChildRef) -> Option<Dim> {
     match c {
         ChildRef::Gui(s) => Some(s.lock().unwrap().size),
         ChildRef::Sizable(rc) => {
-            let inner = rc.borrow();
+            let inner = rc.lock().unwrap();
             if inner.mode == SizableMode::TwoD {
                 Some(inner.size_d)
             } else {
@@ -460,12 +459,12 @@ fn mode_for_movable(c: &ChildRef) -> Option<MovableMode> {
     match c {
         ChildRef::Part(_) => Some(MovableMode::ThreeD),
         ChildRef::Gui(_) => Some(MovableMode::TwoD),
-        ChildRef::Movable(rc) => match rc.borrow().mode {
+        ChildRef::Movable(rc) => match rc.lock().unwrap().mode {
             MovableMode::ThreeD => Some(MovableMode::ThreeD),
             MovableMode::TwoD => Some(MovableMode::TwoD),
             MovableMode::Unset => None,
         },
-        ChildRef::Sizable(rc) => match rc.borrow().mode {
+        ChildRef::Sizable(rc) => match rc.lock().unwrap().mode {
             SizableMode::ThreeD => Some(MovableMode::ThreeD),
             SizableMode::TwoD => Some(MovableMode::TwoD),
             SizableMode::Unset => None,
@@ -478,12 +477,12 @@ fn mode_for_sizable(c: &ChildRef) -> Option<SizableMode> {
     match c {
         ChildRef::Part(_) => Some(SizableMode::ThreeD),
         ChildRef::Gui(_) => Some(SizableMode::TwoD),
-        ChildRef::Sizable(rc) => match rc.borrow().mode {
+        ChildRef::Sizable(rc) => match rc.lock().unwrap().mode {
             SizableMode::ThreeD => Some(SizableMode::ThreeD),
             SizableMode::TwoD => Some(SizableMode::TwoD),
             SizableMode::Unset => None,
         },
-        ChildRef::Movable(rc) => match rc.borrow().mode {
+        ChildRef::Movable(rc) => match rc.lock().unwrap().mode {
             MovableMode::ThreeD => Some(SizableMode::ThreeD),
             MovableMode::TwoD => Some(SizableMode::TwoD),
             MovableMode::Unset => None,
@@ -615,10 +614,10 @@ fn clone_child(
             Ok(ChildRef::Gui(prim.state_arc()))
         }
         ChildRef::Movable(inner_rc) => {
-            let src = inner_rc.borrow();
+            let src = inner_rc.lock().unwrap();
             let new_movable = Movable::new();
             {
-                let mut dst = new_movable.inner.borrow_mut();
+                let mut dst = new_movable.inner.lock().unwrap();
                 dst.mode = src.mode;
                 dst.cframe = src.cframe;
                 dst.position = src.position;
@@ -633,10 +632,10 @@ fn clone_child(
             Ok(ChildRef::Movable(new_movable.inner))
         }
         ChildRef::Sizable(inner_rc) => {
-            let src = inner_rc.borrow();
+            let src = inner_rc.lock().unwrap();
             let new_sizable = Sizable::new();
             {
-                let mut dst = new_sizable.inner.borrow_mut();
+                let mut dst = new_sizable.inner.lock().unwrap();
                 dst.mode = src.mode;
                 dst.size_v = src.size_v;
                 dst.size_d = src.size_d;
@@ -651,10 +650,10 @@ fn clone_child(
             Ok(ChildRef::Sizable(new_sizable.inner))
         }
         ChildRef::Clonable(inner_rc) => {
-            let src = inner_rc.borrow();
+            let src = inner_rc.lock().unwrap();
             let new_clonable = ClonableContainer::new();
             {
-                let mut dst = new_clonable.inner.borrow_mut();
+                let mut dst = new_clonable.inner.lock().unwrap();
                 for c in &src.children {
                     if !c.inner.alive() {
                         continue;
@@ -730,28 +729,28 @@ fn clone_text_state(t: &TextState) -> TextState {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum MovableMode {
+pub(crate) enum MovableMode {
     Unset,
     ThreeD,
     TwoD,
 }
 
 pub struct Movable {
-    inner: Rc<RefCell<MovableInner>>,
+    pub(crate) inner: Arc<Mutex<MovableInner>>,
 }
 
-struct MovableInner {
+pub(crate) struct MovableInner {
     children: Vec<ChildEntry>,
     alive: bool,
-    mode: MovableMode,
-    cframe: CFrame,
-    position: Dim,
+    pub(crate) mode: MovableMode,
+    pub(crate) cframe: CFrame,
+    pub(crate) position: Dim,
 }
 
 impl Movable {
     fn new() -> Self {
         Self {
-            inner: Rc::new(RefCell::new(MovableInner {
+            inner: Arc::new(Mutex::new(MovableInner {
                 children: Vec::new(),
                 alive: true,
                 mode: MovableMode::Unset,
@@ -784,21 +783,21 @@ impl Movable {
 
 impl UserData for Movable {
     fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
-        f.add_field_method_get("Alive", |_, this| Ok(this.inner.borrow().alive));
+        f.add_field_method_get("Alive", |_, this| Ok(this.inner.lock().unwrap().alive));
         f.add_field_method_get("ChildCount", |_, this| {
-            Ok(this.inner.borrow().children.len() as i64)
+            Ok(this.inner.lock().unwrap().children.len() as i64)
         });
         f.add_field_method_get("Mode", |_, this| {
-            Ok(match this.inner.borrow().mode {
+            Ok(match this.inner.lock().unwrap().mode {
                 MovableMode::ThreeD => "3D",
                 MovableMode::TwoD => "2D",
                 MovableMode::Unset => "Unset",
             }
             .to_string())
         });
-        f.add_field_method_get("CFrame", |_, this| Ok(this.inner.borrow().cframe));
+        f.add_field_method_get("CFrame", |_, this| Ok(this.inner.lock().unwrap().cframe));
         f.add_field_method_set("CFrame", |_, this, value: AnyUserData| {
-            let mut inner = this.inner.borrow_mut();
+            let mut inner = this.inner.lock().unwrap();
             if inner.mode == MovableMode::TwoD {
                 return Err(mlua::Error::RuntimeError(
                     "Movable: this container is in 2D mode (GUI children). Use .Position instead.".into(),
@@ -821,9 +820,9 @@ impl UserData for Movable {
             Movable::propagate_3d_delta(&inner, dp, dr);
             Ok(())
         });
-        f.add_field_method_get("Position", |_, this| Ok(this.inner.borrow().position));
+        f.add_field_method_get("Position", |_, this| Ok(this.inner.lock().unwrap().position));
         f.add_field_method_set("Position", |_, this, value: AnyUserData| {
-            let mut inner = this.inner.borrow_mut();
+            let mut inner = this.inner.lock().unwrap();
             if inner.mode == MovableMode::ThreeD {
                 return Err(mlua::Error::RuntimeError(
                     "Movable: this container is in 3D mode (BasePart children). Use .CFrame instead.".into(),
@@ -871,7 +870,7 @@ impl UserData for Movable {
                     }
                 };
 
-                let mut inner = this.inner.borrow_mut();
+                let mut inner = this.inner.lock().unwrap();
                 let candidate_mode = mode_for_movable(&cref);
                 if let Some(cm) = candidate_mode {
                     if inner.mode != MovableMode::Unset && inner.mode != cm {
@@ -906,7 +905,7 @@ impl UserData for Movable {
             "RemoveChild",
             |lua, this, target: AnyUserData| -> mlua::Result<bool> {
                 let target_ref = child_ref_from_userdata(&target)?;
-                let mut inner = this.inner.borrow_mut();
+                let mut inner = this.inner.lock().unwrap();
                 let pos = inner
                     .children
                     .iter()
@@ -928,7 +927,7 @@ impl UserData for Movable {
         );
 
         m.add_method("GetChildren", |lua, this, _: ()| -> mlua::Result<Table> {
-            let inner = this.inner.borrow();
+            let inner = this.inner.lock().unwrap();
             let out = lua.create_table()?;
             let mut i = 1;
             for c in &inner.children {
@@ -941,7 +940,7 @@ impl UserData for Movable {
         });
 
         m.add_method("Destroy", |lua, this, _: ()| -> mlua::Result<()> {
-            let mut inner = this.inner.borrow_mut();
+            let mut inner = this.inner.lock().unwrap();
             if !inner.alive {
                 return Ok(());
             }
@@ -961,28 +960,28 @@ impl UserData for Movable {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum SizableMode {
+pub(crate) enum SizableMode {
     Unset,
     ThreeD,
     TwoD,
 }
 
 pub struct Sizable {
-    inner: Rc<RefCell<SizableInner>>,
+    pub(crate) inner: Arc<Mutex<SizableInner>>,
 }
 
-struct SizableInner {
+pub(crate) struct SizableInner {
     children: Vec<ChildEntry>,
     alive: bool,
-    mode: SizableMode,
-    size_v: Vector,
-    size_d: Dim,
+    pub(crate) mode: SizableMode,
+    pub(crate) size_v: Vector,
+    pub(crate) size_d: Dim,
 }
 
 impl Sizable {
     fn new() -> Self {
         Self {
-            inner: Rc::new(RefCell::new(SizableInner {
+            inner: Arc::new(Mutex::new(SizableInner {
                 children: Vec::new(),
                 alive: true,
                 mode: SizableMode::Unset,
@@ -1016,12 +1015,12 @@ fn safe_div(a: f32, b: f32) -> f32 {
 
 impl UserData for Sizable {
     fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
-        f.add_field_method_get("Alive", |_, this| Ok(this.inner.borrow().alive));
+        f.add_field_method_get("Alive", |_, this| Ok(this.inner.lock().unwrap().alive));
         f.add_field_method_get("ChildCount", |_, this| {
-            Ok(this.inner.borrow().children.len() as i64)
+            Ok(this.inner.lock().unwrap().children.len() as i64)
         });
         f.add_field_method_get("Mode", |_, this| {
-            Ok(match this.inner.borrow().mode {
+            Ok(match this.inner.lock().unwrap().mode {
                 SizableMode::ThreeD => "3D",
                 SizableMode::TwoD => "2D",
                 SizableMode::Unset => "Unset",
@@ -1029,14 +1028,14 @@ impl UserData for Sizable {
             .to_string())
         });
         f.add_field_method_get("Size", |lua, this| -> mlua::Result<Value> {
-            let inner = this.inner.borrow();
+            let inner = this.inner.lock().unwrap();
             match inner.mode {
                 SizableMode::TwoD => Ok(Value::UserData(lua.create_userdata(inner.size_d)?)),
                 _ => Ok(Value::UserData(lua.create_userdata(inner.size_v)?)),
             }
         });
         f.add_field_method_set("Size", |_, this, value: Value| {
-            let mut inner = this.inner.borrow_mut();
+            let mut inner = this.inner.lock().unwrap();
             match &value {
                 Value::UserData(ud) => {
                     if let Ok(d) = ud.borrow::<Dim>() {
@@ -1104,7 +1103,7 @@ impl UserData for Sizable {
                     }
                 };
 
-                let mut inner = this.inner.borrow_mut();
+                let mut inner = this.inner.lock().unwrap();
                 let candidate_mode = mode_for_sizable(&cref);
                 if let Some(cm) = candidate_mode {
                     if inner.mode != SizableMode::Unset && inner.mode != cm {
@@ -1139,7 +1138,7 @@ impl UserData for Sizable {
             "RemoveChild",
             |lua, this, target: AnyUserData| -> mlua::Result<bool> {
                 let target_ref = child_ref_from_userdata(&target)?;
-                let mut inner = this.inner.borrow_mut();
+                let mut inner = this.inner.lock().unwrap();
                 let pos = inner
                     .children
                     .iter()
@@ -1161,7 +1160,7 @@ impl UserData for Sizable {
         );
 
         m.add_method("GetChildren", |lua, this, _: ()| -> mlua::Result<Table> {
-            let inner = this.inner.borrow();
+            let inner = this.inner.lock().unwrap();
             let out = lua.create_table()?;
             let mut i = 1;
             for c in &inner.children {
@@ -1174,7 +1173,7 @@ impl UserData for Sizable {
         });
 
         m.add_method("Destroy", |lua, this, _: ()| -> mlua::Result<()> {
-            let mut inner = this.inner.borrow_mut();
+            let mut inner = this.inner.lock().unwrap();
             if !inner.alive {
                 return Ok(());
             }
@@ -1186,6 +1185,195 @@ impl UserData for Sizable {
                     if let Ok(ud) = child_to_userdata(lua, &entry.inner) {
                         run_remove_callback(lua, &key, ud);
                     }
+                }
+            }
+            Ok(())
+        });
+    }
+}
+
+pub(crate) fn movable_tween_set_cframe(inner_arc: &Arc<Mutex<MovableInner>>, new_cf: CFrame) {
+    let mut inner = inner_arc.lock().unwrap();
+    if !inner.alive || inner.mode == MovableMode::TwoD {
+        return;
+    }
+    let dp = Vector::new(
+        new_cf.position.x - inner.cframe.position.x,
+        new_cf.position.y - inner.cframe.position.y,
+        new_cf.position.z - inner.cframe.position.z,
+    );
+    let dr = Vector::new(
+        new_cf.rotation.x - inner.cframe.rotation.x,
+        new_cf.rotation.y - inner.cframe.rotation.y,
+        new_cf.rotation.z - inner.cframe.rotation.z,
+    );
+    inner.cframe = new_cf;
+    Movable::propagate_3d_delta(&inner, dp, dr);
+}
+
+pub(crate) fn movable_tween_set_position(inner_arc: &Arc<Mutex<MovableInner>>, new_pos: Dim) {
+    let mut inner = inner_arc.lock().unwrap();
+    if !inner.alive || inner.mode == MovableMode::ThreeD {
+        return;
+    }
+    let dx = new_pos.x - inner.position.x;
+    let dy = new_pos.y - inner.position.y;
+    inner.position = new_pos;
+    Movable::propagate_2d_delta(&inner, dx, dy);
+}
+
+pub(crate) fn sizable_tween_set_size_3d(inner_arc: &Arc<Mutex<SizableInner>>, new_size: Vector) {
+    let mut inner = inner_arc.lock().unwrap();
+    if !inner.alive || inner.mode == SizableMode::TwoD {
+        return;
+    }
+    let rx = safe_div(new_size.x, inner.size_v.x);
+    let ry = safe_div(new_size.y, inner.size_v.y);
+    let rz = safe_div(new_size.z, inner.size_v.z);
+    inner.size_v = new_size;
+    Sizable::propagate_3d_ratio(&inner, rx, ry, rz);
+}
+
+pub(crate) fn sizable_tween_set_size_2d(inner_arc: &Arc<Mutex<SizableInner>>, new_size: Dim) {
+    let mut inner = inner_arc.lock().unwrap();
+    if !inner.alive || inner.mode == SizableMode::ThreeD {
+        return;
+    }
+    let rx = safe_div(new_size.x, inner.size_d.x);
+    let ry = safe_div(new_size.y, inner.size_d.y);
+    inner.size_d = new_size;
+    Sizable::propagate_2d_ratio(&inner, rx, ry);
+}
+
+pub struct Billboard {
+    pub(crate) inner: Arc<Mutex<BillboardInner>>,
+}
+
+impl Billboard {
+    fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(BillboardInner {
+                position: Vector::new(0.0, 0.0, 0.0),
+                size: Dim::new(300.0, 300.0),
+                scale_with_camera: false,
+                alive: true,
+                children: Vec::new(),
+            })),
+        }
+    }
+}
+
+impl UserData for Billboard {
+    fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
+        f.add_field_method_get("Alive", |_, this| Ok(this.inner.lock().unwrap().alive));
+        f.add_field_method_get("ChildCount", |_, this| {
+            let mut inner = this.inner.lock().unwrap();
+            inner.children.retain(|w| w.upgrade().is_some());
+            Ok(inner.children.len() as i64)
+        });
+
+        f.add_field_method_get("Position", |_, this| Ok(this.inner.lock().unwrap().position));
+        f.add_field_method_set("Position", |_, this, v: Vector| {
+            this.inner.lock().unwrap().position = v;
+            Ok(())
+        });
+
+        f.add_field_method_get("Size", |_, this| Ok(this.inner.lock().unwrap().size));
+        f.add_field_method_set("Size", |_, this, ud: AnyUserData| {
+            let d = *ud.borrow::<Dim>().map_err(|_| {
+                mlua::Error::RuntimeError("Billboard.Size expects a Dim".into())
+            })?;
+            this.inner.lock().unwrap().size = d;
+            Ok(())
+        });
+
+        f.add_field_method_get("ScaleWithCamera", |_, this| {
+            Ok(this.inner.lock().unwrap().scale_with_camera)
+        });
+        f.add_field_method_set("ScaleWithCamera", |_, this, v: bool| {
+            this.inner.lock().unwrap().scale_with_camera = v;
+            Ok(())
+        });
+    }
+
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method("AddChild", |_, this, child: AnyUserData| -> mlua::Result<()> {
+            let gp = child.borrow::<GuiPrimitive>().map_err(|_| {
+                mlua::Error::RuntimeError(
+                    "Billboard:AddChild expects a GUI primitive".into(),
+                )
+            })?;
+            let state_arc = gp.state_arc();
+            {
+                let mut s = state_arc.lock().unwrap();
+                if let Some(existing) = &s.billboard_parent {
+                    if !Arc::ptr_eq(existing, &this.inner) {
+                        return Err(mlua::Error::RuntimeError(
+                            "Billboard:AddChild: primitive is already linked to a different Billboard"
+                                .into(),
+                        ));
+                    }
+                    return Ok(());
+                }
+                s.billboard_parent = Some(this.inner.clone());
+            }
+            let mut inner = this.inner.lock().unwrap();
+            inner.children.retain(|w| {
+                w.upgrade()
+                    .map(|a| !Arc::ptr_eq(&a, &state_arc))
+                    .unwrap_or(false)
+            });
+            inner.children.push(Arc::downgrade(&state_arc));
+            Ok(())
+        });
+
+        m.add_method(
+            "RemoveChild",
+            |_, this, child: AnyUserData| -> mlua::Result<()> {
+                let gp = child.borrow::<GuiPrimitive>().map_err(|_| {
+                    mlua::Error::RuntimeError(
+                        "Billboard:RemoveChild expects a GUI primitive".into(),
+                    )
+                })?;
+                let state_arc = gp.state_arc();
+                {
+                    let mut s = state_arc.lock().unwrap();
+                    if let Some(existing) = &s.billboard_parent {
+                        if Arc::ptr_eq(existing, &this.inner) {
+                            s.billboard_parent = None;
+                        }
+                    }
+                }
+                let mut inner = this.inner.lock().unwrap();
+                inner.children.retain(|w| {
+                    w.upgrade()
+                        .map(|a| !Arc::ptr_eq(&a, &state_arc))
+                        .unwrap_or(false)
+                });
+                Ok(())
+            },
+        );
+
+        m.add_method("GetChildren", |lua, this, _: ()| -> mlua::Result<Table> {
+            let inner = this.inner.lock().unwrap();
+            let out = lua.create_table()?;
+            let mut i = 1;
+            for w in inner.children.iter() {
+                if let Some(state_arc) = w.upgrade() {
+                    let gp = GuiPrimitive::from_state(state_arc);
+                    out.set(i, gp)?;
+                    i += 1;
+                }
+            }
+            Ok(out)
+        });
+
+        m.add_method("Destroy", |_, this, _: ()| -> mlua::Result<()> {
+            let mut inner = this.inner.lock().unwrap();
+            inner.alive = false;
+            for w in inner.children.drain(..) {
+                if let Some(state_arc) = w.upgrade() {
+                    state_arc.lock().unwrap().billboard_parent = None;
                 }
             }
             Ok(())
@@ -1206,6 +1394,10 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     t.set(
         "Sizable",
         lua.create_function(|_, _: ()| Ok(Sizable::new()))?,
+    )?;
+    t.set(
+        "Billboard",
+        lua.create_function(|_, _: ()| Ok(Billboard::new()))?,
     )?;
     Ok(t)
 }

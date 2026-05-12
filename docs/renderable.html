@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Renderable - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.4">
-    <script src="theme.js?v=1.2.4"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.5">
+    <script src="theme.js?v=1.2.5"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.4" defer></script>
+<script src="sidebar.js?v=1.2.5" defer></script>
 <main>
 
 <h1>Renderable</h1>
@@ -89,6 +89,197 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
         </p>
     </div>
 </div>
+
+<h2 id="effectvolume">EffectVolume</h2>
+
+<p>
+    Invisible 3D volume that emits sprite particles, modeled after
+    Roblox's <code>ParticleEmitter</code>. Set
+    <code>CFrame</code> + <code>Size</code> to describe the spawn region,
+    give it an image, tune the property knobs, and let it run. The
+    volume itself doesn't draw, only the particles do, billboarded
+    toward the active <code>Renderable.Camera</code> (toggle off with
+    <code>FaceCamera = false</code>).
+</p>
+
+<p>
+    Particles are simulated on the Rust heart tick and rendered as
+    textured quads. Each particle's color, size, and transparency
+    sample their respective sequences over the particle's
+    <code>age / lifetime</code> normalized to <code>[0, 1]</code>.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Renderable = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
+<span class="hl-kw">local</span> Asset      = <span class="hl-fn">import</span>(<span class="hl-str">"Asset"</span>)
+<span class="hl-kw">local</span> Primitives = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>)
+
+<span class="hl-kw">local</span> spark    = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"Image"</span>, <span class="hl-str">"sfx.spark"</span>)
+<span class="hl-kw">local</span> emitter  = Renderable.<span class="hl-fn">EffectVolume</span>(spark)
+emitter.CFrame    = Primitives.CFrame.<span class="hl-fn">new</span>(Primitives.Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">2</span>, <span class="hl-num">0</span>))
+emitter.Size      = Primitives.Vector.<span class="hl-fn">new</span>(<span class="hl-num">1</span>, <span class="hl-num">1</span>, <span class="hl-num">1</span>)
+emitter.Rate      = <span class="hl-num">60</span>
+emitter.Lifetime  = { Min = <span class="hl-num">0.5</span>, Max = <span class="hl-num">1.5</span> }
+emitter.Speed     = { Min = <span class="hl-num">2</span>,   Max = <span class="hl-num">5</span> }
+emitter.Spread    = <span class="hl-num">25</span>           <span class="hl-com">-- cone half-angle in degrees</span>
+emitter.Acceleration = Primitives.Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, -<span class="hl-num">9.8</span>, <span class="hl-num">0</span>)
+emitter.TimeScaleTransparency = { [<span class="hl-num">0</span>] = <span class="hl-num">0</span>, [<span class="hl-num">1</span>] = <span class="hl-num">1</span> }   <span class="hl-com">-- fade out</span>
+emitter.SizeOverLife          = { [<span class="hl-num">0</span>] = <span class="hl-num">1</span>, [<span class="hl-num">1</span>] = <span class="hl-num">0.3</span> }</code></pre>
+
+<h3>Properties</h3>
+
+<table>
+    <thead><tr><th>Property</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead>
+    <tbody>
+        <tr><td><code>CFrame</code></td><td>CFrame</td><td>identity</td><td>Spawn region center + rotation.</td></tr>
+        <tr><td><code>Size</code></td><td>Vector</td><td>(1, 1, 1)</td><td>Full extent of the spawn box, in local axes.</td></tr>
+        <tr><td><code>Image</code></td><td>ImageAsset / DynImg / DrawableImg?</td><td>—</td><td>Sprite texture. Read returns a boolean (whether one is set).</td></tr>
+        <tr><td><code>Enabled</code></td><td>boolean</td><td>true</td><td>While false, no new particles spawn; live ones finish.</td></tr>
+        <tr><td><code>FaceCamera</code></td><td>boolean</td><td>true</td><td>Billboard toward the camera. Set false for fixed-orientation sprites.</td></tr>
+        <tr><td><code>Rate</code></td><td>number</td><td>20</td><td>Particles/sec.</td></tr>
+        <tr><td><code>MaxParticles</code></td><td>number</td><td>2048</td><td>Hard cap; new spawns drop above this.</td></tr>
+        <tr><td><code>Lifetime</code></td><td>{ Min, Max }</td><td>1..2 s</td><td>Per-particle. Accepts a plain number too.</td></tr>
+        <tr><td><code>Speed</code></td><td>{ Min, Max }</td><td>2..4</td><td>Initial speed range.</td></tr>
+        <tr><td><code>ParticleSize</code></td><td>{ Min, Max }</td><td>0.5..0.5</td><td>Base sprite size; multiplied by <code>SizeOverLife</code>.</td></tr>
+        <tr><td><code>Rotation</code></td><td>{ Min, Max }</td><td>0..0</td><td>Initial roll, radians.</td></tr>
+        <tr><td><code>RotSpeed</code></td><td>{ Min, Max }</td><td>0..0</td><td>Angular velocity, radians/sec.</td></tr>
+        <tr><td><code>Acceleration</code></td><td>Vector</td><td>(0, 0, 0)</td><td>World-space constant force.</td></tr>
+        <tr><td><code>Drag</code></td><td>number</td><td>0</td><td>Velocity damping per second.</td></tr>
+        <tr><td><code>Spread</code></td><td>number</td><td>0</td><td>Cone half-angle in degrees around <code>EmissionDirection</code>.</td></tr>
+        <tr><td><code>EmissionDirection</code></td><td>Vector</td><td>(0, 1, 0)</td><td>Initial velocity direction, in volume-local space.</td></tr>
+        <tr><td><code>Color</code> / <code>TimeScaleColor</code></td><td>Color3 or sequence</td><td>white</td><td>Aliases. Sequence input formats below.</td></tr>
+        <tr><td><code>Transparency</code> / <code>TimeScaleTransparency</code></td><td>number or sequence</td><td>0</td><td>Aliases.</td></tr>
+        <tr><td><code>SizeOverLife</code></td><td>number or sequence</td><td>1</td><td>Multiplier applied to <code>ParticleSize</code>.</td></tr>
+    </tbody>
+</table>
+
+<h3>Sequence input formats</h3>
+
+<p>
+    Both <code>Color</code> / <code>TimeScaleColor</code> and
+    <code>Transparency</code> / <code>TimeScaleTransparency</code> /
+    <code>SizeOverLife</code> accept three input shapes:
+</p>
+
+<pre><code><span class="hl-com">-- 1) Keyed-table (preferred): time -&gt; value.</span>
+emitter.TimeScaleColor        = { [<span class="hl-num">0</span>] = white, [<span class="hl-num">0.5</span>] = red, [<span class="hl-num">1</span>] = black }
+emitter.TimeScaleTransparency = { [<span class="hl-num">0</span>] = <span class="hl-num">0</span>, [<span class="hl-num">1</span>] = <span class="hl-num">1</span> }
+
+<span class="hl-com">-- 2) Ordered list of { t, value } pairs.</span>
+emitter.Color = { { <span class="hl-num">0</span>, white }, { <span class="hl-num">1</span>, black } }
+
+<span class="hl-com">-- 3) Single constant.</span>
+emitter.Transparency = <span class="hl-num">0.4</span></code></pre>
+
+<h3>Methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">emitter:Emit(n?)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Force-spawn <code>n</code> particles right now (default
+            <code>1</code>), ignoring <code>Rate</code>. Still bounded by
+            <code>MaxParticles</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">emitter:Clear()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">Kill every alive particle immediately.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">emitter:Destroy()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">emitter:AttachShader / DetachShader / ClearShaders / SetData / GetData</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Particle shaders use a <strong>2D-style WGSL contract</strong>
+            (the same kind of shader you'd attach to a
+            <a href="gui.html#primitive">GUI primitive</a>), <em>not</em>
+            the 3D BasePart contract. Particles are always rendered as
+            flat textured quads, so a 2D fragment shader is the natural
+            fit. See <a href="#particle-shaders">Particle shaders</a>
+            below for the binding layout and the input
+            <code>VsOut</code> you have access to.
+        </p>
+    </div>
+</div>
+
+<h3 id="particle-shaders">Particle shaders</h3>
+
+<p>
+    Both <code>EffectVolume</code> (3D) and
+    <a href="gui.html#uieffectvolume">UIEffectVolume</a> (2D) use the
+    <strong>same particle WGSL contract</strong>. The vertex shader is
+    fixed (Ruzit handles billboarding for 3D and screen-space placement
+    for 2D); you write the fragment, exactly like a GUI 2D primitive
+    shader. Pass a <code>ShaderAsset</code> or <code>FragmentAsset</code>
+    to <code>:AttachShader(asset)</code>.
+</p>
+
+<h4>Inputs (read-only in your fragment)</h4>
+
+<table>
+    <thead><tr><th>Symbol</th><th>Type</th><th>Meaning</th></tr></thead>
+    <tbody>
+        <tr><td><code>in.uv</code></td><td>vec2&lt;f32&gt;</td><td>Sprite UV in [0, 1] (per pixel).</td></tr>
+        <tr><td><code>in.color</code></td><td>vec4&lt;f32&gt;</td><td>Per-particle RGBA: rgb sampled from <code>Color</code>/<code>TimeScaleColor</code>, a = (1 − <code>Transparency</code>).</td></tr>
+        <tr><td><code>in.life_t</code></td><td>f32</td><td>This particle's normalized age, 0 = just spawned, 1 = about to die. (3D only; <code>0</code> on 2D.)</td></tr>
+        <tr><td><code>IMG</code></td><td>texture_2d</td><td>The volume's <code>Image</code>. White 1×1 if none.</td></tr>
+        <tr><td><code>IMG_SAMP</code></td><td>sampler</td><td>Linear filtering, clamp-to-edge.</td></tr>
+        <tr><td><code>F.viewport</code></td><td>vec4&lt;f32&gt;</td><td>(width, height, time, _) — 3D only.</td></tr>
+        <tr><td><code>F.resolution</code></td><td>vec4&lt;f32&gt;</td><td>(width, height, time, _) — 2D only.</td></tr>
+    </tbody>
+</table>
+
+<h4>Output</h4>
+
+<p>
+    <code>@fragment fn fs_main(in: VsOut) -&gt; @location(0) vec4&lt;f32&gt;</code>
+    returns the final RGBA. Pre-multiplied alpha blending is on.
+</p>
+
+<h4>Minimal example</h4>
+
+<pre><code><span class="hl-com">// A particle shader that pulses brightness over each particle's life.</span>
+@fragment
+fn fs_main(in: VsOut) -&gt; @location(0) vec4&lt;f32&gt; {
+    let tex = textureSample(IMG, IMG_SAMP, in.uv);
+    let pulse = 0.5 + 0.5 * sin(in.life_t * 6.28318);
+    let rgb = tex.rgb * in.color.rgb * pulse;
+    return vec4&lt;f32&gt;(rgb, tex.a * in.color.a);
+}</code></pre>
+
+<h4>What's NOT in the particle contract (yet)</h4>
+
+<ul>
+    <li>
+        <code>// @ruzit param</code> values you push via
+        <code>:SetData(asset, name, value)</code> are stored on the CPU
+        but <em>not</em> bound to the GPU for particle shaders yet —
+        they have no visual effect. Use <code>in.life_t</code> +
+        per-particle <code>in.color</code> + the time field
+        (<code>F.viewport.z</code> in 3D, <code>F.resolution.z</code> in
+        2D) instead. Param uploads land in a follow-up.
+    </li>
+    <li>
+        The 3D <code>BasePart</code> shader uniforms
+        (<code>I.model</code>, world position, normals, lighting) are
+        <em>not</em> available — particles are 2D quads, not 3D meshes.
+        Don't reuse a BasePart shader on an <code>EffectVolume</code>;
+        write a particle-style one instead.
+    </li>
+</ul>
 
 <h2 id="distortionbox">DistortionBox</h2>
 

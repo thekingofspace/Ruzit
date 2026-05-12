@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Objects - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.4">
-    <script src="theme.js?v=1.2.4"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.5">
+    <script src="theme.js?v=1.2.5"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.4" defer></script>
+<script src="sidebar.js?v=1.2.5" defer></script>
 
 <main>
 
@@ -312,6 +312,123 @@ copy:<span class="hl-fn">AddChild</span>(playerModel)
         <div class="member-header"><span class="member-name">s:Destroy()</span></div>
     </div>
 </div>
+
+<h2 id="billboard">Billboard</h2>
+
+<p>
+    World-anchored UI surface. Link GUI primitives to a Billboard with
+    <code>:AddChild(primitive)</code> and they render in the 3D scene at
+    the Billboard's <code>Position</code> instead of on screen. Each
+    linked primitive's <code>Position</code> is its offset (in pixels)
+    inside the Billboard's local canvas; the canvas itself is centered
+    on the world point. Behind-camera Billboards are culled.
+</p>
+
+<p>
+    A primitive can be linked to <strong>at most one Billboard</strong>
+    at a time. Re-linking it to a different Billboard errors. Destroying
+    a Billboard unlinks every child &mdash; those primitives fall back to
+    normal screen-space rendering at whatever <code>Position</code> they
+    currently hold.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Objects = <span class="hl-fn">import</span>(<span class="hl-str">"Objects"</span>)
+<span class="hl-kw">local</span> GUI     = <span class="hl-fn">import</span>(<span class="hl-str">"GUI"</span>)
+<span class="hl-kw">local</span> Asset   = <span class="hl-fn">import</span>(<span class="hl-str">"Asset"</span>)
+<span class="hl-kw">local</span> Vector  = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Vector
+<span class="hl-kw">local</span> Dim     = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Dim
+
+<span class="hl-kw">local</span> bb = Objects.<span class="hl-fn">Billboard</span>()
+bb.Position = Vector.<span class="hl-fn">new</span>(<span class="hl-num">5</span>, <span class="hl-num">3</span>, <span class="hl-num">0</span>)
+bb.Size     = Dim.<span class="hl-fn">new</span>(<span class="hl-num">300</span>, <span class="hl-num">120</span>)
+
+<span class="hl-kw">local</span> bg = GUI.Basic.<span class="hl-fn">Square</span>()
+bg.Size     = Dim.<span class="hl-fn">new</span>(<span class="hl-num">300</span>, <span class="hl-num">120</span>)
+bg.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>)        <span class="hl-com">-- top-left of canvas</span>
+bb:<span class="hl-fn">AddChild</span>(bg)
+
+<span class="hl-kw">local</span> name = GUI.Basic.<span class="hl-fn">Font</span>(Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"Font"</span>, <span class="hl-str">"ui.body"</span>))
+name.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">12</span>, <span class="hl-num">12</span>)
+bb:<span class="hl-fn">AddChild</span>(name)</code></pre>
+
+<h3>Properties</h3>
+
+<table>
+    <thead><tr><th>Property</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead>
+    <tbody>
+        <tr><td><code>Position</code></td><td>Vector</td><td>(0, 0, 0)</td><td>World-space anchor. Canvas is centered on this point's screen projection.</td></tr>
+        <tr><td><code>Size</code></td><td>Dim</td><td>(300, 300)</td><td>Pixel canvas size. Child positions are offsets inside it (0,0 = top-left).</td></tr>
+        <tr><td><code>ScaleWithCamera</code></td><td>boolean</td><td>false</td><td>See below.</td></tr>
+        <tr><td><code>Alive</code></td><td>boolean</td><td>—</td><td>Read-only.</td></tr>
+        <tr><td><code>ChildCount</code></td><td>number</td><td>—</td><td>Read-only. Drops dead refs lazily.</td></tr>
+    </tbody>
+</table>
+
+<h3 id="billboard-scaling"><code>ScaleWithCamera</code></h3>
+
+<p>
+    <strong>False (default):</strong> the canvas is a fixed pixel size
+    on screen. A 300×300 Billboard always covers 300×300 pixels
+    regardless of camera distance &mdash; the classic Roblox-style
+    nameplate billboard.
+</p>
+
+<p>
+    <strong>True:</strong> the canvas scales with distance like a real
+    3D object. The pixel size becomes a world-space size at the
+    Billboard's depth, so walking closer makes it bigger and walking
+    away makes it smaller, same falloff as a sprite in 3D.
+</p>
+
+<h3>Methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">bb:AddChild(primitive)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Link a GUI primitive. Its <code>Position</code> becomes its
+            in-canvas offset. Errors if the primitive is already linked
+            to a different Billboard.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">bb:RemoveChild(primitive)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Unlink. The primitive returns to screen-space rendering.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">bb:GetChildren()</span><span class="member-type">→ { GuiPrimitive }</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">bb:Destroy()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Mark dead and unlink every child.</p>
+    </div>
+</div>
+
+<h3 id="billboard-tween">Tweening</h3>
+
+<p>
+    A Billboard is a valid target for
+    <a href="tweenservice.html"><code>TweenService.new</code></a>.
+    Tweenable properties:
+</p>
+<ul>
+    <li><code>Position</code> &mdash; goal is a <code>Vector</code></li>
+    <li><code>Size</code> &mdash; goal is a <code>Dim</code></li>
+</ul>
+
+<p>
+    <a href="#movable"><code>Movable</code></a> and
+    <a href="#sizable"><code>Sizable</code></a> are also valid tween
+    targets:
+</p>
+<ul>
+    <li><code>Movable.CFrame</code> (3D mode, goal is a <code>CFrame</code>)
+        or <code>.Position</code> (2D mode, goal is a <code>Dim</code>)
+        &mdash; children follow by delta each tick.</li>
+    <li><code>Sizable.Size</code> (goal is a <code>Vector</code> in 3D
+        mode or a <code>Dim</code> in 2D mode) &mdash; children scale by
+        the ratio each tick.</li>
+</ul>
 
 </main>
 

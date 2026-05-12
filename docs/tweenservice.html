@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TweenService - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.4">
-    <script src="theme.js?v=1.2.4"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.5">
+    <script src="theme.js?v=1.2.5"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.4" defer></script>
+<script src="sidebar.js?v=1.2.5" defer></script>
 
 <main>
 
@@ -135,6 +135,29 @@ tw.Completed:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</sp
                     <li><code>Position</code> &mdash; goal is a <code>Vector</code></li>
                     <li><code>MinFalloff</code> &mdash; goal is a <code>number</code></li>
                     <li><code>MaxFalloff</code> &mdash; goal is a <code>number</code></li>
+                </ul>
+            </li>
+            <li><strong><a href="objects.html#movable">Movable</a></strong>
+                <ul>
+                    <li><code>CFrame</code> &mdash; goal is a <code>CFrame</code> (3D mode)</li>
+                    <li><code>Position</code> &mdash; goal is a <code>Dim</code> (2D mode)</li>
+                </ul>
+                <p style="margin-top:6px">
+                    Children are propagated by the delta on every tick.
+                </p>
+            </li>
+            <li><strong><a href="objects.html#sizable">Sizable</a></strong>
+                <ul>
+                    <li><code>Size</code> &mdash; goal is a <code>Vector</code> (3D mode) or <code>Dim</code> (2D mode)</li>
+                </ul>
+                <p style="margin-top:6px">
+                    Children scale by the ratio each tick.
+                </p>
+            </li>
+            <li><strong><a href="objects.html#billboard">Billboard</a></strong>
+                <ul>
+                    <li><code>Position</code> &mdash; goal is a <code>Vector</code> (world-space anchor)</li>
+                    <li><code>Size</code> &mdash; goal is a <code>Dim</code> (pixel canvas)</li>
                 </ul>
             </li>
         </ul>

@@ -6,6 +6,9 @@ use std::sync::{Arc, OnceLock};
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
+use super::particle_pipeline::{
+    ParticleFrame2D, ParticleFrame3D, ParticleInstance2D, ParticleInstance3D, ParticlePipelines,
+};
 use super::{ImageRef, RenderItem, SceneShaderState};
 
 use crate::libs::renderable::{self, render as r3d};
@@ -385,6 +388,8 @@ pub struct GpuState {
     sphere_index_count: u32,
 
     model_buffers: HashMap<u64, ModelBuffers>,
+
+    particles: ParticlePipelines,
 }
 
 struct ModelBuffers {
@@ -725,6 +730,12 @@ impl GpuState {
             mapped_at_creation: false,
         });
 
+        let particles = ParticlePipelines::new(
+            &device,
+            config.format,
+            wgpu::TextureFormat::Depth32Float,
+        );
+
         Ok(Self {
             device,
             queue,
@@ -778,6 +789,7 @@ impl GpuState {
             sphere_index,
             sphere_index_count,
             model_buffers: HashMap::new(),
+            particles,
         })
     }
 
@@ -1301,36 +1313,20 @@ impl GpuState {
             }
         }
 
-        let res = [self.size.0 as f32, self.size.1 as f32];
-        for (i, item) in items.iter().enumerate() {
-            let alpha = (1.0 - item.transparency).clamp(0.0, 1.0);
-            let color = [item.color.r, item.color.g, item.color.b, alpha];
-            let mut params = [[0.0_f32; 4]; 4];
-            if let Some(sh) = &item.active_shader {
-                let p = sh.params.lock().unwrap();
-                for j in 0..16 {
-                    params[j / 4][j % 4] = p[j];
-                }
+        let effect_3d = renderable::effect_volume_snapshot();
+        let ui_effects = super::ui_effect_volume_snapshot();
+        for v in &effect_3d {
+            if let Some(tex) = &v.texture {
+                let _ = self.ensure_part_texture(tex);
             }
-            let data = UniData {
-                pos: [item.position.x, item.position.y],
-                size: [item.size.x, item.size.y],
-                color,
-                resolution: res,
-                time,
-                shape: item.shape.shape_id(),
-                params,
-            };
-            self.queue
-                .write_buffer(&self.uniform_buffers[i], 0, bytemuck::bytes_of(&data));
+        }
+        for v in &ui_effects {
+            if let Some(tex) = &v.texture {
+                let _ = self.ensure_part_texture(tex);
+            }
         }
 
-        if let Some(sb) = &skybox {
-            self.write_scene_uniform(&self.skybox_uniform, sb, time);
-        }
-        if let Some(pe) = &post_effect {
-            self.write_scene_uniform(&self.post_uniform, pe, time);
-        }
+        let res = [self.size.0 as f32, self.size.1 as f32];
 
         let cam = renderable::camera_snapshot();
         let aspect = if self.size.1 > 0 {
@@ -1352,6 +1348,88 @@ impl GpuState {
         );
         let proj = r3d::perspective_matrix(cam.fov_deg, aspect, cam.near, cam.far);
         let view_proj = r3d::mat4_mul(proj, view);
+
+        for (i, item) in items.iter().enumerate() {
+            let alpha = (1.0 - item.transparency).clamp(0.0, 1.0);
+            let color = [item.color.r, item.color.g, item.color.b, alpha];
+            let mut params = [[0.0_f32; 4]; 4];
+            if let Some(sh) = &item.active_shader {
+                let p = sh.params.lock().unwrap();
+                for j in 0..16 {
+                    params[j / 4][j % 4] = p[j];
+                }
+            }
+
+            let (pos_out, size_out, alpha_out) = match &item.billboard_anchor {
+                Some(b) => {
+                    let w = b.world_pos;
+                    let v = [
+                        view_proj[0][0] * w.x
+                            + view_proj[0][1] * w.y
+                            + view_proj[0][2] * w.z
+                            + view_proj[0][3],
+                        view_proj[1][0] * w.x
+                            + view_proj[1][1] * w.y
+                            + view_proj[1][2] * w.z
+                            + view_proj[1][3],
+                        view_proj[2][0] * w.x
+                            + view_proj[2][1] * w.y
+                            + view_proj[2][2] * w.z
+                            + view_proj[2][3],
+                        view_proj[3][0] * w.x
+                            + view_proj[3][1] * w.y
+                            + view_proj[3][2] * w.z
+                            + view_proj[3][3],
+                    ];
+                    if v[3] <= 0.001 {
+                        ([0.0_f32, 0.0_f32], [0.0_f32, 0.0_f32], 0.0_f32)
+                    } else {
+                        let ndc_x = v[0] / v[3];
+                        let ndc_y = v[1] / v[3];
+                        let sx = (ndc_x * 0.5 + 0.5) * res[0];
+                        let sy = (1.0 - (ndc_y * 0.5 + 0.5)) * res[1];
+                        let scale = if b.scale_with_camera {
+                            let f = (cam.fov_deg.to_radians() * 0.5).tan();
+                            let one_unit_in_px = res[1] * 0.5 / (v[3] * f).max(1e-4);
+                            one_unit_in_px
+                        } else {
+                            1.0
+                        };
+                        let canvas_w = b.canvas_size.x * scale;
+                        let canvas_h = b.canvas_size.y * scale;
+                        let canvas_x = sx - canvas_w * 0.5;
+                        let canvas_y = sy - canvas_h * 0.5;
+                        let p_out = [
+                            canvas_x + item.position.x * scale,
+                            canvas_y + item.position.y * scale,
+                        ];
+                        let s_out = [item.size.x * scale, item.size.y * scale];
+                        (p_out, s_out, alpha)
+                    }
+                }
+                None => ([item.position.x, item.position.y], [item.size.x, item.size.y], alpha),
+            };
+            let color_out = [color[0], color[1], color[2], alpha_out];
+
+            let data = UniData {
+                pos: pos_out,
+                size: size_out,
+                color: color_out,
+                resolution: res,
+                time,
+                shape: item.shape.shape_id(),
+                params,
+            };
+            self.queue
+                .write_buffer(&self.uniform_buffers[i], 0, bytemuck::bytes_of(&data));
+        }
+
+        if let Some(sb) = &skybox {
+            self.write_scene_uniform(&self.skybox_uniform, sb, time);
+        }
+        if let Some(pe) = &post_effect {
+            self.write_scene_uniform(&self.post_uniform, pe, time);
+        }
         let lighting = renderable::lighting_snapshot();
         let frame = r3d::FrameUniform3D {
             view_proj: r3d::transpose4(view_proj),
@@ -1541,6 +1619,178 @@ impl GpuState {
             self.bind_group_3d_cache.insert(key, bg);
         }
 
+
+        for v in &effect_3d {
+            if let Some(sh) = &v.active_shader {
+                self.particles.ensure_pipeline_3d(&self.device, sh.id, &sh.wgsl);
+            }
+        }
+        for v in &ui_effects {
+            if let Some(sh) = &v.active_shader {
+                self.particles.ensure_pipeline_2d(&self.device, sh.id, &sh.wgsl);
+            }
+        }
+
+        let mut spans_3d: Vec<(u64, u32, u32, Option<u64>)> = Vec::new();
+        let mut packed_3d: Vec<ParticleInstance3D> = Vec::new();
+        for v in &effect_3d {
+            if v.particles.is_empty() {
+                continue;
+            }
+            let base = packed_3d.len() as u32;
+            for p in &v.particles {
+                packed_3d.push(ParticleInstance3D {
+                    position_size: [p.position.x, p.position.y, p.position.z, p.size],
+                    color: [p.color.r, p.color.g, p.color.b, p.alpha],
+                    rotation_face: [
+                        p.rotation,
+                        if v.face_camera { 1.0 } else { 0.0 },
+                        p.life_t,
+                        0.0,
+                    ],
+                });
+            }
+            let count = packed_3d.len() as u32 - base;
+            let tex_key = v.texture.as_ref().map(|t| t.id).unwrap_or(0);
+            let shader_id = v.active_shader.as_ref().map(|s| s.id);
+            spans_3d.push((tex_key, base, count, shader_id));
+        }
+        if !packed_3d.is_empty() {
+            self.particles
+                .ensure_3d_capacity(&self.device, packed_3d.len());
+            self.queue.write_buffer(
+                &self.particles.instance_3d_buffer,
+                0,
+                bytemuck::cast_slice(&packed_3d),
+            );
+        }
+        let cam_rot = r3d::euler_rotation_matrix([
+            cam.cframe.rotation.x,
+            cam.cframe.rotation.y,
+            cam.cframe.rotation.z,
+        ]);
+        let particle_frame_3d = ParticleFrame3D {
+            view_proj: r3d::transpose4(view_proj),
+            camera_right: [cam_rot[0][0], cam_rot[0][1], cam_rot[0][2], 0.0],
+            camera_up: [cam_rot[1][0], cam_rot[1][1], cam_rot[1][2], 0.0],
+            viewport: [self.size.0 as f32, self.size.1 as f32, time, 0.0],
+        };
+        self.queue.write_buffer(
+            &self.particles.frame_3d_buffer,
+            0,
+            bytemuck::bytes_of(&particle_frame_3d),
+        );
+
+        let mut spans_2d: Vec<(u64, u32, u32, Option<u64>)> = Vec::new();
+        let mut packed_2d: Vec<ParticleInstance2D> = Vec::new();
+        for v in &ui_effects {
+            if v.particles.is_empty() {
+                continue;
+            }
+            let base = packed_2d.len() as u32;
+            for p in &v.particles {
+                packed_2d.push(ParticleInstance2D {
+                    pos_size_rot: [p.position.x, p.position.y, p.size, p.rotation],
+                    color: [p.color.r, p.color.g, p.color.b, p.alpha],
+                });
+            }
+            let count = packed_2d.len() as u32 - base;
+            let tex_key = v.texture.as_ref().map(|t| t.id).unwrap_or(0);
+            let shader_id = v.active_shader.as_ref().map(|s| s.id);
+            spans_2d.push((tex_key, base, count, shader_id));
+        }
+        if !packed_2d.is_empty() {
+            self.particles
+                .ensure_2d_capacity(&self.device, packed_2d.len());
+            self.queue.write_buffer(
+                &self.particles.instance_2d_buffer,
+                0,
+                bytemuck::cast_slice(&packed_2d),
+            );
+        }
+        let particle_frame_2d = ParticleFrame2D {
+            resolution: [self.size.0 as f32, self.size.1 as f32, time, 0.0],
+        };
+        self.queue.write_buffer(
+            &self.particles.frame_2d_buffer,
+            0,
+            bytemuck::bytes_of(&particle_frame_2d),
+        );
+
+
+        for v in &effect_3d {
+            if v.particles.is_empty() {
+                continue;
+            }
+            let key = v.texture.as_ref().map(|t| t.id).unwrap_or(0);
+            if self.particles.bind_cache_3d.contains_key(&key) {
+                continue;
+            }
+            let view = match &v.texture {
+                Some(tex) => self.image_textures.get(&tex.id).unwrap_or(&self.white_view),
+                None => &self.white_view,
+            };
+            let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Ruzit particle 3D bind"),
+                layout: &self.particles.bind_group_layout_3d,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.particles.frame_3d_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: self.particles.instance_3d_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            });
+            self.particles.bind_cache_3d.insert(key, bg);
+        }
+        for v in &ui_effects {
+            if v.particles.is_empty() {
+                continue;
+            }
+            let key = v.texture.as_ref().map(|t| t.id).unwrap_or(0);
+            if self.particles.bind_cache_2d.contains_key(&key) {
+                continue;
+            }
+            let view = match &v.texture {
+                Some(tex) => self.image_textures.get(&tex.id).unwrap_or(&self.white_view),
+                None => &self.white_view,
+            };
+            let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Ruzit particle 2D bind"),
+                layout: &self.particles.bind_group_layout_2d,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.particles.frame_2d_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: self.particles.instance_2d_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            });
+            self.particles.bind_cache_2d.insert(key, bg);
+        }
+
         let main_target: &wgpu::TextureView = if post_effect.is_some() {
             self.scene_view
                 .as_ref()
@@ -1633,6 +1883,25 @@ impl GpuState {
                 rpass.draw_indexed(0..idx_count, 0, 0..1);
             }
 
+
+            if !spans_3d.is_empty() {
+                for (tex_key, base, count, shader_id) in &spans_3d {
+                    let pipeline = match shader_id {
+                        Some(id) => self
+                            .particles
+                            .pipelines_3d
+                            .get(id)
+                            .unwrap_or(&self.particles.default_pipeline_3d),
+                        None => &self.particles.default_pipeline_3d,
+                    };
+                    if let Some(bg) = self.particles.bind_cache_3d.get(tex_key) {
+                        rpass.set_pipeline(pipeline);
+                        rpass.set_bind_group(0, bg, &[]);
+                        rpass.draw(0..6, *base..*base + *count);
+                    }
+                }
+            }
+
             let win_w = self.config.width;
             let win_h = self.config.height;
             let full_scissor = (0u32, 0u32, win_w, win_h);
@@ -1659,6 +1928,28 @@ impl GpuState {
                 rpass.set_pipeline(pipeline);
                 rpass.set_bind_group(0, &bind_groups_2d[i], &[]);
                 rpass.draw(0..6, 0..1);
+            }
+
+
+            if !spans_2d.is_empty() {
+                if current_scissor != full_scissor {
+                    rpass.set_scissor_rect(0, 0, win_w, win_h);
+                }
+                for (tex_key, base, count, shader_id) in &spans_2d {
+                    let pipeline = match shader_id {
+                        Some(id) => self
+                            .particles
+                            .pipelines_2d
+                            .get(id)
+                            .unwrap_or(&self.particles.default_pipeline_2d),
+                        None => &self.particles.default_pipeline_2d,
+                    };
+                    if let Some(bg) = self.particles.bind_cache_2d.get(tex_key) {
+                        rpass.set_pipeline(pipeline);
+                        rpass.set_bind_group(0, bg, &[]);
+                        rpass.draw(0..6, *base..*base + *count);
+                    }
+                }
             }
         }
 

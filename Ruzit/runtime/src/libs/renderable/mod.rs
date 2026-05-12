@@ -13,11 +13,16 @@ use crate::libs::primitives::{value_to_vector_opt, CFrame, Color3, Vector};
 use crate::libs::signal;
 
 pub mod animation;
+pub mod effect_volume;
 pub mod mesh;
 
 use animation::{
     AnimationTrack, Keyframe, KeyframeAction, TrackBaseline, TrackEvent, TrackRef, TrackState,
     UpdateLink,
+};
+pub use effect_volume::{
+    effect_volume_snapshot, tick_effect_volumes, EffectVolumeHandle, EffectVolumeRender,
+    ParticleRender,
 };
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -864,7 +869,7 @@ fn parse_param_decls(src: &str) -> HashMap<String, u8> {
     map
 }
 
-fn build_attached_3d(asset: &AnyUserData) -> mlua::Result<AttachedShader3D> {
+pub(crate) fn build_attached_3d(asset: &AnyUserData) -> mlua::Result<AttachedShader3D> {
     let (id, code) = if let Ok(s) = asset.borrow::<ShaderAsset>() {
         (s.id, s.code.clone())
     } else if let Ok(f) = asset.borrow::<FragmentAsset>() {
@@ -897,7 +902,7 @@ fn build_attached_3d(asset: &AnyUserData) -> mlua::Result<AttachedShader3D> {
     })
 }
 
-fn shader_asset_id(asset: &AnyUserData) -> mlua::Result<u64> {
+pub(crate) fn shader_asset_id(asset: &AnyUserData) -> mlua::Result<u64> {
     if let Ok(s) = asset.borrow::<ShaderAsset>() {
         return Ok(s.id);
     }
@@ -1826,6 +1831,15 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     )?;
 
     t.set("Camera", lua.create_userdata(CameraHandle)?)?;
+
+    t.set(
+        "EffectVolume",
+        lua.create_function(
+            |_, image: Option<AnyUserData>| -> mlua::Result<EffectVolumeHandle> {
+                effect_volume::new_effect_volume(image)
+            },
+        )?,
+    )?;
 
     t.set(
         "DistortionBox",

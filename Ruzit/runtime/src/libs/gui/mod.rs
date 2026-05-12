@@ -9,7 +9,14 @@ use crate::libs::asset::{self, FontAsset, FragmentAsset, ImageAsset, ShaderAsset
 use crate::libs::primitives::{Color3, Dim};
 use crate::libs::signal;
 
+pub mod effect_volume;
+pub mod particle_pipeline;
 pub mod render;
+
+pub use effect_volume::{
+    tick_ui_effect_volumes, ui_effect_volume_snapshot, UIEffectVolumeHandle, UIEffectVolumeRender,
+    UIParticleRender,
+};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -91,6 +98,23 @@ pub struct PrimitiveState {
     pub prop_signals: HashMap<String, Table>,
 
     pub clip_parent: Option<Arc<Mutex<PrimitiveState>>>,
+
+    pub billboard_parent: Option<Arc<Mutex<BillboardInner>>>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct BillboardAnchor {
+    pub world_pos: crate::libs::primitives::Vector,
+    pub scale_with_camera: bool,
+    pub canvas_size: Dim,
+}
+
+pub struct BillboardInner {
+    pub position: crate::libs::primitives::Vector,
+    pub size: Dim,
+    pub scale_with_camera: bool,
+    pub alive: bool,
+    pub children: Vec<std::sync::Weak<Mutex<PrimitiveState>>>,
 }
 
 pub struct TextState {
@@ -122,6 +146,8 @@ pub struct RenderItem {
     pub image: Option<Arc<ImageRef>>,
 
     pub clip_rect: Option<(f32, f32, f32, f32)>,
+
+    pub billboard_anchor: Option<BillboardAnchor>,
 }
 
 pub fn purge_image(lua: &Lua, asset_id: u64) {
@@ -245,6 +271,17 @@ fn build_snapshot() -> Vec<RenderItem> {
                     Some((parent.position.x, parent.position.y, parent.size.x, parent.size.y))
                 });
 
+                let billboard_anchor = s.billboard_parent.as_ref().and_then(|b_arc| {
+                    let b = b_arc.lock().ok()?;
+                    if !b.alive {
+                        return None;
+                    }
+                    Some(BillboardAnchor {
+                        world_pos: b.position,
+                        scale_with_camera: b.scale_with_camera,
+                        canvas_size: b.size,
+                    })
+                });
                 Some(RenderItem {
                     shape: s.shape,
                     size,
@@ -255,6 +292,7 @@ fn build_snapshot() -> Vec<RenderItem> {
                     active_shader: s.attached.last().cloned(),
                     image,
                     clip_rect,
+                    billboard_anchor,
                 })
             })
             .collect();
@@ -409,6 +447,7 @@ impl GuiPrimitive {
             dyn_img_owner: None,
             prop_signals: HashMap::new(),
             clip_parent: None,
+            billboard_parent: None,
         }));
         REGISTRY.with(|cell| cell.borrow_mut().push(state.clone()));
         bump_dirty();
@@ -464,7 +503,7 @@ pub fn current_version() -> u64 {
     GUI_VERSION.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-fn build_attached(asset: &AnyUserData) -> mlua::Result<AttachedShader> {
+pub(crate) fn build_attached(asset: &AnyUserData) -> mlua::Result<AttachedShader> {
     let (id, source, code) = if let Ok(s) = asset.borrow::<ShaderAsset>() {
         (s.id, s.source.clone(), s.code.clone())
     } else if let Ok(f) = asset.borrow::<FragmentAsset>() {
@@ -870,7 +909,7 @@ impl UserData for GuiPrimitive {
     }
 }
 
-fn shader_asset_id(asset: &AnyUserData) -> mlua::Result<u64> {
+pub(crate) fn shader_asset_id(asset: &AnyUserData) -> mlua::Result<u64> {
     if let Ok(s) = asset.borrow::<ShaderAsset>() {
         return Ok(s.id);
     }
@@ -1067,6 +1106,15 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         lua.create_function(|lua, args: MultiValue| {
             crate::libs::anim_image::make_animated_image(lua, args)
         })?,
+    )?;
+
+    t.set(
+        "UIEffectVolume",
+        lua.create_function(
+            |_, image: Option<AnyUserData>| -> mlua::Result<UIEffectVolumeHandle> {
+                effect_volume::new_ui_effect_volume(image)
+            },
+        )?,
     )?;
 
     Ok(t)

@@ -1534,7 +1534,104 @@ export type Renderable_API = {
 	-- or flip a fresh DistortionBox over the same area with the
 	-- original CFrame / Size.
 	DistortionBox: (part: BasePart, cframe: CFrame, size: Vector) -> DistortionBox,
+
+	-- Spawn an invisible 3D volume that emits sprite particles. Modeled
+	-- after Roblox's ParticleEmitter: set CFrame / Size to describe the
+	-- spawn region, hand it an image, tune the property knobs, and let
+	-- it run. Particles are simulated on the Rust heart tick and rendered
+	-- as billboarded textured quads (FaceCamera = true by default).
+	-- Pass an ImageAsset / DynImg / DrawableImg at construction time, or
+	-- assign `.Image` later.
+	EffectVolume: (image: (ImageAsset | DynImg | DrawableImg)?) -> EffectVolume,
 }
+
+-- =============================================================================
+-- EffectVolume — 3D particle emitter. Lifetime is in seconds, Rate is in
+-- particles/sec. The volume is invisible; only the particles draw.
+-- =============================================================================
+
+-- Shared shape for {Min, Max} ranges. Setters also accept a plain number
+-- (interpreted as {n, n}) or a {min, max} array.
+type NumberRange = { Min: number, Max: number }
+-- Color sequence input formats:
+--   { [0] = c1, [0.5] = c2, [1] = c3 }            keyed table (preferred)
+--   { { 0, c1 }, { 0.5, c2 }, { 1, c3 } }         list of {t, Color3}
+--   Color3                                        single constant
+type ColorSequenceInput = Color3 | { [number]: Color3 } | { { number | Color3 } }
+-- Number sequence input formats (same options, but values are numbers).
+type NumberSequenceInput = number | { [number]: number } | { { number } }
+
+declare class EffectVolume
+	IsAlive: boolean
+	-- Live count of currently-alive particles.
+	ParticleCount: number
+	-- While false the emitter spawns nothing; alive particles keep
+	-- simulating and fade out naturally.
+	Enabled: boolean
+	-- If true (default) particles billboard toward the active camera. If
+	-- false they stay axis-aligned to the volume's CFrame rotation.
+	FaceCamera: boolean
+
+	-- Emission region: particles spawn at a random point inside the
+	-- CFrame-oriented box of the given Size. Set CFrame to move the
+	-- volume; Size scales the spawn region.
+	CFrame: CFrame
+	Size: Vector
+
+	-- Sprite texture. Accepts ImageAsset / DynImg / DrawableImg. Read
+	-- returns true if an image is set, false otherwise.
+	Image: (ImageAsset | DynImg | DrawableImg)?
+
+	-- Spawn rate in particles/sec. 0 disables spawning (alive particles
+	-- still finish their lifetimes).
+	Rate: number
+	-- Hard cap on alive particles. Once hit, new spawns are dropped.
+	-- Default 2048, max 100000.
+	MaxParticles: number
+
+	-- Per-particle randomized ranges.
+	Lifetime: NumberRange
+	Speed: NumberRange
+	ParticleSize: NumberRange
+	Rotation: NumberRange
+	RotSpeed: NumberRange
+
+	-- World-space constant force applied each tick.
+	Acceleration: Vector
+	-- Per-second velocity damping. 0 = none, 1 = halve per second.
+	Drag: number
+	-- Cone half-angle in DEGREES around EmissionDirection. 0 = laser, 180 = full sphere.
+	Spread: number
+	-- Initial velocity direction in the volume's local space. Default is
+	-- {0, 1, 0} (up).
+	EmissionDirection: Vector
+
+	-- Over-life sequences. Color/Transparency/SizeOverLife and their
+	-- TimeScale* aliases share the same underlying storage; assign either
+	-- name and read either name.
+	Color: ColorSequenceInput
+	TimeScaleColor: ColorSequenceInput
+	Transparency: NumberSequenceInput
+	TimeScaleTransparency: NumberSequenceInput
+	SizeOverLife: NumberSequenceInput
+
+	-- Force-spawn `n` particles right now, ignoring Rate (still bounded
+	-- by MaxParticles). Default 1.
+	function Emit(self, n: number?): ()
+	-- Kill every alive particle immediately.
+	function Clear(self): ()
+	-- Stop everything and free the volume.
+	function Destroy(self): ()
+
+	-- Same WGSL contract as BasePart's. Attached shaders modify the
+	-- particle fragment output; SetData / GetData address `// @ruzit
+	-- param` slots.
+	function AttachShader(self, asset: ShaderAsset | FragmentAsset): ()
+	function DetachShader(self, asset: ShaderAsset | FragmentAsset): ()
+	function ClearShaders(self): ()
+	function SetData(self, asset: ShaderAsset | FragmentAsset, name: string, value: number): ()
+	function GetData(self, asset: ShaderAsset | FragmentAsset, name: string): number?
+end
 
 declare class DistortionBox
 	-- Current center + rotation of the box, in part-local model
@@ -1939,7 +2036,62 @@ export type GUI_API = {
 	-- `source` is an Image asset or a DynImg. DynImg sources are re-read
 	-- each tick.
 	AnimatedImage: (xml: string, source: any) -> AnimatedImage,
+
+	-- 2D analog of Renderable.EffectVolume. Spawns sprite particles in
+	-- screen-space at the configured Position / Size (a 2D Dim region).
+	-- Same property surface as the 3D version, minus 3D-only things:
+	-- positions and velocities are 2D pixel coordinates, EmissionDirection
+	-- is a 2D vector. Particles render in the GUI pass with a ZIndex.
+	UIEffectVolume: (image: (ImageAsset | DynImg | DrawableImg)?) -> UIEffectVolume,
 }
+
+-- =============================================================================
+-- UIEffectVolume — 2D particle emitter for screen-space effects.
+-- =============================================================================
+
+-- 2D vector input. Accepts a Dim or any table { X = .., Y = .. } / { x, y }.
+type Vec2Input = Dim | { X: number, Y: number } | { number }
+
+declare class UIEffectVolume
+	IsAlive: boolean
+	ParticleCount: number
+	Enabled: boolean
+
+	-- Emitter region in screen-space pixels. Position is the center,
+	-- Size is the full width/height of the spawn box.
+	Position: Dim
+	Size: Dim
+	-- Drawing order against other GUI primitives.
+	ZIndex: number
+
+	Image: (ImageAsset | DynImg | DrawableImg)?
+
+	Rate: number
+	MaxParticles: number
+
+	Lifetime: NumberRange
+	Speed: NumberRange
+	ParticleSize: NumberRange
+	Rotation: NumberRange
+	RotSpeed: NumberRange
+
+	-- 2D pixel-space force.
+	Acceleration: Vec2Input
+	Drag: number
+	-- Cone half-angle in DEGREES around EmissionDirection.
+	Spread: number
+	EmissionDirection: Vec2Input
+
+	Color: ColorSequenceInput
+	TimeScaleColor: ColorSequenceInput
+	Transparency: NumberSequenceInput
+	TimeScaleTransparency: NumberSequenceInput
+	SizeOverLife: NumberSequenceInput
+
+	function Emit(self, n: number?): ()
+	function Clear(self): ()
+	function Destroy(self): ()
+end
 
 type _GuiLegacyMoved_ = {
 
@@ -2303,6 +2455,12 @@ export type TweenService_API = {
 	--   VoiceChannel    — Volume (number), Pitch / Speed (number),
 	--                     Position (Vector), MinFalloff (number),
 	--                     MaxFalloff (number)
+	--   Movable         — CFrame (CFrame, 3D mode) or Position (Dim, 2D
+	--                     mode). Children move/rotate by the delta.
+	--   Sizable         — Size (Vector for 3D, Dim for 2D). Children
+	--                     scale by the ratio.
+	--   Billboard       — Position (Vector world-space), Size (Dim
+	--                     pixel canvas).
 	--
 	-- The returned Tween starts in "Idle". Call `:Play()` to begin.
 	-- Start values are snapshotted at Play time, not at construction
@@ -4344,10 +4502,48 @@ export type Sizable = {
 	Destroy: (self: Sizable) -> (),
 }
 
+-- =============================================================================
+-- Billboard, world-anchored UI surface. Link GUI primitives to a Billboard and
+-- they render in the 3D scene at the Billboard's Position instead of on
+-- screen. Each linked primitive's Position is interpreted as its offset within
+-- the Billboard's local canvas (in pixels). Behind-camera Billboards are culled.
+--
+-- A primitive can be linked to at most one Billboard at a time. Setting
+-- :AddChild on a primitive already linked to a different Billboard errors.
+-- Destroying the Billboard unlinks all its children (they fall back to normal
+-- screen-space rendering at their existing Position).
+-- =============================================================================
+export type Billboard = {
+	Alive: boolean,
+	ChildCount: number,
+	-- World-space anchor point.
+	Position: Vector,
+	-- Pixel size of the canvas the children lay out inside. Each child's
+	-- Position is treated as an offset (in pixels) from the canvas's
+	-- top-left, like a normal screen GUI but parented to the canvas.
+	Size: Dim,
+	-- If false (default), children render at a fixed pixel size on
+	-- screen no matter how far away the camera is — the classic "always
+	-- the same size" billboard. If true, the canvas (and every child)
+	-- scales with distance like a real 3D object: walking closer makes
+	-- it bigger, walking away makes it smaller.
+	ScaleWithCamera: boolean,
+	-- Link a GUI primitive to render inside this Billboard. The
+	-- primitive's existing Position becomes its offset inside the canvas
+	-- (0,0 = canvas top-left).
+	AddChild: (self: Billboard, child: any) -> (),
+	-- Unlink a child. The primitive falls back to normal screen-space
+	-- rendering using its current Position.
+	RemoveChild: (self: Billboard, child: any) -> (),
+	GetChildren: (self: Billboard) -> { any },
+	Destroy: (self: Billboard) -> (),
+}
+
 export type Objects_API = {
 	ClonableContainer: () -> ClonableContainer,
 	Movable: () -> Movable,
 	Sizable: () -> Sizable,
+	Billboard: () -> Billboard,
 }
 
 export type PhysicsService_API = {
