@@ -420,22 +420,406 @@ player:<span class="hl-fn">JumpToFrame</span>(<span class="hl-str">"Down0000"</s
     bounds still display at consistent dimensions.
 </p>
 
-<h2 id="drawableimg">DrawableImg &amp; CanvasBuffer</h2>
+<h3 id="animimg-props">AnimatedImage properties</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Size</span><span class="member-type">Dim</span></div>
+        <p class="member-desc">
+            Mirror of the underlying Image primitive's Size. Writing
+            squashes / stretches the currently-displayed frame.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Position</span><span class="member-type">Dim</span></div>
+        <p class="member-desc">Top-left position of the rendered image.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.ZIndex</span><span class="member-type">number</span></div>
+        <p class="member-desc">Higher = drawn on top.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Visible</span><span class="member-type">boolean</span></div>
+        <p class="member-desc">
+            Defaults to <code>false</code> like every other GUI
+            primitive. Flip to <code>true</code> after creating tracks
+            so you don't flash a half-set-up animation for a frame.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Color</span><span class="member-type">Color3</span></div>
+        <p class="member-desc">Tint multiplied into the current frame's pixels.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Transparency</span><span class="member-type">number</span></div>
+        <p class="member-desc"><code>0</code> opaque, <code>1</code> fully transparent.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.FrameCount</span><span class="member-type">number</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Total number of <code>&lt;SubTexture&gt;</code> entries parsed from the XML.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Alive</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">False after <code>:Destroy()</code>.</p>
+    </div>
+</div>
+
+<h3 id="animimg-methods">AnimatedImage methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">image:CreateTrack(frames, opts?)</span><span class="member-type">→ AnimationTrack</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Build an AnimationTrack from a sequence of SubTexture
+            names. <code>frames</code> is either an array
+            (<code>{"Down0000", "Down0001"}</code>) or a
+            comma-separated string
+            (<code>"Down0000,Down0001,Down0002"</code>). Unknown frame
+            names error. <code>opts</code> is an optional table with
+            <code>FPS</code> (default 12), <code>Looped</code>
+            (default false), and <code>Priority</code> (default 1).
+            Returns a fresh track with its own state and signals
+            &mdash; useful for layered animation. Tracks are owned by
+            this AnimatedImage; <code>:Destroy()</code> stops them.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">image:JumpToFrame(frame)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Snap the displayed frame to a specific SubTexture by name
+            (<code>"Down0000"</code>) or by zero-based index. The
+            pinned frame stays visible until a track is
+            <code>:Play()</code>'d on top &mdash; priority playback
+            wins. Useful for video-game icons that flip between named
+            static frames.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">image:ClearJump()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Release the manual frame override.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">image:HasFrame(name)</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Whether the parsed atlas contains a SubTexture with this
+            name.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">image:GetFrameNames()</span><span class="member-type">→ { string }</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Every SubTexture name in source order. Handy for picking
+            frame names dynamically (e.g. all frames starting with
+            <code>"down"</code>).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">image:GetPrimitive()</span><span class="member-type">→ Primitive</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            The underlying GUI Image primitive. Useful for clipping
+            (<code>clippable:AddClippable(image:GetPrimitive())</code>)
+            or attaching a shader (<code>:AttachShader(asset)</code>).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">image:Destroy()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Destroy the underlying primitive and stop every track. All
+            <code>:CreateTrack</code> handles still resolve but their
+            ticks stop firing.
+        </p>
+    </div>
+</div>
+
+<h3 id="animtrack-props">AnimationTrack properties</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.FPS</span><span class="member-type">number</span></div>
+        <p class="member-desc">
+            Playback rate. Live-editable; the next tick uses the new
+            value. Clamped to a small positive minimum to avoid
+            divide-by-zero.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Looped</span><span class="member-type">boolean</span></div>
+        <p class="member-desc">
+            When true, the track wraps at the end and fires
+            <code>DidLoop</code>. When false, it stops at the end and
+            fires <code>Ended</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Priority</span><span class="member-type">number</span></div>
+        <p class="member-desc">
+            Higher priority wins when multiple tracks are Playing.
+            When a higher-priority track ends (non-looped) and a
+            lower-priority track is still Playing, the lower one
+            takes over the display. Default 1.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.FrameCount</span><span class="member-type">number</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">How many frames this track plays through.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.State</span><span class="member-type">"Idle" | "Playing" | "Stopped"</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Elapsed</span><span class="member-type">number</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Seconds elapsed in the current play cycle.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.DidLoop</span><span class="member-type">Signal&lt;&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Fires every time a looped track wraps. If the heart loop
+            skipped multiple cycles in one tick (lag spike), the
+            signal fires multiple times in a row.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Ended</span><span class="member-type">Signal&lt;&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Fires once when a non-looped track reaches its end. Does
+            NOT fire on <code>:Stop()</code>.
+        </p>
+    </div>
+</div>
+
+<h3 id="animtrack-methods">AnimationTrack methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">track:Play()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Start the track. Resets <code>Elapsed</code> to 0 and
+            transitions state to <code>"Playing"</code>. Calling on an
+            already-Playing track is a no-op.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">track:Stop()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Stop the track immediately. State goes to
+            <code>"Stopped"</code>. Does NOT fire
+            <code>Ended</code>. The displayed frame switches to
+            whichever lower-priority Playing track wins next tick.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">track:Pause()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Pause without resetting (state goes <code>"Idle"</code>).
+            Elapsed is preserved so <code>:Resume()</code> continues
+            from where you paused.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">track:Resume()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Resume from <code>"Idle"</code> back to <code>"Playing"</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">track:Wait()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Yield the calling coroutine until <code>Ended</code>
+            fires. Must be called from inside a coroutine.
+        </p>
+    </div>
+</div>
+
+<h2 id="drawableimg">DrawableImg</h2>
 
 <p>
-    <code>GUI.DrawableImg(w, h)</code> builds a CPU-mutable image you
-    can draw to with shape primitives (rectangles, lines, circles,
-    pixels, fills). Hand it to <code>part.Texture = drawable</code>
-    and the texture refreshes on the next frame whenever you draw.
-    <code>GUI.CanvasBuffer(w, h)</code> is a scratch buffer with the
-    same draw methods, used to batch many edits before committing
-    to a drawable in a single GPU re-upload.
+    <code>GUI.DrawableImg(width, height)</code> builds a CPU-side
+    RGBA image you can draw shape primitives into from Lua &mdash;
+    rectangles, lines, circles, pixels, fills. Every mutating call
+    bumps an internal version counter, so the next frame the GPU
+    re-uploads the bytes and any GUI primitive whose
+    <code>.Image</code> points at this drawable picks up the change
+    automatically. Assigning <code>part.Texture = drawable</code>
+    on a 3D BasePart works the same way.
 </p>
 
+<pre><code><span class="hl-kw">local</span> mini = GUI.<span class="hl-fn">DrawableImg</span>(<span class="hl-num">128</span>, <span class="hl-num">128</span>)
+mini:<span class="hl-fn">Fill</span>(Color3.<span class="hl-fn">fromRGB</span>(<span class="hl-num">15</span>, <span class="hl-num">20</span>, <span class="hl-num">28</span>))
+mini:<span class="hl-fn">DrawCircle</span>(<span class="hl-num">64</span>, <span class="hl-num">64</span>, <span class="hl-num">50</span>, Color3.<span class="hl-fn">fromRGB</span>(<span class="hl-num">255</span>, <span class="hl-num">200</span>, <span class="hl-num">0</span>), <span class="hl-num">0</span>, <span class="hl-kw">true</span>)
+mini:<span class="hl-fn">DrawRect</span>(<span class="hl-num">32</span>, <span class="hl-num">32</span>, <span class="hl-num">64</span>, <span class="hl-num">8</span>, Color3.<span class="hl-fn">fromRGB</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>))
+
+<span class="hl-com">-- Assign as a primitive image so the renderer shows it.</span>
+<span class="hl-kw">local</span> img = GUI.Basic.<span class="hl-fn">Image</span>(mini)
+img.Size     = Dim.<span class="hl-fn">new</span>(<span class="hl-num">256</span>, <span class="hl-num">256</span>)
+img.Visible  = <span class="hl-kw">true</span></code></pre>
+
+<h3>DrawableImg properties &amp; methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">drawable:Width()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">drawable:Height()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">drawable:Source()</span><span class="member-type">→ string</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Debug label for the drawable (e.g.
+            <code>"&lt;drawable:128x128&gt;"</code>). Useful in logs.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">drawable:Pixels()</span><span class="member-type">→ string</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Return the current pixel buffer as a binary string
+            (<code>width * height * 4</code> bytes of RGBA). Snapshot
+            value; further draws don't mutate the returned string.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">drawable:IsAlive()</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">drawable:WritePixel(x, y, color, transparency?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Set one pixel. <code>color</code> is a
+            <code>Color3</code>. <code>transparency</code> defaults to
+            0 (opaque). Out-of-bounds coordinates are clipped.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">drawable:DrawRect(x, y, w, h, color, transparency?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Fill a rectangle. <code>x, y</code> is the top-left;
+            <code>w, h</code> is the size. Clipped to the drawable's
+            bounds.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">drawable:DrawCube(x, y, w, h, color, transparency?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Alias for <code>:DrawRect</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">drawable:DrawLine(x0, y0, x1, y1, color, transparency?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Bresenham line from <code>(x0,y0)</code> to <code>(x1,y1)</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">drawable:DrawCircle(cx, cy, radius, color, transparency?, filled?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Circle centered on <code>(cx, cy)</code> with radius
+            <code>radius</code>. <code>filled</code> defaults to
+            <code>false</code> (outline). Clipped to bounds.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">drawable:Fill(color, transparency?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Fill the whole drawable with one color.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">drawable:Clear()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Zero out every byte (fully transparent black).</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">drawable:Apply(canvas, atX?, atY?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Blit a <code>CanvasBuffer</code> into this drawable at
+            offset <code>(atX, atY)</code> (defaults to 0, 0). Source
+            pixels with non-zero alpha are copied; clipped to bounds.
+            Use this to batch many CPU draws into a CanvasBuffer
+            cheaply, then commit to the GPU-visible DrawableImg in
+            one shot.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">drawable:Destroy()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Free the drawable. After this, <code>IsAlive()</code> is
+            false and primitives that referenced it stop refreshing.
+        </p>
+    </div>
+</div>
+
+<h2 id="canvasbuffer">CanvasBuffer</h2>
+
 <p>
-    Full reference, recipes, and lifecycle notes live on the
-    <a href="drawable.html"><strong>Drawable</strong></a> page.
+    <code>GUI.CanvasBuffer(width, height)</code> is a scratch CPU
+    buffer with the same drawing methods as <code>DrawableImg</code>,
+    but it is NOT bound to the GPU. Use it when you want to batch
+    many edits without paying for a GPU re-upload on each one &mdash;
+    draw everything into the canvas, then
+    <code>canvas:Apply(drawable)</code> blits the final result onto
+    a real DrawableImg in a single texture write.
 </p>
+
+<pre><code><span class="hl-kw">local</span> board    = GUI.<span class="hl-fn">DrawableImg</span>(<span class="hl-num">256</span>, <span class="hl-num">256</span>)
+<span class="hl-kw">local</span> scratch  = GUI.<span class="hl-fn">CanvasBuffer</span>(<span class="hl-num">256</span>, <span class="hl-num">256</span>)
+
+<span class="hl-kw">for</span> i = <span class="hl-num">1</span>, <span class="hl-num">200</span> <span class="hl-kw">do</span>
+    scratch:<span class="hl-fn">DrawCircle</span>(math.<span class="hl-fn">random</span>(<span class="hl-num">256</span>), math.<span class="hl-fn">random</span>(<span class="hl-num">256</span>), <span class="hl-num">3</span>, Color3.<span class="hl-fn">new</span>(<span class="hl-num">1</span>, <span class="hl-num">1</span>, <span class="hl-num">1</span>), <span class="hl-num">0</span>, <span class="hl-kw">true</span>)
+<span class="hl-kw">end</span>
+
+scratch:<span class="hl-fn">Apply</span>(board)        <span class="hl-com">-- single texture upload at this point</span></code></pre>
+
+<h3>CanvasBuffer methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">canvas:Width()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">canvas:Height()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">canvas:Pixels()</span><span class="member-type">→ string</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Snapshot of the current pixel buffer as RGBA bytes.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">canvas:WritePixel(x, y, color, transparency?)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">canvas:DrawRect(x, y, w, h, color, transparency?)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">canvas:DrawCube(x, y, w, h, color, transparency?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Alias for <code>:DrawRect</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">canvas:DrawLine(x0, y0, x1, y1, color, transparency?)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">canvas:DrawCircle(cx, cy, radius, color, transparency?, filled?)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">canvas:Fill(color, transparency?)</span><span class="tag tag-method">method</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">canvas:Clear()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Zero out every byte.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">canvas:Apply(drawable, atX?, atY?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Blit this canvas onto a <code>DrawableImg</code> at offset
+            <code>(atX, atY)</code> (defaults to 0, 0). One texture
+            upload happens at this point; the canvas itself never
+            touches the GPU. Use it to commit batched CPU work.
+        </p>
+    </div>
+</div>
+
+<h3>DrawableImg vs CanvasBuffer at a glance</h3>
+
+<table>
+    <thead>
+        <tr><th></th><th>DrawableImg</th><th>CanvasBuffer</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>Stored on GPU after draw?</td><td>Yes (texture re-uploads each frame when dirty)</td><td>No, CPU only</td></tr>
+        <tr><td>Show via a primitive directly?</td><td>Yes, <code>GUI.Basic.Image(drawable)</code></td><td>No</td></tr>
+        <tr><td>Use as a 3D part texture?</td><td>Yes, <code>part.Texture = drawable</code></td><td>No</td></tr>
+        <tr><td>Cost per draw call</td><td>Sets a per-frame dirty flag, one upload per frame</td><td>Cheap, just memory write</td></tr>
+        <tr><td>Best when</td><td>You want the result on screen</td><td>You want to batch many writes before committing</td></tr>
+    </tbody>
+</table>
 
 </main>
 
