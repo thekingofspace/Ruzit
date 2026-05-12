@@ -186,6 +186,7 @@ enum TweenProp {
     GuiColor { start: Color3, end_: Color3 },
     GuiTransparency { start: f32, end_: f32 },
     GuiZIndex { start: f32, end_: f32 },
+    GuiRotation { start: f32, end_: f32 },
     SoundVolume { start: f32, end_: f32 },
     SoundPitch { start: f32, end_: f32 },
     SoundPan { start: f32, end_: f32 },
@@ -334,9 +335,13 @@ fn snapshot_start_values(inner: &mut TweenInner) -> mlua::Result<()> {
                         start: s.z_index as f32,
                         end_: *end_,
                     },
+                    ("Rotation", GoalValue::Number(end_)) => TweenProp::GuiRotation {
+                        start: s.rotation,
+                        end_: *end_,
+                    },
                     (name, _) => {
                         return Err(mlua::Error::RuntimeError(format!(
-                            "TweenService: GUI primitive has no tweenable property '{name}' (supported: Position, Size, Color, Transparency, ZIndex — and the value type must match)"
+                            "TweenService: GUI primitive has no tweenable property '{name}' (supported: Position, Size, Color, Transparency, ZIndex, Rotation — and the value type must match)"
                         )));
                     }
                 };
@@ -560,6 +565,9 @@ fn apply_progress(inner: &TweenInner, t: f32) {
                     }
                     TweenProp::GuiZIndex { start, end_ } => {
                         s.z_index = lerp_f(*start, *end_, eased).round() as i32;
+                    }
+                    TweenProp::GuiRotation { start, end_ } => {
+                        s.rotation = lerp_f(*start, *end_, eased);
                     }
                     _ => {}
                 }
@@ -880,8 +888,8 @@ fn parse_goal(property: &str, value: Value) -> mlua::Result<GoalValue> {
                 "TweenService: {property} goal must be a Vector (BasePart) or a Dim (GUI)"
             ))),
         },
-        "Transparency" | "ZIndex" | "Volume" | "Pitch" | "Speed" | "Pan" | "Distortion"
-        | "MinFalloff" | "MaxFalloff" => match value {
+        "Transparency" | "ZIndex" | "Rotation" | "Volume" | "Pitch" | "Speed" | "Pan"
+        | "Distortion" | "MinFalloff" | "MaxFalloff" => match value {
             Value::Integer(n) => Ok(GoalValue::Number(n as f32)),
             Value::Number(n) => Ok(GoalValue::Number(n as f32)),
             _ => Err(mlua::Error::RuntimeError(format!(

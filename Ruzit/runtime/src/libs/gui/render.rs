@@ -179,6 +179,7 @@ pub struct UniData {
     pub resolution: [f32; 2],
     pub time: f32,
     pub shape: u32,
+    pub rotation_pad: [f32; 4],
     pub params: [[f32; 4]; 4],
 }
 
@@ -195,6 +196,7 @@ struct RuzitUni {
     resolution: vec2<f32>,
     time: f32,
     shape: u32,
+    rotation_pad: vec4<f32>,
     params: array<vec4<f32>, 4>,
 };
 
@@ -245,6 +247,7 @@ struct RuzitUni {
     resolution: vec2<f32>,
     time: f32,
     shape: u32,
+    rotation_pad: vec4<f32>,
     params: array<vec4<f32>, 4>,
 };
 
@@ -261,7 +264,14 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
         vec2<f32>(0.0, 1.0),
     );
     let q = quad[vid];
-    let world = U.pos + q * U.size;
+    let rot = U.rotation_pad.x;
+    var local = (q - vec2<f32>(0.5, 0.5)) * U.size;
+    if (abs(rot) > 1e-5) {
+        let cs = cos(rot);
+        let sn = sin(rot);
+        local = vec2<f32>(local.x * cs - local.y * sn, local.x * sn + local.y * cs);
+    }
+    let world = U.pos + U.size * 0.5 + local;
     let x = (world.x / U.resolution.x) * 2.0 - 1.0;
     let y = 1.0 - (world.y / U.resolution.y) * 2.0;
     var out: VsOut;
@@ -993,6 +1003,7 @@ impl GpuState {
             resolution: res,
             time,
             shape: 0,
+            rotation_pad: [0.0; 4],
             params,
         };
         self.queue
@@ -1429,6 +1440,7 @@ impl GpuState {
             };
             let color_out = [color[0], color[1], color[2], alpha_out];
 
+            let rotation_rad = item.rotation.to_radians();
             let data = UniData {
                 pos: pos_out,
                 size: size_out,
@@ -1436,6 +1448,7 @@ impl GpuState {
                 resolution: res,
                 time,
                 shape: item.shape.shape_id(),
+                rotation_pad: [rotation_rad, 0.0, 0.0, 0.0],
                 params,
             };
             self.queue

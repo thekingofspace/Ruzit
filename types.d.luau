@@ -1678,6 +1678,14 @@ declare class Primitive
 	Size: Dim
 	-- Top-left position in screen coords (origin at the top-left of the window).
 	Position: Dim
+	-- Rotation around the primitive's center, in DEGREES. 0 is the natural
+	-- orientation; positive values rotate clockwise (screen-space, Y-down).
+	-- Applies to Square / Image / Font / Triangle / Circle / Clippable
+	-- and to AnimatedImage and DrawableImg (since both rendered through
+	-- Primitive). Spatial queries (GUI.Raycast, GUI.OverlapBox, etc.)
+	-- still test against the un-rotated AABB for now — visual rotation
+	-- only.
+	Rotation: number
 	-- Tint when Texture-less / image tint when textured / glyph color for Text.
 	Color: Color3
 	-- 0 (opaque) … 1 (fully transparent).
@@ -1928,6 +1936,8 @@ export type AnimatedImage = {
 	-- regular Image primitive.
 	Size: Dim,
 	Position: Dim,
+	-- 2D rotation in degrees. Applied around the primitive's center.
+	Rotation: number,
 	ZIndex: number,
 	Visible: boolean,
 	Color: Color3,
@@ -2520,7 +2530,8 @@ export type TweenService_API = {
 	--   BasePart        — CFrame (CFrame), Color (Color3), Size (Vector)
 	--   DistortionBox   — CFrame (CFrame), Size (Vector)
 	--   GUI primitive   — Position (Dim), Size (Dim), Color (Color3),
-	--                     Transparency (number), ZIndex (number)
+	--                     Transparency (number), ZIndex (number),
+	--                     Rotation (number, degrees)
 	--   SFX Sound       — Volume (number), Pitch / Speed (number),
 	--                     Pan (number), Distortion (number),
 	--                     Position (Vector), MinFalloff (number),
@@ -4540,6 +4551,13 @@ export type Movable = {
 	-- 2D mode only. Screen position. Writing it offsets every GUI
 	-- child by the delta from each child's baseline-container Position.
 	Position: Dim,
+	-- 2D mode only. Rotation of the container in degrees. Writing it applies
+	-- a rigid 2D rotation of the WHOLE child subtree around the container's
+	-- own Position: each descendant's position rotates around that pivot and
+	-- each descendant's own rotation gains the same delta. So a Movable whose
+	-- children sit at top / bottom / left / right keeps them on the same
+	-- sides relative to the container after a rotation.
+	Rotation: number,
 	-- When the container is empty AND the first child you add is a
 	-- BasePart (3D mode) or GUI primitive (2D mode), the Movable's
 	-- CFrame / Position is set to the child's at that moment, so the

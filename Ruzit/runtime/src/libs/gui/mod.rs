@@ -81,6 +81,7 @@ pub struct PrimitiveState {
     pub shape: Shape,
     pub size: Dim,
     pub position: Dim,
+    pub rotation: f32,
     pub color: Color3,
     pub transparency: f32,
     pub z_index: i32,
@@ -139,6 +140,7 @@ pub struct RenderItem {
     pub shape: Shape,
     pub size: Dim,
     pub position: Dim,
+    pub rotation: f32,
     pub color: Color3,
     pub transparency: f32,
     pub z_index: i32,
@@ -291,6 +293,7 @@ fn build_snapshot() -> Vec<RenderItem> {
                     shape: s.shape,
                     size,
                     position: s.position,
+                    rotation: s.rotation,
                     color: s.color,
                     transparency: s.transparency,
                     z_index: s.z_index,
@@ -440,6 +443,7 @@ impl GuiPrimitive {
             shape,
             size,
             position: Dim::new(0.0, 0.0),
+            rotation: 0.0,
             color: Color3::new(1.0, 1.0, 1.0),
             transparency: 0.0,
             z_index: 0,
@@ -609,6 +613,24 @@ impl UserData for GuiPrimitive {
             fire_prop_changed(lua, prop_sig, Value::UserData(lua.create_userdata(dim)?));
             Ok(())
         });
+        f.add_field_method_get("Rotation", |_, this| {
+            Ok(this.state.lock().unwrap().rotation)
+        });
+        f.add_field_method_set("Rotation", |lua, this, deg: f32| {
+            this.ensure_alive("set Rotation")?;
+            let (signal_table, prop_sig) = {
+                let mut s = this.state.lock().unwrap();
+                s.rotation = deg;
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("Rotation").cloned(),
+                )
+            };
+            fire_changed(lua, signal_table, "Rotation")?;
+            fire_prop_changed(lua, prop_sig, Value::Number(deg as f64));
+            Ok(())
+        });
+
         f.add_field_method_get("Color", |_, this| Ok(this.state.lock().unwrap().color));
         f.add_field_method_set("Color", |lua, this, value: AnyUserData| {
             this.ensure_alive("set Color")?;

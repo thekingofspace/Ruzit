@@ -167,6 +167,68 @@ fn propagate_pos_2d(child: &ChildRef, dx: f32, dy: f32) {
     }
 }
 
+/// Rigid 2D rotation: every descendant's position rotates around the same
+/// `(pivot_x, pivot_y)` and every rotatable descendant's own rotation field
+/// gains `delta_deg`. `cos_t`/`sin_t` are the cosine/sine of `delta_deg` in
+/// radians, precomputed once by the caller.
+fn rotate_point_2d(p: Dim, pivot_x: f32, pivot_y: f32, cos_t: f32, sin_t: f32) -> Dim {
+    let dx = p.x - pivot_x;
+    let dy = p.y - pivot_y;
+    Dim::new(
+        pivot_x + dx * cos_t - dy * sin_t,
+        pivot_y + dx * sin_t + dy * cos_t,
+    )
+}
+
+fn propagate_rotation_2d(
+    child: &ChildRef,
+    pivot_x: f32,
+    pivot_y: f32,
+    cos_t: f32,
+    sin_t: f32,
+    delta_deg: f32,
+) {
+    match child {
+        // 3D parts don't participate in 2D container rotation.
+        ChildRef::Part(_) => {}
+        ChildRef::Gui(s) => {
+            let mut g = s.lock().unwrap();
+            g.position = rotate_point_2d(g.position, pivot_x, pivot_y, cos_t, sin_t);
+            g.rotation += delta_deg;
+        }
+        ChildRef::Movable(rc) => {
+            let mut inner = rc.lock().unwrap();
+            if inner.mode == MovableMode::TwoD {
+                inner.position =
+                    rotate_point_2d(inner.position, pivot_x, pivot_y, cos_t, sin_t);
+                inner.rotation += delta_deg;
+            }
+            let kids: Vec<ChildRef> =
+                inner.children.iter().map(|c| c.inner.clone()).collect();
+            drop(inner);
+            // Recurse with the OUTER pivot so the whole subtree rotates as a
+            // single rigid body around the originally-rotated container.
+            for c in &kids {
+                propagate_rotation_2d(c, pivot_x, pivot_y, cos_t, sin_t, delta_deg);
+            }
+        }
+        ChildRef::Sizable(rc) => {
+            let kids: Vec<ChildRef> =
+                rc.lock().unwrap().children.iter().map(|c| c.inner.clone()).collect();
+            for c in &kids {
+                propagate_rotation_2d(c, pivot_x, pivot_y, cos_t, sin_t, delta_deg);
+            }
+        }
+        ChildRef::Clonable(rc) => {
+            let kids: Vec<ChildRef> =
+                rc.lock().unwrap().children.iter().map(|c| c.inner.clone()).collect();
+            for c in &kids {
+                propagate_rotation_2d(c, pivot_x, pivot_y, cos_t, sin_t, delta_deg);
+            }
+        }
+    }
+}
+
 fn propagate_size_3d(child: &ChildRef, rx: f32, ry: f32, rz: f32) {
     match child {
         ChildRef::Part(s) => {
@@ -745,6 +807,9 @@ pub(crate) struct MovableInner {
     pub(crate) mode: MovableMode,
     pub(crate) cframe: CFrame,
     pub(crate) position: Dim,
+    /// 2D rotation of the container in degrees. When set via the userdata, the
+    /// delta is propagated to children as a rigid rotation around `position`.
+    pub(crate) rotation: f32,
 }
 
 impl Movable {
@@ -759,6 +824,7 @@ impl Movable {
                     Vector::new(0.0, 0.0, 0.0),
                 ),
                 position: Dim::new(0.0, 0.0),
+                rotation: 0.0,
             })),
         }
     }
@@ -835,6 +901,31 @@ impl UserData for Movable {
             let dy = d.y - inner.position.y;
             inner.position = d;
             Movable::propagate_2d_delta(&inner, dx, dy);
+            Ok(())
+        });
+        f.add_field_method_get("Rotation", |_, this| Ok(this.inner.lock().unwrap().rotation));
+        f.add_field_method_set("Rotation", |_, this, deg: f32| {
+            // Rigid 2D rotation of the whole child subtree around the
+            // container's own .Position. 3D mode uses CFrame for orientation.
+            let mut inner = this.inner.lock().unwrap();
+            if inner.mode == MovableMode::ThreeD {
+                return Err(mlua::Error::RuntimeError(
+                    "Movable: this container is in 3D mode (BasePart children). Set rotation via .CFrame instead.".into(),
+                ));
+            }
+            let delta = deg - inner.rotation;
+            inner.rotation = deg;
+            if delta.abs() < 1e-6 {
+                return Ok(());
+            }
+            let (sin_t, cos_t) = delta.to_radians().sin_cos();
+            let pivot_x = inner.position.x;
+            let pivot_y = inner.position.y;
+            let kids: Vec<ChildRef> = inner.children.iter().map(|c| c.inner.clone()).collect();
+            drop(inner);
+            for c in &kids {
+                propagate_rotation_2d(&c, pivot_x, pivot_y, cos_t, sin_t, delta);
+            }
             Ok(())
         });
     }

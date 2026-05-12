@@ -472,6 +472,19 @@ impl UserData for AnimatedImage {
                 .position = d;
             Ok(())
         });
+        f.add_field_method_get("Rotation", |_, this| {
+            Ok(this.inner.lock().unwrap().primitive_state.lock().unwrap().rotation)
+        });
+        f.add_field_method_set("Rotation", |_, this, deg: f32| {
+            this.inner
+                .lock()
+                .unwrap()
+                .primitive_state
+                .lock()
+                .unwrap()
+                .rotation = deg;
+            Ok(())
+        });
         f.add_field_method_get("ZIndex", |_, this| {
             Ok(this.inner.lock().unwrap().primitive_state.lock().unwrap().z_index as i64)
         });

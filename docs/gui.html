@@ -143,6 +143,19 @@ mask.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</spa
         <p class="member-desc">Top-left position. Origin at the top-left of the window.</p>
     </div>
     <div class="member">
+        <div class="member-header"><span class="member-name">.Rotation</span><span class="member-type">number (degrees)</span></div>
+        <p class="member-desc">
+            Rotation around the primitive's center. <code>0</code> is the
+            natural orientation; positive values rotate clockwise in
+            screen space (Y-down). Applies to every primitive shape and
+            inherits through <code>AnimatedImage</code> /
+            <code>DrawableImg</code> since both render via a Primitive.
+            Note: spatial queries (<code>GUI.Raycast</code>,
+            <code>GUI.OverlapBox</code>, etc.) still hit-test against
+            the un-rotated AABB &mdash; visual rotation only.
+        </p>
+    </div>
+    <div class="member">
         <div class="member-header"><span class="member-name">.Color</span><span class="member-type">Color3</span></div>
         <p class="member-desc">Tint when texture-less; image tint when textured; box colour for Text.</p>
     </div>
