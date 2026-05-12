@@ -200,9 +200,11 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             "Serde" => libs::serde::create(lua)?,
             "SFX" => libs::sfx::create(lua)?,
             "Signal" => libs::signal::class(lua)?,
+            #[cfg(feature = "steam")]
             "Steam" => libs::steam::create(lua)?,
             "Task" => libs::task::create(lua)?,
             "TweenService" => libs::tween::create(lua)?,
+            #[cfg(feature = "voice")]
             "Voice" => libs::voice::create(lua)?,
             "VR" => libs::vr::create(lua)?,
             "Window" => libs::window::create(lua)?,

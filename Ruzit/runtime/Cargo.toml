@@ -38,19 +38,27 @@ wgpu = "22"
 bytemuck = { version = "1", features = ["derive"] }
 pollster = "0.3"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif", "webp"] }
-rodio = { version = "0.20", default-features = false, features = ["symphonia-all"] }
 fontdue = "0.9"
-steamworks = "0.11"
-steamworks-sys = "0.11"
 dirs = "5"
 fbxcel-dom = "0.0.10"
 anyhow = "1"
-cpal = "0.15"
-opus = "0.3"
 gilrs = "0.10"
 rayon = "1"
+rodio = { version = "0.20", default-features = false, features = [
+    "symphonia-all",
+] }
 rapier3d = { version = "0.22", features = ["parallel"] }
 nalgebra = "0.33"
+opus = { version = "0.3", optional = true }
+steamworks = { version = "0.11", optional = true }
+steamworks-sys = { version = "0.11", optional = true }
+cpal = {version = "0.15", optional = true}
+
+
+[features]
+default = ["steam", "voice"]
+steam = ["dep:steamworks", "dep:steamworks-sys"]
+voice = ["dep:opus", "dep:cpal"]
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

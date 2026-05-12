@@ -33,7 +33,9 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         crate::libs::gamepad::pump(lua);
         crate::libs::vr::pump(lua);
         crate::libs::sfx::pump(lua);
+        #[cfg(feature = "steam")]
         crate::libs::steam::pump(lua);
+        #[cfg(feature = "voice")]
         crate::libs::voice::pump(lua);
         crate::libs::asset::pump(lua);
         crate::libs::debug::pump(lua);
@@ -42,11 +44,17 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         let snapshot = snapshot_handlers(lua)?;
         let window_open = crate::libs::window::is_open();
         let sfx_active = crate::libs::sfx::is_active();
+        #[cfg(feature = "voice")]
         let voice_active = crate::libs::voice::is_active();
+        #[cfg(not(feature = "voice"))]
+        let voice_active = true;
 
         if snapshot.is_empty() && !window_open && !sfx_active && !voice_active {
-            crate::libs::steam::shutdown_p2p();
-            crate::libs::steam::force_steam_api_shutdown();
+            #[cfg(feature = "steam")]
+            {
+                crate::libs::steam::shutdown_p2p();
+                crate::libs::steam::force_steam_api_shutdown();
+            }
             return Ok(());
         }
 
@@ -82,8 +90,7 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
 
         if let Some(fps) = get_max_fps() {
             if fps > 0 {
-                let target_interval =
-                    std::time::Duration::from_micros(1_000_000 / fps as u64);
+                let target_interval = std::time::Duration::from_micros(1_000_000 / fps as u64);
                 let elapsed = last.elapsed();
                 if elapsed < target_interval {
                     std::thread::sleep(target_interval - elapsed);

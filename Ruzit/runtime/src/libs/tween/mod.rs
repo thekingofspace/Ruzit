@@ -6,7 +6,9 @@ use mlua::{Lua, MultiValue, Table, UserData, UserDataFields, UserDataMethods, Va
 
 use crate::libs::gui::{GuiPrimitive, PrimitiveState};
 use crate::libs::primitives::{CFrame, Color3, Dim, Vector};
-use crate::libs::renderable::{self, DistortionBoxHandle, DistortionBoxState, PartHandle, PartState};
+use crate::libs::renderable::{
+    self, DistortionBoxHandle, DistortionBoxState, PartHandle, PartState,
+};
 use crate::libs::signal;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -157,11 +159,19 @@ fn lerp_f(a: f32, b: f32, t: f32) -> f32 {
 }
 
 fn lerp_vec(a: Vector, b: Vector, t: f32) -> Vector {
-    Vector::new(lerp_f(a.x, b.x, t), lerp_f(a.y, b.y, t), lerp_f(a.z, b.z, t))
+    Vector::new(
+        lerp_f(a.x, b.x, t),
+        lerp_f(a.y, b.y, t),
+        lerp_f(a.z, b.z, t),
+    )
 }
 
 fn lerp_color(a: Color3, b: Color3, t: f32) -> Color3 {
-    Color3::new(lerp_f(a.r, b.r, t), lerp_f(a.g, b.g, t), lerp_f(a.b, b.b, t))
+    Color3::new(
+        lerp_f(a.r, b.r, t),
+        lerp_f(a.g, b.g, t),
+        lerp_f(a.b, b.b, t),
+    )
 }
 
 fn lerp_cframe(a: CFrame, b: CFrame, t: f32) -> CFrame {
@@ -224,6 +234,7 @@ enum TweenTarget {
         shaders: Arc<Mutex<Vec<crate::libs::sfx::Shader>>>,
         position: Arc<Mutex<Option<crate::libs::sfx::SpatialPos>>>,
     },
+    #[cfg(feature = "voice")]
     Voice {
         shaders: Arc<Mutex<Vec<crate::libs::voice::VoiceShader>>>,
         position: Arc<Mutex<(f32, f32, f32)>>,
@@ -357,23 +368,55 @@ fn snapshot_start_values(inner: &mut TweenInner) -> mlua::Result<()> {
             for g in &inner.goals {
                 let prop = match (g.property.as_str(), &g.value) {
                     ("Volume", GoalValue::Number(end_)) => TweenProp::SoundVolume {
-                        start: find_scalar(|s| if let Shader::Volume(v) = s { Some(*v) } else { None }).unwrap_or(1.0),
+                        start: find_scalar(|s| {
+                            if let Shader::Volume(v) = s {
+                                Some(*v)
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or(1.0),
                         end_: *end_,
                     },
-                    ("Pitch", GoalValue::Number(end_)) | ("Speed", GoalValue::Number(end_)) => TweenProp::SoundPitch {
-                        start: find_scalar(|s| if let Shader::Speed(v) = s { Some(*v) } else { None }).unwrap_or(1.0),
-                        end_: *end_,
-                    },
+                    ("Pitch", GoalValue::Number(end_)) | ("Speed", GoalValue::Number(end_)) => {
+                        TweenProp::SoundPitch {
+                            start: find_scalar(|s| {
+                                if let Shader::Speed(v) = s {
+                                    Some(*v)
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or(1.0),
+                            end_: *end_,
+                        }
+                    }
                     ("Pan", GoalValue::Number(end_)) => TweenProp::SoundPan {
-                        start: find_scalar(|s| if let Shader::Pan(v) = s { Some(*v) } else { None }).unwrap_or(0.0),
+                        start: find_scalar(|s| {
+                            if let Shader::Pan(v) = s {
+                                Some(*v)
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or(0.0),
                         end_: *end_,
                     },
                     ("Distortion", GoalValue::Number(end_)) => TweenProp::SoundDistortion {
-                        start: find_scalar(|s| if let Shader::Distortion(v) = s { Some(*v) } else { None }).unwrap_or(0.0),
+                        start: find_scalar(|s| {
+                            if let Shader::Distortion(v) = s {
+                                Some(*v)
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or(0.0),
                         end_: *end_,
                     },
                     ("Position", GoalValue::Vector(end_)) => TweenProp::SoundPosition {
-                        start: pos_snap.map(|p| Vector::new(p.x, p.y, p.z)).unwrap_or(Vector::new(0.0, 0.0, 0.0)),
+                        start: pos_snap
+                            .map(|p| Vector::new(p.x, p.y, p.z))
+                            .unwrap_or(Vector::new(0.0, 0.0, 0.0)),
                         end_: *end_,
                     },
                     ("MinFalloff", GoalValue::Number(end_)) => TweenProp::SoundMinFalloff {
@@ -393,6 +436,7 @@ fn snapshot_start_values(inner: &mut TweenInner) -> mlua::Result<()> {
                 inner.properties.push(prop);
             }
         }
+        #[cfg(feature = "voice")]
         TweenTarget::Voice { shaders, position } => {
             use crate::libs::voice::VoiceShader;
             let find_scalar = |pick: fn(&VoiceShader) -> Option<f32>| -> Option<f32> {
@@ -400,22 +444,42 @@ fn snapshot_start_values(inner: &mut TweenInner) -> mlua::Result<()> {
             };
             let find_spatial = || -> Option<(f32, f32, f32, f32, f32)> {
                 shaders.lock().unwrap().iter().rev().find_map(|s| match s {
-                    VoiceShader::Spatial { x, y, z, min_falloff, max_falloff } => {
-                        Some((*x, *y, *z, *min_falloff, *max_falloff))
-                    }
+                    VoiceShader::Spatial {
+                        x,
+                        y,
+                        z,
+                        min_falloff,
+                        max_falloff,
+                    } => Some((*x, *y, *z, *min_falloff, *max_falloff)),
                     _ => None,
                 })
             };
             for g in &inner.goals {
                 let prop = match (g.property.as_str(), &g.value) {
                     ("Volume", GoalValue::Number(end_)) => TweenProp::VoiceVolume {
-                        start: find_scalar(|s| if let VoiceShader::Volume(v) = s { Some(*v) } else { None }).unwrap_or(1.0),
+                        start: find_scalar(|s| {
+                            if let VoiceShader::Volume(v) = s {
+                                Some(*v)
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or(1.0),
                         end_: *end_,
                     },
-                    ("Pitch", GoalValue::Number(end_)) | ("Speed", GoalValue::Number(end_)) => TweenProp::VoicePitch {
-                        start: find_scalar(|s| if let VoiceShader::Speed(v) = s { Some(*v) } else { None }).unwrap_or(1.0),
-                        end_: *end_,
-                    },
+                    ("Pitch", GoalValue::Number(end_)) | ("Speed", GoalValue::Number(end_)) => {
+                        TweenProp::VoicePitch {
+                            start: find_scalar(|s| {
+                                if let VoiceShader::Speed(v) = s {
+                                    Some(*v)
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or(1.0),
+                            end_: *end_,
+                        }
+                    }
                     ("Position", GoalValue::Vector(end_)) => {
                         let start = find_spatial()
                             .map(|(x, y, z, _, _)| Vector::new(x, y, z))
@@ -583,25 +647,50 @@ fn apply_progress(inner: &TweenInner, t: f32) {
                 match prop {
                     TweenProp::SoundVolume { start, end_ } => {
                         let v = lerp_f(*start, *end_, eased).max(0.0);
-                        replace(&mut shaders.lock().unwrap(), |s| matches!(s, Shader::Volume(_)), Shader::Volume(v));
+                        replace(
+                            &mut shaders.lock().unwrap(),
+                            |s| matches!(s, Shader::Volume(_)),
+                            Shader::Volume(v),
+                        );
                     }
                     TweenProp::SoundPitch { start, end_ } => {
                         let v = lerp_f(*start, *end_, eased).max(0.0);
-                        replace(&mut shaders.lock().unwrap(), |s| matches!(s, Shader::Speed(_)), Shader::Speed(v));
+                        replace(
+                            &mut shaders.lock().unwrap(),
+                            |s| matches!(s, Shader::Speed(_)),
+                            Shader::Speed(v),
+                        );
                     }
                     TweenProp::SoundPan { start, end_ } => {
                         let v = lerp_f(*start, *end_, eased).clamp(-1.0, 1.0);
-                        replace(&mut shaders.lock().unwrap(), |s| matches!(s, Shader::Pan(_)), Shader::Pan(v));
+                        replace(
+                            &mut shaders.lock().unwrap(),
+                            |s| matches!(s, Shader::Pan(_)),
+                            Shader::Pan(v),
+                        );
                     }
                     TweenProp::SoundDistortion { start, end_ } => {
                         let v = lerp_f(*start, *end_, eased).max(0.0);
-                        replace(&mut shaders.lock().unwrap(), |s| matches!(s, Shader::Distortion(_)), Shader::Distortion(v));
+                        replace(
+                            &mut shaders.lock().unwrap(),
+                            |s| matches!(s, Shader::Distortion(_)),
+                            Shader::Distortion(v),
+                        );
                     }
                     TweenProp::SoundPosition { start, end_ } => {
                         let v = lerp_vec(*start, *end_, eased);
                         let mut guard = position.lock().unwrap();
-                        let (min_f, max_f) = guard.as_ref().map(|p| (p.min_falloff, p.max_falloff)).unwrap_or((0.0, 20.0));
-                        *guard = Some(SpatialPos { x: v.x, y: v.y, z: v.z, min_falloff: min_f, max_falloff: max_f });
+                        let (min_f, max_f) = guard
+                            .as_ref()
+                            .map(|p| (p.min_falloff, p.max_falloff))
+                            .unwrap_or((0.0, 20.0));
+                        *guard = Some(SpatialPos {
+                            x: v.x,
+                            y: v.y,
+                            z: v.z,
+                            min_falloff: min_f,
+                            max_falloff: max_f,
+                        });
                     }
                     TweenProp::SoundMinFalloff { start, end_ } => {
                         let v = lerp_f(*start, *end_, eased).max(0.0);
@@ -609,10 +698,18 @@ fn apply_progress(inner: &TweenInner, t: f32) {
                         match guard.as_mut() {
                             Some(p) => {
                                 p.min_falloff = v;
-                                if p.max_falloff < p.min_falloff { p.max_falloff = p.min_falloff; }
+                                if p.max_falloff < p.min_falloff {
+                                    p.max_falloff = p.min_falloff;
+                                }
                             }
                             None => {
-                                *guard = Some(SpatialPos { x: 0.0, y: 0.0, z: 0.0, min_falloff: v, max_falloff: v.max(20.0) });
+                                *guard = Some(SpatialPos {
+                                    x: 0.0,
+                                    y: 0.0,
+                                    z: 0.0,
+                                    min_falloff: v,
+                                    max_falloff: v.max(20.0),
+                                });
                             }
                         }
                     }
@@ -622,10 +719,18 @@ fn apply_progress(inner: &TweenInner, t: f32) {
                         match guard.as_mut() {
                             Some(p) => {
                                 p.max_falloff = v;
-                                if p.min_falloff > p.max_falloff { p.min_falloff = p.max_falloff; }
+                                if p.min_falloff > p.max_falloff {
+                                    p.min_falloff = p.max_falloff;
+                                }
                             }
                             None => {
-                                *guard = Some(SpatialPos { x: 0.0, y: 0.0, z: 0.0, min_falloff: 0.0, max_falloff: v });
+                                *guard = Some(SpatialPos {
+                                    x: 0.0,
+                                    y: 0.0,
+                                    z: 0.0,
+                                    min_falloff: 0.0,
+                                    max_falloff: v,
+                                });
                             }
                         }
                     }
@@ -633,29 +738,52 @@ fn apply_progress(inner: &TweenInner, t: f32) {
                 }
             }
         }
+        #[cfg(feature = "voice")]
         TweenTarget::Voice { shaders, position } => {
             use crate::libs::voice::VoiceShader;
-            fn replace<F: Fn(&VoiceShader) -> bool>(list: &mut Vec<VoiceShader>, kind: F, new: VoiceShader) {
+            fn replace<F: Fn(&VoiceShader) -> bool>(
+                list: &mut Vec<VoiceShader>,
+                kind: F,
+                new: VoiceShader,
+            ) {
                 list.retain(|s| !kind(s));
                 list.push(new);
             }
             let current_spatial = || -> (f32, f32, f32, f32, f32) {
-                shaders.lock().unwrap().iter().rev().find_map(|s| match s {
-                    VoiceShader::Spatial { x, y, z, min_falloff, max_falloff } => {
-                        Some((*x, *y, *z, *min_falloff, *max_falloff))
-                    }
-                    _ => None,
-                }).unwrap_or((0.0, 0.0, 0.0, 0.0, 8.0))
+                shaders
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .rev()
+                    .find_map(|s| match s {
+                        VoiceShader::Spatial {
+                            x,
+                            y,
+                            z,
+                            min_falloff,
+                            max_falloff,
+                        } => Some((*x, *y, *z, *min_falloff, *max_falloff)),
+                        _ => None,
+                    })
+                    .unwrap_or((0.0, 0.0, 0.0, 0.0, 8.0))
             };
             for prop in &inner.properties {
                 match prop {
                     TweenProp::VoiceVolume { start, end_ } => {
                         let v = lerp_f(*start, *end_, eased).max(0.0);
-                        replace(&mut shaders.lock().unwrap(), |s| matches!(s, VoiceShader::Volume(_)), VoiceShader::Volume(v));
+                        replace(
+                            &mut shaders.lock().unwrap(),
+                            |s| matches!(s, VoiceShader::Volume(_)),
+                            VoiceShader::Volume(v),
+                        );
                     }
                     TweenProp::VoicePitch { start, end_ } => {
                         let v = lerp_f(*start, *end_, eased).max(0.0);
-                        replace(&mut shaders.lock().unwrap(), |s| matches!(s, VoiceShader::Speed(_)), VoiceShader::Speed(v));
+                        replace(
+                            &mut shaders.lock().unwrap(),
+                            |s| matches!(s, VoiceShader::Speed(_)),
+                            VoiceShader::Speed(v),
+                        );
                     }
                     TweenProp::VoicePosition { start, end_ } => {
                         let v = lerp_vec(*start, *end_, eased);
@@ -663,7 +791,13 @@ fn apply_progress(inner: &TweenInner, t: f32) {
                         replace(
                             &mut shaders.lock().unwrap(),
                             |s| matches!(s, VoiceShader::Spatial { .. }),
-                            VoiceShader::Spatial { x: v.x, y: v.y, z: v.z, min_falloff: mn, max_falloff: mx },
+                            VoiceShader::Spatial {
+                                x: v.x,
+                                y: v.y,
+                                z: v.z,
+                                min_falloff: mn,
+                                max_falloff: mx,
+                            },
                         );
                         *position.lock().unwrap() = (v.x, v.y, v.z);
                     }
@@ -674,7 +808,13 @@ fn apply_progress(inner: &TweenInner, t: f32) {
                         replace(
                             &mut shaders.lock().unwrap(),
                             |s| matches!(s, VoiceShader::Spatial { .. }),
-                            VoiceShader::Spatial { x, y, z, min_falloff: v, max_falloff: new_max },
+                            VoiceShader::Spatial {
+                                x,
+                                y,
+                                z,
+                                min_falloff: v,
+                                max_falloff: new_max,
+                            },
                         );
                         *position.lock().unwrap() = (x, y, z);
                     }
@@ -685,7 +825,13 @@ fn apply_progress(inner: &TweenInner, t: f32) {
                         replace(
                             &mut shaders.lock().unwrap(),
                             |s| matches!(s, VoiceShader::Spatial { .. }),
-                            VoiceShader::Spatial { x, y, z, min_falloff: new_min, max_falloff: v },
+                            VoiceShader::Spatial {
+                                x,
+                                y,
+                                z,
+                                min_falloff: new_min,
+                                max_falloff: v,
+                            },
                         );
                         *position.lock().unwrap() = (x, y, z);
                     }
@@ -803,15 +949,16 @@ impl UserData for TweenHandle {
             if inner.state == TweenState::Playing {
                 return Ok(());
             }
-            if inner.state == TweenState::Completed || inner.state == TweenState::Cancelled || inner.state == TweenState::Idle {
+            if inner.state == TweenState::Completed
+                || inner.state == TweenState::Cancelled
+                || inner.state == TweenState::Idle
+            {
                 inner.elapsed = 0.0;
                 snapshot_start_values(&mut inner)?;
             }
             inner.state = TweenState::Playing;
             drop(inner);
-            let already = ACTIVE.with(|c| {
-                c.borrow().iter().any(|a| Arc::ptr_eq(a, &this.inner))
-            });
+            let already = ACTIVE.with(|c| c.borrow().iter().any(|a| Arc::ptr_eq(a, &this.inner)));
             if !already {
                 ACTIVE.with(|c| c.borrow_mut().push(this.inner.clone()));
             }
@@ -902,14 +1049,11 @@ fn parse_goal(property: &str, value: Value) -> mlua::Result<GoalValue> {
     }
 }
 
-fn create_tween(
-    lua: &Lua,
-    args: MultiValue,
-) -> mlua::Result<TweenHandle> {
+fn create_tween(lua: &Lua, args: MultiValue) -> mlua::Result<TweenHandle> {
     let mut iter = args.into_iter();
-    let target_v = iter.next().ok_or_else(|| {
-        mlua::Error::RuntimeError("TweenService.new: missing target".into())
-    })?;
+    let target_v = iter
+        .next()
+        .ok_or_else(|| mlua::Error::RuntimeError("TweenService.new: missing target".into()))?;
     let time_v = iter.next().ok_or_else(|| {
         mlua::Error::RuntimeError("TweenService.new: missing duration (number)".into())
     })?;
@@ -948,40 +1092,50 @@ fn create_tween(
         }
     };
 
-    let target = match &target_v {
-        Value::UserData(ud) => {
-            if let Ok(part) = ud.borrow::<PartHandle>() {
-                TweenTarget::Part(part.state.clone())
-            } else if let Ok(dbox) = ud.borrow::<DistortionBoxHandle>() {
-                TweenTarget::Distortion(dbox.inner.clone())
-            } else if let Ok(gui) = ud.borrow::<GuiPrimitive>() {
-                TweenTarget::Gui(gui.state_arc())
-            } else if let Ok(snd) = ud.borrow::<crate::libs::sfx::Sound>() {
-                TweenTarget::Sound {
-                    shaders: snd.shaders.clone(),
-                    position: snd.position.clone(),
-                }
-            } else if let Ok(vc) = ud.borrow::<crate::libs::voice::ChannelHandle>() {
-                TweenTarget::Voice {
-                    shaders: vc.shaders.clone(),
-                    position: vc.position.clone(),
-                }
-            } else if let Ok(mv) = ud.borrow::<crate::libs::objects::Movable>() {
-                TweenTarget::Movable(mv.inner.clone())
-            } else if let Ok(sz) = ud.borrow::<crate::libs::objects::Sizable>() {
-                TweenTarget::Sizable(sz.inner.clone())
-            } else if let Ok(bb) = ud.borrow::<crate::libs::objects::Billboard>() {
-                TweenTarget::Billboard(bb.inner.clone())
-            } else {
-                return Err(mlua::Error::RuntimeError(
+    let target = {
+        match &target_v {
+            Value::UserData(ud) => {
+                #[cfg(feature = "voice")]
+                let voice =
+                    ud.borrow::<crate::libs::voice::ChannelHandle>()
+                        .map(|vc| TweenTarget::Voice {
+                            shaders: vc.shaders.clone(),
+                            position: vc.position.clone(),
+                        });
+                #[cfg(not(feature = "voice"))]
+                let voice: Result<TweenTarget, String> =
+                    Err("voice not included in feature flags".to_string());
+
+                if let Ok(vc) = voice {
+                    vc
+                } else if let Ok(part) = ud.borrow::<PartHandle>() {
+                    TweenTarget::Part(part.state.clone())
+                } else if let Ok(dbox) = ud.borrow::<DistortionBoxHandle>() {
+                    TweenTarget::Distortion(dbox.inner.clone())
+                } else if let Ok(gui) = ud.borrow::<GuiPrimitive>() {
+                    TweenTarget::Gui(gui.state_arc())
+                } else if let Ok(snd) = ud.borrow::<crate::libs::sfx::Sound>() {
+                    TweenTarget::Sound {
+                        shaders: snd.shaders.clone(),
+                        position: snd.position.clone(),
+                    }
+                } else if let Ok(mv) = ud.borrow::<crate::libs::objects::Movable>() {
+                    TweenTarget::Movable(mv.inner.clone())
+                } else if let Ok(sz) = ud.borrow::<crate::libs::objects::Sizable>() {
+                    TweenTarget::Sizable(sz.inner.clone())
+                } else if let Ok(bb) = ud.borrow::<crate::libs::objects::Billboard>() {
+                    TweenTarget::Billboard(bb.inner.clone())
+                } else {
+                    return Err(mlua::Error::RuntimeError(
                     "TweenService.new: target must be a BasePart, DistortionBox, GUI primitive, Sound, VoiceChannel, Movable, Sizable, or Billboard".into(),
                 ));
+                }
             }
-        }
-        _ => {
-            return Err(mlua::Error::RuntimeError(
+            _ => {
+                return Err(mlua::Error::RuntimeError(
                 "TweenService.new: target must be a userdata (BasePart, DistortionBox, GUI primitive, Sound, VoiceChannel, Movable, Sizable, or Billboard)".into(),
             ));
+            }
         }
     };
 
@@ -1020,15 +1174,15 @@ fn create_tween(
 
 fn lerp_value(lua: &Lua, args: MultiValue) -> mlua::Result<Value> {
     let mut iter = args.into_iter();
-    let a = iter
-        .next()
-        .ok_or_else(|| mlua::Error::RuntimeError("TweenService.Lerp: missing first argument (start value)".into()))?;
-    let b = iter
-        .next()
-        .ok_or_else(|| mlua::Error::RuntimeError("TweenService.Lerp: missing second argument (goal value)".into()))?;
-    let alpha_v = iter
-        .next()
-        .ok_or_else(|| mlua::Error::RuntimeError("TweenService.Lerp: missing third argument (alpha)".into()))?;
+    let a = iter.next().ok_or_else(|| {
+        mlua::Error::RuntimeError("TweenService.Lerp: missing first argument (start value)".into())
+    })?;
+    let b = iter.next().ok_or_else(|| {
+        mlua::Error::RuntimeError("TweenService.Lerp: missing second argument (goal value)".into())
+    })?;
+    let alpha_v = iter.next().ok_or_else(|| {
+        mlua::Error::RuntimeError("TweenService.Lerp: missing third argument (alpha)".into())
+    })?;
     let style = iter.next().unwrap_or(Value::Nil);
 
     let direction_v = iter.next().unwrap_or(Value::Nil);
