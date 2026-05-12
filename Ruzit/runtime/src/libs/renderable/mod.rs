@@ -532,7 +532,7 @@ impl PartHandle {
         Self { state }
     }
 
-    fn new_shape(lua: &Lua, shape: PartShape, model: Option<ModelRef>) -> mlua::Result<Self> {
+    pub fn new_shape(lua: &Lua, shape: PartShape, model: Option<ModelRef>) -> mlua::Result<Self> {
         Self::new_shape_with(lua, shape, model, None)
     }
 

@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Objects - Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css?v=1.2.3">
+    <script src="theme.js?v=1.2.3"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=1.2.3" defer></script>
+
+<main>
+
+<h1>Objects</h1>
+<p class="lede">
+    A misc library of useful non-specific composition objects.
+    <code>ClonableContainer</code> deep-clones its children;
+    <code>Movable</code> and <code>Sizable</code> are transform groupers
+    that move or scale every child relative to that child's individual
+    baseline.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Objects = <span class="hl-fn">import</span>(<span class="hl-str">"Objects"</span>)
+
+<span class="hl-kw">local</span> rack = Objects.<span class="hl-fn">Sizable</span>()
+rack:<span class="hl-fn">AddChild</span>(crateA)
+rack:<span class="hl-fn">AddChild</span>(crateB)
+rack.Size = Vector.<span class="hl-fn">new</span>(<span class="hl-num">0.5</span>, <span class="hl-num">0.5</span>, <span class="hl-num">0.5</span>) <span class="hl-com">-- crates shrink to half size</span>
+
+<span class="hl-kw">local</span> copy = Objects.<span class="hl-fn">ClonableContainer</span>()
+copy:<span class="hl-fn">AddChild</span>(playerModel)
+<span class="hl-kw">local</span> npc = copy:<span class="hl-fn">Clone</span>()                <span class="hl-com">-- new player with the same shaders / deformations</span></code></pre>
+
+<h2 id="containers">Shared behavior</h2>
+
+<p>
+    All three container types share:
+</p>
+<ul>
+    <li><strong>Children added later don't see prior transforms.</strong>
+        Adding a part to a container is a snapshot &mdash; the child's
+        current position / size is left alone. Only subsequent moves /
+        resizes after the add propagate as deltas. So if you shrink a
+        container, then add a fresh child, then shrink again: the old
+        child shrinks twice, the new child only once.</li>
+    <li><strong>Containers can nest.</strong> <code>Movable</code> can
+        contain <code>Movable</code> / <code>Sizable</code> children;
+        same for <code>Sizable</code>. Moving / scaling the outer
+        container propagates recursively through inner containers down
+        to the actual leaf BaseParts / GUI primitives. The only
+        nesting that's forbidden is <code>ClonableContainer</code>
+        inside <code>ClonableContainer</code> (you can put a
+        <code>Movable</code> / <code>Sizable</code> inside a
+        <code>Clonable</code>, but not another Clonable).</li>
+    <li><strong>Children are not destroyed when the container is.</strong>
+        <code>:Destroy()</code> tears down the container's child list
+        but leaves every child userdata alive. Pass a <code>removeFn</code>
+        to <code>:AddChild(child, removeFn)</code> if you want a hook
+        on destruction (gets called once with the child as its only
+        argument).</li>
+    <li><strong>Type-locking.</strong> <code>Movable</code> and
+        <code>Sizable</code> auto-detect 2D vs 3D from the first
+        <code>:AddChild</code> call (including any nested container's
+        leaf mode). After that, the wrong type errors on add.
+        <code>ClonableContainer</code> happily mixes both.</li>
+    <li><code>:GetChildren()</code> returns a Lua array of every alive
+        child as fresh userdata wrappers.</li>
+    <li><code>:RemoveChild(child)</code> detaches a child from the
+        container's list. Returns <code>true</code> if found.
+        Fires the child's <code>removeFn</code> callback if one was
+        registered at <code>:AddChild</code> time. The child userdata
+        itself is left alive.</li>
+</ul>
+
+<h3>Movable / Sizable: inherit-on-empty</h3>
+
+<p>
+    When a <code>Movable</code> or <code>Sizable</code> is empty and
+    you add a leaf (BasePart / GUI primitive) or a nested container
+    that already has the right mode, the container <strong>adopts that
+    child's state</strong> as its own:
+</p>
+<ul>
+    <li>3D <code>Movable</code> + first BasePart child: container's
+        <code>CFrame</code> snaps to the part's <code>CFrame</code>.
+        The next <code>m.CFrame = X</code> moves the part by exactly
+        <code>X - part.CFrame</code> &mdash; no surprise jump from
+        origin.</li>
+    <li>2D <code>Movable</code> + first GUI child: container's
+        <code>Position</code> snaps to the primitive's
+        <code>Position</code>.</li>
+    <li>3D <code>Sizable</code> + first BasePart child: container's
+        <code>Size</code> snaps to the part's <code>Size</code>.</li>
+    <li>2D <code>Sizable</code> + first GUI child: container's
+        <code>Size</code> snaps to the primitive's <code>Size</code>.</li>
+</ul>
+
+<p>
+    Inheritance only happens when the container is empty &mdash; later
+    adds use the current container state as the baseline (so the
+    "shrink, add, shrink again" semantics still hold).
+</p>
+
+<h2 id="clonable">ClonableContainer</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Objects.ClonableContainer()</span>
+            <span class="member-type">→ ClonableContainer</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">container:AddChild(child, removeFn?)</span>
+        </div>
+        <p class="member-desc">
+            Attach a <code>BasePart</code> or GUI primitive. Optional
+            <code>removeFn</code> is invoked on <code>:Destroy()</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">container:Clone()</span>
+            <span class="member-type">→ ClonableContainer</span>
+        </div>
+        <p class="member-desc">
+            Deep-clone the container. Every child is re-spawned and
+            populated with the same:
+        </p>
+        <ul>
+            <li>CFrame, Size, Color, Render, Lit, CastShadow,
+                ReceiveShadow, IgnoreInRaycast (for BaseParts)</li>
+            <li>Position, Size, Color, Transparency, ZIndex, Visible
+                (for GUI primitives)</li>
+            <li>Model + texture references (shared Arcs, so the clone
+                still shares mesh data with the original)</li>
+            <li>Deformed mesh state (shared Arc; further deformations on
+                one don't bleed into the other since deformation
+                rebuilds the Arc)</li>
+            <li>Attached shaders, each with an <strong>independent
+                copy of its 16-float param block</strong> so updating
+                the clone's params doesn't touch the original's</li>
+            <li>Text content / font reference (for Text primitives)</li>
+            <li><strong>Nested containers</strong> (Movable / Sizable)
+                are deep-cloned too &mdash; the clones contain fresh
+                inner containers with fresh leaves, structurally
+                matching the original.</li>
+            <li><strong>Clippable parent links</strong> are remapped:
+                if a GUI child was clipped by another GUI primitive
+                that's also in the same clone tree, the clone's
+                <code>clip_parent</code> is rewired to the clone of
+                that parent. Clippable parents that live OUTSIDE the
+                clone tree are dropped on the clone (the new
+                primitives don't inherit the original's external
+                clipping).</li>
+        </ul>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">container:RemoveChild(child)</span>
+            <span class="member-type">→ boolean</span>
+        </div>
+        <p class="member-desc">
+            Detach <code>child</code> from the list. Returns
+            <code>true</code> on success. Fires the stored removeFn if
+            present, leaves the child userdata alive.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">container:GetChildren()</span>
+            <span class="member-type">→ { any }</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">container:Destroy()</span>
+        </div>
+    </div>
+</div>
+
+<h2 id="movable">Movable</h2>
+
+<p>
+    Carries either a <code>CFrame</code> (3D mode) or a <code>Dim</code>
+    Position (2D mode). Writing the property applies the delta to every
+    child, where the delta is measured from <em>that specific child's</em>
+    baseline of the container, recorded when it was added.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Objects.Movable()</span>
+            <span class="member-type">→ Movable</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">m.CFrame</span>
+            <span class="member-type">CFrame</span>
+        </div>
+        <p class="member-desc">
+            3D-mode only. Writes through as a per-child positional and
+            rotational delta. Errors when the container is locked to 2D.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">m.Position</span>
+            <span class="member-type">Dim</span>
+        </div>
+        <p class="member-desc">
+            2D-mode only. Writes through as a per-child Dim delta.
+            Errors when the container is locked to 3D.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">m.Mode</span>
+            <span class="member-type">"2D" | "3D" | "Unset"</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">m:AddChild(child, removeFn?)</span></div>
+        <p class="member-desc">
+            When the Movable is empty and the child carries a usable
+            transform (BasePart CFrame, GUI Position, or a nested
+            container of the same mode), the Movable inherits that
+            value as its own current state. The first add is always a
+            no-op move; later adds use the current container state as
+            the baseline.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">m:RemoveChild(child)</span><span class="member-type">→ boolean</span></div>
+        <p class="member-desc">
+            Detach a child. Returns true on success. Fires the stored
+            removeFn if registered, leaves the child alive.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">m:GetChildren()</span><span class="member-type">→ { any }</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">m:Destroy()</span></div>
+    </div>
+</div>
+
+<h2 id="sizable">Sizable</h2>
+
+<p>
+    Carries a <code>Size</code> property of either type
+    <code>Vector</code> (3D mode) or <code>Dim</code> (2D mode). Writing
+    it scales every child by the per-axis ratio of <code>Size</code> to
+    the child's baseline container size. Heterogeneous: a tiny child
+    added to a small container scales the same proportionally as a big
+    child added later.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Objects.Sizable()</span>
+            <span class="member-type">→ Sizable</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">s.Size</span>
+            <span class="member-type">Vector | Dim</span>
+        </div>
+        <p class="member-desc">
+            3D-mode containers accept either a userdata
+            <code>Vector</code> or a Luau native <code>vec3</code> (the
+            engine's <code>value_to_vector_opt</code> handles the
+            unification). 2D-mode containers accept a <code>Dim</code>.
+            Passing the wrong type for the locked mode errors.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">s.Mode</span>
+            <span class="member-type">"2D" | "3D" | "Unset"</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">s:AddChild(child, removeFn?)</span></div>
+        <p class="member-desc">
+            When the Sizable is empty, inherits the new child's Size
+            (BasePart Vector, GUI Dim, or a nested Sizable's Size) so
+            the next resize applies as a clean ratio from there.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">s:RemoveChild(child)</span><span class="member-type">→ boolean</span></div>
+        <p class="member-desc">
+            Detach a child. Returns true on success. Fires the stored
+            removeFn if registered, leaves the child alive.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">s:GetChildren()</span><span class="member-type">→ { any }</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">s:Destroy()</span></div>
+    </div>
+</div>
+
+</main>
+
+</body>
+</html>

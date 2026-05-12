@@ -350,7 +350,11 @@ impl GuiPrimitive {
         self.state.clone()
     }
 
-    fn new(lua: &Lua, shape: Shape) -> mlua::Result<Self> {
+    pub fn from_state(state: Arc<Mutex<PrimitiveState>>) -> Self {
+        Self { state }
+    }
+
+    pub fn new(lua: &Lua, shape: Shape) -> mlua::Result<Self> {
         Self::with_state(lua, shape, None, None, Dim::new(100.0, 100.0))
     }
 
@@ -1057,6 +1061,12 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 lua.create_userdata(crate::libs::drawable::CanvasBufferHandle { inner: state })
             },
         )?,
+    )?;
+    t.set(
+        "AnimatedImage",
+        lua.create_function(|lua, args: MultiValue| {
+            crate::libs::anim_image::make_animated_image(lua, args)
+        })?,
     )?;
 
     Ok(t)

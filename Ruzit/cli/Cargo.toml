@@ -1,6 +1,6 @@
 [package]
 name = "ruzit-cli"
-version = "1.2.2"
+version = "1.2.3"
 edition = "2024"
 
 [[bin]]
@@ -14,4 +14,4 @@ toml = "0.8"
 base64 = "0.22"
 ureq = { version = "2", default-features = false, features = ["tls", "gzip"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
-mlua = { version = "0.10", features = ["luau"] }
+mlua = { version = "0.10", features = ["luau", "luau-jit"] }

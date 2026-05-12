@@ -14,6 +14,12 @@ const CACHE_KEY: &str = "ruzit_cache";
 
 pub fn run_entry(fs: Fs, entry_key: &str) -> Result<(), String> {
     let lua = Lua::new();
+    lua.set_compiler(
+        mlua::Compiler::new()
+            .set_optimization_level(2)
+            .set_debug_level(1),
+    );
+    lua.enable_jit(true);
     let cache = lua.create_table().map_err(|e| e.to_string())?;
     lua.set_named_registry_value(CACHE_KEY, cache)
         .map_err(|e| e.to_string())?;
@@ -185,6 +191,7 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             "Managed" => libs::managed::create(lua, fs.clone())?,
             "Mouse" => libs::mouse::create(lua)?,
             "Net" => libs::net::create(lua)?,
+            "Objects" => libs::objects::create(lua)?,
             "PhysicsService" => libs::physics::create(lua)?,
             "Primitives" => libs::primitives::create(lua)?,
             "Process" => libs::process::create(lua)?,

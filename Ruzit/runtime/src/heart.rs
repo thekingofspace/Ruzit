@@ -63,6 +63,7 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         crate::libs::renderable::tick_distortion_boxes();
         crate::libs::dynmesh::tick();
         crate::libs::dynimg::tick();
+        crate::libs::anim_image::tick(lua, dt as f32);
         crate::libs::video::tick(dt * 1000.0);
 
         for (id, func) in snapshot {

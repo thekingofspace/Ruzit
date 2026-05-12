@@ -1752,6 +1752,88 @@ export type DynImg_API = {
 	New: (width: number, height: number, primitives: { Primitive }?) -> DynImg,
 }
 
+-- =============================================================================
+-- AnimatedImage — sprite-sheet animation primitive (returned by
+-- `GUI.AnimatedImage(xml, source)`). Plays named animations from a packed
+-- spritesheet, with priority blending across multiple concurrent tracks.
+-- The source can be a static Image asset OR a live DynImg (re-sampled each
+-- tick, so an animated procedural source works too).
+-- =============================================================================
+
+export type AnimationTrack = {
+	-- Frames per second this track advances at.
+	FPS: number,
+	-- When true, the track restarts at the end and fires DidLoop. When
+	-- false, it stops at the end and fires Ended.
+	Looped: boolean,
+	-- Higher priority wins when multiple tracks are Playing
+	-- simultaneously. If the high-priority track ends (non-looped) and
+	-- a lower-priority track is still Playing, the lower one becomes
+	-- visible. Default 1.
+	Priority: number,
+	-- Read-only: number of frames in this track's animation.
+	FrameCount: number,
+	-- "Idle", "Playing", "Stopped".
+	State: string,
+	-- Seconds elapsed in the current play cycle.
+	Elapsed: number,
+	-- Fires every time a looped track wraps around. Receives no args.
+	DidLoop: Signal<>,
+	-- Fires once when a non-looped track reaches its end. Receives no
+	-- args. Does not fire on :Stop().
+	Ended: Signal<>,
+	-- Start the track (resets elapsed from 0).
+	Play: (self: AnimationTrack) -> (),
+	-- Stop the track. No further signal fires; the rendered frame stays
+	-- on whatever the highest-priority remaining playing track wants.
+	Stop: (self: AnimationTrack) -> (),
+	-- Pause without resetting (state goes Idle).
+	Pause: (self: AnimationTrack) -> (),
+	-- Resume from where Pause left off.
+	Resume: (self: AnimationTrack) -> (),
+	-- Block the current coroutine until Ended fires.
+	Wait: (self: AnimationTrack) -> (),
+}
+
+export type AnimatedImage = {
+	-- Mirror fields of the underlying GUI Image primitive — set these
+	-- to move, resize, recolor, hide, etc. Resizing squashes /
+	-- stretches the currently-displayed frame the same way an Image
+	-- primitive does.
+	Size: Dim,
+	Position: Dim,
+	ZIndex: number,
+	Visible: boolean,
+	Color: Color3,
+	Transparency: number,
+	-- Read-only: total number of frames defined in the XML.
+	FrameCount: number,
+	Alive: boolean,
+	-- Build (or return nil for unknown) an AnimationTrack for one of
+	-- the named `<animation>` definitions. Each :GetTrack call returns
+	-- a fresh track with its own state and signals — useful for layered
+	-- animation (e.g. a base "idle" and a transient "blink"). Tracks
+	-- belong to this AnimatedImage; destroying the image stops them.
+	GetTrack: (self: AnimatedImage, name: string) -> AnimationTrack?,
+	-- Whether the XML defined an animation with this name.
+	HasAnimation: (self: AnimatedImage, name: string) -> boolean,
+	-- Snap the displayed frame to a specific frame index (0-based,
+	-- bounded). Stays visible until a track is :Play()'d on top. Useful
+	-- for video-game icons where you want to flip between static
+	-- pictures from the same atlas.
+	JumpToFrame: (self: AnimatedImage, index: number) -> (),
+	-- Clear the manual frame override so track playback takes over
+	-- again (or, if no tracks are playing, the image stays on whatever
+	-- frame was last rendered).
+	ClearJump: (self: AnimatedImage) -> (),
+	-- The underlying GUI Image primitive. Useful for clipping
+	-- (`clippable:AddClippable(animimg:GetPrimitive())`) or other
+	-- primitive-level ops.
+	GetPrimitive: (self: AnimatedImage) -> any,
+	-- Destroy the underlying primitive and stop all tracks.
+	Destroy: (self: AnimatedImage) -> (),
+}
+
 export type GUI_API = {
 	-- 2D overlay primitives. Each factory returns a Primitive you can then
 	-- position, size, color, etc. on screen.
@@ -1800,6 +1882,31 @@ export type GUI_API = {
 	-- when you're rebuilding a complex sprite, you stage into the
 	-- buffer, then commit in one shot.
 	CanvasBuffer: (width: number, height: number) -> CanvasBuffer,
+	-- Sprite-sheet animation primitive. Pass an XML string describing
+	-- frames and named animations, plus either an Image asset or a
+	-- DynImg as the source spritesheet. Returns an AnimatedImage
+	-- userdata. The image is sampled per-frame on the heart loop and
+	-- displayed via a GUI Image primitive that you can position,
+	-- resize, color, etc. through the AnimatedImage's mirror fields.
+	--
+	-- XML schema (two flavors, both supported, can mix):
+	--
+	--   <animated frame_width="32" frame_height="32" columns="8">
+	--       <!-- grid mode: cells are chopped from a regular grid -->
+	--       <animation name="idle" frames="0,1,2,3" fps="6" looped="true"/>
+	--       <animation name="walk" frames="4-9" fps="10"/>
+	--   </animated>
+	--
+	--   <animated>
+	--       <!-- explicit-rect mode: each frame is named -->
+	--       <frame name="f0" x="0" y="0" w="32" h="32"/>
+	--       <frame name="f1" x="32" y="0" w="32" h="32"/>
+	--       <animation name="idle" frames="f0,f1" fps="6"/>
+	--   </animated>
+	--
+	-- `frames` is a comma-separated list of frame indices, names, or
+	-- inclusive ranges (`"4-9"` expands to 4,5,6,7,8,9).
+	AnimatedImage: (xml: string, source: any) -> AnimatedImage,
 }
 
 type _GuiLegacyMoved_ = {
@@ -4095,6 +4202,100 @@ declare class PhysicsPlane
 	function Destroy(self): ()
 end
 
+-- =============================================================================
+-- Objects — misc library of useful non-specific composition objects.
+--
+-- `ClonableContainer` holds a child set and can be deep-cloned (including
+-- deformations, color changes, attached shaders and their param state).
+--
+-- `Movable` and `Sizable` are transform groupers: attach children, move /
+-- resize the container, every child moves / scales relative to its own
+-- baseline. Each child records the container's state AT THE MOMENT it was
+-- added, so adding a shrunken child to an already-shrunken container does
+-- not double-shrink; subsequent container changes apply as deltas.
+--
+-- Destroying any of these containers does NOT destroy the children. If you
+-- pass a removeFn when calling :AddChild, it's invoked on :Destroy with the
+-- child as its only argument, but the child object itself is left alive.
+-- =============================================================================
+
+export type ClonableContainer = {
+	Alive: boolean,
+	ChildCount: number,
+	-- Attach a child. `removeFn` is called once with the child userdata
+	-- when the container is :Destroy()'d (the container does NOT
+	-- destroy the child itself; the callback is your hook to do that
+	-- if you want).
+	AddChild: (self: ClonableContainer, child: any, removeFn: ((any) -> ())?) -> (),
+	-- Remove a previously-added child from the container's list.
+	-- Returns true if the child was found and removed. Fires the
+	-- child's removeFn callback (if any was provided to AddChild) on
+	-- removal. Does NOT destroy the child userdata itself.
+	RemoveChild: (self: ClonableContainer, child: any) -> boolean,
+	GetChildren: (self: ClonableContainer) -> { any },
+	-- Deep-clone the container. Every child is re-spawned with the
+	-- same CFrame / Size / Color / Render flags / Lit / shadow flags,
+	-- the same model + texture references (shared Arcs), the same
+	-- deformed mesh data, and each attached shader is cloned with an
+	-- independent copy of its param block (so updating the original
+	-- doesn't bleed into the clone).
+	Clone: (self: ClonableContainer) -> ClonableContainer,
+	Destroy: (self: ClonableContainer) -> (),
+}
+
+export type Movable = {
+	Alive: boolean,
+	ChildCount: number,
+	-- "3D" (BasePart children, locked after the first :AddChild),
+	-- "2D" (GUI primitive children), or "Unset" (no children yet).
+	Mode: string,
+	-- 3D mode only. World pose of the container. Writing it moves every
+	-- 3D child by the delta from each child's baseline-container CFrame.
+	CFrame: CFrame,
+	-- 2D mode only. Screen position. Writing it offsets every GUI
+	-- child by the delta from each child's baseline-container Position.
+	Position: Dim,
+	-- When the container is empty AND the first child you add is a
+	-- BasePart (3D mode) or GUI primitive (2D mode), the Movable's
+	-- CFrame / Position is set to the child's at that moment, so the
+	-- first add is always a no-op move. Subsequent moves apply deltas
+	-- from there.
+	AddChild: (self: Movable, child: any, removeFn: ((any) -> ())?) -> (),
+	-- Detach a child. Returns true if found. Fires the child's
+	-- removeFn callback if one was registered. Does NOT destroy the
+	-- child itself.
+	RemoveChild: (self: Movable, child: any) -> boolean,
+	GetChildren: (self: Movable) -> { any },
+	Destroy: (self: Movable) -> (),
+}
+
+export type Sizable = {
+	Alive: boolean,
+	ChildCount: number,
+	Mode: string,
+	-- Pass a Vector to size 3D children, or a Dim to size GUI children.
+	-- Vectors accept both the userdata Vector and Luau's built-in vec3
+	-- via Primitives.value_to_vector_opt. Writing it scales every child
+	-- by the ratio of `Size` to each child's baseline container size.
+	Size: any,
+	-- Same inherit-on-first-child as Movable: an empty Sizable adopts
+	-- its first leaf's Size (or its first nested Sizable's Size) so
+	-- subsequent resizes apply as ratios from a sensible baseline.
+	AddChild: (self: Sizable, child: any, removeFn: ((any) -> ())?) -> (),
+	-- Detach a child. Returns true if found. Fires the child's
+	-- removeFn callback if one was registered. Does NOT destroy the
+	-- child itself.
+	RemoveChild: (self: Sizable, child: any) -> boolean,
+	GetChildren: (self: Sizable) -> { any },
+	Destroy: (self: Sizable) -> (),
+}
+
+export type Objects_API = {
+	ClonableContainer: () -> ClonableContainer,
+	Movable: () -> Movable,
+	Sizable: () -> Sizable,
+}
+
 export type PhysicsService_API = {
 	-- Spin up a new physics plane with optional gravity + thread count.
 	New: (opts: PhysicsPlaneOptions?) -> PhysicsPlane,
@@ -4115,6 +4316,7 @@ export type Imports = {
 	Managed: Managed_API,
 	Mouse: Mouse_API,
 	Net: Net_API,
+	Objects: Objects_API,
 	PhysicsService: PhysicsService_API,
 	Primitives: Primitives_API,
 	Process: Process_API,

@@ -1,4 +1,5 @@
 pub mod actor;
+pub mod anim_image;
 pub mod asset;
 pub mod debug;
 pub mod drawable;
@@ -14,6 +15,7 @@ pub mod lighting;
 pub mod managed;
 pub mod mouse;
 pub mod net;
+pub mod objects;
 pub mod physics;
 pub mod primitives;
 pub mod process;
