@@ -247,13 +247,16 @@ fn render_frame_to_primitive(inner: &AnimatedImageInner, frame_idx: usize) {
     };
     let pixels = build_frame_pixels(&src_bytes, src_w, src_h, &frame);
     let id = NEXT_IMAGE_ID.fetch_add(1, Ordering::Relaxed);
-    let mut ps = inner.primitive_state.lock().unwrap();
-    ps.image = Some(Arc::new(ImageRef {
-        id,
-        width: frame.frame_width.max(1),
-        height: frame.frame_height.max(1),
-        data: Arc::new(pixels),
-    }));
+    {
+        let mut ps = inner.primitive_state.lock().unwrap();
+        ps.image = Some(Arc::new(ImageRef {
+            id,
+            width: frame.frame_width.max(1),
+            height: frame.frame_height.max(1),
+            data: Arc::new(pixels),
+        }));
+    }
+    crate::libs::gui::bump_dirty();
 }
 
 fn build_frame_pixels(src: &[u8], src_w: u32, src_h: u32, f: &Frame) -> Vec<u8> {

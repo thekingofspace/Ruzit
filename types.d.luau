@@ -1769,7 +1769,7 @@ export type DynImg_API = {
 -- frames don't jitter between trimmed sub-textures).
 -- =============================================================================
 
-export type AnimationTrack = {
+export type AnimatedImageTrack = {
 	-- Frames per second this track advances at.
 	FPS: number,
 	-- When true, the track wraps and fires DidLoop. When false, it
@@ -1832,7 +1832,7 @@ export type AnimatedImage = {
 		self: AnimatedImage,
 		frames: { string } | string,
 		opts: { FPS: number?, Looped: boolean?, Priority: number? }?
-	) -> AnimationTrack,
+	) -> AnimatedImageTrack,
 	-- Snap the displayed frame to a specific SubTexture (by name) or
 	-- by numeric index. Stays visible until a track is :Play()'d on
 	-- top (priority blending wins over a manual pin). Useful for
