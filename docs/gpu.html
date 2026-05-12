@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GPU - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.3">
-    <script src="theme.js?v=1.2.3"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.4">
+    <script src="theme.js?v=1.2.4"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.3" defer></script>
+<script src="sidebar.js?v=1.2.4" defer></script>
 
 <main>
 
@@ -29,7 +29,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.Info()</span>
-            <span class="member-type">→ GPUInfo</span>
+            <span class="member-type">â†’ GPUInfo</span>
         </div>
         <p class="member-desc">
             Static adapter info. Cached, calling repeatedly is
@@ -40,7 +40,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.Limits()</span>
-            <span class="member-type">→ GPULimits</span>
+            <span class="member-type">â†’ GPULimits</span>
         </div>
         <p class="member-desc">
             Hard limits the active GPU device reports. wgpu doesn't
@@ -52,7 +52,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.FrameStats()</span>
-            <span class="member-type">→ GPUFrameStats</span>
+            <span class="member-type">â†’ GPUFrameStats</span>
         </div>
         <p class="member-desc">
             FPS / frame time / scene part count. Updated once per heart
@@ -67,14 +67,14 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.Raycast(origin, direction, filter?, maxDistance?)</span>
-            <span class="member-type">→ RaycastHit?</span>
+            <span class="member-type">â†’ RaycastHit?</span>
         </div>
         <p class="member-desc">
             GPU-dispatched ray test against every renderable BasePart.
             One compute thread per part runs in parallel: cubes test as
             oriented bounding boxes (CFrame + Size), spheres as
             ellipsoids (CFrame + Size), and <strong>models with mesh
-            data test per-triangle</strong> via Möller-Trumbore in
+            data test per-triangle</strong> via MÃ¶ller-Trumbore in
             part-local space, so corners and concavities hit precisely
             instead of bounding boxes. Models without mesh data fall
             back to OBB. Parts with <code>Render = false</code> or
@@ -113,7 +113,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.ScreenToRay(point)</span>
-            <span class="member-type">→ (Vector, Vector)</span>
+            <span class="member-type">â†’ (Vector, Vector)</span>
         </div>
         <p class="member-desc">
             Convert a screen pixel (Mouse.Position style) to a world-space
@@ -125,7 +125,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.WorldToScreen(world)</span>
-            <span class="member-type">→ (Dim?, boolean)</span>
+            <span class="member-type">â†’ (Dim?, boolean)</span>
         </div>
         <p class="member-desc">
             Project a world-space point onto the screen.
@@ -148,7 +148,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.NewBuffer(size)</span>
-            <span class="member-type">→ GPUBuffer</span>
+            <span class="member-type">â†’ GPUBuffer</span>
         </div>
         <p class="member-desc">
             Allocate a GPU storage buffer of <code>size</code> floats.
@@ -197,7 +197,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetMaxFrameRate()</span>
-            <span class="member-type">→ number?</span>
+            <span class="member-type">â†’ number?</span>
         </div>
         <p class="member-desc">Current cap, or <code>nil</code> when uncapped.</p>
     </div>
@@ -221,7 +221,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetVSync()</span>
-            <span class="member-type">→ boolean</span>
+            <span class="member-type">â†’ boolean</span>
         </div>
         <p class="member-desc">
             True if the swapchain is currently in a VSync mode.
@@ -267,7 +267,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetPowerMode()</span>
-            <span class="member-type">→ "Quality" | "Performance" | "Auto"</span>
+            <span class="member-type">â†’ "Quality" | "Performance" | "Auto"</span>
         </div>
         <p class="member-desc">
             Current power-mode preference. Default is
@@ -277,23 +277,23 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetBounds(part, quality?)</span>
-            <span class="member-type">→ { { Position, Size, Min, Max } }</span>
+            <span class="member-type">â†’ { { Position, Size, Min, Max } }</span>
         </div>
         <p class="member-desc">
             Return one or more world-space AABBs covering a BasePart.
             Each entry is <code>{ Position, Size, Min, Max }</code> with
             <code>Position</code> the AABB center and <code>Size</code>
-            its full extents (max − min). Honors deformations,
+            its full extents (max âˆ’ min). Honors deformations,
             current animation state, and DynMesh-driven movement, so
             the boxes follow the live mesh.
         </p>
         <p class="member-desc">
             <code>quality</code> controls how many boxes you get:
             <ul>
-                <li><strong>1 (default)</strong> — single box that
+                <li><strong>1 (default)</strong> â€” single box that
                     encloses the entire part. Cheapest. Always
                     accurate for cubes / spheres.</li>
-                <li><strong>2+</strong> — split a model's vertices
+                <li><strong>2+</strong> â€” split a model's vertices
                     into N bins along the longest axis and return a
                     tight AABB per bin. Useful for long thin meshes
                     where one big box is loose. Cubes and spheres
@@ -304,7 +304,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.CheckArea(center, size, quality?)</span>
-            <span class="member-type">→ { BasePart }</span>
+            <span class="member-type">â†’ { BasePart }</span>
         </div>
         <p class="member-desc">
             Return every renderable BasePart whose bounds (computed at
@@ -331,7 +331,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.OverlapSphere(center, radius, filter?)</span>
-            <span class="member-type">→ { BasePart }</span>
+            <span class="member-type">â†’ { BasePart }</span>
         </div>
         <p class="member-desc">
             Return every part whose AABB intersects the sphere centered
@@ -343,7 +343,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.OverlapBox(center, size, rotation?, filter?)</span>
-            <span class="member-type">→ { BasePart }</span>
+            <span class="member-type">â†’ { BasePart }</span>
         </div>
         <p class="member-desc">
             Return every part whose AABB intersects the oriented box at
@@ -359,7 +359,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.OverlapFrustum(filter?)</span>
-            <span class="member-type">→ { BasePart }</span>
+            <span class="member-type">â†’ { BasePart }</span>
         </div>
         <p class="member-desc">
             Return every part whose AABB is inside or intersects the
@@ -373,7 +373,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetItemsInZone(cframe, size, filter?)</span>
-            <span class="member-type">→ { BasePart }</span>
+            <span class="member-type">â†’ { BasePart }</span>
         </div>
         <p class="member-desc">
             Mesh-precise oriented-zone query. <code>cframe</code> places
@@ -433,7 +433,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetShadowsEnabled()</span>
-            <span class="member-type">→ boolean</span>
+            <span class="member-type">â†’ boolean</span>
         </div>
     </div>
     <div class="member">
@@ -453,7 +453,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetShadowMapQuality()</span>
-            <span class="member-type">→ number</span>
+            <span class="member-type">â†’ number</span>
         </div>
     </div>
     <div class="member">
@@ -472,7 +472,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetShadowDistance()</span>
-            <span class="member-type">→ number</span>
+            <span class="member-type">â†’ number</span>
         </div>
     </div>
     <div class="member">
@@ -490,7 +490,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetShadowBias()</span>
-            <span class="member-type">→ number</span>
+            <span class="member-type">â†’ number</span>
         </div>
     </div>
     <div class="member">
@@ -511,7 +511,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetShadowPCF()</span>
-            <span class="member-type">→ number</span>
+            <span class="member-type">â†’ number</span>
         </div>
     </div>
 </div>
@@ -611,7 +611,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">buf:Size()</span>
-            <span class="member-type">→ number</span>
+            <span class="member-type">â†’ number</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">

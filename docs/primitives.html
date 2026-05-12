@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Primitives - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.3">
-    <script src="theme.js?v=1.2.3"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.4">
+    <script src="theme.js?v=1.2.4"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.3" defer></script>
+<script src="sidebar.js?v=1.2.4" defer></script>
 
 <main>
 
@@ -36,7 +36,7 @@
     around is cheap.
 </div>
 
-<!-- ────────────────────────────────────────────────────────────────── -->
+<!-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <h2 id="vector">Vector</h2>
 
 <p>
@@ -59,7 +59,7 @@ part:<span class="hl-fn">LookAt</span>(<span class="hl-fn">vector</span>(<span c
     component getters (<code>.X</code>, <code>.Magnitude</code>); reach
     for native <code>vector</code> when you're hot-path reading
     components in a tight loop, since native vector reads happen
-    entirely inside the VM (~5-10× faster than crossing the FFI
+    entirely inside the VM (~5-10Ã— faster than crossing the FFI
     boundary every time).
 </div>
 
@@ -96,7 +96,7 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">Vector.FromNative(native)</span>
-            <span class="member-type">→ Vector</span>
+            <span class="member-type">â†’ Vector</span>
             <span class="tag tag-static">static</span>
         </div>
         <p class="member-desc">
@@ -110,7 +110,7 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
             <code>CFrame.new</code>, etc.) accept.
         </p>
         <pre><code>Vector.<span class="hl-fn">FromNative</span>(<span class="hl-fn">vector</span>(<span class="hl-num">1</span>, <span class="hl-num">2</span>, <span class="hl-num">3</span>))
-<span class="hl-com">-- → Vector(1, 2, 3)</span></code></pre>
+<span class="hl-com">-- â†’ Vector(1, 2, 3)</span></code></pre>
     </div>
 </div>
 
@@ -148,7 +148,7 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
             <span class="tag tag-readonly">read-only</span>
         </div>
         <p class="member-desc">
-            Cached Euclidean length, <code>sqrt(X² + Y² + Z²)</code>.
+            Cached Euclidean length, <code>sqrt(XÂ² + YÂ² + ZÂ²)</code>.
             Computed once at construction; reads are free.
         </p>
     </div>
@@ -160,7 +160,7 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">v:Lerp(other, t)</span>
-            <span class="member-type">→ Vector</span>
+            <span class="member-type">â†’ Vector</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -172,7 +172,7 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">v:Dot(other)</span>
-            <span class="member-type">→ number</span>
+            <span class="member-type">â†’ number</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -183,7 +183,7 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">v:Cross(other)</span>
-            <span class="member-type">→ Vector</span>
+            <span class="member-type">â†’ Vector</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -193,7 +193,7 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">v:Normalized()</span>
-            <span class="member-type">→ Vector</span>
+            <span class="member-type">â†’ Vector</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -204,7 +204,7 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">v:Distance(other)</span>
-            <span class="member-type">→ number</span>
+            <span class="member-type">â†’ number</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -215,7 +215,7 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">v:ToNative()</span>
-            <span class="member-type">→ vector</span>
+            <span class="member-type">â†’ vector</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -223,7 +223,7 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
             <a href="https://luau.org/library/#vector-library" target="_blank" rel="noopener">native <code>vector</code></a>.
             Use this in hot paths where you're reading components
             repeatedly &mdash; native vector reads happen inside the VM
-            without crossing into Rust, which is roughly 5-10× faster
+            without crossing into Rust, which is roughly 5-10Ã— faster
             than reading <code>v.X</code> / <code>v.Y</code> /
             <code>v.Z</code> on a userdata per access.
         </p>
@@ -234,42 +234,42 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">a + b</span>
-            <span class="member-type">→ Vector</span>
+            <span class="member-type">â†’ Vector</span>
         </div>
         <p class="member-desc">Component-wise addition.</p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">a - b</span>
-            <span class="member-type">→ Vector</span>
+            <span class="member-type">â†’ Vector</span>
         </div>
         <p class="member-desc">Component-wise subtraction.</p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">v * scalar</span>
-            <span class="member-type">→ Vector</span>
+            <span class="member-type">â†’ Vector</span>
         </div>
         <p class="member-desc">Scalar multiply. The scalar must be a number.</p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">v / scalar</span>
-            <span class="member-type">→ Vector</span>
+            <span class="member-type">â†’ Vector</span>
         </div>
         <p class="member-desc">Scalar divide.</p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">-v</span>
-            <span class="member-type">→ Vector</span>
+            <span class="member-type">â†’ Vector</span>
         </div>
         <p class="member-desc">Negation. Equivalent to <code>v * -1</code>.</p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">a == b, a &lt; b, a &lt;= b</span>
-            <span class="member-type">→ boolean</span>
+            <span class="member-type">â†’ boolean</span>
         </div>
         <p class="member-desc">
             Component-wise comparisons (<code>true</code> only when ALL
@@ -292,7 +292,7 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
 <span class="hl-kw">local</span> distance = delta.Magnitude
 <span class="hl-kw">local</span> dir      = delta / distance     <span class="hl-com">-- normalised</span></code></pre>
 
-<!-- ────────────────────────────────────────────────────────────────── -->
+<!-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <h2 id="color3">Color3</h2>
 
 <p>
@@ -378,7 +378,7 @@ Color3.FromHex(<span class="hl-str">"ff0"</span>)        <span class="hl-com">--
     <div class="member">
         <div class="member-header">
             <span class="member-name">c:Lerp(other, t)</span>
-            <span class="member-type">→ Color3</span>
+            <span class="member-type">â†’ Color3</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -389,7 +389,7 @@ Color3.FromHex(<span class="hl-str">"ff0"</span>)        <span class="hl-com">--
     <div class="member">
         <div class="member-header">
             <span class="member-name">a + b</span>
-            <span class="member-type">→ Color3</span>
+            <span class="member-type">â†’ Color3</span>
         </div>
         <p class="member-desc">
             Channel-wise add. Result is clamped to <code>0 .. 1</code>.
@@ -398,14 +398,14 @@ Color3.FromHex(<span class="hl-str">"ff0"</span>)        <span class="hl-com">--
     <div class="member">
         <div class="member-header">
             <span class="member-name">a - b</span>
-            <span class="member-type">→ Color3</span>
+            <span class="member-type">â†’ Color3</span>
         </div>
         <p class="member-desc">Channel-wise subtract. Clamped at <code>0</code>.</p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">a == b, a &lt; b, a &lt;= b</span>
-            <span class="member-type">→ boolean</span>
+            <span class="member-type">â†’ boolean</span>
         </div>
         <p class="member-desc">
             Component-wise comparisons (<code>true</code> only when ALL
@@ -425,7 +425,7 @@ Process.Heartbeat:Connect(<span class="hl-kw">function</span>(_dt)
     <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>).SetAmbient(sky)
 <span class="hl-kw">end</span>)</code></pre>
 
-<!-- ────────────────────────────────────────────────────────────────── -->
+<!-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <h2 id="cframe">CFrame</h2>
 
 <p>
@@ -436,7 +436,7 @@ Process.Heartbeat:Connect(<span class="hl-kw">function</span>(_dt)
 
 <p>
     Orientation is stored as Euler angles in radians, applied
-    <code>X → Y → Z</code>. For controlled rotations
+    <code>X â†’ Y â†’ Z</code>. For controlled rotations
     <code>CFrame.Angles(rx, ry, rz)</code> is the canonical builder.
 </p>
 
@@ -467,7 +467,7 @@ CFrame.new(Vector.new(), Vector.new(<span class="hl-num">0</span>, math.pi, <spa
             Vector.new(rx, ry, rz))</code> but reads more clearly at the
             call site.
         </p>
-        <pre><code>CFrame.Angles(<span class="hl-num">0</span>, math.pi / <span class="hl-num">4</span>, <span class="hl-num">0</span>)   <span class="hl-com">-- 45° yaw</span></code></pre>
+        <pre><code>CFrame.Angles(<span class="hl-num">0</span>, math.pi / <span class="hl-num">4</span>, <span class="hl-num">0</span>)   <span class="hl-com">-- 45Â° yaw</span></code></pre>
     </div>
     <div class="member">
         <div class="member-header">
@@ -519,7 +519,7 @@ camera.CFrame = CFrame.<span class="hl-fn">LookAt</span>(
     <div class="member">
         <div class="member-header">
             <span class="member-name">cf:Lerp(other, t)</span>
-            <span class="member-type">→ CFrame</span>
+            <span class="member-type">â†’ CFrame</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -531,7 +531,7 @@ camera.CFrame = CFrame.<span class="hl-fn">LookAt</span>(
     <div class="member">
         <div class="member-header">
             <span class="member-name">a * b  (CFrame * CFrame)</span>
-            <span class="member-type">→ CFrame</span>
+            <span class="member-type">â†’ CFrame</span>
         </div>
         <p class="member-desc">
             Compose poses. <code>parent * child</code> gives the child's
@@ -542,7 +542,7 @@ camera.CFrame = CFrame.<span class="hl-fn">LookAt</span>(
     <div class="member">
         <div class="member-header">
             <span class="member-name">a * v  (CFrame * Vector)</span>
-            <span class="member-type">→ CFrame</span>
+            <span class="member-type">â†’ CFrame</span>
         </div>
         <p class="member-desc">
             Transforms a point from the CFrame's local space into world
@@ -552,7 +552,7 @@ camera.CFrame = CFrame.<span class="hl-fn">LookAt</span>(
     <div class="member">
         <div class="member-header">
             <span class="member-name">a + b, a - b</span>
-            <span class="member-type">→ CFrame</span>
+            <span class="member-type">â†’ CFrame</span>
         </div>
         <p class="member-desc">
             Component-wise add / subtract. Position and rotation each
@@ -562,7 +562,7 @@ camera.CFrame = CFrame.<span class="hl-fn">LookAt</span>(
     <div class="member">
         <div class="member-header">
             <span class="member-name">cf:FuzzyEq(other, epsilon?)</span>
-            <span class="member-type">→ boolean</span>
+            <span class="member-type">â†’ boolean</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -576,7 +576,7 @@ camera.CFrame = CFrame.<span class="hl-fn">LookAt</span>(
         <p class="member-desc">
             <strong>Caveat:</strong> rotation is compared as raw Euler
             radians, not angular distance, so two visually identical
-            rotations differing by a multiple of 2π will not
+            rotations differing by a multiple of 2Ï€ will not
             <code>FuzzyEq</code>. Wrap your bounds yourself if that
             matters.
         </p>
@@ -598,7 +598,7 @@ part.Size   = Vector.new(<span class="hl-num">1</span>, <span class="hl-num">1</
 part.CFrame = CFrame.new(Vector.new(<span class="hl-num">0</span>, <span class="hl-num">2</span>, <span class="hl-num">-5</span>))
               * CFrame.Angles(<span class="hl-num">0</span>, math.pi / <span class="hl-num">4</span>, <span class="hl-num">0</span>)</code></pre>
 
-<!-- ────────────────────────────────────────────────────────────────── -->
+<!-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <h2 id="dim">Dim</h2>
 
 <p>
@@ -652,7 +652,7 @@ part.CFrame = CFrame.new(Vector.new(<span class="hl-num">0</span>, <span class="
     <div class="member">
         <div class="member-header">
             <span class="member-name">d:Lerp(other, t)</span>
-            <span class="member-type">→ Dim</span>
+            <span class="member-type">â†’ Dim</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">Linear interpolation, same shape as Vector.</p>
@@ -660,7 +660,7 @@ part.CFrame = CFrame.new(Vector.new(<span class="hl-num">0</span>, <span class="
     <div class="member">
         <div class="member-header">
             <span class="member-name">d:Scale(reference, target, maintainRatio?)</span>
-            <span class="member-type">→ Dim</span>
+            <span class="member-type">â†’ Dim</span>
             <span class="tag tag-method">method</span>
             <span class="tag tag-new">new in 1.2</span>
         </div>
@@ -685,21 +685,21 @@ part.CFrame = CFrame.new(Vector.new(<span class="hl-num">0</span>, <span class="
     <div class="member">
         <div class="member-header">
             <span class="member-name">a + b, a - b</span>
-            <span class="member-type">→ Dim</span>
+            <span class="member-type">â†’ Dim</span>
         </div>
         <p class="member-desc">Component-wise add / subtract.</p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">d * scalar, d / scalar, -d</span>
-            <span class="member-type">→ Dim</span>
+            <span class="member-type">â†’ Dim</span>
         </div>
         <p class="member-desc">Scalar multiply / divide / negate.</p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">a == b, a &lt; b, a &lt;= b</span>
-            <span class="member-type">→ boolean</span>
+            <span class="member-type">â†’ boolean</span>
         </div>
         <p class="member-desc">
             Component-wise comparisons (<code>true</code> only when BOTH
@@ -765,7 +765,7 @@ hp.Position = centre - hp.Size / <span class="hl-num">2</span></code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">UDim.FromDim(scaleX, scaleY, parent)</span>
-            <span class="member-type">→ Dim</span>
+            <span class="member-type">â†’ Dim</span>
             <span class="tag tag-static">static</span>
         </div>
         <p class="member-desc">
@@ -775,7 +775,7 @@ hp.Position = centre - hp.Size / <span class="hl-num">2</span></code></pre>
             for sizing a button or tile to a fraction of a container
             without first constructing a <code>UDim</code> value.
         </p>
-        <pre><code><span class="hl-com">-- 20% × 20% of the parent.</span>
+        <pre><code><span class="hl-com">-- 20% Ã— 20% of the parent.</span>
 btn.Size = UDim.<span class="hl-fn">FromDim</span>(<span class="hl-num">0.2</span>, <span class="hl-num">0.2</span>, parentSize)</code></pre>
     </div>
 </div>
@@ -786,7 +786,7 @@ btn.Size = UDim.<span class="hl-fn">FromDim</span>(<span class="hl-num">0.2</spa
     <div class="member">
         <div class="member-header">
             <span class="member-name">u:ToDim(parent)</span>
-            <span class="member-type">→ Dim</span>
+            <span class="member-type">â†’ Dim</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -794,33 +794,33 @@ btn.Size = UDim.<span class="hl-fn">FromDim</span>(<span class="hl-num">0.2</spa
             corresponding component of <code>parent</code>.
         </p>
         <pre><code>UDim.<span class="hl-fn">new</span>(<span class="hl-num">0.5</span>, <span class="hl-num">0.25</span>):<span class="hl-fn">ToDim</span>(Dim.<span class="hl-fn">new</span>(<span class="hl-num">800</span>, <span class="hl-num">600</span>))
-<span class="hl-com">-- → Dim(400, 150)</span></code></pre>
+<span class="hl-com">-- â†’ Dim(400, 150)</span></code></pre>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">u:Lerp(other, t)</span>
-            <span class="member-type">→ UDim</span>
+            <span class="member-type">â†’ UDim</span>
             <span class="tag tag-method">method</span>
         </div>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">a + b, a - b</span>
-            <span class="member-type">→ UDim</span>
+            <span class="member-type">â†’ UDim</span>
         </div>
         <p class="member-desc">Component-wise addition / subtraction (combine offsets).</p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">u * scalar, u / scalar, -u</span>
-            <span class="member-type">→ UDim</span>
+            <span class="member-type">â†’ UDim</span>
         </div>
         <p class="member-desc">Scalar arithmetic and negation.</p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">a == b, a &lt; b, a &lt;= b</span>
-            <span class="member-type">→ boolean</span>
+            <span class="member-type">â†’ boolean</span>
         </div>
         <p class="member-desc">Component-wise comparisons (<code>true</code> only when BOTH axes match).</p>
     </div>

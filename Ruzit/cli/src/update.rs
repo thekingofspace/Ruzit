@@ -1,4 +1,4 @@
-use std::env;
+﻿use std::env;
 use std::fs;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
@@ -25,7 +25,7 @@ fn steam_lib_name() -> &'static str {
 fn agent() -> Agent {
     ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(60))
-        .user_agent("ruzit/1.2.3")
+        .user_agent("ruzit/1.2.4")
         .build()
 }
 
@@ -185,7 +185,7 @@ pub fn cmd_update(arg: Option<&String>) -> Result<(), String> {
     make_executable(&runtime_dest);
 
     println!(
-        "[ruzit] update complete from {}\n        → {} ({} bytes)\n\
+        "[ruzit] update complete from {}\n        â†’ {} ({} bytes)\n\
          [ruzit] CLI binary unchanged. Reinstall ruzit{exe_ext} manually if you need a new CLI.",
         archive_url,
         runtime_dest.display(),

@@ -1,6 +1,6 @@
-[package]
+﻿[package]
 name = "ruzit-cli"
-version = "1.2.3"
+version = "1.2.4"
 edition = "2024"
 
 [[bin]]

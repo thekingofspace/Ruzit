@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SFX - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.3">
-    <script src="theme.js?v=1.2.3"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.4">
+    <script src="theme.js?v=1.2.4"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.3" defer></script>
+<script src="sidebar.js?v=1.2.4" defer></script>
 
 <main>
 
@@ -26,7 +26,9 @@
 
 <span class="hl-kw">local</span> data = Asset.GetAsset(<span class="hl-str">"Sound"</span>, <span class="hl-str">"sfx.explode"</span>)
 <span class="hl-kw">local</span> snd  = SFX.LoadSound(data)
-snd:Volume(<span class="hl-num">0.6</span>):Echo(<span class="hl-num">120</span>, <span class="hl-num">0.4</span>, <span class="hl-num">0.3</span>):Play()</code></pre>
+snd.Volume = <span class="hl-num">0.6</span>
+snd.Echo = { Delay = <span class="hl-num">120</span>, Feedback = <span class="hl-num">0.4</span>, Mix = <span class="hl-num">0.3</span> }
+snd:Play()</code></pre>
 
 <h2 id="api">SFX API</h2>
 
@@ -34,7 +36,7 @@ snd:Volume(<span class="hl-num">0.6</span>):Echo(<span class="hl-num">120</span>
     <div class="member">
         <div class="member-header">
             <span class="member-name">SFX.LoadSound(data)</span>
-            <span class="member-type">→ Sound</span>
+            <span class="member-type">â†’ Sound</span>
         </div>
         <p class="member-desc">
             Wrap a <code>SoundData</code> into a playable <code>Sound</code>.
@@ -62,8 +64,8 @@ snd:Volume(<span class="hl-num">0.6</span>):Echo(<span class="hl-num">120</span>
         <tr><td><code>SFX.Volume(factor)</code></td><td>Linear gain.</td></tr>
         <tr><td><code>SFX.Speed(factor)</code></td><td>Time + pitch.</td></tr>
         <tr><td><code>SFX.Pan(amount)</code></td><td>Stereo pan, -1 to +1.</td></tr>
-        <tr><td><code>SFX.FadeIn(seconds)</code></td><td>0→1 envelope from start.</td></tr>
-        <tr><td><code>SFX.FadeOut(seconds)</code></td><td>1→0 envelope at end.</td></tr>
+        <tr><td><code>SFX.FadeIn(seconds)</code></td><td>0â†’1 envelope from start.</td></tr>
+        <tr><td><code>SFX.FadeOut(seconds)</code></td><td>1â†’0 envelope at end.</td></tr>
         <tr><td><code>SFX.LowPass(freq)</code></td><td>Biquad lowpass at the given Hz.</td></tr>
         <tr><td><code>SFX.HighPass(freq)</code></td><td>Biquad highpass.</td></tr>
         <tr><td><code>SFX.Delay(seconds)</code></td><td>Wait before producing audio.</td></tr>
@@ -152,14 +154,14 @@ music.DidLoop:Connect(<span class="hl-kw">function</span>()
         <div class="member-header"><span class="member-name">snd:Stop()</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">snd:IsPlaying()</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">snd:IsPlaying()</span><span class="member-type">â†’ boolean</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">snd:Reset()</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Drop all fluent shaders and attachments, back to a clean state.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">snd:LinkToUpdate(interval)</span><span class="member-type">→ Signal&lt;number&gt;</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">snd:LinkToUpdate(interval)</span><span class="member-type">â†’ Signal&lt;number&gt;</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Fires every <code>interval</code> seconds with elapsed playback
             time. Useful for syncing animation / particles to audio.
@@ -167,47 +169,109 @@ music.DidLoop:Connect(<span class="hl-kw">function</span>()
     </div>
 </div>
 
-<h3>Fluent shaders</h3>
+<h3>Modifier properties</h3>
 
 <p>
-    Each replaces any prior call to the same method (no stacking).
-    Apply before <code>:Play()</code>; settings reset between plays.
+    Each built-in modifier is exposed as a single live property on the
+    Sound. Assigning replaces the prior value (no stacking), reading
+    returns the current value, and assigning <code>nil</code> /
+    <code>0</code> / <code>false</code> removes the modifier. Changes
+    apply on the <em>next</em> <code>:Play()</code>, settings are kept
+    between plays unless you explicitly clear them.
 </p>
 
 <table>
     <tbody>
-        <tr><td><code>snd:Volume(factor)</code></td><td>1.0 unchanged, 0.0 silence, &gt;1 boosted.</td></tr>
-        <tr><td><code>snd:Speed(factor)</code></td><td>2.0 = 2&times; faster (also pitched up an octave).</td></tr>
-        <tr><td><code>snd:Pitch(factor)</code></td><td>Pitch shift via resampling. Doesn't change duration.</td></tr>
-        <tr><td><code>snd:Pan(amount)</code></td><td>-1 left / 0 center / +1 right.</td></tr>
-        <tr><td><code>snd:LowPass(freq)</code></td><td>Biquad lowpass.</td></tr>
-        <tr><td><code>snd:HighPass(freq)</code></td><td>Biquad highpass.</td></tr>
-        <tr><td><code>snd:FadeIn(seconds)</code></td><td>Linear envelope from start.</td></tr>
-        <tr><td><code>snd:FadeOut(seconds)</code></td><td>Linear envelope at end.</td></tr>
-        <tr><td><code>snd:Delay(seconds)</code></td><td>Wait before producing audio.</td></tr>
-        <tr><td><code>snd:Loop()</code></td><td>Each loop fires <code>Started</code>/<code>Stopped</code> fresh.</td></tr>
-        <tr><td><code>snd:Distortion(amount)</code></td><td>Soft saturation. &gt;1 hard-clips.</td></tr>
-        <tr><td><code>snd:Echo(delay_ms, feedback?, mix?)</code></td><td>Single-tap echo.</td></tr>
-        <tr><td><code>snd:Reverb(mix?, decay?)</code></td><td>Diffuse reverb.</td></tr>
-        <tr><td><code>snd:Tremolo(rate?, depth?)</code></td><td>Periodic amplitude wobble.</td></tr>
+        <tr><td><code>snd.Volume</code></td><td>number</td><td>1.0 unchanged, 0.0 silence, &gt;1 boosted.</td></tr>
+        <tr><td><code>snd.Speed</code></td><td>number</td><td>2.0 = 2&times; faster (also pitched up an octave).</td></tr>
+        <tr><td><code>snd.Pitch</code></td><td>number</td><td>Alias for <code>Speed</code>, set either, both read the same value.</td></tr>
+        <tr><td><code>snd.Pan</code></td><td>number</td><td>-1 left / 0 center / +1 right.</td></tr>
+        <tr><td><code>snd.LowPass</code></td><td>number? (Hz)</td><td>Biquad lowpass at the given Hz. Set to nil to disable.</td></tr>
+        <tr><td><code>snd.HighPass</code></td><td>number? (Hz)</td><td>Biquad highpass. Set to nil to disable.</td></tr>
+        <tr><td><code>snd.FadeIn</code></td><td>number (s)</td><td>Linear envelope from start. Set to 0 to disable.</td></tr>
+        <tr><td><code>snd.FadeOut</code></td><td>number (s)</td><td>Linear envelope at end. Set to 0 to disable.</td></tr>
+        <tr><td><code>snd.Delay</code></td><td>number (s)</td><td>Wait before producing audio. Set to 0 to disable.</td></tr>
+        <tr><td><code>snd.Loop</code></td><td>boolean</td><td>Legacy in-source repeat (no <code>DidLoop</code> signal). Prefer <code>snd.Looped</code> for engine-observed loops.</td></tr>
+        <tr><td><code>snd.Distortion</code></td><td>number</td><td>Soft saturation. Set to 0 to disable, &gt;1 hard-clips.</td></tr>
+        <tr><td><code>snd.Echo</code></td><td>table? { Delay, Feedback?, Mix? }</td><td>Single-tap echo. Set to nil to disable.</td></tr>
+        <tr><td><code>snd.Reverb</code></td><td>table? { Mix?, Decay? }</td><td>Diffuse reverb. Set to nil to disable.</td></tr>
+        <tr><td><code>snd.Tremolo</code></td><td>table? { Rate?, Depth? }</td><td>Periodic amplitude wobble. Set to nil to disable.</td></tr>
     </tbody>
 </table>
 
+<pre><code><span class="hl-com">-- Live volume duck while a dialogue line plays.</span>
+music.Volume = <span class="hl-num">0.2</span>
+dialog:Play()
+dialog.Stopped:Connect(<span class="hl-kw">function</span>() music.Volume = <span class="hl-num">1.0</span> <span class="hl-kw">end</span>)
+
+<span class="hl-com">-- Underwater preset.</span>
+snd.LowPass = <span class="hl-num">800</span>
+snd.Reverb  = { Mix = <span class="hl-num">0.4</span>, Decay = <span class="hl-num">3</span> }</code></pre>
+
 <h3 id="positional">3D positional audio</h3>
+
+<p>
+    Position the sound in world space, the active
+    <code>Renderable.Camera</code> is the listener. Inside
+    <code>MinFalloff</code> the sound is at full volume, past
+    <code>MaxFalloff</code> it is silent, and in between it rolls off
+    smoothly. Setting <code>Position</code> to <code>nil</code> reverts
+    to non-positional (no attenuation, no spatial pan).
+</p>
 
 <div class="member-list">
     <div class="member">
-        <div class="member-header"><span class="member-name">snd:SetPosition(x, y, z, falloff?)</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">.Position</span><span class="member-type">Vector?</span></div>
         <p class="member-desc">
-            Listener is the active <code>Renderable.Camera</code>. Distance
-            falloff defaults to 20 world units. Call
-            <code>:ClearPosition()</code> to revert to non-positional.
+            World-space position. Assign a <code>Vector</code> to place
+            in 3D, or <code>nil</code> to disable spatial audio.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.MinFalloff</span><span class="member-type">number</span></div>
+        <p class="member-desc">
+            Inner radius. Distances â‰¤ this play at full volume. Defaults
+            to <code>0</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.MaxFalloff</span><span class="member-type">number</span></div>
+        <p class="member-desc">
+            Outer radius. Distances â‰¥ this are silent. Defaults to
+            <code>20</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">snd:SetPosition(x, y, z, max_falloff?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Convenience form, takes raw components plus an optional
+            override for <code>MaxFalloff</code>. Equivalent to setting
+            <code>snd.Position</code> (and optionally <code>snd.MaxFalloff</code>).
         </p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">snd:ClearPosition()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Same as <code>snd.Position = nil</code>.</p>
     </div>
 </div>
+
+<h3 id="tweening">Tweening</h3>
+
+<p>
+    A Sound is a valid target for
+    <a href="tweenservice.html"><code>TweenService.new</code></a>.
+    Tweenable properties: <code>Volume</code>, <code>Pitch</code> /
+    <code>Speed</code>, <code>Pan</code>, <code>Distortion</code>,
+    <code>Position</code>, <code>MinFalloff</code>,
+    <code>MaxFalloff</code>.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Tween = <span class="hl-fn">import</span>(<span class="hl-str">"TweenService"</span>)
+
+<span class="hl-com">-- 2 s fade-out, then stop.</span>
+<span class="hl-kw">local</span> t = Tween.new(music, <span class="hl-num">2</span>, <span class="hl-str">"Sine"</span>, { Volume = <span class="hl-num">0</span> })
+t.Completed:Connect(<span class="hl-kw">function</span>() music:Stop() <span class="hl-kw">end</span>)
+t:Play()</code></pre>
 
 <h3 id="dsp">DSP shaders</h3>
 
@@ -227,7 +291,7 @@ music.DidLoop:Connect(<span class="hl-kw">function</span>()
         <div class="member-header"><span class="member-name">snd:SetData(asset, name, value)</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">snd:GetData(asset, name)</span><span class="member-type">→ number?</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">snd:GetData(asset, name)</span><span class="member-type">â†’ number?</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">snd:ApplyShader(shader)</span><span class="tag tag-method">method</span></div>

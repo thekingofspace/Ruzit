@@ -10,7 +10,7 @@ use mlua::{
 };
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 
-use crate::libs::primitives::read_xyz_from_args;
+use crate::libs::primitives::{Vector, read_xyz_from_args, value_to_vector_opt};
 use crate::libs::shader::{AttachedShader, Params, read_param, shader_attach_spec, shader_id};
 use crate::libs::signal;
 
@@ -195,11 +195,11 @@ pub struct Sound {
     started_table: Table,
     stopped_table: Table,
     did_loop_table: Table,
-    shaders: Mutex<Vec<Shader>>,
+    pub(crate) shaders: Arc<Mutex<Vec<Shader>>>,
     attached: Mutex<Vec<AttachedShader>>,
     update_links: Mutex<Vec<UpdateLink>>,
     current_id: Arc<Mutex<Option<u64>>>,
-    position: Arc<Mutex<Option<SpatialPos>>>,
+    pub(crate) position: Arc<Mutex<Option<SpatialPos>>>,
     looped: Arc<AtomicBool>,
     loop_count: Arc<AtomicU64>,
     total_duration: Mutex<Option<Duration>>,
@@ -211,7 +211,8 @@ pub struct SpatialPos {
     pub x: f32,
     pub y: f32,
     pub z: f32,
-    pub falloff: f32,
+    pub min_falloff: f32,
+    pub max_falloff: f32,
 }
 
 struct UpdateLink {
@@ -290,7 +291,7 @@ fn load_from_data(lua: &Lua, data: &SoundData) -> mlua::Result<AnyUserData> {
         started_table: started,
         stopped_table: stopped,
         did_loop_table: did_loop,
-        shaders: Mutex::new(Vec::new()),
+        shaders: Arc::new(Mutex::new(Vec::new())),
         attached: Mutex::new(Vec::new()),
         update_links: Mutex::new(Vec::new()),
         current_id,
@@ -300,6 +301,28 @@ fn load_from_data(lua: &Lua, data: &SoundData) -> mlua::Result<AnyUserData> {
         total_duration: Mutex::new(total),
         pending_offset: Mutex::new(Duration::ZERO),
     })
+}
+
+fn shader_set(sound: &Sound, new_shader: Shader) {
+    let mut list = sound.shaders.lock().unwrap();
+    let kind = new_shader.kind_id();
+    list.retain(|s| s.kind_id() != kind);
+    list.push(new_shader);
+}
+
+fn shader_remove(sound: &Sound, kind: u8) {
+    sound.shaders.lock().unwrap().retain(|s| s.kind_id() != kind);
+}
+
+fn find_shader(sound: &Sound, pred: impl Fn(&Shader) -> bool) -> Option<Shader> {
+    sound
+        .shaders
+        .lock()
+        .unwrap()
+        .iter()
+        .rev()
+        .find(|s| pred(s))
+        .copied()
 }
 
 impl UserData for Sound {
@@ -354,6 +377,349 @@ impl UserData for Sound {
             }
             Ok(())
         });
+
+        f.add_field_method_get("Volume", |_, this| {
+            Ok(find_shader(this, |s| matches!(s, Shader::Volume(_)))
+                .and_then(|s| if let Shader::Volume(v) = s { Some(v) } else { None })
+                .unwrap_or(1.0))
+        });
+        f.add_field_method_set("Volume", |_, this, factor: f32| {
+            shader_set(this, Shader::Volume(factor.max(0.0)));
+            Ok(())
+        });
+
+        f.add_field_method_get("Speed", |_, this| {
+            Ok(find_shader(this, |s| matches!(s, Shader::Speed(_)))
+                .and_then(|s| if let Shader::Speed(v) = s { Some(v) } else { None })
+                .unwrap_or(1.0))
+        });
+        f.add_field_method_set("Speed", |_, this, factor: f32| {
+            shader_set(this, Shader::Speed(factor.max(0.0)));
+            Ok(())
+        });
+
+        f.add_field_method_get("Pitch", |_, this| {
+            Ok(find_shader(this, |s| matches!(s, Shader::Speed(_)))
+                .and_then(|s| if let Shader::Speed(v) = s { Some(v) } else { None })
+                .unwrap_or(1.0))
+        });
+        f.add_field_method_set("Pitch", |_, this, factor: f32| {
+            shader_set(this, Shader::Speed(factor.max(0.0)));
+            Ok(())
+        });
+
+        f.add_field_method_get("Pan", |_, this| {
+            Ok(find_shader(this, |s| matches!(s, Shader::Pan(_)))
+                .and_then(|s| if let Shader::Pan(v) = s { Some(v) } else { None })
+                .unwrap_or(0.0))
+        });
+        f.add_field_method_set("Pan", |_, this, amount: f32| {
+            shader_set(this, Shader::Pan(amount.clamp(-1.0, 1.0)));
+            Ok(())
+        });
+
+        f.add_field_method_get("LowPass", |_, this| -> mlua::Result<mlua::Value> {
+            Ok(match find_shader(this, |s| matches!(s, Shader::LowPass(_))) {
+                Some(Shader::LowPass(v)) => mlua::Value::Integer(v as i32),
+                _ => mlua::Value::Nil,
+            })
+        });
+        f.add_field_method_set("LowPass", |_, this, v: mlua::Value| {
+            match v {
+                mlua::Value::Nil => shader_remove(this, 4),
+                mlua::Value::Integer(n) => shader_set(this, Shader::LowPass(n.max(0) as u32)),
+                mlua::Value::Number(n) => shader_set(this, Shader::LowPass(n.max(0.0) as u32)),
+                _ => {
+                    return Err(mlua::Error::RuntimeError(
+                        "Sound.LowPass expects a number (Hz) or nil".into(),
+                    ));
+                }
+            }
+            Ok(())
+        });
+
+        f.add_field_method_get("HighPass", |_, this| -> mlua::Result<mlua::Value> {
+            Ok(match find_shader(this, |s| matches!(s, Shader::HighPass(_))) {
+                Some(Shader::HighPass(v)) => mlua::Value::Integer(v as i32),
+                _ => mlua::Value::Nil,
+            })
+        });
+        f.add_field_method_set("HighPass", |_, this, v: mlua::Value| {
+            match v {
+                mlua::Value::Nil => shader_remove(this, 5),
+                mlua::Value::Integer(n) => shader_set(this, Shader::HighPass(n.max(0) as u32)),
+                mlua::Value::Number(n) => shader_set(this, Shader::HighPass(n.max(0.0) as u32)),
+                _ => {
+                    return Err(mlua::Error::RuntimeError(
+                        "Sound.HighPass expects a number (Hz) or nil".into(),
+                    ));
+                }
+            }
+            Ok(())
+        });
+
+        f.add_field_method_get("FadeIn", |_, this| {
+            Ok(find_shader(this, |s| matches!(s, Shader::FadeIn(_)))
+                .and_then(|s| if let Shader::FadeIn(v) = s { Some(v) } else { None })
+                .unwrap_or(0.0))
+        });
+        f.add_field_method_set("FadeIn", |_, this, secs: f64| {
+            if secs <= 0.0 {
+                shader_remove(this, 2);
+            } else {
+                shader_set(this, Shader::FadeIn(secs));
+            }
+            Ok(())
+        });
+
+        f.add_field_method_get("FadeOut", |_, this| {
+            Ok(find_shader(this, |s| matches!(s, Shader::FadeOut(_)))
+                .and_then(|s| if let Shader::FadeOut(v) = s { Some(v) } else { None })
+                .unwrap_or(0.0))
+        });
+        f.add_field_method_set("FadeOut", |_, this, secs: f64| {
+            if secs <= 0.0 {
+                shader_remove(this, 3);
+            } else {
+                shader_set(this, Shader::FadeOut(secs));
+            }
+            Ok(())
+        });
+
+        f.add_field_method_get("Delay", |_, this| {
+            Ok(find_shader(this, |s| matches!(s, Shader::Delay(_)))
+                .and_then(|s| if let Shader::Delay(v) = s { Some(v) } else { None })
+                .unwrap_or(0.0))
+        });
+        f.add_field_method_set("Delay", |_, this, secs: f64| {
+            if secs <= 0.0 {
+                shader_remove(this, 6);
+            } else {
+                shader_set(this, Shader::Delay(secs));
+            }
+            Ok(())
+        });
+
+        f.add_field_method_get("Loop", |_, this| {
+            Ok(find_shader(this, |s| matches!(s, Shader::Repeat)).is_some())
+        });
+        f.add_field_method_set("Loop", |_, this, on: bool| {
+            if on {
+                shader_set(this, Shader::Repeat);
+            } else {
+                shader_remove(this, 7);
+            }
+            Ok(())
+        });
+
+        f.add_field_method_get("Distortion", |_, this| {
+            Ok(find_shader(this, |s| matches!(s, Shader::Distortion(_)))
+                .and_then(|s| if let Shader::Distortion(v) = s { Some(v) } else { None })
+                .unwrap_or(0.0))
+        });
+        f.add_field_method_set("Distortion", |_, this, amount: f32| {
+            if amount <= 0.0 {
+                shader_remove(this, 9);
+            } else {
+                shader_set(this, Shader::Distortion(amount));
+            }
+            Ok(())
+        });
+
+        f.add_field_method_get("Echo", |lua, this| -> mlua::Result<mlua::Value> {
+            match find_shader(this, |s| matches!(s, Shader::Echo { .. })) {
+                Some(Shader::Echo { delay_ms, feedback, mix }) => {
+                    let t = lua.create_table()?;
+                    t.set("Delay", delay_ms as i64)?;
+                    t.set("Feedback", feedback)?;
+                    t.set("Mix", mix)?;
+                    Ok(mlua::Value::Table(t))
+                }
+                _ => Ok(mlua::Value::Nil),
+            }
+        });
+        f.add_field_method_set("Echo", |_, this, v: mlua::Value| {
+            match v {
+                mlua::Value::Nil => shader_remove(this, 10),
+                mlua::Value::Table(t) => {
+                    let delay_ms = t
+                        .get::<i64>("Delay")
+                        .map(|n| n.max(0) as u32)
+                        .unwrap_or(250);
+                    let feedback = t.get::<f32>("Feedback").unwrap_or(0.4);
+                    let mix = t.get::<f32>("Mix").unwrap_or(0.4);
+                    shader_set(
+                        this,
+                        Shader::Echo {
+                            delay_ms,
+                            feedback,
+                            mix,
+                        },
+                    );
+                }
+                _ => {
+                    return Err(mlua::Error::RuntimeError(
+                        "Sound.Echo expects a table { Delay, Feedback?, Mix? } or nil".into(),
+                    ));
+                }
+            }
+            Ok(())
+        });
+
+        f.add_field_method_get("Reverb", |lua, this| -> mlua::Result<mlua::Value> {
+            match find_shader(this, |s| matches!(s, Shader::Reverb { .. })) {
+                Some(Shader::Reverb { mix, decay }) => {
+                    let t = lua.create_table()?;
+                    t.set("Mix", mix)?;
+                    t.set("Decay", decay)?;
+                    Ok(mlua::Value::Table(t))
+                }
+                _ => Ok(mlua::Value::Nil),
+            }
+        });
+        f.add_field_method_set("Reverb", |_, this, v: mlua::Value| {
+            match v {
+                mlua::Value::Nil => shader_remove(this, 11),
+                mlua::Value::Table(t) => {
+                    let mix = t.get::<f32>("Mix").unwrap_or(0.35);
+                    let decay = t.get::<f32>("Decay").unwrap_or(0.7);
+                    shader_set(this, Shader::Reverb { mix, decay });
+                }
+                _ => {
+                    return Err(mlua::Error::RuntimeError(
+                        "Sound.Reverb expects a table { Mix?, Decay? } or nil".into(),
+                    ));
+                }
+            }
+            Ok(())
+        });
+
+        f.add_field_method_get("Tremolo", |lua, this| -> mlua::Result<mlua::Value> {
+            match find_shader(this, |s| matches!(s, Shader::Tremolo { .. })) {
+                Some(Shader::Tremolo { rate, depth }) => {
+                    let t = lua.create_table()?;
+                    t.set("Rate", rate)?;
+                    t.set("Depth", depth)?;
+                    Ok(mlua::Value::Table(t))
+                }
+                _ => Ok(mlua::Value::Nil),
+            }
+        });
+        f.add_field_method_set("Tremolo", |_, this, v: mlua::Value| {
+            match v {
+                mlua::Value::Nil => shader_remove(this, 12),
+                mlua::Value::Table(t) => {
+                    let rate = t.get::<f32>("Rate").unwrap_or(5.0);
+                    let depth = t.get::<f32>("Depth").unwrap_or(0.5);
+                    shader_set(this, Shader::Tremolo { rate, depth });
+                }
+                _ => {
+                    return Err(mlua::Error::RuntimeError(
+                        "Sound.Tremolo expects a table { Rate?, Depth? } or nil".into(),
+                    ));
+                }
+            }
+            Ok(())
+        });
+
+        f.add_field_method_get("Position", |_, this| -> mlua::Result<Option<Vector>> {
+            Ok(this
+                .position
+                .lock()
+                .unwrap()
+                .map(|p| Vector::new(p.x, p.y, p.z)))
+        });
+        f.add_field_method_set("Position", |_, this, v: mlua::Value| {
+            match v {
+                mlua::Value::Nil => {
+                    *this.position.lock().unwrap() = None;
+                }
+                other => {
+                    let vec = value_to_vector_opt(&other).ok_or_else(|| {
+                        mlua::Error::RuntimeError(
+                            "Sound.Position expects a Vector or nil".into(),
+                        )
+                    })?;
+                    let mut guard = this.position.lock().unwrap();
+                    let (min_f, max_f) = guard
+                        .as_ref()
+                        .map(|p| (p.min_falloff, p.max_falloff))
+                        .unwrap_or((0.0, 20.0));
+                    *guard = Some(SpatialPos {
+                        x: vec.x,
+                        y: vec.y,
+                        z: vec.z,
+                        min_falloff: min_f,
+                        max_falloff: max_f,
+                    });
+                }
+            }
+            Ok(())
+        });
+
+        f.add_field_method_get("MinFalloff", |_, this| {
+            Ok(this
+                .position
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|p| p.min_falloff)
+                .unwrap_or(0.0))
+        });
+        f.add_field_method_set("MinFalloff", |_, this, v: f32| {
+            let v = v.max(0.0);
+            let mut guard = this.position.lock().unwrap();
+            match guard.as_mut() {
+                Some(p) => {
+                    p.min_falloff = v;
+                    if p.max_falloff < p.min_falloff {
+                        p.max_falloff = p.min_falloff;
+                    }
+                }
+                None => {
+                    *guard = Some(SpatialPos {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                        min_falloff: v,
+                        max_falloff: v.max(20.0),
+                    });
+                }
+            }
+            Ok(())
+        });
+
+        f.add_field_method_get("MaxFalloff", |_, this| {
+            Ok(this
+                .position
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|p| p.max_falloff)
+                .unwrap_or(20.0))
+        });
+        f.add_field_method_set("MaxFalloff", |_, this, v: f32| {
+            let v = v.max(0.0);
+            let mut guard = this.position.lock().unwrap();
+            match guard.as_mut() {
+                Some(p) => {
+                    p.max_falloff = v;
+                    if p.min_falloff > p.max_falloff {
+                        p.min_falloff = p.max_falloff;
+                    }
+                }
+                None => {
+                    *guard = Some(SpatialPos {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                        min_falloff: 0.0,
+                        max_falloff: v,
+                    });
+                }
+            }
+            Ok(())
+        });
     }
 
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
@@ -378,99 +744,6 @@ impl UserData for Sound {
             Ok(())
         });
 
-        fn set_kind(this: &Sound, new_shader: Shader) {
-            let mut list = this.shaders.lock().unwrap();
-            let kind = new_shader.kind_id();
-            list.retain(|s| s.kind_id() != kind);
-            list.push(new_shader);
-        }
-        m.add_method("Volume", |_, this, factor: f32| -> mlua::Result<()> {
-            set_kind(this, Shader::Volume(factor.max(0.0)));
-            Ok(())
-        });
-        m.add_method("Speed", |_, this, factor: f32| -> mlua::Result<()> {
-            set_kind(this, Shader::Speed(factor.max(0.0)));
-            Ok(())
-        });
-        m.add_method("Pitch", |_, this, factor: f32| -> mlua::Result<()> {
-            set_kind(this, Shader::Speed(factor.max(0.0)));
-            Ok(())
-        });
-        m.add_method("Pan", |_, this, amount: f32| -> mlua::Result<()> {
-            set_kind(this, Shader::Pan(amount));
-            Ok(())
-        });
-        m.add_method("LowPass", |_, this, freq: u32| -> mlua::Result<()> {
-            set_kind(this, Shader::LowPass(freq));
-            Ok(())
-        });
-        m.add_method("HighPass", |_, this, freq: u32| -> mlua::Result<()> {
-            set_kind(this, Shader::HighPass(freq));
-            Ok(())
-        });
-        m.add_method("FadeIn", |_, this, secs: f64| -> mlua::Result<()> {
-            set_kind(this, Shader::FadeIn(secs));
-            Ok(())
-        });
-        m.add_method("FadeOut", |_, this, secs: f64| -> mlua::Result<()> {
-            set_kind(this, Shader::FadeOut(secs));
-            Ok(())
-        });
-        m.add_method("Delay", |_, this, secs: f64| -> mlua::Result<()> {
-            set_kind(this, Shader::Delay(secs));
-            Ok(())
-        });
-        m.add_method("Loop", |_, this, _: ()| -> mlua::Result<()> {
-            set_kind(this, Shader::Repeat);
-            Ok(())
-        });
-        m.add_method("Distortion", |_, this, amount: f32| -> mlua::Result<()> {
-            set_kind(this, Shader::Distortion(amount));
-            Ok(())
-        });
-        m.add_method(
-            "Echo",
-            |_,
-             this,
-             (delay_ms, feedback, mix): (u32, Option<f32>, Option<f32>)|
-             -> mlua::Result<()> {
-                set_kind(
-                    this,
-                    Shader::Echo {
-                        delay_ms,
-                        feedback: feedback.unwrap_or(0.4),
-                        mix: mix.unwrap_or(0.4),
-                    },
-                );
-                Ok(())
-            },
-        );
-        m.add_method(
-            "Reverb",
-            |_, this, (mix, decay): (Option<f32>, Option<f32>)| -> mlua::Result<()> {
-                set_kind(
-                    this,
-                    Shader::Reverb {
-                        mix: mix.unwrap_or(0.35),
-                        decay: decay.unwrap_or(0.7),
-                    },
-                );
-                Ok(())
-            },
-        );
-        m.add_method(
-            "Tremolo",
-            |_, this, (rate, depth): (Option<f32>, Option<f32>)| -> mlua::Result<()> {
-                set_kind(
-                    this,
-                    Shader::Tremolo {
-                        rate: rate.unwrap_or(5.0),
-                        depth: depth.unwrap_or(0.5),
-                    },
-                );
-                Ok(())
-            },
-        );
         m.add_method("Reset", |_, this, _: ()| -> mlua::Result<()> {
             this.shaders.lock().unwrap().clear();
             Ok(())
@@ -489,16 +762,19 @@ impl UserData for Sound {
                     return Ok(());
                 }
                 let ((x, y, z), tail) = read_xyz_from_args(args)?;
-                let falloff = match tail {
+                let max_falloff = match tail {
                     Some(mlua::Value::Number(n)) => n as f32,
                     Some(mlua::Value::Integer(n)) => n as f32,
                     _ => 20.0,
                 };
-                *this.position.lock().unwrap() = Some(SpatialPos {
+                let mut guard = this.position.lock().unwrap();
+                let min_falloff = guard.as_ref().map(|p| p.min_falloff).unwrap_or(0.0);
+                *guard = Some(SpatialPos {
                     x,
                     y,
                     z,
-                    falloff: falloff.max(0.1),
+                    min_falloff,
+                    max_falloff: max_falloff.max(0.1),
                 });
                 Ok(())
             },
@@ -1530,7 +1806,15 @@ impl Iterator for CameraSpatial {
             let dy = pos.y - cy;
             let dz = pos.z - cz;
             let dist = (dx * dx + dy * dy + dz * dz).sqrt();
-            let atten = (1.0 - (dist / pos.falloff)).clamp(0.0, 1.0).powf(1.6);
+            let atten = if dist <= pos.min_falloff {
+                1.0
+            } else if dist >= pos.max_falloff {
+                0.0
+            } else {
+                let span = (pos.max_falloff - pos.min_falloff).max(0.001);
+                let t = (dist - pos.min_falloff) / span;
+                (1.0 - t).clamp(0.0, 1.0).powf(1.6)
+            };
 
             let yaw = cam.cframe.rotation.y;
             let cy_ = yaw.cos();

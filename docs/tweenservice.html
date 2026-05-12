@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TweenService - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.3">
-    <script src="theme.js?v=1.2.3"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.4">
+    <script src="theme.js?v=1.2.4"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.3" defer></script>
+<script src="sidebar.js?v=1.2.4" defer></script>
 
 <main>
 
@@ -84,7 +84,7 @@ tw.Completed:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</sp
     <div class="member">
         <div class="member-header">
             <span class="member-name">TweenService.new(target, duration, style, direction?, properties)</span>
-            <span class="member-type">→ Tween</span>
+            <span class="member-type">â†’ Tween</span>
         </div>
         <p class="member-desc">
             Create a tween. <code>target</code> is a tweenable userdata.
@@ -111,6 +111,26 @@ tw.Completed:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</sp
                     <li><code>ZIndex</code> &mdash; goal is a <code>number</code> (rounded each tick)</li>
                 </ul>
             </li>
+            <li><strong><a href="sfx.html#sound">SFX Sound</a></strong>
+                <ul>
+                    <li><code>Volume</code> &mdash; goal is a <code>number</code></li>
+                    <li><code>Pitch</code> / <code>Speed</code> &mdash; goal is a <code>number</code></li>
+                    <li><code>Pan</code> &mdash; goal is a <code>number</code> (-1..1)</li>
+                    <li><code>Distortion</code> &mdash; goal is a <code>number</code></li>
+                    <li><code>Position</code> &mdash; goal is a <code>Vector</code></li>
+                    <li><code>MinFalloff</code> &mdash; goal is a <code>number</code></li>
+                    <li><code>MaxFalloff</code> &mdash; goal is a <code>number</code></li>
+                </ul>
+            </li>
+            <li><strong><a href="voice.html#channel">VoiceChannel</a></strong>
+                <ul>
+                    <li><code>Volume</code> &mdash; goal is a <code>number</code></li>
+                    <li><code>Pitch</code> / <code>Speed</code> &mdash; goal is a <code>number</code></li>
+                    <li><code>Position</code> &mdash; goal is a <code>Vector</code></li>
+                    <li><code>MinFalloff</code> &mdash; goal is a <code>number</code></li>
+                    <li><code>MaxFalloff</code> &mdash; goal is a <code>number</code></li>
+                </ul>
+            </li>
         </ul>
         <p class="member-desc">
             The returned Tween starts in <code>"Idle"</code>. Call
@@ -130,7 +150,7 @@ tw.Completed:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</sp
     <div class="member">
         <div class="member-header">
             <span class="member-name">TweenService.Create(target, duration, style, direction?, properties)</span>
-            <span class="member-type">→ Tween</span>
+            <span class="member-type">â†’ Tween</span>
         </div>
         <p class="member-desc">
             Alias for <code>new</code> (Roblox-style spelling).
@@ -139,7 +159,7 @@ tw.Completed:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</sp
     <div class="member">
         <div class="member-header">
             <span class="member-name">TweenService.Lerp(start, goal, alpha, style?, direction?)</span>
-            <span class="member-type">→ same type as start / goal</span>
+            <span class="member-type">â†’ same type as start / goal</span>
         </div>
         <p class="member-desc">
             Single-shot eased interpolation. Same families and directions

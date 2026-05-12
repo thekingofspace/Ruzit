@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Actor - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.3">
-    <script src="theme.js?v=1.2.3"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.4">
+    <script src="theme.js?v=1.2.4"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.3" defer></script>
+<script src="sidebar.js?v=1.2.4" defer></script>
 
 <main>
 
@@ -45,7 +45,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">Actor.new(source, threads?)</span>
-            <span class="member-type">→ Actor</span>
+            <span class="member-type">â†’ Actor</span>
         </div>
         <p class="member-desc">
             Create a worker pool. <code>source</code> must be a Luau
@@ -58,7 +58,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">Actor.FromFile(path, threads?)</span>
-            <span class="member-type">→ Actor</span>
+            <span class="member-type">â†’ Actor</span>
         </div>
         <p class="member-desc">
             Load worker code from a separate <code>.luau</code> file.
@@ -85,7 +85,7 @@
         <p class="member-desc">Queue one job. Arguments are deep-copied to a worker.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">actor:Pop(yield_for_result?)</span><span class="member-type">→ ...any</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">actor:Pop(yield_for_result?)</span><span class="member-type">â†’ ...any</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Pop the next ready result. With <code>yield_for_result =
             true</code> blocks until one's available; without (default),
@@ -95,11 +95,11 @@
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">actor:Pending()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">actor:Pending()</span><span class="member-type">â†’ number</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Number of jobs in flight + ready results not yet popped.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">actor:Threads()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">actor:Threads()</span><span class="member-type">â†’ number</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">actor:Close()</span><span class="tag tag-method">method</span></div>

@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Serde - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.3">
-    <script src="theme.js?v=1.2.3"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.4">
+    <script src="theme.js?v=1.2.4"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.3" defer></script>
+<script src="sidebar.js?v=1.2.4" defer></script>
 
 <main>
 
@@ -32,7 +32,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">Serde.Encode(format, data, pretty?)</span>
-            <span class="member-type">→ string</span>
+            <span class="member-type">â†’ string</span>
         </div>
         <p class="member-desc">
             Serialise Lua data to a textual format. <code>pretty</code>
@@ -44,7 +44,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">Serde.Decode(format, text)</span>
-            <span class="member-type">→ any</span>
+            <span class="member-type">â†’ any</span>
         </div>
         <p class="member-desc">
             Inverse of <code>Encode</code>. Returns nested tables /
@@ -62,7 +62,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">Serde.Hash(algo, data, encoding?)</span>
-            <span class="member-type">→ string</span>
+            <span class="member-type">â†’ string</span>
         </div>
         <p class="member-desc">
             Cryptographic hash. <code>encoding</code> controls the return
@@ -96,7 +96,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">Serde.Compress(algo, data, level?)</span>
-            <span class="member-type">→ string</span>
+            <span class="member-type">â†’ string</span>
         </div>
         <p class="member-desc">
             <code>level</code> is 0&ndash;9 for gzip / zlib / deflate,
@@ -107,7 +107,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">Serde.Decompress(algo, data)</span>
-            <span class="member-type">→ string</span>
+            <span class="member-type">â†’ string</span>
         </div>
         <p class="member-desc">Inverse. Throws on truncated / bad-magic data.</p>
     </div>

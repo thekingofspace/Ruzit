@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LightingService - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.3">
-    <script src="theme.js?v=1.2.3"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.4">
+    <script src="theme.js?v=1.2.4"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.3" defer></script>
+<script src="sidebar.js?v=1.2.4" defer></script>
 
 <main>
 
@@ -150,28 +150,28 @@ LightingService:<span class="hl-fn">AddObject</span>(somePart)
     <div class="member">
         <div class="member-header">
             <span class="member-name">LightingService.GetSunDirection()</span>
-            <span class="member-type">→ Vector</span>
+            <span class="member-type">â†’ Vector</span>
         </div>
         <p class="member-desc">Current sun direction.</p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">LightingService.GetSunColor()</span>
-            <span class="member-type">→ Color3</span>
+            <span class="member-type">â†’ Color3</span>
         </div>
         <p class="member-desc">Current sun color.</p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">LightingService.GetAmbient()</span>
-            <span class="member-type">→ Color3</span>
+            <span class="member-type">â†’ Color3</span>
         </div>
         <p class="member-desc">Current ambient term.</p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">LightingService.Get()</span>
-            <span class="member-type">→ { SunDirection, SunColor, Ambient }</span>
+            <span class="member-type">â†’ { SunDirection, SunColor, Ambient }</span>
         </div>
         <p class="member-desc">
             Snapshot all three at once. Handy for debug HUDs and
@@ -200,7 +200,7 @@ LightingService:<span class="hl-fn">AddObject</span>(somePart)
     <div class="member">
         <div class="member-header">
             <span class="member-name">LightingService:IsObjectManaged(part)</span>
-            <span class="member-type">→ boolean</span>
+            <span class="member-type">â†’ boolean</span>
         </div>
         <p class="member-desc">
             Whether the part's <code>Lit</code> flag is currently on.
@@ -209,7 +209,7 @@ LightingService:<span class="hl-fn">AddObject</span>(somePart)
     <div class="member">
         <div class="member-header">
             <span class="member-name">LightingService.GenerateLightSource(kind, opts?)</span>
-            <span class="member-type">→ LightSource</span>
+            <span class="member-type">â†’ LightSource</span>
         </div>
         <p class="member-desc">
             Spawn a new <code>LightSource</code> and add it to the active
@@ -224,7 +224,7 @@ LightingService:<span class="hl-fn">AddObject</span>(somePart)
     <div class="member">
         <div class="member-header">
             <span class="member-name">LightingService.GetActiveLights()</span>
-            <span class="member-type">→ { LightSource }</span>
+            <span class="member-type">â†’ { LightSource }</span>
         </div>
         <p class="member-desc">
             Every alive LightSource as a Lua array.
@@ -233,7 +233,7 @@ LightingService:<span class="hl-fn">AddObject</span>(somePart)
     <div class="member">
         <div class="member-header">
             <span class="member-name">LightingService.GetLightCount()</span>
-            <span class="member-type">→ number</span>
+            <span class="member-type">â†’ number</span>
         </div>
         <p class="member-desc">
             How many LightSources are currently alive. Cheap.
@@ -242,7 +242,7 @@ LightingService:<span class="hl-fn">AddObject</span>(somePart)
     <div class="member">
         <div class="member-header">
             <span class="member-name">LightingService.UploadLights(buffer)</span>
-            <span class="member-type">→ number</span>
+            <span class="member-type">â†’ number</span>
         </div>
         <p class="member-desc">
             Pack the current set of LightSources into a GPU storage buffer
@@ -282,7 +282,7 @@ LightingService:<span class="hl-fn">AddObject</span>(somePart)
     <div class="member">
         <div class="member-header">
             <span class="member-name">LightingService.SetSkybox(asset)</span>
-            <span class="member-type">→ SceneShader</span>
+            <span class="member-type">â†’ SceneShader</span>
         </div>
         <p class="member-desc">
             Run a fragment shader on a fullscreen quad before the 3D
@@ -306,7 +306,7 @@ LightingService:<span class="hl-fn">AddObject</span>(somePart)
     <div class="member">
         <div class="member-header">
             <span class="member-name">LightingService.SetPostEffect(asset)</span>
-            <span class="member-type">→ SceneShader</span>
+            <span class="member-type">â†’ SceneShader</span>
         </div>
         <p class="member-desc">
             Install a fragment shader that runs ONCE per frame as the
@@ -473,7 +473,7 @@ LightingService:<span class="hl-fn">AddObject</span>(somePart)
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">:Direction()</span><span class="member-type">→ Vector</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">:Direction()</span><span class="member-type">â†’ Vector</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             World-space forward derived from <code>CFrame.Rotation</code>.
             For a Spotlight this is the cone direction.

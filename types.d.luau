@@ -948,52 +948,56 @@ declare class Sound
 	-- seeks immediately; writing while stopped sets the start offset for
 	-- the next :Play() call.
 	TimePosition: number
-	-- Begin playback. Re-applying shaders or :Volume / :Speed first changes
-	-- how this playback sounds, settings don't carry between :Play calls
-	-- unless you re-apply them.
+	-- Modifier properties. Each is a single live slot; assigning replaces
+	-- the prior value (no stacking). Assign nil / 0 / false to remove.
+	-- Changes apply on the next :Play() and are kept between plays.
+	-- Linear gain. 1.0 unchanged, 0.0 silence, >1 boosted.
+	Volume: number
+	-- Time + pitch. 2.0 = 2x faster (also pitched up an octave).
+	Speed: number
+	-- Alias for Speed; read/write the same underlying value.
+	Pitch: number
+	-- Stereo pan. -1 left / 0 center / +1 right.
+	Pan: number
+	-- Lowpass / highpass biquad. Set to nil to disable.
+	LowPass: number?
+	HighPass: number?
+	-- Linear fade envelope length in seconds. Set to 0 to disable.
+	FadeIn: number
+	FadeOut: number
+	-- Wait before producing audio, in seconds. Set to 0 to disable.
+	Delay: number
+	-- Legacy in-source repeat. Prefer `Looped` for engine-observed loops
+	-- with DidLoop fire.
+	Loop: boolean
+	-- Soft saturation amount. Set to 0 to disable; >1 hard-clips.
+	Distortion: number
+	-- Single-tap echo. Set to nil to disable.
+	Echo: { Delay: number, Feedback: number?, Mix: number? }?
+	-- Diffuse reverb. Set to nil to disable.
+	Reverb: { Mix: number?, Decay: number? }?
+	-- Periodic amplitude wobble. Set to nil to disable.
+	Tremolo: { Rate: number?, Depth: number? }?
+	-- 3D world position. Listener = the active Renderable.Camera. Set to
+	-- nil to revert to non-positional (centered) playback.
+	Position: Vector?
+	-- Inner / outer falloff radii. Distances ≤ MinFalloff play at full
+	-- volume; distances ≥ MaxFalloff are silent; in between is a smooth
+	-- roll-off. Defaults: 0 / 20.
+	MinFalloff: number
+	MaxFalloff: number
+	-- Begin playback. Modifier properties / shaders set before this carry
+	-- into the next play.
 	function Play(self): ()
 	-- Halt the currently-playing instance. Fires Stopped.
 	function Stop(self): ()
 	function IsPlaying(self): boolean
-	-- Fluent built-in shaders: each one replaces any prior call to the same
-	-- method on this Sound (so Volume(0.5) → Volume(0.8) ends at 0.8, no
-	-- stacking). Call before :Play(), they apply on the next playback.
-	-- Linear gain. 1.0 = unchanged, 0.0 = silence, >1 = boosted.
-	function Volume(self, factor: number): ()
-	-- Time scaling. 1.0 = real-time, 2.0 = 2x faster (also pitches up an octave).
-	function Speed(self, factor: number): ()
-	-- Pure pitch shift via resampling. Same audible effect as Speed but
-	-- sample-rate-aware so the timeline length doesn't change.
-	function Pitch(self, factor: number): ()
-	-- Stereo pan. -1 = left, 0 = center, +1 = right.
-	function Pan(self, amount: number): ()
-	-- Lowpass / highpass biquad. `freq` is the cutoff in Hz.
-	function LowPass(self, freq: number): ()
-	function HighPass(self, freq: number): ()
-	-- Linear envelope. Volume ramps from 0→1 over `seconds` from playback start.
-	function FadeIn(self, seconds: number): ()
-	-- Volume ramps from 1→0 over the trailing `seconds` of playback.
-	function FadeOut(self, seconds: number): ()
-	-- Wait `seconds` before producing any audio. Useful for staggered SFX.
-	function Delay(self, seconds: number): ()
-	-- Mark this sound as looping. Each loop fires Started/Stopped fresh.
-	function Loop(self): ()
-	-- Soft saturation. `amount` in roughly 0..1; values >1 hard-clip.
-	function Distortion(self, amount: number): ()
-	-- Single-tap echo. `delay_ms` is one tap, `feedback` is the per-tap
-	-- gain decay (0..0.95 typical), `mix` is the wet/dry blend (0..1).
-	function Echo(self, delay_ms: number, feedback: number?, mix: number?): ()
-	-- Diffuse reverb. `mix` 0..1 wet/dry, `decay` is the RT60-ish tail.
-	function Reverb(self, mix: number?, decay: number?): ()
-	-- Periodic amplitude wobble. `rate` Hz, `depth` 0..1.
-	function Tremolo(self, rate: number?, depth: number?): ()
 	-- Drop ALL fluent shaders and (custom) attachments, back to a clean state.
 	function Reset(self): ()
-	-- 3D world position. Listener = the active Renderable.Camera (the
-	-- viewport). Distance falloff defaults to 20 world units; pass an
-	-- explicit value to tighten or widen. Call ClearPosition() to revert
-	-- to non-positional (centered) playback.
-	function SetPosition(self, x: number, y: number, z: number, falloff: number?): ()
+	-- Convenience setters; equivalent to assigning the Position /
+	-- MinFalloff / MaxFalloff properties above. `max_falloff` falls back
+	-- to the current MaxFalloff (or 20 if unset).
+	function SetPosition(self, x: number, y: number, z: number, max_falloff: number?): ()
 	function ClearPosition(self): ()
 	-- Legacy / advanced: build shader instances yourself.
 	function ApplyShader(self, shader: SoundShader): ()
@@ -2277,6 +2281,13 @@ export type TweenService_API = {
 	--   BasePart        — CFrame (CFrame), Color (Color3), Size (Vector)
 	--   GUI primitive   — Position (Dim), Size (Dim), Color (Color3),
 	--                     Transparency (number), ZIndex (number)
+	--   SFX Sound       — Volume (number), Pitch / Speed (number),
+	--                     Pan (number), Distortion (number),
+	--                     Position (Vector), MinFalloff (number),
+	--                     MaxFalloff (number)
+	--   VoiceChannel    — Volume (number), Pitch / Speed (number),
+	--                     Position (Vector), MinFalloff (number),
+	--                     MaxFalloff (number)
 	--
 	-- The returned Tween starts in "Idle". Call `:Play()` to begin.
 	-- Start values are snapshotted at Play time, not at construction
@@ -2356,6 +2367,22 @@ end
 declare class VoiceChannel
 	-- True while at least one packet is queued for playback.
 	IsPlaying: boolean
+	-- Modifier properties. Same shape as SFX.Sound's, but only the portable
+	-- subset that the Voice mixer supports (no per-channel Lowpass / Echo /
+	-- etc.). Assigning replaces the prior value (no stacking).
+	-- Linear gain. 1.0 unchanged, 0 silence, >1 boost.
+	Volume: number
+	-- Time + pitch. Clamps to 0.25..4.
+	Speed: number
+	-- Alias for Speed.
+	Pitch: number
+	-- 3D world anchor. Set to nil to revert to non-positional.
+	Position: Vector?
+	-- Inner / outer falloff radii. Distances ≤ MinFalloff play at full
+	-- volume; distances ≥ MaxFalloff are silent; smooth roll-off in
+	-- between. Defaults: 0 / 8.
+	MinFalloff: number
+	MaxFalloff: number
 	-- Feed an Opus packet (received from a peer). Decoded and queued for
 	-- playback. Auto-clamps backlog to ~1 second to prevent runaway latency.
 	function Push(self, packet: string): ()
@@ -2367,14 +2394,12 @@ declare class VoiceChannel
 	-- / Voice.Spatial to alter playback. Stack multiple for compound effects.
 	function ApplyShader(self, shader: VoiceShader): ()
 	function ClearShaders(self): ()
-	-- 3D position is STATIC, set it once and the channel stays anchored to
-	-- that world point as the camera moves around (just like Renderable parts).
-	-- Listener = the active Renderable.Camera, so turning the camera also
-	-- rotates where the voice comes from. Pass nil (or no args) to clear.
+	-- Convenience setter; equivalent to assigning `Position`. Pass nil (or
+	-- no args) to clear.
 	function SetPosition(self, x: number?, y: number?, z: number?): ()
 	-- Same idea but also installs/replaces the Spatial shader with this
 	-- distance falloff in one call. Pass nil to clear the spatial shader.
-	function SetSpatial(self, x: number?, y: number?, z: number?, falloff: number?): ()
+	function SetSpatial(self, x: number?, y: number?, z: number?, max_falloff: number?): ()
 end
 
 declare class VoiceRecorder
@@ -2411,7 +2436,7 @@ export type Voice_API = {
 	-- Fire-and-forget: spin up a transient channel, decode + play the
 	-- packet, optionally pinned to a world position. Best for one-off
 	-- received messages. For ongoing peer voice prefer CreateChannel().
-	PlayPacket: (packet: string, opts: { x: number?, y: number?, z: number?, falloff: number? }?) -> VoiceChannel,
+	PlayPacket: (packet: string, opts: { x: number?, y: number?, z: number?, falloff: number?, min_falloff: number? }?) -> VoiceChannel,
 	-- Empty packet collector. Hook to mic.OnPacket OR to received-from-peer
 	-- packets, each :Push(bytes) appends to the recorded stream. Save it
 	-- with :Serialize() when done.
@@ -2445,7 +2470,7 @@ export type Voice_API = {
 	-- explicitly via Voice.ListenerPosition).
 	Volume: (factor: number) -> VoiceShader,
 	Speed: (factor: number) -> VoiceShader,
-	Spatial: (x: number, y: number, z: number, falloff: number?) -> VoiceShader,
+	Spatial: (x: number, y: number, z: number, max_falloff: number?) -> VoiceShader,
 	-- Override the listener (defaults to the active Renderable.Camera).
 	-- Read by Spatial shaders. Pass (0, 0, 0) to revert to camera-tracking.
 	ListenerPosition: (x: number, y: number, z: number) -> (),

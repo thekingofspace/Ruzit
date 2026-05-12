@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VR - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.3">
-    <script src="theme.js?v=1.2.3"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.4">
+    <script src="theme.js?v=1.2.4"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.3" defer></script>
+<script src="sidebar.js?v=1.2.4" defer></script>
 
 <main>
 
@@ -41,7 +41,7 @@ pads.Right.OnInput:Connect(<span class="hl-kw">function</span>(name, value, stat
     <div class="member">
         <div class="member-header">
             <span class="member-name">VR.IsVrPresent()</span>
-            <span class="member-type">→ boolean</span>
+            <span class="member-type">â†’ boolean</span>
         </div>
         <p class="member-desc">
             True if a VR runtime is installed on this host. Detects
@@ -53,7 +53,7 @@ pads.Right.OnInput:Connect(<span class="hl-kw">function</span>(name, value, stat
     <div class="member">
         <div class="member-header">
             <span class="member-name">VR.LinkVRView()</span>
-            <span class="member-type">→ VRCamera</span>
+            <span class="member-type">â†’ VRCamera</span>
         </div>
         <p class="member-desc">
             Hand the engine camera over to the VR pipeline. Calling while
@@ -126,10 +126,10 @@ pads.Right.OnInput:Connect(<span class="hl-kw">function</span>(name, value, stat
         <p class="member-desc">Re-anchor the play space so the current head pose becomes the origin facing +Z.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">cam:GetEyePose("Left" | "Right")</span><span class="member-type">→ CFrame</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">cam:GetEyePose("Left" | "Right")</span><span class="member-type">â†’ CFrame</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">cam:GetPlayArea()</span><span class="member-type">→ { Width, Depth }</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">cam:GetPlayArea()</span><span class="member-type">â†’ { Width, Depth }</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Chaperone / guardian dimensions in metres. (0, 0) when not reported.</p>
     </div>
     <div class="member">
@@ -139,7 +139,7 @@ pads.Right.OnInput:Connect(<span class="hl-kw">function</span>(name, value, stat
     <div class="member">
         <div class="member-header">
             <span class="member-name">cam:GetControllers()</span>
-            <span class="member-type">→ { Left: VRController, Right: VRController }</span>
+            <span class="member-type">â†’ { Left: VRController, Right: VRController }</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -207,7 +207,7 @@ pads.Right.OnInput:Connect(<span class="hl-kw">function</span>(name, value, stat
     <div class="member">
         <div class="member-header">
             <span class="member-name">controller:Vibrate(duration, frequency?, amplitude?)</span>
-            <span class="member-type">→ boolean</span>
+            <span class="member-type">â†’ boolean</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">

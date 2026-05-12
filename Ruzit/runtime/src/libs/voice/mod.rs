@@ -46,7 +46,8 @@ pub enum VoiceShader {
         x: f32,
         y: f32,
         z: f32,
-        falloff: f32,
+        min_falloff: f32,
+        max_falloff: f32,
     },
 }
 
@@ -74,7 +75,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         "Spatial",
         lua.create_function(|_, args: MultiValue| -> mlua::Result<VoiceShader> {
             let ((x, y, z), tail) = read_xyz_from_args(args)?;
-            let falloff = match tail {
+            let max_falloff = match tail {
                 Some(Value::Number(n)) => n as f32,
                 Some(Value::Integer(n)) => n as f32,
                 _ => 8.0,
@@ -83,7 +84,8 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 x,
                 y,
                 z,
-                falloff: falloff.max(0.1),
+                min_falloff: 0.0,
+                max_falloff: max_falloff.max(0.1),
             })
         })?,
     )?;
@@ -196,9 +198,17 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                             opts.get::<f32>("y"),
                             opts.get::<f32>("z"),
                         ) {
-                            let falloff = opts.get::<f32>("falloff").unwrap_or(8.0).max(0.1);
+                            let max_falloff =
+                                opts.get::<f32>("falloff").unwrap_or(8.0).max(0.1);
+                            let min_falloff = opts.get::<f32>("min_falloff").unwrap_or(0.0).max(0.0);
                             let mut shaders = channel.shaders.lock().unwrap();
-                            shaders.push(VoiceShader::Spatial { x, y, z, falloff });
+                            shaders.push(VoiceShader::Spatial {
+                                x,
+                                y,
+                                z,
+                                min_falloff,
+                                max_falloff,
+                            });
                             *channel.position.lock().unwrap() = (x, y, z);
                         }
                     }
@@ -433,8 +443,8 @@ fn create_channel(lua: &Lua) -> mlua::Result<AnyUserData> {
 
 pub struct ChannelHandle {
     queue: Arc<Mutex<VecDeque<f32>>>,
-    shaders: Arc<Mutex<Vec<VoiceShader>>>,
-    position: Arc<Mutex<(f32, f32, f32)>>,
+    pub(crate) shaders: Arc<Mutex<Vec<VoiceShader>>>,
+    pub(crate) position: Arc<Mutex<(f32, f32, f32)>>,
     decoder: Arc<Mutex<Decoder>>,
     sink: Mutex<Option<Sink>>,
     playing: Arc<AtomicBool>,
@@ -443,10 +453,151 @@ pub struct ChannelHandle {
 unsafe impl Send for ChannelHandle {}
 unsafe impl Sync for ChannelHandle {}
 
+fn voice_get_scalar(
+    shaders: &Arc<Mutex<Vec<VoiceShader>>>,
+    pick: impl Fn(&VoiceShader) -> Option<f32>,
+) -> Option<f32> {
+    shaders.lock().unwrap().iter().rev().find_map(pick)
+}
+
+fn voice_set_scalar(shaders: &Arc<Mutex<Vec<VoiceShader>>>, new: VoiceShader) {
+    let kind = std::mem::discriminant(&new);
+    let mut list = shaders.lock().unwrap();
+    list.retain(|s| std::mem::discriminant(s) != kind);
+    list.push(new);
+}
+
+fn voice_spatial_get(
+    shaders: &Arc<Mutex<Vec<VoiceShader>>>,
+) -> Option<(f32, f32, f32, f32, f32)> {
+    shaders.lock().unwrap().iter().rev().find_map(|s| match s {
+        VoiceShader::Spatial {
+            x,
+            y,
+            z,
+            min_falloff,
+            max_falloff,
+        } => Some((*x, *y, *z, *min_falloff, *max_falloff)),
+        _ => None,
+    })
+}
+
+fn voice_spatial_update(
+    shaders: &Arc<Mutex<Vec<VoiceShader>>>,
+    pos_arc: &Arc<Mutex<(f32, f32, f32)>>,
+    x: f32,
+    y: f32,
+    z: f32,
+    min_falloff: f32,
+    max_falloff: f32,
+) {
+    let mut list = shaders.lock().unwrap();
+    list.retain(|s| !matches!(s, VoiceShader::Spatial { .. }));
+    list.push(VoiceShader::Spatial {
+        x,
+        y,
+        z,
+        min_falloff: min_falloff.max(0.0),
+        max_falloff: max_falloff.max(min_falloff.max(0.0)),
+    });
+    *pos_arc.lock().unwrap() = (x, y, z);
+}
+
 impl UserData for ChannelHandle {
     fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
         f.add_field_method_get("IsPlaying", |_, this| {
             Ok(this.playing.load(Ordering::Relaxed))
+        });
+
+        f.add_field_method_get("Volume", |_, this| {
+            Ok(voice_get_scalar(&this.shaders, |s| match s {
+                VoiceShader::Volume(v) => Some(*v),
+                _ => None,
+            })
+            .unwrap_or(1.0))
+        });
+        f.add_field_method_set("Volume", |_, this, v: f32| {
+            voice_set_scalar(&this.shaders, VoiceShader::Volume(v.max(0.0)));
+            Ok(())
+        });
+
+        f.add_field_method_get("Speed", |_, this| {
+            Ok(voice_get_scalar(&this.shaders, |s| match s {
+                VoiceShader::Speed(v) => Some(*v),
+                _ => None,
+            })
+            .unwrap_or(1.0))
+        });
+        f.add_field_method_set("Speed", |_, this, v: f32| {
+            voice_set_scalar(&this.shaders, VoiceShader::Speed(v.max(0.0)));
+            Ok(())
+        });
+
+        f.add_field_method_get("Pitch", |_, this| {
+            Ok(voice_get_scalar(&this.shaders, |s| match s {
+                VoiceShader::Speed(v) => Some(*v),
+                _ => None,
+            })
+            .unwrap_or(1.0))
+        });
+        f.add_field_method_set("Pitch", |_, this, v: f32| {
+            voice_set_scalar(&this.shaders, VoiceShader::Speed(v.max(0.0)));
+            Ok(())
+        });
+
+        f.add_field_method_get("Position", |_, this| -> mlua::Result<Option<crate::libs::primitives::Vector>> {
+            Ok(voice_spatial_get(&this.shaders).map(|(x, y, z, _, _)| {
+                crate::libs::primitives::Vector::new(x, y, z)
+            }))
+        });
+        f.add_field_method_set("Position", |_, this, v: mlua::Value| {
+            match v {
+                mlua::Value::Nil => {
+                    this.shaders
+                        .lock()
+                        .unwrap()
+                        .retain(|s| !matches!(s, VoiceShader::Spatial { .. }));
+                }
+                other => {
+                    let vec = crate::libs::primitives::value_to_vector_opt(&other)
+                        .ok_or_else(|| {
+                            mlua::Error::RuntimeError(
+                                "VoiceChannel.Position expects a Vector or nil".into(),
+                            )
+                        })?;
+                    let (min_f, max_f) = voice_spatial_get(&this.shaders)
+                        .map(|(_, _, _, mn, mx)| (mn, mx))
+                        .unwrap_or((0.0, 8.0));
+                    voice_spatial_update(&this.shaders, &this.position, vec.x, vec.y, vec.z, min_f, max_f);
+                }
+            }
+            Ok(())
+        });
+
+        f.add_field_method_get("MinFalloff", |_, this| {
+            Ok(voice_spatial_get(&this.shaders)
+                .map(|(_, _, _, mn, _)| mn)
+                .unwrap_or(0.0))
+        });
+        f.add_field_method_set("MinFalloff", |_, this, v: f32| {
+            let v = v.max(0.0);
+            let (x, y, z, _, max_f) =
+                voice_spatial_get(&this.shaders).unwrap_or((0.0, 0.0, 0.0, 0.0, 8.0));
+            voice_spatial_update(&this.shaders, &this.position, x, y, z, v, max_f.max(v));
+            Ok(())
+        });
+
+        f.add_field_method_get("MaxFalloff", |_, this| {
+            Ok(voice_spatial_get(&this.shaders)
+                .map(|(_, _, _, _, mx)| mx)
+                .unwrap_or(8.0))
+        });
+        f.add_field_method_set("MaxFalloff", |_, this, v: f32| {
+            let v = v.max(0.0);
+            let (x, y, z, min_f, _) =
+                voice_spatial_get(&this.shaders).unwrap_or((0.0, 0.0, 0.0, 0.0, 8.0));
+            voice_spatial_update(&this.shaders, &this.position, x, y, z, min_f.min(v), v);
+            Ok(())
         });
     }
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
@@ -554,18 +705,23 @@ impl UserData for ChannelHandle {
                     return Ok(());
                 }
                 let ((x, y, z), tail) = read_xyz_from_args(args)?;
-                let falloff = match tail {
+                let max_falloff = match tail {
                     Some(Value::Number(n)) => n as f32,
                     Some(Value::Integer(n)) => n as f32,
                     _ => 8.0,
                 };
                 let mut shaders = this.shaders.lock().unwrap();
+                let prior_min = shaders.iter().find_map(|s| match s {
+                    VoiceShader::Spatial { min_falloff, .. } => Some(*min_falloff),
+                    _ => None,
+                });
                 shaders.retain(|s| !matches!(s, VoiceShader::Spatial { .. }));
                 shaders.push(VoiceShader::Spatial {
                     x,
                     y,
                     z,
-                    falloff: falloff.max(0.1),
+                    min_falloff: prior_min.unwrap_or(0.0),
+                    max_falloff: max_falloff.max(0.1),
                 });
                 *this.position.lock().unwrap() = (x, y, z);
                 Ok(())
@@ -622,12 +778,27 @@ impl Iterator for VoiceSource {
             match *s {
                 VoiceShader::Volume(v) => volume *= v,
                 VoiceShader::Speed(s) => speed *= s,
-                VoiceShader::Spatial { x, y, z, falloff } => {
+                VoiceShader::Spatial {
+                    x,
+                    y,
+                    z,
+                    min_falloff,
+                    max_falloff,
+                } => {
                     let dx = x - listener.0;
                     let dy = y - listener.1;
                     let dz = z - listener.2;
                     let dist = (dx * dx + dy * dy + dz * dz).sqrt();
-                    atten *= (1.0 - (dist / falloff)).clamp(0.0, 1.0).powf(1.6);
+                    let a = if dist <= min_falloff {
+                        1.0
+                    } else if dist >= max_falloff {
+                        0.0
+                    } else {
+                        let span = (max_falloff - min_falloff).max(0.001);
+                        let t = (dist - min_falloff) / span;
+                        (1.0 - t).clamp(0.0, 1.0).powf(1.6)
+                    };
+                    atten *= a;
                     let _ = pos;
                     let cam = crate::libs::renderable::camera_snapshot();
                     let yaw = cam.cframe.rotation.y;
