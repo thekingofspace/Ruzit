@@ -863,7 +863,8 @@ burst.TimeScaleTransparency = { [<span class="hl-num">0</span>] = <span class="h
         <tr><td><code>Speed</code></td><td>{ Min, Max }</td><td>80..160</td><td>Pixels/sec.</td></tr>
         <tr><td><code>ParticleSize</code></td><td>{ Min, Max }</td><td>16..16</td><td>Base sprite size in pixels.</td></tr>
         <tr><td><code>Rotation</code> / <code>RotSpeed</code></td><td>{ Min, Max }</td><td>0..0</td><td>Per-particle.</td></tr>
-        <tr><td><code>Acceleration</code></td><td>Vec2 / Dim / { X, Y }</td><td>(0, 200)</td><td>2D pixel-space force.</td></tr>
+        <tr><td><code>Acceleration</code></td><td>Vec2 / Dim / { X, Y }</td><td>(0, 200)</td><td>2D pixel-space force applied to every particle equally.</td></tr>
+        <tr><td><code>RandomizeForce</code></td><td>{ X?, Y? }</td><td>all zero</td><td>Per-particle randomized force in pixels/sec². Each axis is a <code>{min, max}</code> range sampled at spawn. Example: <code>{ X = {min = -50, max = 50}, Y = {min = -120, max = 0} }</code>.</td></tr>
         <tr><td><code>Drag</code></td><td>number</td><td>0</td><td>Velocity damping per second.</td></tr>
         <tr><td><code>Spread</code></td><td>number</td><td>0</td><td>Cone half-angle in degrees.</td></tr>
         <tr><td><code>EmissionDirection</code></td><td>Vec2 / Dim / { X, Y }</td><td>(0, -1)</td><td>Initial velocity direction.</td></tr>

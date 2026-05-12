@@ -142,7 +142,8 @@ emitter.SizeOverLife          = { [<span class="hl-num">0</span>] = <span class=
         <tr><td><code>ParticleSize</code></td><td>{ Min, Max }</td><td>0.5..0.5</td><td>Base sprite size; multiplied by <code>SizeOverLife</code>.</td></tr>
         <tr><td><code>Rotation</code></td><td>{ Min, Max }</td><td>0..0</td><td>Initial roll, radians.</td></tr>
         <tr><td><code>RotSpeed</code></td><td>{ Min, Max }</td><td>0..0</td><td>Angular velocity, radians/sec.</td></tr>
-        <tr><td><code>Acceleration</code></td><td>Vector</td><td>(0, 0, 0)</td><td>World-space constant force.</td></tr>
+        <tr><td><code>Acceleration</code></td><td>Vector</td><td>(0, 0, 0)</td><td>World-space constant force applied to every particle equally.</td></tr>
+        <tr><td><code>RandomizeForce</code></td><td>{ X?, Y?, Z? }</td><td>all zero</td><td>Per-particle randomized force. Each axis is an independent <code>{min, max}</code> range sampled once at spawn and added to <code>Acceleration</code> each tick. Missing axes default to <code>{0, 0}</code>. Example: <code>{ X = {min = -2, max = 2}, Y = {min = 1, max = 5} }</code>.</td></tr>
         <tr><td><code>Drag</code></td><td>number</td><td>0</td><td>Velocity damping per second.</td></tr>
         <tr><td><code>Spread</code></td><td>number</td><td>0</td><td>Cone half-angle in degrees around <code>EmissionDirection</code>.</td></tr>
         <tr><td><code>EmissionDirection</code></td><td>Vector</td><td>(0, 1, 0)</td><td>Initial velocity direction, in volume-local space.</td></tr>

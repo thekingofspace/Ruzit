@@ -41,6 +41,7 @@ pub struct UIParticle {
     pub rotation: f32,
     pub rot_speed: f32,
     pub seed_size: f32,
+    pub random_force: Vec2,
 }
 
 pub struct UIEffectVolumeState {
@@ -57,6 +58,8 @@ pub struct UIEffectVolumeState {
     pub lifetime: Range,
     pub speed: Range,
     pub acceleration: Vec2,
+    pub randomize_force_x: Range,
+    pub randomize_force_y: Range,
     pub drag: f32,
     pub spread: f32,
     pub emission_direction: Vec2,
@@ -146,6 +149,10 @@ fn spawn_one(s: &mut UIEffectVolumeState) {
     let rotation = rand_range(&mut s.rng_state, s.rotation_init);
     let rot_speed = rand_range(&mut s.rng_state, s.rot_speed);
     let size = rand_range(&mut s.rng_state, s.size_init).max(0.0);
+    let random_force = Vec2::new(
+        rand_range(&mut s.rng_state, s.randomize_force_x),
+        rand_range(&mut s.rng_state, s.randomize_force_y),
+    );
 
     s.particles.push(UIParticle {
         position,
@@ -155,6 +162,7 @@ fn spawn_one(s: &mut UIEffectVolumeState) {
         rotation,
         rot_speed,
         seed_size: size,
+        random_force,
     });
 }
 
@@ -173,8 +181,8 @@ pub fn tick_ui_effect_volumes(dt: f32) {
             for p in s.particles.iter_mut() {
                 p.age += dt;
                 let attenuate = (1.0 - drag * dt).clamp(0.0, 1.0);
-                p.velocity.x = p.velocity.x * attenuate + accel.x * dt;
-                p.velocity.y = p.velocity.y * attenuate + accel.y * dt;
+                p.velocity.x = p.velocity.x * attenuate + (accel.x + p.random_force.x) * dt;
+                p.velocity.y = p.velocity.y * attenuate + (accel.y + p.random_force.y) * dt;
                 p.position.x += p.velocity.x * dt;
                 p.position.y += p.velocity.y * dt;
                 p.rotation += p.rot_speed * dt;
@@ -413,6 +421,44 @@ impl UserData for UIEffectVolumeHandle {
             Ok(())
         });
 
+        f.add_field_method_get("RandomizeForce", |lua, this| {
+            let s = this.inner.lock().unwrap();
+            let t = lua.create_table()?;
+            t.set("X", range_to_table(lua, s.randomize_force_x)?)?;
+            t.set("Y", range_to_table(lua, s.randomize_force_y)?)?;
+            Ok(t)
+        });
+        f.add_field_method_set("RandomizeForce", |_, this, v: Value| {
+            let t = match v {
+                Value::Table(t) => t,
+                Value::Nil => {
+                    let mut s = this.inner.lock().unwrap();
+                    s.randomize_force_x = Range::new(0.0, 0.0);
+                    s.randomize_force_y = Range::new(0.0, 0.0);
+                    return Ok(());
+                }
+                _ => {
+                    return Err(mlua::Error::RuntimeError(
+                        "UIEffectVolume.RandomizeForce expects a table { X = {min,max}, Y = {min,max} } or nil".into(),
+                    ));
+                }
+            };
+            let x_v: Value = t.get("X").unwrap_or(Value::Nil);
+            let y_v: Value = t.get("Y").unwrap_or(Value::Nil);
+            let x = match x_v {
+                Value::Nil => Range::new(0.0, 0.0),
+                other => range_from_value(other, "UIEffectVolume.RandomizeForce.X")?,
+            };
+            let y = match y_v {
+                Value::Nil => Range::new(0.0, 0.0),
+                other => range_from_value(other, "UIEffectVolume.RandomizeForce.Y")?,
+            };
+            let mut s = this.inner.lock().unwrap();
+            s.randomize_force_x = x;
+            s.randomize_force_y = y;
+            Ok(())
+        });
+
         f.add_field_method_get("Drag", |_, this| Ok(this.inner.lock().unwrap().drag));
         f.add_field_method_set("Drag", |_, this, v: f32| {
             this.inner.lock().unwrap().drag = v.max(0.0);
@@ -611,6 +657,8 @@ pub fn new_ui_effect_volume(image: Option<AnyUserData>) -> mlua::Result<UIEffect
         lifetime: Range::new(1.0, 2.0),
         speed: Range::new(80.0, 160.0),
         acceleration: Vec2::new(0.0, 200.0),
+        randomize_force_x: Range::new(0.0, 0.0),
+        randomize_force_y: Range::new(0.0, 0.0),
         drag: 0.0,
         spread: 0.0,
         emission_direction: Vec2::new(0.0, -1.0),

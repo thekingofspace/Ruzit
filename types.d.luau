@@ -1596,8 +1596,13 @@ declare class EffectVolume
 	Rotation: NumberRange
 	RotSpeed: NumberRange
 
-	-- World-space constant force applied each tick.
+	-- World-space constant force applied each tick (same for every particle).
 	Acceleration: Vector
+	-- Per-particle randomized force, sampled once at spawn and added to
+	-- Acceleration each tick. Each axis is an independent {min, max} range
+	-- in world units/sec². Missing axes default to {0, 0}.
+	-- Example: `{ X = {min = -1, max = 1}, Y = {min = 4, max = 8} }`
+	RandomizeForce: { X: NumberRange?, Y: NumberRange?, Z: NumberRange? }
 	-- Per-second velocity damping. 0 = none, 1 = halve per second.
 	Drag: number
 	-- Cone half-angle in DEGREES around EmissionDirection. 0 = laser, 180 = full sphere.
@@ -2075,8 +2080,12 @@ declare class UIEffectVolume
 	Rotation: NumberRange
 	RotSpeed: NumberRange
 
-	-- 2D pixel-space force.
+	-- 2D pixel-space force (same for every particle).
 	Acceleration: Vec2Input
+	-- Per-particle randomized force, sampled once at spawn and added to
+	-- Acceleration each tick. Pixels/sec². 2D only — Z is silently
+	-- ignored if you pass it.
+	RandomizeForce: { X: NumberRange?, Y: NumberRange? }
 	Drag: number
 	-- Cone half-angle in DEGREES around EmissionDirection.
 	Spread: number

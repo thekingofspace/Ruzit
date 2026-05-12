@@ -121,6 +121,7 @@ pub struct Particle {
     pub rotation: f32,
     pub rot_speed: f32,
     pub seed_size: f32,
+    pub random_force: Vector,
 }
 
 pub struct EffectVolumeState {
@@ -136,6 +137,9 @@ pub struct EffectVolumeState {
     pub lifetime: Range,
     pub speed: Range,
     pub acceleration: Vector,
+    pub randomize_force_x: Range,
+    pub randomize_force_y: Range,
+    pub randomize_force_z: Range,
     pub drag: f32,
     pub spread: f32,
     pub emission_direction: Vector,
@@ -279,6 +283,11 @@ fn spawn_one(s: &mut EffectVolumeState) {
     let rotation = rand_range(&mut s.rng_state, s.rotation_init);
     let rot_speed = rand_range(&mut s.rng_state, s.rot_speed);
     let size = rand_range(&mut s.rng_state, s.size_init).max(0.0);
+    let random_force = Vector::new(
+        rand_range(&mut s.rng_state, s.randomize_force_x),
+        rand_range(&mut s.rng_state, s.randomize_force_y),
+        rand_range(&mut s.rng_state, s.randomize_force_z),
+    );
 
     s.particles.push(Particle {
         position,
@@ -288,6 +297,7 @@ fn spawn_one(s: &mut EffectVolumeState) {
         rotation,
         rot_speed,
         seed_size: size,
+        random_force,
     });
 }
 
@@ -302,9 +312,9 @@ pub fn tick_effect_volumes(dt: f32) {
             for p in s.particles.iter_mut() {
                 p.age += dt;
                 let attenuate = (1.0 - drag * dt).clamp(0.0, 1.0);
-                p.velocity.x = p.velocity.x * attenuate + accel.x * dt;
-                p.velocity.y = p.velocity.y * attenuate + accel.y * dt;
-                p.velocity.z = p.velocity.z * attenuate + accel.z * dt;
+                p.velocity.x = p.velocity.x * attenuate + (accel.x + p.random_force.x) * dt;
+                p.velocity.y = p.velocity.y * attenuate + (accel.y + p.random_force.y) * dt;
+                p.velocity.z = p.velocity.z * attenuate + (accel.z + p.random_force.z) * dt;
                 p.position.x += p.velocity.x * dt;
                 p.position.y += p.velocity.y * dt;
                 p.position.z += p.velocity.z * dt;
@@ -444,7 +454,13 @@ pub(crate) fn range_from_value(v: Value, name: &str) -> mlua::Result<Range> {
             if let Ok(n) = t.get::<f32>("Min") {
                 a = Some(n);
             }
+            if let Ok(n) = t.get::<f32>("min") {
+                a = Some(n);
+            }
             if let Ok(n) = t.get::<f32>("Max") {
+                b = Some(n);
+            }
+            if let Ok(n) = t.get::<f32>("max") {
                 b = Some(n);
             }
             match (a, b) {
@@ -700,6 +716,52 @@ impl UserData for EffectVolumeHandle {
             Ok(())
         });
 
+        f.add_field_method_get("RandomizeForce", |lua, this| {
+            let s = this.inner.lock().unwrap();
+            let t = lua.create_table()?;
+            t.set("X", range_to_table(lua, s.randomize_force_x)?)?;
+            t.set("Y", range_to_table(lua, s.randomize_force_y)?)?;
+            t.set("Z", range_to_table(lua, s.randomize_force_z)?)?;
+            Ok(t)
+        });
+        f.add_field_method_set("RandomizeForce", |_, this, v: Value| {
+            let t = match v {
+                Value::Table(t) => t,
+                Value::Nil => {
+                    let mut s = this.inner.lock().unwrap();
+                    s.randomize_force_x = Range::new(0.0, 0.0);
+                    s.randomize_force_y = Range::new(0.0, 0.0);
+                    s.randomize_force_z = Range::new(0.0, 0.0);
+                    return Ok(());
+                }
+                _ => {
+                    return Err(mlua::Error::RuntimeError(
+                        "EffectVolume.RandomizeForce expects a table { X = {min,max}, Y = ..., Z = ... } or nil".into(),
+                    ));
+                }
+            };
+            let x_v: Value = t.get("X").unwrap_or(Value::Nil);
+            let y_v: Value = t.get("Y").unwrap_or(Value::Nil);
+            let z_v: Value = t.get("Z").unwrap_or(Value::Nil);
+            let x = match x_v {
+                Value::Nil => Range::new(0.0, 0.0),
+                other => range_from_value(other, "EffectVolume.RandomizeForce.X")?,
+            };
+            let y = match y_v {
+                Value::Nil => Range::new(0.0, 0.0),
+                other => range_from_value(other, "EffectVolume.RandomizeForce.Y")?,
+            };
+            let z = match z_v {
+                Value::Nil => Range::new(0.0, 0.0),
+                other => range_from_value(other, "EffectVolume.RandomizeForce.Z")?,
+            };
+            let mut s = this.inner.lock().unwrap();
+            s.randomize_force_x = x;
+            s.randomize_force_y = y;
+            s.randomize_force_z = z;
+            Ok(())
+        });
+
         f.add_field_method_get("Drag", |_, this| Ok(this.inner.lock().unwrap().drag));
         f.add_field_method_set("Drag", |_, this, v: f32| {
             this.inner.lock().unwrap().drag = v.max(0.0);
@@ -930,6 +992,9 @@ pub fn new_effect_volume(image: Option<AnyUserData>) -> mlua::Result<EffectVolum
         lifetime: Range::new(1.0, 2.0),
         speed: Range::new(2.0, 4.0),
         acceleration: Vector::new(0.0, 0.0, 0.0),
+        randomize_force_x: Range::new(0.0, 0.0),
+        randomize_force_y: Range::new(0.0, 0.0),
+        randomize_force_z: Range::new(0.0, 0.0),
         drag: 0.0,
         spread: 0.0,
         emission_direction: Vector::new(0.0, 1.0, 0.0),
