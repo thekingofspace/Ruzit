@@ -1681,7 +1681,7 @@ impl GpuState {
             bytemuck::bytes_of(&particle_frame_3d),
         );
 
-        let mut spans_2d: Vec<(u64, u32, u32, Option<u64>)> = Vec::new();
+        let mut spans_2d: Vec<(u64, u32, u32, Option<u64>, i32)> = Vec::new();
         let mut packed_2d: Vec<ParticleInstance2D> = Vec::new();
         for v in &ui_effects {
             if v.particles.is_empty() {
@@ -1697,7 +1697,7 @@ impl GpuState {
             let count = packed_2d.len() as u32 - base;
             let tex_key = v.texture.as_ref().map(|t| t.id).unwrap_or(0);
             let shader_id = v.active_shader.as_ref().map(|s| s.id);
-            spans_2d.push((tex_key, base, count, shader_id));
+            spans_2d.push((tex_key, base, count, shader_id, v.z_index));
         }
         if !packed_2d.is_empty() {
             self.particles
@@ -1908,34 +1908,23 @@ impl GpuState {
             let mut current_scissor = full_scissor;
             rpass.set_scissor_rect(0, 0, win_w, win_h);
 
+            let mut draw_seq_2d: Vec<(i32, usize, bool)> =
+                Vec::with_capacity(items.len() + spans_2d.len());
             for (i, item) in items.iter().enumerate() {
-                let want = match item.clip_rect {
-                    Some((x, y, w, h)) => clamp_scissor(x, y, w, h, win_w, win_h),
-                    None => Some(full_scissor),
-                };
-                let scissor = match want {
-                    Some(s) => s,
-                    None => continue,
-                };
-                if scissor != current_scissor {
-                    rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
-                    current_scissor = scissor;
-                }
-                let pipeline = match &item.active_shader {
-                    Some(sh) => self.pipelines.get(&sh.id).unwrap_or(&self.default_pipeline),
-                    None => &self.default_pipeline,
-                };
-                rpass.set_pipeline(pipeline);
-                rpass.set_bind_group(0, &bind_groups_2d[i], &[]);
-                rpass.draw(0..6, 0..1);
+                draw_seq_2d.push((item.z_index, i, false));
             }
+            for (i, span) in spans_2d.iter().enumerate() {
+                draw_seq_2d.push((span.4, i, true));
+            }
+            draw_seq_2d.sort_by_key(|e| e.0);
 
-
-            if !spans_2d.is_empty() {
-                if current_scissor != full_scissor {
-                    rpass.set_scissor_rect(0, 0, win_w, win_h);
-                }
-                for (tex_key, base, count, shader_id) in &spans_2d {
+            for (_, idx, is_particle) in &draw_seq_2d {
+                if *is_particle {
+                    let (tex_key, base, count, shader_id, _) = &spans_2d[*idx];
+                    if current_scissor != full_scissor {
+                        rpass.set_scissor_rect(0, 0, win_w, win_h);
+                        current_scissor = full_scissor;
+                    }
                     let pipeline = match shader_id {
                         Some(id) => self
                             .particles
@@ -1949,6 +1938,28 @@ impl GpuState {
                         rpass.set_bind_group(0, bg, &[]);
                         rpass.draw(0..6, *base..*base + *count);
                     }
+                } else {
+                    let i = *idx;
+                    let item = &items[i];
+                    let want = match item.clip_rect {
+                        Some((x, y, w, h)) => clamp_scissor(x, y, w, h, win_w, win_h),
+                        None => Some(full_scissor),
+                    };
+                    let scissor = match want {
+                        Some(s) => s,
+                        None => continue,
+                    };
+                    if scissor != current_scissor {
+                        rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
+                        current_scissor = scissor;
+                    }
+                    let pipeline = match &item.active_shader {
+                        Some(sh) => self.pipelines.get(&sh.id).unwrap_or(&self.default_pipeline),
+                        None => &self.default_pipeline,
+                    };
+                    rpass.set_pipeline(pipeline);
+                    rpass.set_bind_group(0, &bind_groups_2d[i], &[]);
+                    rpass.draw(0..6, 0..1);
                 }
             }
         }
