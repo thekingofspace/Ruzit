@@ -56,7 +56,7 @@ cpal = {version = "0.15", optional = true}
 
 
 [features]
-default = ["steam", "voice"]
+default = []
 steam = ["dep:steamworks", "dep:steamworks-sys"]
 voice = ["dep:opus", "dep:cpal"]
 
