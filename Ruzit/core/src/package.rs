@@ -314,6 +314,122 @@ pub fn write_assets_sharded(
     Ok(shards.len())
 }
 
+pub fn discover_managed_files(dir: &Path) -> Result<HashMap<String, Vec<PathBuf>>, String> {
+    let mut groups: HashMap<String, Vec<PathBuf>> = HashMap::new();
+    if !dir.is_dir() {
+        return Ok(groups);
+    }
+    for entry in fs::read_dir(dir).map_err(|e| format!("read_dir {}: {e}", dir.display()))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("managed") {
+            continue;
+        }
+        let fname = match path.file_name().and_then(|s| s.to_str()) {
+            Some(s) => s,
+            None => continue,
+        };
+        let id = match fname.find('.') {
+            Some(dot) if dot > 0 => &fname[..dot],
+            _ => continue,
+        };
+        groups.entry(id.to_string()).or_default().push(path);
+    }
+    Ok(groups)
+}
+
+pub fn load_single_managed_package(
+    id: &str,
+    paths: &[PathBuf],
+) -> Result<LoadedPackage, String> {
+    let mut pkg = LoadedPackage {
+        id: id.to_string(),
+        name: id.to_string(),
+        version: String::new(),
+        creator: String::new(),
+        entry: "Main.luau".to_string(),
+        file_type: FileType::Relative,
+        physical_root: None,
+        files: HashMap::new(),
+        assets: HashMap::new(),
+        scripts_compressed: false,
+        assets_compressed: false,
+        scripts_bytecode: false,
+    };
+    for path in paths {
+        merge_managed_file_into(&mut pkg, path)?;
+    }
+    Ok(pkg)
+}
+
+fn merge_managed_file_into(pkg: &mut LoadedPackage, path: &Path) -> Result<(), String> {
+    let encrypted = fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let plain = crate::managed::decrypt_payload(&encrypted)
+        .map_err(|e| format!("decrypt {}: {e}", path.display()))?;
+    let parsed: JsonValue =
+        serde_json::from_slice(&plain).map_err(|e| format!("parse {}: {e}", path.display()))?;
+    let kind = parsed.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+    let header_compressed = parsed
+        .get("compressed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let header_bytecode = parsed
+        .get("bytecode")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if let Some(s) = parsed.get("name").and_then(|v| v.as_str()) {
+        pkg.name = s.to_string();
+    }
+    if let Some(s) = parsed.get("version").and_then(|v| v.as_str()) {
+        pkg.version = s.to_string();
+    }
+    if let Some(s) = parsed.get("creator").and_then(|v| v.as_str()) {
+        pkg.creator = s.to_string();
+    }
+
+    match kind {
+        "scripts" => {
+            pkg.scripts_compressed = header_compressed;
+            pkg.scripts_bytecode = header_bytecode;
+            if let Some(s) = parsed.get("entry").and_then(|v| v.as_str()) {
+                pkg.entry = s.to_string();
+            }
+            if let Some(s) = parsed.get("file_type").and_then(|v| v.as_str()) {
+                if let Some(ft) = FileType::parse(s) {
+                    pkg.file_type = ft;
+                }
+            }
+            if let Some(obj) = parsed.get("files").and_then(|v| v.as_object()) {
+                for (k, v) in obj {
+                    if let Some(s) = v.as_str() {
+                        let stored = if header_compressed || header_bytecode {
+                            s.to_string()
+                        } else {
+                            strip_bom(s.to_string())
+                        };
+                        pkg.files.insert(k.clone(), stored);
+                    }
+                }
+            }
+        }
+        "assets" | "assets_manifest" => {
+            pkg.assets_compressed = header_compressed;
+            if let Some(obj) = parsed.get("assets").and_then(|v| v.as_object()) {
+                for (k, v) in obj {
+                    if let Some(b64) = v.as_str() {
+                        let normalized =
+                            k.strip_prefix("assets/").unwrap_or(k.as_str()).to_string();
+                        pkg.assets.insert(normalized, b64.to_string());
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, String> {
     let mut packages: HashMap<String, LoadedPackage> = HashMap::new();
     if !dir.is_dir() {

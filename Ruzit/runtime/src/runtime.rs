@@ -307,7 +307,7 @@ fn resolve_load_path(fs: &Fs, owner: &str, raw: &str) -> mlua::Result<std::path:
 fn host_package_view(
     fs: &Fs,
 ) -> (
-    Option<std::sync::Arc<std::collections::HashMap<String, std::sync::Arc<crate::vfs::Package>>>>,
+    Option<std::sync::Arc<crate::vfs::LazyPackageRegistry>>,
     Option<String>,
 ) {
     match fs {
