@@ -1792,14 +1792,14 @@ export type AnimatedImageTrack = {
 	-- on :Stop().
 	Ended: Signal<>,
 	-- Reset elapsed to 0 and set state = Playing.
-	Play: (self: AnimationTrack) -> (),
+	Play: (self: AnimatedImageTrack) -> (),
 	-- Stop the track. No more signal fires.
-	Stop: (self: AnimationTrack) -> (),
+	Stop: (self: AnimatedImageTrack) -> (),
 	-- Pause without resetting (state goes Idle). Resume continues.
-	Pause: (self: AnimationTrack) -> (),
-	Resume: (self: AnimationTrack) -> (),
+	Pause: (self: AnimatedImageTrack) -> (),
+	Resume: (self: AnimatedImageTrack) -> (),
 	-- Block the current coroutine until Ended fires.
-	Wait: (self: AnimationTrack) -> (),
+	Wait: (self: AnimatedImageTrack) -> (),
 }
 
 export type AnimatedImage = {
@@ -1815,7 +1815,7 @@ export type AnimatedImage = {
 	-- Read-only: total number of `<SubTexture>` frames parsed.
 	FrameCount: number,
 	Alive: boolean,
-	-- Build an AnimationTrack from a sequence of SubTexture names.
+	-- Build an AnimatedImageTrack from a sequence of SubTexture names.
 	-- `frames` accepts either an array (`{"Down0000", "Down0001"}`) or
 	-- a comma-separated string (`"Down0000,Down0001,Down0002"`). Order
 	-- is the playback order. Unknown frame names error.

@@ -73,11 +73,11 @@ impl TrackInner {
     }
 }
 
-pub struct AnimationTrack {
+pub struct AnimatedImageTrack {
     inner: Arc<Mutex<TrackInner>>,
 }
 
-impl UserData for AnimationTrack {
+impl UserData for AnimatedImageTrack {
     fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
         f.add_field_method_get("FPS", |_, this| Ok(this.inner.lock().unwrap().fps));
         f.add_field_method_set("FPS", |_, this, v: f32| {
@@ -536,7 +536,7 @@ impl UserData for AnimatedImage {
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
         m.add_method(
             "CreateTrack",
-            |lua, this, args: MultiValue| -> mlua::Result<AnimationTrack> {
+            |lua, this, args: MultiValue| -> mlua::Result<AnimatedImageTrack> {
                 let mut iter = args.into_iter();
                 let frames_v = iter.next().ok_or_else(|| {
                     mlua::Error::RuntimeError(
@@ -560,7 +560,7 @@ impl UserData for AnimatedImage {
                     ended_signal: ended,
                 }));
                 inner.tracks.push(track_inner.clone());
-                Ok(AnimationTrack { inner: track_inner })
+                Ok(AnimatedImageTrack { inner: track_inner })
             },
         );
         m.add_method(
