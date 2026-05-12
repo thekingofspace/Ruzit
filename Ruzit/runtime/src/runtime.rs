@@ -268,8 +268,20 @@ fn install_load(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<()
 
 fn resolve_load_path(fs: &Fs, owner: &str, raw: &str) -> mlua::Result<std::path::PathBuf> {
     let p = std::path::Path::new(raw);
+    let exe_relative = raw.starts_with("./") || raw.starts_with(".\\");
     let mut candidate = if p.is_absolute() {
         p.to_path_buf()
+    } else if exe_relative {
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+            .ok_or_else(|| {
+                mlua::Error::RuntimeError(
+                    "load: './' is exe-relative but the current_exe path is unavailable".into(),
+                )
+            })?;
+        let stripped = &raw[2..];
+        exe_dir.join(stripped)
     } else {
         vfs::caller_dir(fs, owner).join(raw)
     };
