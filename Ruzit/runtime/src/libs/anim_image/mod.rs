@@ -17,19 +17,16 @@ mod xml;
 
 static NEXT_IMAGE_ID: AtomicU64 = AtomicU64::new(1);
 
-#[derive(Clone, Copy, Debug)]
-struct FrameRect {
+#[derive(Clone, Copy)]
+struct Frame {
     x: u32,
     y: u32,
-    w: u32,
-    h: u32,
-}
-
-#[derive(Clone)]
-struct AnimDef {
-    frames: Vec<usize>,
-    fps: f32,
-    looped: bool,
+    width: u32,
+    height: u32,
+    frame_x: i32,
+    frame_y: i32,
+    frame_width: u32,
+    frame_height: u32,
 }
 
 enum SourceKind {
@@ -69,7 +66,7 @@ impl TrackInner {
         let t = if self.looped {
             self.elapsed.rem_euclid(total)
         } else {
-            self.elapsed.min(total - 1e-6)
+            self.elapsed.min(total - 1e-6).max(0.0)
         };
         let idx = (t / frame_dur) as usize;
         self.frames.get(idx.min(self.frames.len() - 1)).copied()
@@ -156,8 +153,8 @@ impl UserData for AnimationTrack {
 
 struct AnimatedImageInner {
     source: SourceKind,
-    frames: Vec<FrameRect>,
-    animations: HashMap<String, AnimDef>,
+    frames: Vec<Frame>,
+    name_to_index: HashMap<String, usize>,
     primitive_state: Arc<Mutex<PrimitiveState>>,
     tracks: Vec<Arc<Mutex<TrackInner>>>,
     manual_frame: Option<usize>,
@@ -177,51 +174,36 @@ impl AnimatedImage {
         lua: &Lua,
         xml_text: &str,
         source: SourceKind,
-        source_w: u32,
-        source_h: u32,
     ) -> mlua::Result<Self> {
-        let parsed = xml::parse_animated_xml(xml_text, source_w, source_h)?;
-        let primitive = GuiPrimitive::new(lua, Shape::Image)?;
-        let primitive_arc = primitive.state_arc();
-        {
-            let mut ps = primitive_arc.lock().unwrap();
-            ps.size = Dim::new(source_w as f32, source_h as f32);
-        }
-
-        let animations = parsed
-            .animations
-            .into_iter()
-            .map(|(k, v)| {
-                let mut resolved: Vec<usize> = Vec::with_capacity(v.frames.len());
-                for f in v.frames {
-                    match f {
-                        xml::FrameRef::Index(i) => {
-                            if i < parsed.frames.len() {
-                                resolved.push(i);
-                            }
-                        }
-                        xml::FrameRef::Name(name) => {
-                            if let Some(&i) = parsed.name_to_frame.get(&name) {
-                                resolved.push(i);
-                            }
-                        }
-                    }
-                }
-                (
-                    k,
-                    AnimDef {
-                        frames: resolved,
-                        fps: v.fps,
-                        looped: v.looped,
-                    },
-                )
+        let parsed = xml::parse_texture_atlas(xml_text)?;
+        let frames: Vec<Frame> = parsed
+            .frames
+            .iter()
+            .map(|(_, f)| Frame {
+                x: f.x,
+                y: f.y,
+                width: f.width,
+                height: f.height,
+                frame_x: f.frame_x,
+                frame_y: f.frame_y,
+                frame_width: f.frame_width,
+                frame_height: f.frame_height,
             })
             .collect();
+        let name_to_index = parsed.name_to_index;
+
+        let primitive = GuiPrimitive::new(lua, Shape::Image)?;
+        let primitive_arc = primitive.state_arc();
+        let initial_size = frames
+            .first()
+            .map(|f| Dim::new(f.frame_width as f32, f.frame_height as f32))
+            .unwrap_or(Dim::new(64.0, 64.0));
+        primitive_arc.lock().unwrap().size = initial_size;
 
         let inner = Arc::new(Mutex::new(AnimatedImageInner {
             source,
-            frames: parsed.frames,
-            animations,
+            frames,
+            name_to_index,
             primitive_state: primitive_arc,
             tracks: Vec::new(),
             manual_frame: None,
@@ -230,13 +212,11 @@ impl AnimatedImage {
         ACTIVE.with(|c| c.borrow_mut().push(inner.clone()));
 
         let img = AnimatedImage { inner };
-        img.render_frame(0);
+        if !img.inner.lock().unwrap().frames.is_empty() {
+            let guard = img.inner.lock().unwrap();
+            render_frame_to_primitive(&guard, 0);
+        }
         Ok(img)
-    }
-
-    fn render_frame(&self, frame_idx: usize) {
-        let inner = self.inner.lock().unwrap();
-        render_frame_to_primitive(&inner, frame_idx);
     }
 }
 
@@ -259,40 +239,62 @@ fn read_source_bytes(src: &SourceKind) -> Option<(Vec<u8>, u32, u32)> {
 }
 
 fn render_frame_to_primitive(inner: &AnimatedImageInner, frame_idx: usize) {
-    let Some(rect) = inner.frames.get(frame_idx).copied() else {
+    let Some(frame) = inner.frames.get(frame_idx).copied() else {
         return;
     };
     let Some((src_bytes, src_w, src_h)) = read_source_bytes(&inner.source) else {
         return;
     };
-    let cropped = crop_rgba(&src_bytes, src_w, src_h, rect);
-    let mut ps = inner.primitive_state.lock().unwrap();
+    let pixels = build_frame_pixels(&src_bytes, src_w, src_h, &frame);
     let id = NEXT_IMAGE_ID.fetch_add(1, Ordering::Relaxed);
+    let mut ps = inner.primitive_state.lock().unwrap();
     ps.image = Some(Arc::new(ImageRef {
         id,
-        width: rect.w,
-        height: rect.h,
-        data: Arc::new(cropped),
+        width: frame.frame_width.max(1),
+        height: frame.frame_height.max(1),
+        data: Arc::new(pixels),
     }));
 }
 
-fn crop_rgba(src: &[u8], src_w: u32, src_h: u32, rect: FrameRect) -> Vec<u8> {
-    let dst_w = rect.w.min(src_w.saturating_sub(rect.x));
-    let dst_h = rect.h.min(src_h.saturating_sub(rect.y));
-    let mut out = Vec::with_capacity((dst_w * dst_h * 4) as usize);
-    let stride = (src_w * 4) as usize;
-    for row in 0..dst_h {
-        let y = (rect.y + row) as usize;
-        let start = y * stride + (rect.x as usize) * 4;
-        let end = start + (dst_w as usize) * 4;
-        if end > src.len() {
-            break;
+fn build_frame_pixels(src: &[u8], src_w: u32, src_h: u32, f: &Frame) -> Vec<u8> {
+    let fw = f.frame_width.max(1);
+    let fh = f.frame_height.max(1);
+    let mut out = vec![0u8; (fw * fh * 4) as usize];
+
+    let src_stride = (src_w * 4) as usize;
+    let dst_stride = (fw * 4) as usize;
+
+    for row in 0..f.height {
+        let sy_signed = (f.y as i64) + (row as i64);
+        if sy_signed < 0 || sy_signed >= src_h as i64 {
+            continue;
         }
-        out.extend_from_slice(&src[start..end]);
-    }
-    let expected = (rect.w * rect.h * 4) as usize;
-    if out.len() < expected {
-        out.resize(expected, 0);
+        let dy_signed = (row as i64) - (f.frame_y as i64);
+        if dy_signed < 0 || dy_signed >= fh as i64 {
+            continue;
+        }
+        let sy = sy_signed as usize;
+        let dy = dy_signed as usize;
+
+        for col in 0..f.width {
+            let sx_signed = (f.x as i64) + (col as i64);
+            if sx_signed < 0 || sx_signed >= src_w as i64 {
+                continue;
+            }
+            let dx_signed = (col as i64) - (f.frame_x as i64);
+            if dx_signed < 0 || dx_signed >= fw as i64 {
+                continue;
+            }
+            let sx = sx_signed as usize;
+            let dx = dx_signed as usize;
+
+            let s_off = sy * src_stride + sx * 4;
+            let d_off = dy * dst_stride + dx * 4;
+            if s_off + 4 > src.len() || d_off + 4 > out.len() {
+                continue;
+            }
+            out[d_off..d_off + 4].copy_from_slice(&src[s_off..s_off + 4]);
+        }
     }
     out
 }
@@ -359,6 +361,78 @@ pub fn tick(lua: &Lua, dt: f32) {
             let _ = signal::fire(lua, &sig, MultiValue::new());
         }
     }
+}
+
+fn resolve_frames(
+    name_to_index: &HashMap<String, usize>,
+    frames_v: Value,
+) -> mlua::Result<Vec<usize>> {
+    let mut out: Vec<usize> = Vec::new();
+    match frames_v {
+        Value::String(s) => {
+            let text = s.to_str()?.to_string();
+            for part in text.split(',') {
+                let p = part.trim();
+                if p.is_empty() {
+                    continue;
+                }
+                let idx = name_to_index.get(p).copied().ok_or_else(|| {
+                    mlua::Error::RuntimeError(format!(
+                        "AnimatedImage:CreateTrack: unknown frame '{p}'"
+                    ))
+                })?;
+                out.push(idx);
+            }
+        }
+        Value::Table(t) => {
+            for pair in t.sequence_values::<String>() {
+                let name = pair?;
+                let idx = name_to_index.get(&name).copied().ok_or_else(|| {
+                    mlua::Error::RuntimeError(format!(
+                        "AnimatedImage:CreateTrack: unknown frame '{name}'"
+                    ))
+                })?;
+                out.push(idx);
+            }
+        }
+        _ => {
+            return Err(mlua::Error::RuntimeError(
+                "AnimatedImage:CreateTrack: frames must be a comma-separated string or an array of names".into(),
+            ));
+        }
+    }
+    if out.is_empty() {
+        return Err(mlua::Error::RuntimeError(
+            "AnimatedImage:CreateTrack: at least one frame name is required".into(),
+        ));
+    }
+    Ok(out)
+}
+
+fn read_track_opts(opts_v: Value) -> mlua::Result<(f32, bool, f32)> {
+    let mut fps: f32 = 12.0;
+    let mut looped: bool = false;
+    let mut priority: f32 = 1.0;
+    match opts_v {
+        Value::Nil => {}
+        Value::Table(t) => {
+            if let Ok(v) = t.get::<f32>("FPS") {
+                fps = v.max(0.001);
+            }
+            if let Ok(v) = t.get::<bool>("Looped") {
+                looped = v;
+            }
+            if let Ok(v) = t.get::<f32>("Priority") {
+                priority = v;
+            }
+        }
+        _ => {
+            return Err(mlua::Error::RuntimeError(
+                "AnimatedImage:CreateTrack: opts must be a table or nil".into(),
+            ));
+        }
+    }
+    Ok((fps, looped, priority))
 }
 
 impl UserData for AnimatedImage {
@@ -458,39 +532,61 @@ impl UserData for AnimatedImage {
 
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
         m.add_method(
-            "GetTrack",
-            |lua, this, name: String| -> mlua::Result<Option<AnimationTrack>> {
+            "CreateTrack",
+            |lua, this, args: MultiValue| -> mlua::Result<AnimationTrack> {
+                let mut iter = args.into_iter();
+                let frames_v = iter.next().ok_or_else(|| {
+                    mlua::Error::RuntimeError(
+                        "AnimatedImage:CreateTrack: missing frames argument".into(),
+                    )
+                })?;
+                let opts_v = iter.next().unwrap_or(Value::Nil);
+                let (fps, looped, priority) = read_track_opts(opts_v)?;
                 let mut inner = this.inner.lock().unwrap();
-                let def = match inner.animations.get(&name) {
-                    Some(d) => d.clone(),
-                    None => return Ok(None),
-                };
+                let resolved = resolve_frames(&inner.name_to_index, frames_v)?;
                 let did_loop = signal::new_instance(lua)?;
                 let ended = signal::new_instance(lua)?;
                 let track_inner = Arc::new(Mutex::new(TrackInner {
-                    frames: def.frames,
-                    fps: def.fps,
-                    looped: def.looped,
-                    priority: 1.0,
+                    frames: resolved,
+                    fps,
+                    looped,
+                    priority,
                     state: TrackState::Idle,
                     elapsed: 0.0,
                     did_loop_signal: did_loop,
                     ended_signal: ended,
                 }));
                 inner.tracks.push(track_inner.clone());
-                Ok(Some(AnimationTrack { inner: track_inner }))
+                Ok(AnimationTrack { inner: track_inner })
             },
         );
         m.add_method(
             "JumpToFrame",
-            |_, this, idx: i64| -> mlua::Result<()> {
-                let frame_count = this.inner.lock().unwrap().frames.len();
-                if frame_count == 0 {
+            |_, this, v: Value| -> mlua::Result<()> {
+                let mut inner = this.inner.lock().unwrap();
+                if inner.frames.is_empty() {
                     return Ok(());
                 }
-                let clamped = (idx.max(0) as usize).min(frame_count - 1);
-                this.inner.lock().unwrap().manual_frame = Some(clamped);
-                render_frame_to_primitive(&this.inner.lock().unwrap(), clamped);
+                let last = inner.frames.len() - 1;
+                let idx = match v {
+                    Value::Integer(n) => (n.max(0) as usize).min(last),
+                    Value::Number(n) => (n.max(0.0) as usize).min(last),
+                    Value::String(s) => {
+                        let name = s.to_str()?.to_string();
+                        *inner.name_to_index.get(&name).ok_or_else(|| {
+                            mlua::Error::RuntimeError(format!(
+                                "AnimatedImage:JumpToFrame: unknown frame '{name}'"
+                            ))
+                        })?
+                    }
+                    _ => {
+                        return Err(mlua::Error::RuntimeError(
+                            "AnimatedImage:JumpToFrame expects a frame name or numeric index".into(),
+                        ));
+                    }
+                };
+                inner.manual_frame = Some(idx);
+                render_frame_to_primitive(&inner, idx);
                 Ok(())
             },
         );
@@ -498,6 +594,22 @@ impl UserData for AnimatedImage {
             this.inner.lock().unwrap().manual_frame = None;
             Ok(())
         });
+        m.add_method("HasFrame", |_, this, name: String| -> mlua::Result<bool> {
+            Ok(this.inner.lock().unwrap().name_to_index.contains_key(&name))
+        });
+        m.add_method(
+            "GetFrameNames",
+            |lua, this, _: ()| -> mlua::Result<Table> {
+                let inner = this.inner.lock().unwrap();
+                let out = lua.create_table()?;
+                let mut ordered: Vec<(&String, &usize)> = inner.name_to_index.iter().collect();
+                ordered.sort_by_key(|(_, i)| **i);
+                for (i, (name, _)) in ordered.iter().enumerate() {
+                    out.set(i + 1, (*name).clone())?;
+                }
+                Ok(out)
+            },
+        );
         m.add_method(
             "GetPrimitive",
             |lua, this, _: ()| -> mlua::Result<GuiPrimitive> {
@@ -507,9 +619,6 @@ impl UserData for AnimatedImage {
                 ))
             },
         );
-        m.add_method("HasAnimation", |_, this, name: String| -> mlua::Result<bool> {
-            Ok(this.inner.lock().unwrap().animations.contains_key(&name))
-        });
         m.add_method("Destroy", |_, this, _: ()| -> mlua::Result<()> {
             let mut inner = this.inner.lock().unwrap();
             inner.alive = false;
@@ -523,7 +632,7 @@ pub fn make_animated_image(lua: &Lua, args: MultiValue) -> mlua::Result<Animated
     let mut iter = args.into_iter();
     let xml_v = iter.next().ok_or_else(|| {
         mlua::Error::RuntimeError(
-            "GUI.AnimatedImage: missing first argument (XML string)".into(),
+            "GUI.AnimatedImage: missing first argument (TextureAtlas XML string)".into(),
         )
     })?;
     let src_v = iter.next().ok_or_else(|| {
@@ -536,29 +645,21 @@ pub fn make_animated_image(lua: &Lua, args: MultiValue) -> mlua::Result<Animated
         Value::String(s) => s.to_str()?.to_string(),
         _ => {
             return Err(mlua::Error::RuntimeError(
-                "GUI.AnimatedImage: first argument must be an XML string".into(),
+                "GUI.AnimatedImage: first argument must be a TextureAtlas XML string".into(),
             ));
         }
     };
 
-    let (source, w, h) = match src_v {
+    let source = match src_v {
         Value::UserData(ud) => {
             if let Ok(asset) = ud.borrow::<ImageAsset>() {
-                (
-                    SourceKind::Static {
-                        bytes: asset.data.clone(),
-                        width: asset.width,
-                        height: asset.height,
-                    },
-                    asset.width,
-                    asset.height,
-                )
+                SourceKind::Static {
+                    bytes: asset.data.clone(),
+                    width: asset.width,
+                    height: asset.height,
+                }
             } else if let Ok(dyn_h) = ud.borrow::<DynImgHandle>() {
-                let (w, h) = {
-                    let s = dyn_h.inner.lock().unwrap();
-                    (s.width, s.height)
-                };
-                (SourceKind::Dyn(dyn_h.inner.clone()), w, h)
+                SourceKind::Dyn(dyn_h.inner.clone())
             } else {
                 return Err(mlua::Error::RuntimeError(
                     "GUI.AnimatedImage: source must be an Image asset or a DynImg".into(),
@@ -572,5 +673,5 @@ pub fn make_animated_image(lua: &Lua, args: MultiValue) -> mlua::Result<Animated
         }
     };
 
-    AnimatedImage::new(lua, &xml_text, source, w, h)
+    AnimatedImage::new(lua, &xml_text, source)
 }

@@ -1753,79 +1753,97 @@ export type DynImg_API = {
 }
 
 -- =============================================================================
--- AnimatedImage — sprite-sheet animation primitive (returned by
--- `GUI.AnimatedImage(xml, source)`). Plays named animations from a packed
--- spritesheet, with priority blending across multiple concurrent tracks.
--- The source can be a static Image asset OR a live DynImg (re-sampled each
--- tick, so an animated procedural source works too).
+-- AnimatedImage — TextureAtlas-driven sprite-sheet animation primitive
+-- (returned by `GUI.AnimatedImage(xml, source)`).
+--
+-- The XML is Sparrow / Flash-style: a `<TextureAtlas>` root with named
+-- `<SubTexture>` frames. The XML itself does NOT define animations — it
+-- just chops the spritesheet into named pieces. You build animations at
+-- runtime via `:CreateTrack(frames, opts)` which gives you a track with
+-- its own FPS / Looped / Priority and DidLoop / Ended signals.
+--
+-- The source can be a static Image asset OR a live DynImg (re-sampled
+-- each tick, so procedural / streamed atlases work). frameX / frameY /
+-- frameWidth / frameHeight on the SubTexture handle trimmed sprites
+-- correctly (transparent halo restored to the original cell size, so
+-- frames don't jitter between trimmed sub-textures).
 -- =============================================================================
 
 export type AnimationTrack = {
 	-- Frames per second this track advances at.
 	FPS: number,
-	-- When true, the track restarts at the end and fires DidLoop. When
-	-- false, it stops at the end and fires Ended.
+	-- When true, the track wraps and fires DidLoop. When false, it
+	-- stops at the end and fires Ended.
 	Looped: boolean,
 	-- Higher priority wins when multiple tracks are Playing
-	-- simultaneously. If the high-priority track ends (non-looped) and
-	-- a lower-priority track is still Playing, the lower one becomes
-	-- visible. Default 1.
+	-- simultaneously. When the high-priority track ends (non-looped)
+	-- the next-highest still-Playing track takes over the display.
+	-- Default 1.
 	Priority: number,
-	-- Read-only: number of frames in this track's animation.
+	-- Read-only frame count.
 	FrameCount: number,
 	-- "Idle", "Playing", "Stopped".
 	State: string,
 	-- Seconds elapsed in the current play cycle.
 	Elapsed: number,
-	-- Fires every time a looped track wraps around. Receives no args.
+	-- Fires every time a looped track wraps. No args.
 	DidLoop: Signal<>,
-	-- Fires once when a non-looped track reaches its end. Receives no
-	-- args. Does not fire on :Stop().
+	-- Fires once when a non-looped track ends. No args. Does not fire
+	-- on :Stop().
 	Ended: Signal<>,
-	-- Start the track (resets elapsed from 0).
+	-- Reset elapsed to 0 and set state = Playing.
 	Play: (self: AnimationTrack) -> (),
-	-- Stop the track. No further signal fires; the rendered frame stays
-	-- on whatever the highest-priority remaining playing track wants.
+	-- Stop the track. No more signal fires.
 	Stop: (self: AnimationTrack) -> (),
-	-- Pause without resetting (state goes Idle).
+	-- Pause without resetting (state goes Idle). Resume continues.
 	Pause: (self: AnimationTrack) -> (),
-	-- Resume from where Pause left off.
 	Resume: (self: AnimationTrack) -> (),
 	-- Block the current coroutine until Ended fires.
 	Wait: (self: AnimationTrack) -> (),
 }
 
 export type AnimatedImage = {
-	-- Mirror fields of the underlying GUI Image primitive — set these
-	-- to move, resize, recolor, hide, etc. Resizing squashes /
-	-- stretches the currently-displayed frame the same way an Image
-	-- primitive does.
+	-- Mirror fields of the underlying GUI Image primitive. Resizing
+	-- squashes / stretches the currently-displayed frame just like a
+	-- regular Image primitive.
 	Size: Dim,
 	Position: Dim,
 	ZIndex: number,
 	Visible: boolean,
 	Color: Color3,
 	Transparency: number,
-	-- Read-only: total number of frames defined in the XML.
+	-- Read-only: total number of `<SubTexture>` frames parsed.
 	FrameCount: number,
 	Alive: boolean,
-	-- Build (or return nil for unknown) an AnimationTrack for one of
-	-- the named `<animation>` definitions. Each :GetTrack call returns
-	-- a fresh track with its own state and signals — useful for layered
-	-- animation (e.g. a base "idle" and a transient "blink"). Tracks
-	-- belong to this AnimatedImage; destroying the image stops them.
-	GetTrack: (self: AnimatedImage, name: string) -> AnimationTrack?,
-	-- Whether the XML defined an animation with this name.
-	HasAnimation: (self: AnimatedImage, name: string) -> boolean,
-	-- Snap the displayed frame to a specific frame index (0-based,
-	-- bounded). Stays visible until a track is :Play()'d on top. Useful
-	-- for video-game icons where you want to flip between static
-	-- pictures from the same atlas.
-	JumpToFrame: (self: AnimatedImage, index: number) -> (),
-	-- Clear the manual frame override so track playback takes over
-	-- again (or, if no tracks are playing, the image stays on whatever
-	-- frame was last rendered).
+	-- Build an AnimationTrack from a sequence of SubTexture names.
+	-- `frames` accepts either an array (`{"Down0000", "Down0001"}`) or
+	-- a comma-separated string (`"Down0000,Down0001,Down0002"`). Order
+	-- is the playback order. Unknown frame names error.
+	--
+	-- `opts` (optional) is `{ FPS = 12, Looped = true, Priority = 1 }`.
+	-- Defaults: FPS = 12, Looped = false, Priority = 1. All three are
+	-- live-editable on the returned track.
+	--
+	-- Each call returns a fresh track with its own signals — useful
+	-- for layered animation (a base "idle" and a transient "hurt").
+	-- Tracks belong to this AnimatedImage; destroying the image stops
+	-- every track.
+	CreateTrack: (
+		self: AnimatedImage,
+		frames: { string } | string,
+		opts: { FPS: number?, Looped: boolean?, Priority: number? }?
+	) -> AnimationTrack,
+	-- Snap the displayed frame to a specific SubTexture (by name) or
+	-- by numeric index. Stays visible until a track is :Play()'d on
+	-- top (priority blending wins over a manual pin). Useful for
+	-- video-game icons that just flip between named static frames.
+	JumpToFrame: (self: AnimatedImage, frame: string | number) -> (),
+	-- Release the manual frame override.
 	ClearJump: (self: AnimatedImage) -> (),
+	-- Whether the parsed atlas contains a SubTexture with this name.
+	HasFrame: (self: AnimatedImage, name: string) -> boolean,
+	-- Every SubTexture name in source order.
+	GetFrameNames: (self: AnimatedImage) -> { string },
 	-- The underlying GUI Image primitive. Useful for clipping
 	-- (`clippable:AddClippable(animimg:GetPrimitive())`) or other
 	-- primitive-level ops.
@@ -1882,30 +1900,26 @@ export type GUI_API = {
 	-- when you're rebuilding a complex sprite, you stage into the
 	-- buffer, then commit in one shot.
 	CanvasBuffer: (width: number, height: number) -> CanvasBuffer,
-	-- Sprite-sheet animation primitive. Pass an XML string describing
-	-- frames and named animations, plus either an Image asset or a
-	-- DynImg as the source spritesheet. Returns an AnimatedImage
-	-- userdata. The image is sampled per-frame on the heart loop and
-	-- displayed via a GUI Image primitive that you can position,
-	-- resize, color, etc. through the AnimatedImage's mirror fields.
+	-- Sprite-sheet animation primitive driven by a Sparrow / Flash-style
+	-- TextureAtlas XML. The XML defines named frames (SubTextures); you
+	-- build animations at runtime by calling `:CreateTrack(frames, opts)`
+	-- on the returned AnimatedImage.
 	--
-	-- XML schema (two flavors, both supported, can mix):
+	--   <?xml version="1.0" encoding="utf-8"?>
+	--   <TextureAtlas imagePath="Test.png">
+	--       <SubTexture name="Down0000" x="404" y="0" width="404" height="404"
+	--                   frameX="2" frameY="2" frameWidth="400" frameHeight="400"/>
+	--       <SubTexture name="Up0000"   x="0"   y="0" width="404" height="404"
+	--                   frameX="2" frameY="2" frameWidth="400" frameHeight="400"/>
+	--   </TextureAtlas>
 	--
-	--   <animated frame_width="32" frame_height="32" columns="8">
-	--       <!-- grid mode: cells are chopped from a regular grid -->
-	--       <animation name="idle" frames="0,1,2,3" fps="6" looped="true"/>
-	--       <animation name="walk" frames="4-9" fps="10"/>
-	--   </animated>
+	-- Each SubTexture's (x, y, width, height) is the sub-image rectangle
+	-- in the source sheet. (frameX, frameY, frameWidth, frameHeight)
+	-- restore trimmed sprites to their original cell size so frames
+	-- don't jitter between trimmed sub-textures of different bounds.
 	--
-	--   <animated>
-	--       <!-- explicit-rect mode: each frame is named -->
-	--       <frame name="f0" x="0" y="0" w="32" h="32"/>
-	--       <frame name="f1" x="32" y="0" w="32" h="32"/>
-	--       <animation name="idle" frames="f0,f1" fps="6"/>
-	--   </animated>
-	--
-	-- `frames` is a comma-separated list of frame indices, names, or
-	-- inclusive ranges (`"4-9"` expands to 4,5,6,7,8,9).
+	-- `source` is an Image asset or a DynImg. DynImg sources are re-read
+	-- each tick.
 	AnimatedImage: (xml: string, source: any) -> AnimatedImage,
 }
 

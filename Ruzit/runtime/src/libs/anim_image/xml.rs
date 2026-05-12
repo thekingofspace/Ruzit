@@ -1,22 +1,19 @@
 use std::collections::HashMap;
 
-use super::FrameRect;
-
-pub enum FrameRef {
-    Index(usize),
-    Name(String),
+pub struct ParsedFrame {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+    pub frame_x: i32,
+    pub frame_y: i32,
+    pub frame_width: u32,
+    pub frame_height: u32,
 }
 
-pub struct ParsedAnimation {
-    pub frames: Vec<FrameRef>,
-    pub fps: f32,
-    pub looped: bool,
-}
-
-pub struct ParsedAnim {
-    pub frames: Vec<FrameRect>,
-    pub name_to_frame: HashMap<String, usize>,
-    pub animations: HashMap<String, ParsedAnimation>,
+pub struct ParsedAtlas {
+    pub frames: Vec<(String, ParsedFrame)>,
+    pub name_to_index: HashMap<String, usize>,
 }
 
 struct Tag<'a> {
@@ -29,17 +26,13 @@ fn err(msg: impl Into<String>) -> mlua::Error {
     mlua::Error::RuntimeError(format!("AnimatedImage XML: {}", msg.into()))
 }
 
-pub fn parse_animated_xml(
-    text: &str,
-    image_w: u32,
-    image_h: u32,
-) -> mlua::Result<ParsedAnim> {
+pub fn parse_texture_atlas(text: &str) -> mlua::Result<ParsedAtlas> {
     let bytes = text.as_bytes();
     let mut i: usize = 0;
     let mut tags: Vec<Tag> = Vec::new();
 
     while i < bytes.len() {
-        skip_whitespace(bytes, &mut i);
+        skip_ws(bytes, &mut i);
         if i >= bytes.len() {
             break;
         }
@@ -83,11 +76,10 @@ pub fn parse_animated_xml(
         }
         let name = std::str::from_utf8(&bytes[name_start..p])
             .map_err(|_| err("non-UTF-8 in tag name"))?;
-
         let mut attrs: HashMap<String, String> = HashMap::new();
 
         loop {
-            skip_whitespace(bytes, &mut p);
+            skip_ws(bytes, &mut p);
             if p >= bytes.len() {
                 return Err(err("unexpected EOF inside tag"));
             }
@@ -117,13 +109,13 @@ pub fn parse_animated_xml(
             let key = std::str::from_utf8(&bytes[k_start..p])
                 .map_err(|_| err("non-UTF-8 in attr name"))?
                 .to_string();
-            skip_whitespace(bytes, &mut p);
+            skip_ws(bytes, &mut p);
             if p >= bytes.len() || bytes[p] != b'=' {
                 attrs.insert(key, String::new());
                 continue;
             }
             p += 1;
-            skip_whitespace(bytes, &mut p);
+            skip_ws(bytes, &mut p);
             if p >= bytes.len() || (bytes[p] != b'"' && bytes[p] != b'\'') {
                 return Err(err("expected quoted attribute value"));
             }
@@ -151,129 +143,66 @@ pub fn parse_animated_xml(
         i = p;
     }
 
-    let mut frames: Vec<FrameRect> = Vec::new();
-    let mut name_to_frame: HashMap<String, usize> = HashMap::new();
-    let mut animations: HashMap<String, ParsedAnimation> = HashMap::new();
-
-    let root = tags
+    let _root = tags
         .iter()
-        .find(|t| !t.closing && t.name == "animated")
-        .ok_or_else(|| err("missing <animated> root element"))?;
+        .find(|t| !t.closing && t.name.eq_ignore_ascii_case("TextureAtlas"))
+        .ok_or_else(|| err("missing <TextureAtlas> root element"))?;
 
-    let frame_width = root.attrs.get("frame_width").and_then(|s| s.parse::<u32>().ok());
-    let frame_height = root
-        .attrs
-        .get("frame_height")
-        .and_then(|s| s.parse::<u32>().ok());
-    let columns = root.attrs.get("columns").and_then(|s| s.parse::<u32>().ok());
-
-    let grid_mode = frame_width.is_some() && frame_height.is_some();
-    if grid_mode {
-        let fw = frame_width.unwrap().max(1);
-        let fh = frame_height.unwrap().max(1);
-        let cols = columns.unwrap_or((image_w / fw).max(1));
-        let rows = (image_h / fh).max(1);
-        for r in 0..rows {
-            for c in 0..cols {
-                frames.push(FrameRect {
-                    x: c * fw,
-                    y: r * fh,
-                    w: fw,
-                    h: fh,
-                });
-            }
-        }
-    }
+    let mut frames: Vec<(String, ParsedFrame)> = Vec::new();
+    let mut name_to_index: HashMap<String, usize> = HashMap::new();
 
     for tag in &tags {
-        if tag.closing || tag.name != "frame" {
-            continue;
-        }
-        let x = tag.attrs.get("x").and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
-        let y = tag.attrs.get("y").and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
-        let w = tag
-            .attrs
-            .get("w")
-            .or_else(|| tag.attrs.get("width"))
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(1);
-        let h = tag
-            .attrs
-            .get("h")
-            .or_else(|| tag.attrs.get("height"))
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(1);
-        let idx = frames.len();
-        frames.push(FrameRect { x, y, w, h });
-        if let Some(n) = tag.attrs.get("name") {
-            name_to_frame.insert(n.clone(), idx);
-        }
-    }
-
-    for tag in &tags {
-        if tag.closing || tag.name != "animation" {
+        if tag.closing || !tag.name.eq_ignore_ascii_case("SubTexture") {
             continue;
         }
         let name = tag
             .attrs
             .get("name")
             .cloned()
-            .ok_or_else(|| err("<animation> requires a name attribute"))?;
-        let fps = tag
-            .attrs
-            .get("fps")
-            .and_then(|s| s.parse::<f32>().ok())
-            .unwrap_or(10.0)
-            .max(0.001);
-        let looped = tag
-            .attrs
-            .get("looped")
-            .map(|s| matches!(s.as_str(), "true" | "1" | "yes" | "True"))
-            .unwrap_or(false);
+            .ok_or_else(|| err("<SubTexture> requires a name attribute"))?;
+        let x = parse_u32(tag.attrs.get("x"), 0);
+        let y = parse_u32(tag.attrs.get("y"), 0);
+        let width = parse_u32(tag.attrs.get("width"), 1);
+        let height = parse_u32(tag.attrs.get("height"), 1);
+        let frame_x = parse_i32(tag.attrs.get("frameX"), 0);
+        let frame_y = parse_i32(tag.attrs.get("frameY"), 0);
+        let frame_width = parse_u32(tag.attrs.get("frameWidth"), width);
+        let frame_height = parse_u32(tag.attrs.get("frameHeight"), height);
 
-        let frames_attr = tag.attrs.get("frames").cloned().unwrap_or_default();
-        let mut frame_refs: Vec<FrameRef> = Vec::new();
-        for part in frames_attr.split(',') {
-            let p = part.trim();
-            if p.is_empty() {
-                continue;
-            }
-            if let Ok(n) = p.parse::<usize>() {
-                frame_refs.push(FrameRef::Index(n));
-            } else if let Some(range) = p.split_once('-') {
-                if let (Ok(a), Ok(b)) =
-                    (range.0.trim().parse::<usize>(), range.1.trim().parse::<usize>())
-                {
-                    let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
-                    for k in lo..=hi {
-                        frame_refs.push(FrameRef::Index(k));
-                    }
-                } else {
-                    frame_refs.push(FrameRef::Name(p.to_string()));
-                }
-            } else {
-                frame_refs.push(FrameRef::Name(p.to_string()));
-            }
-        }
-
-        animations.insert(
+        let idx = frames.len();
+        name_to_index.insert(name.clone(), idx);
+        frames.push((
             name,
-            ParsedAnimation {
-                frames: frame_refs,
-                fps,
-                looped,
+            ParsedFrame {
+                x,
+                y,
+                width,
+                height,
+                frame_x,
+                frame_y,
+                frame_width,
+                frame_height,
             },
-        );
+        ));
     }
 
-    Ok(ParsedAnim {
+    Ok(ParsedAtlas {
         frames,
-        name_to_frame,
-        animations,
+        name_to_index,
     })
 }
 
-fn skip_whitespace(bytes: &[u8], i: &mut usize) {
+fn parse_u32(s: Option<&String>, default: u32) -> u32 {
+    s.and_then(|x| x.parse::<i64>().ok())
+        .map(|n| n.max(0) as u32)
+        .unwrap_or(default)
+}
+
+fn parse_i32(s: Option<&String>, default: i32) -> i32 {
+    s.and_then(|x| x.parse::<i32>().ok()).unwrap_or(default)
+}
+
+fn skip_ws(bytes: &[u8], i: &mut usize) {
     while *i < bytes.len() && bytes[*i].is_ascii_whitespace() {
         *i += 1;
     }

@@ -280,44 +280,48 @@ mask.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</spa
 <h2 id="animatedimage">AnimatedImage</h2>
 
 <p>
-    Sprite-sheet animation primitive.
-    <code>GUI.AnimatedImage(xml, source)</code> reads an XML string and a
-    source image (either an <code>Image</code> asset or a
-    <code>DynImg</code> live buffer), then plays named animations from
-    that atlas. Multiple <code>AnimationTrack</code>s can run at once;
-    the highest-priority playing track is what's displayed. When that
-    track ends (non-looped), the next-highest takes over. DynImg sources
-    are re-sampled each frame so a procedural / video-textured source
-    works too.
+    Sprite-sheet animation primitive driven by Sparrow / Flash-style
+    <code>&lt;TextureAtlas&gt;</code> XML.
+    <code>GUI.AnimatedImage(xml, source)</code> parses the XML into a
+    map of named frames; the XML itself does not define animations.
+    Animations are built at runtime by calling
+    <code>:CreateTrack(frames, opts)</code> on the returned
+    AnimatedImage, passing the names of the SubTextures to play in
+    order. Each track carries its own FPS, Looped, Priority, and
+    <code>DidLoop</code> / <code>Ended</code> signals.
 </p>
 
 <h3>XML schema</h3>
 
 <p>
-    Two flavors, both supported in the same document.
+    Standard Sparrow output (e.g. from the FNF spritesheet & XML
+    generator) works directly:
 </p>
 
-<pre><code><span class="hl-com">&lt;!-- Grid mode: cells are chopped from a regular spacing --&gt;</span>
-<span class="hl-kw">&lt;animated</span> frame_width=<span class="hl-str">"32"</span> frame_height=<span class="hl-str">"32"</span> columns=<span class="hl-str">"8"</span><span class="hl-kw">&gt;</span>
-    <span class="hl-kw">&lt;animation</span> name=<span class="hl-str">"idle"</span> frames=<span class="hl-str">"0,1,2,3"</span> fps=<span class="hl-str">"6"</span> looped=<span class="hl-str">"true"</span><span class="hl-kw">/&gt;</span>
-    <span class="hl-kw">&lt;animation</span> name=<span class="hl-str">"walk"</span> frames=<span class="hl-str">"4-9"</span> fps=<span class="hl-str">"10"</span><span class="hl-kw">/&gt;</span>
-<span class="hl-kw">&lt;/animated&gt;</span>
-
-<span class="hl-com">&lt;!-- Explicit-rect mode: each frame is named with a rectangle --&gt;</span>
-<span class="hl-kw">&lt;animated&gt;</span>
-    <span class="hl-kw">&lt;frame</span> name=<span class="hl-str">"f0"</span> x=<span class="hl-str">"0"</span>  y=<span class="hl-str">"0"</span> w=<span class="hl-str">"32"</span> h=<span class="hl-str">"32"</span><span class="hl-kw">/&gt;</span>
-    <span class="hl-kw">&lt;frame</span> name=<span class="hl-str">"f1"</span> x=<span class="hl-str">"32"</span> y=<span class="hl-str">"0"</span> w=<span class="hl-str">"32"</span> h=<span class="hl-str">"32"</span><span class="hl-kw">/&gt;</span>
-    <span class="hl-kw">&lt;animation</span> name=<span class="hl-str">"idle"</span> frames=<span class="hl-str">"f0,f1"</span> fps=<span class="hl-str">"6"</span><span class="hl-kw">/&gt;</span>
-<span class="hl-kw">&lt;/animated&gt;</span></code></pre>
+<pre><code><span class="hl-kw">&lt;?xml</span> version=<span class="hl-str">"1.0"</span> encoding=<span class="hl-str">"utf-8"</span><span class="hl-kw">?&gt;</span>
+<span class="hl-kw">&lt;TextureAtlas</span> imagePath=<span class="hl-str">"Test.png"</span><span class="hl-kw">&gt;</span>
+    <span class="hl-kw">&lt;SubTexture</span> name=<span class="hl-str">"Down0000"</span> x=<span class="hl-str">"404"</span> y=<span class="hl-str">"0"</span> width=<span class="hl-str">"404"</span> height=<span class="hl-str">"404"</span>
+                frameX=<span class="hl-str">"2"</span> frameY=<span class="hl-str">"2"</span> frameWidth=<span class="hl-str">"400"</span> frameHeight=<span class="hl-str">"400"</span><span class="hl-kw">/&gt;</span>
+    <span class="hl-kw">&lt;SubTexture</span> name=<span class="hl-str">"Up0000"</span>   x=<span class="hl-str">"0"</span>   y=<span class="hl-str">"0"</span> width=<span class="hl-str">"404"</span> height=<span class="hl-str">"404"</span>
+                frameX=<span class="hl-str">"2"</span> frameY=<span class="hl-str">"2"</span> frameWidth=<span class="hl-str">"400"</span> frameHeight=<span class="hl-str">"400"</span><span class="hl-kw">/&gt;</span>
+<span class="hl-kw">&lt;/TextureAtlas&gt;</span></code></pre>
 
 <p>
-    <code>frames</code> is a comma-separated list of frame indices,
-    names, or inclusive ranges (<code>"4-9"</code> expands to
-    <code>4,5,6,7,8,9</code>). Animation attributes: <code>name</code>
-    (required), <code>frames</code> (required), <code>fps</code>
-    (default 10), <code>looped</code> (<code>"true"</code> or
-    <code>"false"</code>, default false).
+    Per-SubTexture attributes:
 </p>
+<ul>
+    <li><code>name</code> &mdash; lookup key used at runtime. Required.</li>
+    <li><code>x</code>, <code>y</code>, <code>width</code>,
+        <code>height</code> &mdash; sub-rectangle within the source
+        image.</li>
+    <li><code>frameX</code>, <code>frameY</code>,
+        <code>frameWidth</code>, <code>frameHeight</code> &mdash;
+        optional. Restores trimmed sprites to their original cell size
+        (the sub-image is placed at offset
+        <code>(-frameX, -frameY)</code> within a transparent
+        <code>frameWidth &times; frameHeight</code> canvas), so frames
+        of different trimmed bounds don't jitter in playback.</li>
+</ul>
 
 <h3>Worked example</h3>
 
@@ -326,53 +330,94 @@ mask.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</spa
 <span class="hl-kw">local</span> Primitives = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>)
 <span class="hl-kw">local</span> Dim = Primitives.Dim
 
-<span class="hl-kw">local</span> sheet = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"Image"</span>, <span class="hl-str">"sprites.hero"</span>)
-<span class="hl-kw">local</span> xml = [[
-&lt;animated frame_width="32" frame_height="32" columns="8"&gt;
-    &lt;animation name="idle" frames="0,1,2,3" fps="6" looped="true"/&gt;
-    &lt;animation name="hurt" frames="16,17,18" fps="12"/&gt;
-&lt;/animated&gt;
-]]
+<span class="hl-kw">local</span> sheet  = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"Image"</span>, <span class="hl-str">"sprites.player"</span>)
+<span class="hl-kw">local</span> atlas  = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"File"</span>, <span class="hl-str">"sprites.player_xml"</span>)
+<span class="hl-kw">local</span> player = GUI.<span class="hl-fn">AnimatedImage</span>(atlas, sheet)
+player.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">100</span>, <span class="hl-num">100</span>)
+player.Size     = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</span>, <span class="hl-num">200</span>)
 
-<span class="hl-kw">local</span> hero = GUI.<span class="hl-fn">AnimatedImage</span>(xml, sheet)
-hero.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">100</span>, <span class="hl-num">100</span>)
-hero.Size = Dim.<span class="hl-fn">new</span>(<span class="hl-num">128</span>, <span class="hl-num">128</span>)        <span class="hl-com">-- 4x scale, squashed exactly like a regular Image</span>
+<span class="hl-com">-- Tracks are built at runtime from SubTexture names.</span>
+<span class="hl-kw">local</span> down_idle = player:<span class="hl-fn">CreateTrack</span>(
+    {<span class="hl-str">"Down0000"</span>, <span class="hl-str">"Down0001"</span>, <span class="hl-str">"Down0002"</span>, <span class="hl-str">"Down0003"</span>},
+    { FPS = <span class="hl-num">12</span>, Looped = <span class="hl-kw">true</span>, Priority = <span class="hl-num">1</span> }
+)
+down_idle:<span class="hl-fn">Play</span>()
 
-<span class="hl-kw">local</span> idle = hero:<span class="hl-fn">GetTrack</span>(<span class="hl-str">"idle"</span>)
-idle.Priority = <span class="hl-num">1</span>
-idle:<span class="hl-fn">Play</span>()
+<span class="hl-com">-- Comma-separated string also works.</span>
+<span class="hl-kw">local</span> up_hit = player:<span class="hl-fn">CreateTrack</span>(
+    <span class="hl-str">"Up0000,Up0001,Up0002"</span>,
+    { FPS = <span class="hl-num">18</span>, Priority = <span class="hl-num">10</span> }
+)
+up_hit.Ended:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>() up_hit:<span class="hl-fn">Stop</span>() <span class="hl-kw">end</span>)
 
-<span class="hl-kw">function</span> on_player_hurt()
-    <span class="hl-kw">local</span> hurt = hero:<span class="hl-fn">GetTrack</span>(<span class="hl-str">"hurt"</span>)
-    hurt.Priority = <span class="hl-num">10</span>
-    hurt.Ended:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>() hurt:<span class="hl-fn">Stop</span>() <span class="hl-kw">end</span>)
-    hurt:<span class="hl-fn">Play</span>()  <span class="hl-com">-- replaces idle while playing; idle resumes when hurt ends</span>
-<span class="hl-kw">end</span>
+<span class="hl-kw">function</span> on_player_hit()
+    up_hit:<span class="hl-fn">Play</span>()       <span class="hl-com">-- priority 10 wins over priority 1 idle</span>
+<span class="hl-kw">end</span>                    <span class="hl-com">-- when up_hit ends, down_idle becomes visible again</span>
 
-<span class="hl-com">-- Icon-style usage with the same atlas:</span>
-hero:<span class="hl-fn">JumpToFrame</span>(<span class="hl-num">23</span>)         <span class="hl-com">-- pin to frame 23 indefinitely</span></code></pre>
+<span class="hl-com">-- Icon-style usage: pin a single named frame.</span>
+player:<span class="hl-fn">JumpToFrame</span>(<span class="hl-str">"Down0000"</span>)</code></pre>
 
 <h3>Priority blending</h3>
 
 <p>
     Multiple tracks can be <code>:Play()</code>'d at the same time.
-    Each tick, the engine picks the highest-priority Playing track and
-    renders its current frame. Lower-priority tracks keep advancing
+    Each tick the engine picks the highest-priority Playing track and
+    renders its current frame. Lower-priority tracks keep ticking
     silently in the background. When a higher-priority track ends
-    (non-looped), the next-highest still-Playing track takes over the
-    display. Looped tracks keep playing forever until you
+    (non-looped) the next-highest still-Playing track immediately
+    becomes visible. Looped tracks keep going forever until you
     <code>:Stop()</code> them.
+</p>
+
+<h3>Track options</h3>
+
+<p>
+    Defaults: <code>FPS = 12</code>, <code>Looped = false</code>,
+    <code>Priority = 1</code>. All three are live-editable on the
+    returned track. Other fields:
+</p>
+<ul>
+    <li><code>track.FrameCount</code>, <code>track.State</code>
+        (<code>"Idle"</code> / <code>"Playing"</code> /
+        <code>"Stopped"</code>), <code>track.Elapsed</code>.</li>
+    <li><code>track.DidLoop</code> fires every wrap of a looped track.
+        <code>track.Ended</code> fires once when a non-looped track
+        reaches its end (does not fire on <code>:Stop()</code>).</li>
+    <li><code>:Play</code>, <code>:Stop</code>, <code>:Pause</code>,
+        <code>:Resume</code>, <code>:Wait</code> (yields until Ended).</li>
+</ul>
+
+<h3>JumpToFrame</h3>
+
+<p>
+    <code>image:JumpToFrame(name)</code> accepts a SubTexture name OR a
+    numeric index (0-based, bounded). The pinned frame stays visible
+    until a track is <code>:Play()</code>'d on top &mdash; priority
+    playback always wins over a manual pin. Call
+    <code>:ClearJump()</code> to release.
 </p>
 
 <h3>DynImg sources</h3>
 
 <p>
     Pass a <code>DynImg</code> instead of a static <code>Image</code>
-    asset and the AnimatedImage re-samples the source buffer every
-    tick. The frame rectangles still come from the XML; what changes is
-    the underlying pixels. Useful for: spritesheets that are themselves
-    procedurally generated, screen-captured atlases, network-streamed
+    asset and the AnimatedImage re-samples the source buffer each
+    tick. The SubTexture rectangles still come from the XML; what
+    changes is the underlying pixels. Useful for procedurally generated
+    atlases, screen-captured spritesheets, or network-streamed
     textures.
+</p>
+
+<h3>Size semantics &amp; trim</h3>
+
+<p>
+    Setting <code>animimg.Size = Dim.new(W, H)</code> squashes and
+    stretches the currently-displayed frame the same way a regular
+    Image primitive scales. The <em>logical</em> frame size is the
+    SubTexture's <code>frameWidth &times; frameHeight</code> (or its
+    <code>width &times; height</code> if no <code>frame*</code>
+    attributes are present), so two frames with different trimmed
+    bounds still display at consistent dimensions.
 </p>
 
 <h2 id="drawableimg">DrawableImg &amp; CanvasBuffer</h2>
