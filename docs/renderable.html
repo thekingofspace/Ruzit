@@ -559,6 +559,51 @@ lid_l.Size = Vector.<span class="hl-fn">new</span>(<span class="hl-num">0.08</sp
             Empty for OBJ / synthesised meshes.
         </p>
     </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">part:LinkInput(audio)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Anchor an <a href="sfx.html#sound">SFX Sound</a> or
+            <a href="voice.html#channel">VoiceChannel</a> to this part.
+            While linked, the engine copies the part's
+            <code>CFrame.Position</code> into the audio's
+            <code>Position</code> property each heart tick, so the sound
+            follows the part automatically. Saves you from doing the
+            per-frame copy in Lua.
+        </p>
+        <p class="member-desc">
+            For SFX: the link writes <code>snd.Position</code>, preserving
+            <code>MinFalloff</code> / <code>MaxFalloff</code>. If the
+            sound had no Position, defaults <code>0</code> / <code>20</code>
+            are installed on first sync. For VoiceChannel: writes the
+            channel's Spatial shader the same way (defaults <code>0</code>
+            / <code>8</code>). Linking the same audio source again
+            replaces the previous binding.
+        </p>
+        <p class="member-desc">
+            Destroying the part automatically drops the link. The audio
+            keeps its last-synced position frozen.
+        </p>
+        <pre><code><span class="hl-kw">local</span> snd = SFX.<span class="hl-fn">LoadSound</span>(boom_data)
+snd.MaxFalloff = <span class="hl-num">50</span>
+projectile:<span class="hl-fn">LinkInput</span>(snd)
+snd:<span class="hl-fn">Play</span>()  <span class="hl-com">-- audio now follows `projectile` in 3D</span></code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">part:UnlinkInput(audio)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Remove an earlier <code>LinkInput</code> binding. The audio's
+            <code>Position</code> stops being driven by the part and
+            stays wherever it was on the last synced tick. Use
+            <code>audio.Position = nil</code> after to revert to
+            non-positional playback.
+        </p>
+    </div>
 </div>
 
 <h2 id="animation-track">AnimationTrack</h2>

@@ -1409,6 +1409,20 @@ declare class BasePart
 	-- Names of every animation clip baked into the source FBX file. Empty
 	-- for OBJ / synthesised meshes / FBX exports without animations.
 	function GetTrackNames(self): { string }
+
+	-- ── Audio anchoring ──────────────────────────────────────────────────
+	-- Pin an SFX Sound or VoiceChannel to this part. While linked, the
+	-- engine copies `part.CFrame.Position` into the audio's `Position`
+	-- property every heart tick, so the source follows the part in 3D
+	-- without any per-frame Lua. Existing MinFalloff / MaxFalloff are
+	-- preserved (defaults 0 / 20 for SFX, 0 / 8 for Voice if the audio
+	-- had no Position yet). Linking the same audio again replaces the
+	-- previous binding. Destroying the part drops the link automatically.
+	function LinkInput(self, audio: Sound | VoiceChannel): ()
+	-- Drop a prior LinkInput binding. The audio's Position freezes at
+	-- the last synced value, assign `audio.Position = nil` if you want
+	-- to revert to non-positional playback.
+	function UnlinkInput(self, audio: Sound | VoiceChannel): ()
 end
 
 -- =============================================================================

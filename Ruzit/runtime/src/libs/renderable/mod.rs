@@ -301,6 +301,133 @@ pub fn tick_distortion_boxes() {
     }
 }
 
+struct AudioLink {
+    audio_id: usize,
+    part: Arc<Mutex<PartState>>,
+    update: Box<dyn Fn(f32, f32, f32) + Send>,
+}
+
+thread_local! {
+    static AUDIO_LINKS: RefCell<Vec<AudioLink>> = const { RefCell::new(Vec::new()) };
+}
+
+pub fn tick_audio_links() {
+    AUDIO_LINKS.with(|c| {
+        let mut links = c.borrow_mut();
+        links.retain(|link| link.part.lock().unwrap().alive);
+        for link in links.iter() {
+            let (x, y, z) = {
+                let p = link.part.lock().unwrap();
+                let pos = p.current_cframe().position;
+                (pos.x, pos.y, pos.z)
+            };
+            (link.update)(x, y, z);
+        }
+    });
+}
+
+fn audio_id_of(audio: &AnyUserData) -> mlua::Result<usize> {
+    if let Ok(snd) = audio.borrow::<crate::libs::sfx::Sound>() {
+        return Ok(Arc::as_ptr(&snd.shaders) as usize);
+    }
+    if let Ok(vc) = audio.borrow::<crate::libs::voice::ChannelHandle>() {
+        return Ok(Arc::as_ptr(&vc.shaders) as usize);
+    }
+    Err(mlua::Error::RuntimeError(
+        "expected a Sound or VoiceChannel".into(),
+    ))
+}
+
+fn link_audio_to_part(part: &Arc<Mutex<PartState>>, audio: AnyUserData) -> mlua::Result<()> {
+    use crate::libs::sfx::{Shader as SfxShader, Sound, SpatialPos};
+    use crate::libs::voice::{ChannelHandle, VoiceShader};
+
+    let (audio_id, update): (usize, Box<dyn Fn(f32, f32, f32) + Send>) =
+        if let Ok(snd) = audio.borrow::<Sound>() {
+            let id = Arc::as_ptr(&snd.shaders) as usize;
+            let pos_arc = snd.position.clone();
+            let cb = Box::new(move |x: f32, y: f32, z: f32| {
+                let mut guard = pos_arc.lock().unwrap();
+                let (min_f, max_f) = guard
+                    .as_ref()
+                    .map(|p| (p.min_falloff, p.max_falloff))
+                    .unwrap_or((0.0, 20.0));
+                *guard = Some(SpatialPos {
+                    x,
+                    y,
+                    z,
+                    min_falloff: min_f,
+                    max_falloff: max_f,
+                });
+            });
+            let _ = std::marker::PhantomData::<SfxShader>;
+            (id, cb)
+        } else if let Ok(vc) = audio.borrow::<ChannelHandle>() {
+            let id = Arc::as_ptr(&vc.shaders) as usize;
+            let shaders_arc = vc.shaders.clone();
+            let pos_arc = vc.position.clone();
+            let cb = Box::new(move |x: f32, y: f32, z: f32| {
+                let mut list = shaders_arc.lock().unwrap();
+                let (mn, mx) = list
+                    .iter()
+                    .rev()
+                    .find_map(|s| match s {
+                        VoiceShader::Spatial {
+                            min_falloff,
+                            max_falloff,
+                            ..
+                        } => Some((*min_falloff, *max_falloff)),
+                        _ => None,
+                    })
+                    .unwrap_or((0.0, 8.0));
+                list.retain(|s| !matches!(s, VoiceShader::Spatial { .. }));
+                list.push(VoiceShader::Spatial {
+                    x,
+                    y,
+                    z,
+                    min_falloff: mn,
+                    max_falloff: mx,
+                });
+                drop(list);
+                *pos_arc.lock().unwrap() = (x, y, z);
+            });
+            (id, cb)
+        } else {
+            return Err(mlua::Error::RuntimeError(
+                "LinkInput: expected a Sound or VoiceChannel".into(),
+            ));
+        };
+
+    let (x, y, z) = {
+        let p = part.lock().unwrap();
+        let pos = p.current_cframe().position;
+        (pos.x, pos.y, pos.z)
+    };
+    update(x, y, z);
+
+    AUDIO_LINKS.with(|c| {
+        let mut links = c.borrow_mut();
+        links.retain(|l| l.audio_id != audio_id);
+        links.push(AudioLink {
+            audio_id,
+            part: part.clone(),
+            update,
+        });
+    });
+    Ok(())
+}
+
+fn unlink_audio_from_part(part: &Arc<Mutex<PartState>>, audio: AnyUserData) -> mlua::Result<()> {
+    let audio_id = audio_id_of(&audio)?;
+    let part_id = Arc::as_ptr(part) as usize;
+    AUDIO_LINKS.with(|c| {
+        c.borrow_mut().retain(|l| {
+            !(l.audio_id == audio_id && Arc::as_ptr(&l.part) as usize == part_id)
+        });
+    });
+    Ok(())
+}
+
 fn cframe_close(a: CFrame, b: CFrame) -> bool {
     let eps = 1e-5_f32;
     (a.position.x - b.position.x).abs() < eps
@@ -1218,6 +1345,20 @@ impl UserData for PartHandle {
             }
             Ok(out)
         });
+
+        m.add_method(
+            "LinkInput",
+            |_, this, audio: AnyUserData| -> mlua::Result<()> {
+                this.ensure_alive("LinkInput")?;
+                link_audio_to_part(&this.state, audio)
+            },
+        );
+        m.add_method(
+            "UnlinkInput",
+            |_, this, audio: AnyUserData| -> mlua::Result<()> {
+                unlink_audio_from_part(&this.state, audio)
+            },
+        );
     }
 }
 

@@ -60,6 +60,7 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         crate::libs::physics::tick(lua, dt);
         crate::libs::tween::tick(lua, dt as f32);
         crate::libs::renderable::tick_animations(lua, dt as f32);
+        crate::libs::renderable::tick_audio_links();
         crate::libs::renderable::tick_distortion_boxes();
         crate::libs::dynmesh::tick();
         crate::libs::dynimg::tick();
