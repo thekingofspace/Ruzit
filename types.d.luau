@@ -2279,6 +2279,7 @@ export type TweenService_API = {
 	--
 	-- Supported targets and properties:
 	--   BasePart        — CFrame (CFrame), Color (Color3), Size (Vector)
+	--   DistortionBox   — CFrame (CFrame), Size (Vector)
 	--   GUI primitive   — Position (Dim), Size (Dim), Color (Color3),
 	--                     Transparency (number), ZIndex (number)
 	--   SFX Sound       — Volume (number), Pitch / Speed (number),

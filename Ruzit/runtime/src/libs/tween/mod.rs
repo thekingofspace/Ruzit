@@ -6,7 +6,7 @@ use mlua::{Lua, MultiValue, Table, UserData, UserDataFields, UserDataMethods, Va
 
 use crate::libs::gui::{GuiPrimitive, PrimitiveState};
 use crate::libs::primitives::{CFrame, Color3, Dim, Vector};
-use crate::libs::renderable::{self, PartHandle, PartState};
+use crate::libs::renderable::{self, DistortionBoxHandle, DistortionBoxState, PartHandle, PartState};
 use crate::libs::signal;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -179,6 +179,8 @@ enum TweenProp {
     PartCFrame { start: CFrame, end_: CFrame },
     PartColor { start: Color3, end_: Color3 },
     PartSize { start: Vector, end_: Vector },
+    DistortionCFrame { start: CFrame, end_: CFrame },
+    DistortionSize { start: Vector, end_: Vector },
     GuiPosition { start: Dim, end_: Dim },
     GuiSize { start: Dim, end_: Dim },
     GuiColor { start: Color3, end_: Color3 },
@@ -209,6 +211,7 @@ enum TweenState {
 
 enum TweenTarget {
     Part(Arc<Mutex<PartState>>),
+    Distortion(Arc<Mutex<DistortionBoxState>>),
     Gui(Arc<Mutex<PrimitiveState>>),
     Sound {
         shaders: Arc<Mutex<Vec<crate::libs::sfx::Shader>>>,
@@ -271,6 +274,27 @@ fn snapshot_start_values(inner: &mut TweenInner) -> mlua::Result<()> {
                     (name, _) => {
                         return Err(mlua::Error::RuntimeError(format!(
                             "TweenService: BasePart has no tweenable property '{name}' (supported: CFrame, Color, Size — and the value type must match)"
+                        )));
+                    }
+                };
+                inner.properties.push(prop);
+            }
+        }
+        TweenTarget::Distortion(state_arc) => {
+            let s = state_arc.lock().unwrap();
+            for g in &inner.goals {
+                let prop = match (g.property.as_str(), &g.value) {
+                    ("CFrame", GoalValue::CFrame(end_)) => TweenProp::DistortionCFrame {
+                        start: s.current_cf,
+                        end_: *end_,
+                    },
+                    ("Size", GoalValue::Vector(end_)) => TweenProp::DistortionSize {
+                        start: s.current_size,
+                        end_: *end_,
+                    },
+                    (name, _) => {
+                        return Err(mlua::Error::RuntimeError(format!(
+                            "TweenService: DistortionBox has no tweenable property '{name}' (supported: CFrame, Size — and the value type must match)"
                         )));
                     }
                 };
@@ -429,6 +453,22 @@ fn apply_progress(inner: &TweenInner, t: f32) {
             }
             drop(s);
             renderable::bump_parts_dirty();
+        }
+        TweenTarget::Distortion(state_arc) => {
+            let mut s = state_arc.lock().unwrap();
+            if s.alive {
+                for prop in &inner.properties {
+                    match prop {
+                        TweenProp::DistortionCFrame { start, end_ } => {
+                            s.current_cf = lerp_cframe(*start, *end_, eased);
+                        }
+                        TweenProp::DistortionSize { start, end_ } => {
+                            s.current_size = lerp_vec(*start, *end_, eased);
+                        }
+                        _ => {}
+                    }
+                }
+            }
         }
         TweenTarget::Gui(state_arc) => {
             let mut s = state_arc.lock().unwrap();
@@ -788,6 +828,8 @@ fn create_tween(
         Value::UserData(ud) => {
             if let Ok(part) = ud.borrow::<PartHandle>() {
                 TweenTarget::Part(part.state.clone())
+            } else if let Ok(dbox) = ud.borrow::<DistortionBoxHandle>() {
+                TweenTarget::Distortion(dbox.inner.clone())
             } else if let Ok(gui) = ud.borrow::<GuiPrimitive>() {
                 TweenTarget::Gui(gui.state_arc())
             } else if let Ok(snd) = ud.borrow::<crate::libs::sfx::Sound>() {
@@ -802,13 +844,13 @@ fn create_tween(
                 }
             } else {
                 return Err(mlua::Error::RuntimeError(
-                    "TweenService.new: target must be a BasePart, GUI primitive, Sound, or VoiceChannel".into(),
+                    "TweenService.new: target must be a BasePart, DistortionBox, GUI primitive, Sound, or VoiceChannel".into(),
                 ));
             }
         }
         _ => {
             return Err(mlua::Error::RuntimeError(
-                "TweenService.new: target must be a userdata (BasePart, GUI primitive, Sound, or VoiceChannel)".into(),
+                "TweenService.new: target must be a userdata (BasePart, DistortionBox, GUI primitive, Sound, or VoiceChannel)".into(),
             ));
         }
     };
