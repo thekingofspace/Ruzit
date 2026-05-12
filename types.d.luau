@@ -2048,6 +2048,70 @@ export type GUI_API = {
 	-- positions and velocities are 2D pixel coordinates, EmissionDirection
 	-- is a 2D vector. Particles render in the GUI pass with a ZIndex.
 	UIEffectVolume: (image: (ImageAsset | DynImg | DrawableImg)?) -> UIEffectVolume,
+
+	-- 2D analog of GPU.Raycast. GPU-dispatched ray test against every
+	-- visible GUI primitive. One compute thread per primitive runs in
+	-- parallel:
+	--   * Square / Image / Font / Clippable hit-tests as an AABB
+	--     (Position .. Position + Size in screen pixels).
+	--   * Circle hit-tests as an ellipse inscribed in the AABB.
+	--   * Triangle hit-tests as the actual triangle (apex at the top-
+	--     middle of the AABB, base across the bottom).
+	-- Primitives with Visible = false are skipped. Falls back silently
+	-- if the GPU has not been initialized yet (no window opened).
+	--
+	-- origin / direction are 2D pixel-space (Dim or { X, Y } table).
+	-- direction is normalized internally; zero-length errors.
+	-- filter visits hits nearest-first; return true to accept, false /
+	-- nil to skip. maxDistance caps the ray length (default ~1e6).
+	-- Returns nil when nothing was hit.
+	Raycast: (
+		origin: Dim | { number },
+		direction: Dim | { number },
+		filter: ((primitive: any) -> boolean)?,
+		maxDistance: number?
+	) -> { Primitive: any, Distance: number, Position: Dim }?,
+
+	-- Every visible primitive whose AABB overlaps the AABB centered at
+	-- `center` with full extents `size` (both in pixels).
+	CheckArea: (
+		center: Dim | { number },
+		size: Dim | { number },
+		quality: string?,
+		filter: ((primitive: any) -> boolean)?
+	) -> { any },
+
+	-- Every visible primitive whose AABB intersects the circle.
+	OverlapSphere: (
+		center: Dim | { number },
+		radius: number,
+		filter: ((primitive: any) -> boolean)?
+	) -> { any },
+
+	-- Every visible primitive whose AABB intersects the OBB at `center`
+	-- with full extents `size`, rotated by `rotation` radians (defaults
+	-- to 0). Test is exact OBB-vs-AABB on the GPU.
+	OverlapBox: (
+		center: Dim | { number },
+		size: Dim | { number },
+		rotation: number?,
+		filter: ((primitive: any) -> boolean)?
+	) -> { any },
+
+	-- Every visible primitive whose AABB intersects the current viewport
+	-- rect (0, 0) .. (window width, height). 2D analog of the 3D camera
+	-- frustum query.
+	OverlapFrustum: (filter: ((primitive: any) -> boolean)?) -> { any },
+
+	-- Oriented zone query. `cframe` accepts a CFrame (uses .position.xy
+	-- and .rotation.z), a Dim, or a { X, Y } table. `size` is full
+	-- extents. Equivalent to OverlapBox on the 2D system since GUI
+	-- primitives don't carry sub-quad geometry.
+	GetItemsInZone: (
+		cframe: CFrame | Dim | { number },
+		size: Dim | { number },
+		filter: ((primitive: any) -> boolean)?
+	) -> { any },
 }
 
 -- =============================================================================

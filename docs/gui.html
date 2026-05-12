@@ -906,6 +906,122 @@ burst.TimeScaleTransparency = { [<span class="hl-num">0</span>] = <span class="h
     </div>
 </div>
 
+<h2 id="spatial">Spatial queries (GPU)</h2>
+
+<p>
+    2D analogs of the <a href="gpu.html">GPU spatial queries</a>, run as
+    compute passes against every visible GUI primitive. One thread per
+    primitive tests against the query shape; matches are written to a
+    packed atomic-counter buffer, then the index list is read back and
+    resolved to <a href="#primitive">Primitive</a> userdata. Filter
+    callbacks (when supplied) run on the CPU after the GPU returns
+    candidates, so they only fire on hits. Primitives with
+    <code>Visible = false</code> are skipped.
+</p>
+
+<p>
+    <code>origin</code>, <code>center</code>, <code>size</code> arguments
+    accept either a <code>Dim</code> or a plain <code>{ X, Y }</code> /
+    <code>{ x, y }</code> table (also <code>{ number, number }</code>
+    array form), all in screen-space pixels.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.Raycast(origin, direction, filter?, maxDistance?)</span>
+            <span class="member-type">&rarr; { Primitive, Distance, Position }?</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            GPU-dispatched 2D ray test. Cubes / Images / Fonts / Clippables
+            test as axis-aligned rectangles
+            (<code>Position .. Position + Size</code>); circles as the
+            inscribed ellipse; triangles as the actual triangle (apex at
+            the top-middle of the AABB, base across the bottom).
+            <code>direction</code> is normalized internally;
+            zero-length errors. Hits are visited nearest-first;
+            <code>filter</code> returns <code>true</code> to accept,
+            <code>false</code> / <code>nil</code> to skip past.
+            Returns <code>nil</code> when nothing was hit.
+            Falls back to no-op if the GPU has not been initialized yet
+            (no window opened).
+        </p>
+        <pre><code><span class="hl-kw">local</span> hit = GUI.<span class="hl-fn">Raycast</span>(Dim.<span class="hl-fn">new</span>(<span class="hl-num">100</span>, <span class="hl-num">100</span>), Dim.<span class="hl-fn">new</span>(<span class="hl-num">1</span>, <span class="hl-num">0</span>))
+<span class="hl-kw">if</span> hit <span class="hl-kw">then</span>
+    <span class="hl-fn">print</span>(<span class="hl-str">"hit at "</span>, hit.Position.X, hit.Position.Y, <span class="hl-str">"dist "</span>, hit.Distance)
+<span class="hl-kw">end</span></code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.CheckArea(center, size, quality?, filter?)</span>
+            <span class="member-type">&rarr; { Primitive }</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Every visible primitive whose AABB overlaps the rectangle
+            centered at <code>center</code> with full extents
+            <code>size</code>. <code>quality</code> is accepted for
+            parity with the 3D API but ignored — 2D primitives have no
+            sub-quad geometry.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.OverlapSphere(center, radius, filter?)</span>
+            <span class="member-type">&rarr; { Primitive }</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Every visible primitive whose AABB intersects the circle at
+            <code>center</code> with the given radius. (Named
+            "Sphere" to mirror the 3D API.)
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.OverlapBox(center, size, rotation?, filter?)</span>
+            <span class="member-type">&rarr; { Primitive }</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Every visible primitive whose AABB intersects the
+            oriented box at <code>center</code> with full extents
+            <code>size</code>, rotated by <code>rotation</code> radians
+            (defaults to 0). The GPU test is exact OBB-vs-AABB via the
+            separating-axis theorem.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.OverlapFrustum(filter?)</span>
+            <span class="member-type">&rarr; { Primitive }</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Every visible primitive whose AABB intersects the current
+            viewport rect <code>(0, 0)..(window width, height)</code>.
+            Useful as a fast pass for "what's on-screen right now."
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.GetItemsInZone(cframe, size, filter?)</span>
+            <span class="member-type">&rarr; { Primitive }</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Oriented zone query. <code>cframe</code> accepts a
+            <code>CFrame</code> (uses <code>position.xy</code> and
+            <code>rotation.z</code>), a <code>Dim</code>, or a plain
+            <code>{ X, Y }</code> table. Equivalent to
+            <code>OverlapBox</code> on the 2D system; the 3D version's
+            "mesh-precise" semantics don't apply here since GUI
+            primitives have no sub-quad geometry.
+        </p>
+    </div>
+</div>
+
 </main>
 
 </body>

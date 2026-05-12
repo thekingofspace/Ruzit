@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::num::NonZeroU64;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use bytemuck::{Pod, Zeroable};
@@ -15,6 +15,23 @@ use crate::libs::renderable::{self, render as r3d};
 
 static VSYNC_ON: AtomicBool = AtomicBool::new(false);
 static PRESENT_MODE_DIRTY: AtomicBool = AtomicBool::new(false);
+static VIEWPORT_WIDTH: AtomicU32 = AtomicU32::new(0);
+static VIEWPORT_HEIGHT: AtomicU32 = AtomicU32::new(0);
+
+pub fn current_viewport_size() -> Option<(u32, u32)> {
+    let w = VIEWPORT_WIDTH.load(Ordering::Relaxed);
+    let h = VIEWPORT_HEIGHT.load(Ordering::Relaxed);
+    if w == 0 || h == 0 {
+        None
+    } else {
+        Some((w, h))
+    }
+}
+
+fn store_viewport_size(w: u32, h: u32) {
+    VIEWPORT_WIDTH.store(w, Ordering::Relaxed);
+    VIEWPORT_HEIGHT.store(h, Ordering::Relaxed);
+}
 
 fn clamp_scissor(
     x: f32,
@@ -742,7 +759,7 @@ impl GpuState {
             adapter,
             surface,
             config,
-            size: (size.width, size.height),
+            size: { store_viewport_size(size.width, size.height); (size.width, size.height) },
             bind_group_layout,
             pipeline_layout,
             vs_module,
@@ -803,6 +820,7 @@ impl GpuState {
         self.config.width = cw;
         self.config.height = ch;
         self.size = (cw, ch);
+        store_viewport_size(cw, ch);
         self.surface.configure(&self.device, &self.config);
 
         self.scene_texture = None;

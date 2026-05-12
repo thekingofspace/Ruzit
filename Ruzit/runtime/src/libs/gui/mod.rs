@@ -12,6 +12,7 @@ use crate::libs::signal;
 pub mod effect_volume;
 pub mod particle_pipeline;
 pub mod render;
+pub mod spatial;
 
 pub use effect_volume::{
     tick_ui_effect_volumes, ui_effect_volume_snapshot, UIEffectVolumeHandle, UIEffectVolumeRender,
@@ -148,6 +149,10 @@ pub struct RenderItem {
     pub clip_rect: Option<(f32, f32, f32, f32)>,
 
     pub billboard_anchor: Option<BillboardAnchor>,
+}
+
+pub fn list_primitive_states() -> Vec<Arc<Mutex<PrimitiveState>>> {
+    REGISTRY.with(|cell| cell.borrow().iter().cloned().collect())
 }
 
 pub fn purge_image(lua: &Lua, asset_id: u64) {
@@ -1108,6 +1113,13 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         })?,
     )?;
 
+    t.set("Raycast", lua.create_function(raycast_2d)?)?;
+    t.set("CheckArea", lua.create_function(check_area_2d)?)?;
+    t.set("OverlapSphere", lua.create_function(overlap_sphere_2d)?)?;
+    t.set("OverlapBox", lua.create_function(overlap_box_2d)?)?;
+    t.set("OverlapFrustum", lua.create_function(overlap_frustum_2d)?)?;
+    t.set("GetItemsInZone", lua.create_function(get_items_in_zone_2d)?)?;
+
     t.set(
         "UIEffectVolume",
         lua.create_function(
@@ -1118,4 +1130,256 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     )?;
 
     Ok(t)
+}
+
+fn dim_or_table_to_xy(v: &Value, name: &str) -> mlua::Result<[f32; 2]> {
+    match v {
+        Value::UserData(ud) => {
+            if let Ok(d) = ud.borrow::<Dim>() {
+                return Ok([d.x, d.y]);
+            }
+            Err(mlua::Error::RuntimeError(format!(
+                "{name}: expected a Dim or {{ X, Y }} table"
+            )))
+        }
+        Value::Table(t) => {
+            let x: f32 = t.get(1).or_else(|_| t.get("X")).or_else(|_| t.get("x"))?;
+            let y: f32 = t.get(2).or_else(|_| t.get("Y")).or_else(|_| t.get("y"))?;
+            Ok([x, y])
+        }
+        _ => Err(mlua::Error::RuntimeError(format!(
+            "{name}: expected a Dim or {{ X, Y }} table"
+        ))),
+    }
+}
+
+fn apply_filter_and_collect(
+    lua: &Lua,
+    hits: Vec<Arc<Mutex<PrimitiveState>>>,
+    filter: Option<mlua::Function>,
+) -> mlua::Result<Table> {
+    let out = lua.create_table()?;
+    let mut idx = 1;
+    for state_arc in hits {
+        let keep = match &filter {
+            Some(f) => {
+                let gp = GuiPrimitive::from_state(state_arc.clone());
+                let v: Value = f.call(gp)?;
+                matches!(v, Value::Boolean(true))
+            }
+            None => true,
+        };
+        if keep {
+            out.set(idx, GuiPrimitive::from_state(state_arc))?;
+            idx += 1;
+        }
+    }
+    Ok(out)
+}
+
+fn raycast_2d(lua: &Lua, args: MultiValue) -> mlua::Result<Value> {
+    let mut iter = args.into_iter();
+    let origin_v = iter.next().ok_or_else(|| {
+        mlua::Error::RuntimeError("GUI.Raycast: missing origin (Dim or {x, y})".into())
+    })?;
+    let dir_v = iter.next().ok_or_else(|| {
+        mlua::Error::RuntimeError("GUI.Raycast: missing direction (Dim or {x, y})".into())
+    })?;
+    let filter_v = iter.next().unwrap_or(Value::Nil);
+    let max_dist_v = iter.next().unwrap_or(Value::Nil);
+
+    let origin = dim_or_table_to_xy(&origin_v, "GUI.Raycast: origin")?;
+    let direction = dim_or_table_to_xy(&dir_v, "GUI.Raycast: direction")?;
+    let dir_len = (direction[0] * direction[0] + direction[1] * direction[1]).sqrt();
+    if dir_len < 1e-6 {
+        return Err(mlua::Error::RuntimeError(
+            "GUI.Raycast: direction has zero length".into(),
+        ));
+    }
+    let filter: Option<mlua::Function> = match filter_v {
+        Value::Nil => None,
+        Value::Function(f) => Some(f),
+        other => {
+            return Err(mlua::Error::RuntimeError(format!(
+                "GUI.Raycast: filter must be a function or nil (got {})",
+                other.type_name()
+            )))
+        }
+    };
+    let max_dist = match max_dist_v {
+        Value::Nil => 1.0e6,
+        Value::Integer(n) => n as f32,
+        Value::Number(n) => n as f32,
+        _ => {
+            return Err(mlua::Error::RuntimeError(
+                "GUI.Raycast: maxDistance must be a number or nil".into(),
+            ))
+        }
+    };
+
+    let hits = match spatial::gpu_raycast_2d(origin, direction, max_dist) {
+        Some(h) => h,
+        None => return Ok(Value::Nil),
+    };
+
+    for h in hits {
+        let keep = match &filter {
+            Some(f) => {
+                let gp = GuiPrimitive::from_state(h.state.clone());
+                let v: Value = f.call(gp)?;
+                matches!(v, Value::Boolean(true))
+            }
+            None => true,
+        };
+        if !keep {
+            continue;
+        }
+        let out = lua.create_table()?;
+        out.set("Primitive", GuiPrimitive::from_state(h.state.clone()))?;
+        out.set("Distance", h.distance)?;
+        out.set("Position", Dim::new(h.position[0], h.position[1]))?;
+        return Ok(Value::Table(out));
+    }
+    Ok(Value::Nil)
+}
+
+fn parse_filter(v: Value, label: &str) -> mlua::Result<Option<mlua::Function>> {
+    match v {
+        Value::Nil => Ok(None),
+        Value::Function(f) => Ok(Some(f)),
+        other => Err(mlua::Error::RuntimeError(format!(
+            "{label}: filter must be a function or nil (got {})",
+            other.type_name()
+        ))),
+    }
+}
+
+fn check_area_2d(lua: &Lua, args: MultiValue) -> mlua::Result<Table> {
+    let mut iter = args.into_iter();
+    let center_v = iter
+        .next()
+        .ok_or_else(|| mlua::Error::RuntimeError("GUI.CheckArea: missing center".into()))?;
+    let size_v = iter
+        .next()
+        .ok_or_else(|| mlua::Error::RuntimeError("GUI.CheckArea: missing size".into()))?;
+    let _quality = iter.next().unwrap_or(Value::Nil);
+    let filter = parse_filter(iter.next().unwrap_or(Value::Nil), "GUI.CheckArea")?;
+
+    let c = dim_or_table_to_xy(&center_v, "GUI.CheckArea: center")?;
+    let s = dim_or_table_to_xy(&size_v, "GUI.CheckArea: size")?;
+    let lo = [c[0] - s[0] * 0.5, c[1] - s[1] * 0.5];
+    let hi = [c[0] + s[0] * 0.5, c[1] + s[1] * 0.5];
+
+    let hits = spatial::gpu_overlap_2d(spatial::OverlapShape2D::Aabb { lo, hi })
+        .unwrap_or_default();
+    apply_filter_and_collect(lua, hits, filter)
+}
+
+fn overlap_sphere_2d(lua: &Lua, args: MultiValue) -> mlua::Result<Table> {
+    let mut iter = args.into_iter();
+    let center_v = iter.next().ok_or_else(|| {
+        mlua::Error::RuntimeError("GUI.OverlapSphere: missing center".into())
+    })?;
+    let radius_v = iter.next().ok_or_else(|| {
+        mlua::Error::RuntimeError("GUI.OverlapSphere: missing radius".into())
+    })?;
+    let filter = parse_filter(iter.next().unwrap_or(Value::Nil), "GUI.OverlapSphere")?;
+
+    let center = dim_or_table_to_xy(&center_v, "GUI.OverlapSphere: center")?;
+    let radius: f32 = match radius_v {
+        Value::Integer(n) => n as f32,
+        Value::Number(n) => n as f32,
+        _ => {
+            return Err(mlua::Error::RuntimeError(
+                "GUI.OverlapSphere: radius must be a number".into(),
+            ))
+        }
+    };
+    let hits = spatial::gpu_overlap_2d(spatial::OverlapShape2D::Circle { center, radius })
+        .unwrap_or_default();
+    apply_filter_and_collect(lua, hits, filter)
+}
+
+fn overlap_box_2d(lua: &Lua, args: MultiValue) -> mlua::Result<Table> {
+    let mut iter = args.into_iter();
+    let center_v = iter
+        .next()
+        .ok_or_else(|| mlua::Error::RuntimeError("GUI.OverlapBox: missing center".into()))?;
+    let size_v = iter
+        .next()
+        .ok_or_else(|| mlua::Error::RuntimeError("GUI.OverlapBox: missing size".into()))?;
+    let rotation_v = iter.next().unwrap_or(Value::Nil);
+    let filter = parse_filter(iter.next().unwrap_or(Value::Nil), "GUI.OverlapBox")?;
+
+    let center = dim_or_table_to_xy(&center_v, "GUI.OverlapBox: center")?;
+    let size = dim_or_table_to_xy(&size_v, "GUI.OverlapBox: size")?;
+    let rotation = match rotation_v {
+        Value::Nil => 0.0_f32,
+        Value::Integer(n) => n as f32,
+        Value::Number(n) => n as f32,
+        _ => {
+            return Err(mlua::Error::RuntimeError(
+                "GUI.OverlapBox: rotation must be a number (radians) or nil".into(),
+            ))
+        }
+    };
+    let hits = spatial::gpu_overlap_2d(spatial::OverlapShape2D::Box {
+        center,
+        size,
+        rotation,
+    })
+    .unwrap_or_default();
+    apply_filter_and_collect(lua, hits, filter)
+}
+
+fn overlap_frustum_2d(lua: &Lua, args: MultiValue) -> mlua::Result<Table> {
+    let filter = parse_filter(args.into_iter().next().unwrap_or(Value::Nil), "GUI.OverlapFrustum")?;
+    let vp = spatial::viewport_bounds()
+        .unwrap_or([0.0, 0.0, 1920.0, 1080.0]);
+    let hits = spatial::gpu_overlap_2d(spatial::OverlapShape2D::Aabb {
+        lo: [vp[0], vp[1]],
+        hi: [vp[2], vp[3]],
+    })
+    .unwrap_or_default();
+    apply_filter_and_collect(lua, hits, filter)
+}
+
+fn get_items_in_zone_2d(lua: &Lua, args: MultiValue) -> mlua::Result<Table> {
+    let mut iter = args.into_iter();
+    let cframe_v = iter.next().ok_or_else(|| {
+        mlua::Error::RuntimeError("GUI.GetItemsInZone: missing cframe / center".into())
+    })?;
+    let size_v = iter
+        .next()
+        .ok_or_else(|| mlua::Error::RuntimeError("GUI.GetItemsInZone: missing size".into()))?;
+    let filter = parse_filter(iter.next().unwrap_or(Value::Nil), "GUI.GetItemsInZone")?;
+
+    let (center, rotation) = match &cframe_v {
+        Value::UserData(ud) => {
+            if let Ok(cf) = ud.borrow::<crate::libs::primitives::CFrame>() {
+                ([cf.position.x, cf.position.y], cf.rotation.z)
+            } else if let Ok(d) = ud.borrow::<Dim>() {
+                ([d.x, d.y], 0.0_f32)
+            } else {
+                return Err(mlua::Error::RuntimeError(
+                    "GUI.GetItemsInZone: cframe must be a CFrame or Dim".into(),
+                ));
+            }
+        }
+        Value::Table(_) => (dim_or_table_to_xy(&cframe_v, "GUI.GetItemsInZone: center")?, 0.0_f32),
+        _ => {
+            return Err(mlua::Error::RuntimeError(
+                "GUI.GetItemsInZone: cframe must be a CFrame, Dim, or {X, Y} table".into(),
+            ))
+        }
+    };
+    let size = dim_or_table_to_xy(&size_v, "GUI.GetItemsInZone: size")?;
+
+    let hits = spatial::gpu_overlap_2d(spatial::OverlapShape2D::Box {
+        center,
+        size,
+        rotation,
+    })
+    .unwrap_or_default();
+    apply_filter_and_collect(lua, hits, filter)
 }
