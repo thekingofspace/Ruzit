@@ -33,6 +33,7 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         crate::libs::gamepad::pump(lua);
         crate::libs::vr::pump(lua);
         crate::libs::sfx::pump(lua);
+        crate::libs::soundbyte::pump(lua);
         #[cfg(feature = "steam")]
         crate::libs::steam::pump(lua);
         #[cfg(feature = "voice")]
@@ -43,13 +44,14 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
 
         let snapshot = snapshot_handlers(lua)?;
         let window_open = crate::libs::window::is_open();
-        let sfx_active = crate::libs::sfx::is_active();
+        let sfx_active = crate::libs::sfx::is_active() || crate::libs::soundbyte::is_active();
         #[cfg(feature = "voice")]
         let voice_active = crate::libs::voice::is_active();
         #[cfg(not(feature = "voice"))]
         let voice_active = true;
 
         if snapshot.is_empty() && !window_open && !sfx_active && !voice_active {
+            crate::libs::soundbyte::shutdown();
             #[cfg(feature = "steam")]
             {
                 crate::libs::steam::shutdown_p2p();

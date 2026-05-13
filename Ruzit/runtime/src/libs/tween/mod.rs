@@ -204,10 +204,15 @@ enum TweenProp {
     SoundPosition { start: Vector, end_: Vector },
     SoundMinFalloff { start: f32, end_: f32 },
     SoundMaxFalloff { start: f32, end_: f32 },
+    #[cfg(feature = "voice")]
     VoiceVolume { start: f32, end_: f32 },
+    #[cfg(feature = "voice")]
     VoicePitch { start: f32, end_: f32 },
+    #[cfg(feature = "voice")]
     VoicePosition { start: Vector, end_: Vector },
+    #[cfg(feature = "voice")]
     VoiceMinFalloff { start: f32, end_: f32 },
+    #[cfg(feature = "voice")]
     VoiceMaxFalloff { start: f32, end_: f32 },
     MovableCFrame { start: CFrame, end_: CFrame },
     MovablePosition2D { start: Dim, end_: Dim },
@@ -215,6 +220,14 @@ enum TweenProp {
     SizableSize2D { start: Dim, end_: Dim },
     BillboardPosition { start: Vector, end_: Vector },
     BillboardSize { start: Dim, end_: Dim },
+    SBModifierValue { start: f32, end_: f32 },
+    SBModifierMin { start: f32, end_: f32 },
+    SBModifierMax { start: f32, end_: f32 },
+    SBOutputVolume { start: f32, end_: f32 },
+    SBOutputFalloffMin { start: f32, end_: f32 },
+    SBOutputFalloffMax { start: f32, end_: f32 },
+    SBOutputPosition { start: Vector, end_: Vector },
+    SBOutputCFrame { start: CFrame, end_: CFrame },
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -242,6 +255,8 @@ enum TweenTarget {
     Movable(Arc<Mutex<crate::libs::objects::MovableInner>>),
     Sizable(Arc<Mutex<crate::libs::objects::SizableInner>>),
     Billboard(Arc<Mutex<crate::libs::gui::BillboardInner>>),
+    SBModifier(Arc<Mutex<crate::libs::soundbyte::ModifierState>>),
+    SBOutput(Arc<crate::libs::soundbyte::OutputState>),
 }
 
 struct GoalSpec {
@@ -569,6 +584,65 @@ fn snapshot_start_values(inner: &mut TweenInner) -> mlua::Result<()> {
                 inner.properties.push(prop);
             }
         }
+        TweenTarget::SBModifier(arc) => {
+            let s = arc.lock().unwrap();
+            for g in &inner.goals {
+                let prop = match (g.property.as_str(), &g.value) {
+                    ("Value", GoalValue::Number(end_)) => TweenProp::SBModifierValue {
+                        start: s.value,
+                        end_: *end_,
+                    },
+                    ("Min", GoalValue::Number(end_)) => TweenProp::SBModifierMin {
+                        start: s.min,
+                        end_: *end_,
+                    },
+                    ("Max", GoalValue::Number(end_)) => TweenProp::SBModifierMax {
+                        start: s.max,
+                        end_: *end_,
+                    },
+                    (name, _) => {
+                        return Err(mlua::Error::RuntimeError(format!(
+                            "TweenService: SoundByte Modifier has no tweenable property '{name}' (supported: Value, Min, Max — all numbers)"
+                        )));
+                    }
+                };
+                inner.properties.push(prop);
+            }
+        }
+        TweenTarget::SBOutput(arc) => {
+            let snap = *arc.spatial.lock().unwrap();
+            let cf = *arc.explicit_cframe.lock().unwrap();
+            for g in &inner.goals {
+                let prop = match (g.property.as_str(), &g.value) {
+                    ("Volume", GoalValue::Number(end_)) => TweenProp::SBOutputVolume {
+                        start: snap.volume,
+                        end_: *end_,
+                    },
+                    ("FalloffMinDistance", GoalValue::Number(end_)) => TweenProp::SBOutputFalloffMin {
+                        start: snap.falloff_min,
+                        end_: *end_,
+                    },
+                    ("FalloffMaxDistance", GoalValue::Number(end_)) => TweenProp::SBOutputFalloffMax {
+                        start: snap.falloff_max,
+                        end_: *end_,
+                    },
+                    ("Position", GoalValue::Vector(end_)) => TweenProp::SBOutputPosition {
+                        start: snap.position,
+                        end_: *end_,
+                    },
+                    ("CFrame", GoalValue::CFrame(end_)) => TweenProp::SBOutputCFrame {
+                        start: cf.unwrap_or_else(|| CFrame::new(snap.position, Vector::new(0.0, 0.0, 0.0))),
+                        end_: *end_,
+                    },
+                    (name, _) => {
+                        return Err(mlua::Error::RuntimeError(format!(
+                            "TweenService: SoundByte OutputNode has no tweenable property '{name}' (supported: Volume, FalloffMinDistance, FalloffMaxDistance, Position, CFrame)"
+                        )));
+                    }
+                };
+                inner.properties.push(prop);
+            }
+        }
     }
     Ok(())
 }
@@ -883,6 +957,74 @@ fn apply_progress(inner: &TweenInner, t: f32) {
                 }
             }
         }
+        TweenTarget::SBModifier(arc) => {
+            let mut s = arc.lock().unwrap();
+            for prop in &inner.properties {
+                match prop {
+                    TweenProp::SBModifierValue { start, end_ } => {
+                        let lo = s.min.min(s.max);
+                        let hi = s.min.max(s.max);
+                        s.value = lerp_f(*start, *end_, eased).clamp(lo, hi);
+                    }
+                    TweenProp::SBModifierMin { start, end_ } => {
+                        s.min = lerp_f(*start, *end_, eased);
+                        if s.max < s.min {
+                            s.max = s.min;
+                        }
+                    }
+                    TweenProp::SBModifierMax { start, end_ } => {
+                        s.max = lerp_f(*start, *end_, eased);
+                        if s.min > s.max {
+                            s.min = s.max;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        TweenTarget::SBOutput(arc) => {
+            for prop in &inner.properties {
+                match prop {
+                    TweenProp::SBOutputVolume { start, end_ } => {
+                        let v = lerp_f(*start, *end_, eased).max(0.0);
+                        arc.spatial.lock().unwrap().volume = v;
+                        if let Some(sink) = arc.sink.lock().unwrap().as_ref() {
+                            sink.set_volume(v);
+                        }
+                    }
+                    TweenProp::SBOutputFalloffMin { start, end_ } => {
+                        let v = lerp_f(*start, *end_, eased).max(0.0);
+                        let mut s = arc.spatial.lock().unwrap();
+                        s.falloff_min = v;
+                        if s.falloff_max < s.falloff_min {
+                            s.falloff_max = s.falloff_min;
+                        }
+                    }
+                    TweenProp::SBOutputFalloffMax { start, end_ } => {
+                        let v = lerp_f(*start, *end_, eased).max(0.0);
+                        let mut s = arc.spatial.lock().unwrap();
+                        s.falloff_max = v;
+                        if s.falloff_min > s.falloff_max {
+                            s.falloff_min = s.falloff_max;
+                        }
+                    }
+                    TweenProp::SBOutputPosition { start, end_ } => {
+                        let v = lerp_vec(*start, *end_, eased);
+                        let mut s = arc.spatial.lock().unwrap();
+                        s.position = v;
+                        s.use_3d = true;
+                    }
+                    TweenProp::SBOutputCFrame { start, end_ } => {
+                        let cf = lerp_cframe(*start, *end_, eased);
+                        *arc.explicit_cframe.lock().unwrap() = Some(cf);
+                        let mut s = arc.spatial.lock().unwrap();
+                        s.position = cf.position;
+                        s.use_3d = true;
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 }
 
@@ -1036,7 +1178,8 @@ fn parse_goal(property: &str, value: Value) -> mlua::Result<GoalValue> {
             ))),
         },
         "Transparency" | "ZIndex" | "Rotation" | "Volume" | "Pitch" | "Speed" | "Pan"
-        | "Distortion" | "MinFalloff" | "MaxFalloff" => match value {
+        | "Distortion" | "MinFalloff" | "MaxFalloff" | "Value" | "Min" | "Max"
+        | "FalloffMinDistance" | "FalloffMaxDistance" => match value {
             Value::Integer(n) => Ok(GoalValue::Number(n as f32)),
             Value::Number(n) => Ok(GoalValue::Number(n as f32)),
             _ => Err(mlua::Error::RuntimeError(format!(
@@ -1125,9 +1268,13 @@ fn create_tween(lua: &Lua, args: MultiValue) -> mlua::Result<TweenHandle> {
                     TweenTarget::Sizable(sz.inner.clone())
                 } else if let Ok(bb) = ud.borrow::<crate::libs::objects::Billboard>() {
                     TweenTarget::Billboard(bb.inner.clone())
+                } else if let Ok(m) = ud.borrow::<crate::libs::soundbyte::Modifier>() {
+                    TweenTarget::SBModifier(m.state.clone())
+                } else if let Ok(o) = ud.borrow::<crate::libs::soundbyte::OutputNode>() {
+                    TweenTarget::SBOutput(o.state.clone())
                 } else {
                     return Err(mlua::Error::RuntimeError(
-                    "TweenService.new: target must be a BasePart, DistortionBox, GUI primitive, Sound, VoiceChannel, Movable, Sizable, or Billboard".into(),
+                    "TweenService.new: target must be a BasePart, DistortionBox, GUI primitive, Sound, VoiceChannel, Movable, Sizable, Billboard, SoundByte Modifier, or SoundByte OutputNode".into(),
                 ));
                 }
             }

@@ -24,6 +24,7 @@ pub mod renderable;
 pub mod runservice;
 pub mod serde;
 pub mod sfx;
+pub mod soundbyte;
 pub mod shader;
 pub mod signal;
 #[cfg(feature = "steam")]

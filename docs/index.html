@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ruzit, Luau-scripted 2D + 3D game engine</title>
-    <link rel="stylesheet" href="style.css?v=1.2.5">
-    <script src="theme.js?v=1.2.5"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.6">
+    <script src="theme.js?v=1.2.6"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.5" defer></script>
+<script src="sidebar.js?v=1.2.6" defer></script>
 
 <main>
 
@@ -121,6 +121,66 @@
         </p>
     </div>
 </div>
+
+<h2 id="build-flags">Build flags</h2>
+
+<p>
+    Ruzit's runtime crate ships with three optional Cargo features.
+    The default <code>ruzit</code> CLI build enables only the bare
+    minimum; opt in to what your game uses by passing
+    <code>--features</code> at compile time (or by listing them in your
+    <code>build.toml</code>'s <code>features</code> array when building
+    a launcher).
+</p>
+
+<table>
+    <thead>
+        <tr><th>Flag</th><th>Pulls in</th><th>Unlocks</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code>voice</code></td>
+            <td><code>cpal</code> + <code>opus</code></td>
+            <td>
+                Microphone capture. Required for
+                <a href="soundbyte.html#voicechannel"><code>SoundByte.GetVoiceChannel</code></a>
+                and the legacy <a href="voice.html"><code>Voice</code></a>
+                module. Check <code>SoundByte.VoiceFlagEnabled</code> at
+                runtime before allocating channels.
+            </td>
+        </tr>
+        <tr>
+            <td><code>steam</code></td>
+            <td><code>steamworks</code> + <code>steamworks-sys</code></td>
+            <td>
+                Steam P2P, lobbies, achievements, Workshop, Steam Cloud.
+                Required for the
+                <a href="steam.html"><code>Steam</code></a> module.
+                Steam runtime initialization happens at launcher
+                start; if absent, <code>Steam</code> calls error early.
+            </td>
+        </tr>
+    </tbody>
+</table>
+
+<p>
+    Building from source with everything:
+</p>
+
+<pre><code>cargo build --release --features <span class="hl-str">voice,steam</span></code></pre>
+
+<p>
+    Or for a packaged game via the CLI:
+</p>
+
+<pre><code>ruzit build --features <span class="hl-str">voice</span></code></pre>
+
+<p>
+    Features that aren't compiled in fail loudly at the import boundary
+    with a clear message (e.g. <code>"voice feature is disabled in this
+    build"</code>), so you can ship a slimmer runtime without any
+    silent-no-op surprises.
+</p>
 
 <h2 id="quick-start">Quick Start</h2>
 

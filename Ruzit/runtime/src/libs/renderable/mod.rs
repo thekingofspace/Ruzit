@@ -379,7 +379,7 @@ fn link_audio_to_part(part: &Arc<Mutex<PartState>>, audio: AnyUserData) -> mlua:
                     drop(list);
                     *pos_arc.lock().unwrap() = (x, y, z);
                 });
-                (id, cb.into())
+                (id, cb as Box<dyn Fn(f32, f32, f32) + Send>)
             });
         #[cfg(not(feature = "voice"))]
         let channel_handle: Result<(usize, Box<dyn Fn(f32, f32, f32) + Send>), String> =

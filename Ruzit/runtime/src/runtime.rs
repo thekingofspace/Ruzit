@@ -199,6 +199,7 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             "Renderable" => libs::renderable::create(lua)?,
             "Serde" => libs::serde::create(lua)?,
             "SFX" => libs::sfx::create(lua)?,
+            "SoundByte" => libs::soundbyte::create(lua)?,
             "Signal" => libs::signal::class(lua)?,
             #[cfg(feature = "steam")]
             "Steam" => libs::steam::create(lua)?,

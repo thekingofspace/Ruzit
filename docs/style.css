@@ -422,9 +422,34 @@ main td pre code {
 .tag-static { background: var(--accent-soft); color: var(--accent); }
 .tag-method { background: var(--accent-soft); color: var(--accent); }
 .tag-new { background: rgba(56, 178, 76, 0.18); color: #237b39; }
+.tag-deprecated, .deprecated-tag { background: rgba(213, 76, 76, 0.18); color: #a13a3a; }
 
 :root[data-theme="dark"] .tag-readonly { color: #f3c25c; }
 :root[data-theme="dark"] .tag-new { color: #6cd082; }
+:root[data-theme="dark"] .tag-deprecated,
+:root[data-theme="dark"] .deprecated-tag { color: #ef6f6f; }
+
+.deprecated-tag {
+    display: inline-block;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 1px 5px;
+    margin-left: 6px;
+    border-radius: 3px;
+    font-weight: 600;
+}
+
+.deprecation-banner {
+    margin: 8px 0 20px 0;
+    padding: 14px 16px;
+    border-radius: 6px;
+    background: rgba(213, 76, 76, 0.10);
+    border-left: 4px solid #d54c4c;
+    font-size: 14px;
+    color: var(--fg-strong);
+}
+.deprecation-banner strong { color: #d54c4c; }
 
 .member-desc { color: var(--fg-soft); font-size: 14px; margin: 6px 0 0 0; }
 

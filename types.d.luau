@@ -1036,6 +1036,129 @@ export type SFX_API = {
 }
 
 -- =============================================================================
+-- SoundByte — graph-routed audio system. The replacement for the old SFX/Voice
+-- modules (which remain importable for back-compat but are now deprecated).
+--
+-- Build a graph by linking sources (Player, VoiceChannel) through modifiers
+-- into sinks (OutputNode for speakers, ByteSink for serialized strings).
+-- Every link is `SoundByte.Link(source, ..modifiers, sink)` and returns a
+-- LinkHandle with `:Unlink()`. Modifiers store Enabled / Min / Max / Value;
+-- everything in the graph is tweenable via TweenService.
+--
+--   local SoundByte = import("SoundByte")
+--   local Asset = import("Asset")
+--   local sfx = Asset.GetAsset("Sound", "sfx.boom")
+--
+--   local player  = SoundByte.NewPlayer(sfx)
+--   local output  = SoundByte.NewOutput()
+--   local reverb  = SoundByte.GetModifier("Reverb")
+--   reverb.Min, reverb.Max, reverb.Value = 0, 1, 0.5
+--   local link = SoundByte.Link(player, reverb, output)
+--   player:Play()
+--   ...
+--   link:Unlink()
+-- =============================================================================
+
+declare class SoundByteModifier
+	-- One of: "Volume", "Speed", "Pitch", "Pan", "Distortion", "LowPass",
+	-- "HighPass", "Echo", "Reverb", "Tremolo", "FadeIn", "FadeOut",
+	-- "Delay", "PlaybackSpeed".
+	Kind: string
+	-- When false the modifier is in the link graph but doesn't apply.
+	Enabled: boolean
+	-- Min / Max are the clamp range for `Value`. Setting Min above Max
+	-- (or vice versa) auto-corrects the other side. `Value` is the
+	-- currently-applied amount, clamped to [Min, Max].
+	Min: number
+	Max: number
+	Value: number
+end
+
+declare class SoundBytePlayer
+	Source: string
+	-- Fires when the player starts emitting audio after a :Play().
+	Started: Signal<>
+	-- Fires when playback drains (natural end or :Stop()).
+	Stopped: Signal<>
+	-- Fires every wrap when `Looped = true`. The first :Play() doesn't
+	-- fire it; only subsequent loop restarts do.
+	DidLoop: Signal<>
+	-- True between :Play() and the next Stopped.
+	IsPlaying: boolean
+	Looped: boolean
+	-- Begin playback. Requires at least one linked sink (OutputNode or
+	-- ByteSink). Calls re-trigger from the start.
+	function Play(self): ()
+	function Stop(self): ()
+end
+
+declare class SoundByteOutput
+	-- 0 = silent. >1 boosts.
+	Volume: number
+	-- Inner / outer falloff radii. Distance ≤ MinDistance plays at full
+	-- volume; ≥ MaxDistance is silent; smooth roll-off between.
+	FalloffMinDistance: number
+	FalloffMaxDistance: number
+	-- Pose this output in 3D. Setting to nil reverts to non-spatial.
+	-- `Position` is also writable; `CFrame` takes precedence if both
+	-- are set.
+	CFrame: CFrame?
+	Position: Vector
+	-- Anchor to a BasePart. The output's position is copied from the
+	-- part each heart tick. Equivalent to repeatedly setting Position
+	-- from the part's CFrame.position. Call :Unfollow to release.
+	function Follow(self, part: BasePart): ()
+	function Unfollow(self): ()
+end
+
+declare class SoundByteByte
+	-- Fires once per audio packet with a binary string of little-endian
+	-- f32 samples (PCM, interleaved if channels > 1). Hook into Net /
+	-- Steam P2P / disk to stream the audio elsewhere.
+	OnPacket: Signal<string>
+	SampleRate: number
+	Channels: number
+	QueueLength: number
+	-- Drop any pending packets that haven't fired yet.
+	function Drain(self): number
+end
+
+declare class SoundByteVoiceChannel
+	Enabled: boolean
+	-- Voice activation amplitude threshold. 0 = always send.
+	Threshold: number
+end
+
+declare class SoundByteLink
+	-- Detach this link. The source no longer routes through these
+	-- modifiers to this sink. If the source has no remaining links a
+	-- subsequent Play() will error.
+	function Unlink(self): ()
+end
+
+export type SoundByte_API = {
+	-- True when this build was compiled with the voice feature enabled
+	-- (`--features voice`). When false, `GetVoiceChannel` errors.
+	VoiceFlagEnabled: boolean,
+	-- Wrap a SoundData asset into a playable Player.
+	NewPlayer: (data: SoundData) -> SoundBytePlayer,
+	-- Allocate a new speaker output. Default Volume 1.0, non-spatial.
+	NewOutput: () -> SoundByteOutput,
+	-- Allocate a new byte sink. Connect a source via `Link` to start
+	-- receiving PCM packets on `.OnPacket`.
+	NewByte: () -> SoundByteByte,
+	-- Build a modifier of the given kind. See `SoundByteModifier.Kind`
+	-- for valid strings.
+	GetModifier: (kind: string) -> SoundByteModifier,
+	-- Allocate a new voice channel. Errors if VoiceFlagEnabled is false.
+	GetVoiceChannel: () -> SoundByteVoiceChannel,
+	-- Wire a source → modifiers → sink. Order is significant for
+	-- modifiers (left-to-right in the call). Returns a LinkHandle that
+	-- can :Unlink() to detach.
+	Link: (...any) -> SoundByteLink,
+}
+
+-- =============================================================================
 -- Managed, runtime info about loaded .managed packages (the project itself,
 -- DLCs, and anything dropped into the Packages/ folder).
 -- =============================================================================
@@ -2545,6 +2668,11 @@ export type TweenService_API = {
 	--                     scale by the ratio.
 	--   Billboard       — Position (Vector world-space), Size (Dim
 	--                     pixel canvas).
+	--   SoundByte
+	--    Modifier       — Value, Min, Max (all numbers).
+	--    OutputNode     — Volume (number), FalloffMinDistance,
+	--                     FalloffMaxDistance, Position (Vector),
+	--                     CFrame (CFrame).
 	--
 	-- The returned Tween starts in "Idle". Call `:Play()` to begin.
 	-- Start values are snapshotted at Play time, not at construction
@@ -4665,6 +4793,7 @@ export type Imports = {
 	Renderable: Renderable_API,
 	Serde: Serde_API,
 	SFX: SFX_API,
+	SoundByte: SoundByte_API,
 	Signal: Signal_API,
 	Steam: Steam_API,
 	Task: Task_API,

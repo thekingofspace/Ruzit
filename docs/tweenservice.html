@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TweenService - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.5">
-    <script src="theme.js?v=1.2.5"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.6">
+    <script src="theme.js?v=1.2.6"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.5" defer></script>
+<script src="sidebar.js?v=1.2.6" defer></script>
 
 <main>
 
@@ -160,6 +160,42 @@ tw.Completed:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</sp
                     <li><code>Position</code> &mdash; goal is a <code>Vector</code> (world-space anchor)</li>
                     <li><code>Size</code> &mdash; goal is a <code>Dim</code> (pixel canvas)</li>
                 </ul>
+            </li>
+            <li><strong><a href="soundbyte.html#modifier">SoundByte Modifier</a></strong>
+                <ul>
+                    <li><code>Value</code> &mdash; goal is a <code>number</code></li>
+                    <li><code>Min</code> &mdash; goal is a <code>number</code></li>
+                    <li><code>Max</code> &mdash; goal is a <code>number</code></li>
+                </ul>
+                <p style="margin-top:6px">
+                    Live-DSP modifier kinds (Volume, Pan, Distortion,
+                    Tremolo, Vibrato, BitCrusher, NoiseGate, Compressor,
+                    Limiter, Saturation, RingMod, Chorus, Flanger,
+                    StereoWiden, Wobble, Telephone, Underwater, Mute)
+                    pick up <code>Value</code> changes per-sample, so a
+                    tween while playing actually morphs the sound.
+                    Snapshot kinds (Speed, LowPass, HighPass, BandPass,
+                    Echo, Reverb, FadeIn, FadeOut, Delay) capture the
+                    value at <code>:Play()</code> time &mdash; the tween
+                    still completes cleanly, but you have to re-Play to
+                    hear it.
+                </p>
+            </li>
+            <li><strong><a href="soundbyte.html#outputnode">SoundByte OutputNode</a></strong>
+                <ul>
+                    <li><code>Volume</code> &mdash; goal is a <code>number</code></li>
+                    <li><code>FalloffMinDistance</code> &mdash; goal is a <code>number</code></li>
+                    <li><code>FalloffMaxDistance</code> &mdash; goal is a <code>number</code></li>
+                    <li><code>Position</code> &mdash; goal is a <code>Vector</code></li>
+                    <li><code>CFrame</code> &mdash; goal is a <code>CFrame</code></li>
+                </ul>
+                <p style="margin-top:6px">
+                    Tweening <code>Position</code> or <code>CFrame</code>
+                    auto-enables 3D spatial mode on the output. Tweening
+                    <code>Volume</code> flows straight into the rodio
+                    Sink, so it ducks the live signal in real time
+                    without rebuilding the source chain.
+                </p>
             </li>
         </ul>
         <p class="member-desc">
