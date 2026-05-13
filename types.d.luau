@@ -1129,6 +1129,34 @@ declare class SoundByteVoiceChannel
 	Threshold: number
 end
 
+declare class SoundByteByteSource
+	-- When false, SendInput is a no-op and queued audio stops flowing
+	-- into downstream sinks.
+	Enabled: boolean
+	-- Sample rate the queued samples are interpreted at (Hz).
+	SampleRate: number
+	-- Number of interleaved channels in the queue.
+	Channels: number
+	-- Current number of buffered f32 samples waiting to be played.
+	QueueLength: number
+	-- QueueLength / (SampleRate * Channels) — how much audio is buffered
+	-- ahead of the playhead.
+	BufferSeconds: number
+	-- Feed a packet of little-endian f32 samples (same format as
+	-- SoundByteByte.OnPacket). Length must be a multiple of 4.
+	function SendInput(self, packet: string): ()
+	-- Feed a Lua array of raw f32 samples (already decoded).
+	function SendSamples(self, samples: { number }): ()
+	-- Empty the playback queue without tearing down any links.
+	function Clear(self): ()
+	-- Stop all downstream sinks routed from this source and clear the
+	-- queue. Links remain attached until the next :SendInput.
+	function Stop(self): ()
+	-- Stop and unregister this source. After Destroy any further
+	-- SendInput calls do nothing.
+	function Destroy(self): ()
+end
+
 declare class SoundByteLink
 	-- Detach this link. The source no longer routes through these
 	-- modifiers to this sink. If the source has no remaining links a
@@ -1147,6 +1175,11 @@ export type SoundByte_API = {
 	-- Allocate a new byte sink. Connect a source via `Link` to start
 	-- receiving PCM packets on `.OnPacket`.
 	NewByte: () -> SoundByteByte,
+	-- Allocate a queue-fed audio source. Feed it the byte packets that
+	-- arrive from a remote SoundByteByte via :SendInput and Link it into
+	-- an OutputNode to play. Defaults: 48000 Hz, 1 channel — pass
+	-- (sampleRate, channels) to match the producing SoundByteByte.
+	NewByteSource: (sampleRate: number?, channels: number?) -> SoundByteByteSource,
 	-- Build a modifier of the given kind. See `SoundByteModifier.Kind`
 	-- for valid strings.
 	GetModifier: (kind: string) -> SoundByteModifier,

@@ -17,13 +17,18 @@
 <h1>SoundByte</h1>
 <p class="lede">
     Graph-routed audio. Sources (<a href="#player">Player</a>,
-    <a href="#voicechannel">VoiceChannel</a>) pass through any number of
+    <a href="#voicechannel">VoiceChannel</a>,
+    <a href="#bytesource">ByteSource</a>) pass through any number of
     <a href="#modifier">Modifiers</a> into sinks
     (<a href="#outputnode">OutputNode</a> for speakers,
     <a href="#bytesink">ByteSink</a> for serialized PCM strings you can
-    send over the network or save to disk). Replaces the legacy
-    <a href="sfx.html">SFX</a> and <a href="voice.html">Voice</a> modules
-    &mdash; both still load, but they're frozen.
+    send over the network or save to disk). The
+    <a href="#bytesink">ByteSink</a> &rarr; network &rarr;
+    <a href="#bytesource">ByteSource</a> pair is what builds remote-voice
+    playback &mdash; one peer captures, the other plays the bytes back.
+    Replaces the legacy <a href="sfx.html">SFX</a> and
+    <a href="voice.html">Voice</a> modules &mdash; both still load, but
+    they're frozen.
 </p>
 
 <pre><code><span class="hl-kw">local</span> SoundByte = <span class="hl-fn">import</span>(<span class="hl-str">"SoundByte"</span>)

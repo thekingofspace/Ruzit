@@ -18,6 +18,7 @@ thread_local! {
     static OUTPUT: RefCell<Option<OutputStreamHandle>> = const { RefCell::new(None) };
     static BYTE_REGISTRY: RefCell<Vec<Arc<Mutex<ByteSinkState>>>> = const { RefCell::new(Vec::new()) };
     static PLAYER_REGISTRY: RefCell<Vec<Arc<Mutex<PlayerState>>>> = const { RefCell::new(Vec::new()) };
+    static BYTE_SOURCE_REGISTRY: RefCell<Vec<Arc<Mutex<ByteSourceState>>>> = const { RefCell::new(Vec::new()) };
     #[cfg(feature = "voice")]
     static VOICE_REGISTRY: RefCell<Vec<Arc<Mutex<VoiceChannelState>>>> = const { RefCell::new(Vec::new()) };
 }
@@ -65,6 +66,36 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     t.set(
         "NewByte",
         lua.create_function(|lua, _: ()| -> mlua::Result<ByteSink> { ByteSink::new(lua) })?,
+    )?;
+
+    t.set(
+        "NewByteSource",
+        lua.create_function(
+            |_, args: MultiValue| -> mlua::Result<ByteSource> {
+                let mut iter = args.into_iter();
+                let sample_rate = match iter.next() {
+                    Some(Value::Nil) | None => 48000u32,
+                    Some(Value::Integer(i)) => i.max(1) as u32,
+                    Some(Value::Number(n)) => n.max(1.0) as u32,
+                    Some(_) => {
+                        return Err(mlua::Error::RuntimeError(
+                            "SoundByte.NewByteSource: sampleRate must be a number".into(),
+                        ))
+                    }
+                };
+                let channels = match iter.next() {
+                    Some(Value::Nil) | None => 1u16,
+                    Some(Value::Integer(i)) => i.clamp(1, 8) as u16,
+                    Some(Value::Number(n)) => (n as i64).clamp(1, 8) as u16,
+                    Some(_) => {
+                        return Err(mlua::Error::RuntimeError(
+                            "SoundByte.NewByteSource: channels must be a number".into(),
+                        ))
+                    }
+                };
+                Ok(ByteSource::new(sample_rate, channels))
+            },
+        )?,
     )?;
 
     t.set(
@@ -991,6 +1022,172 @@ impl UserData for ByteSink {
     }
 }
 
+pub struct ByteSourceState {
+    pub id: u64,
+    pub enabled: bool,
+    pub queue: Arc<Mutex<VecDeque<f32>>>,
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub active_sinks: Mutex<Vec<(u64, Sink)>>,
+    pub max_buffer_samples: usize,
+}
+
+unsafe impl Send for ByteSourceState {}
+unsafe impl Sync for ByteSourceState {}
+
+pub struct ByteSource {
+    pub state: Arc<Mutex<ByteSourceState>>,
+}
+
+impl ByteSource {
+    pub fn new(sample_rate: u32, channels: u16) -> Self {
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        let sr = sample_rate.max(8000);
+        let ch = channels.max(1);
+        let state = Arc::new(Mutex::new(ByteSourceState {
+            id,
+            enabled: true,
+            queue: Arc::new(Mutex::new(VecDeque::new())),
+            sample_rate: sr,
+            channels: ch,
+            active_sinks: Mutex::new(Vec::new()),
+            max_buffer_samples: (sr as usize) * (ch as usize) * 5,
+        }));
+        BYTE_SOURCE_REGISTRY.with(|r| r.borrow_mut().push(state.clone()));
+        Self { state }
+    }
+}
+
+impl UserData for ByteSource {
+    fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
+        f.add_field_method_get("Enabled", |_, this| Ok(this.state.lock().unwrap().enabled));
+        f.add_field_method_set("Enabled", |_, this, v: bool| {
+            this.state.lock().unwrap().enabled = v;
+            Ok(())
+        });
+        f.add_field_method_get("SampleRate", |_, this| {
+            Ok(this.state.lock().unwrap().sample_rate as i64)
+        });
+        f.add_field_method_get("Channels", |_, this| {
+            Ok(this.state.lock().unwrap().channels as i64)
+        });
+        f.add_field_method_get("QueueLength", |_, this| {
+            Ok(this.state.lock().unwrap().queue.lock().unwrap().len() as i64)
+        });
+        f.add_field_method_get("BufferSeconds", |_, this| {
+            let s = this.state.lock().unwrap();
+            let q = s.queue.lock().unwrap().len() as f64;
+            let denom = (s.sample_rate as f64) * (s.channels as f64).max(1.0);
+            Ok(if denom > 0.0 { q / denom } else { 0.0 })
+        });
+    }
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method("SendInput", |_, this, packet: mlua::String| -> mlua::Result<()> {
+            let s = this.state.lock().unwrap();
+            if !s.enabled {
+                return Ok(());
+            }
+            let bytes = packet.as_bytes();
+            if bytes.len() % 4 != 0 {
+                return Err(mlua::Error::RuntimeError(
+                    "ByteSource:SendInput: byte length must be a multiple of 4 (interleaved little-endian f32)".into(),
+                ));
+            }
+            let queue = s.queue.clone();
+            let max_buf = s.max_buffer_samples;
+            drop(s);
+            let mut q = queue.lock().unwrap();
+            let mut i = 0;
+            while i + 4 <= bytes.len() {
+                let sample = f32::from_le_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]);
+                q.push_back(sample);
+                i += 4;
+            }
+            if q.len() > max_buf {
+                let drop_n = q.len() - max_buf;
+                q.drain(..drop_n);
+            }
+            Ok(())
+        });
+        m.add_method("SendSamples", |_, this, samples: Vec<f32>| -> mlua::Result<()> {
+            let s = this.state.lock().unwrap();
+            if !s.enabled {
+                return Ok(());
+            }
+            let queue = s.queue.clone();
+            let max_buf = s.max_buffer_samples;
+            drop(s);
+            let mut q = queue.lock().unwrap();
+            q.extend(samples.into_iter());
+            if q.len() > max_buf {
+                let drop_n = q.len() - max_buf;
+                q.drain(..drop_n);
+            }
+            Ok(())
+        });
+        m.add_method("Clear", |_, this, _: ()| -> mlua::Result<()> {
+            let s = this.state.lock().unwrap();
+            s.queue.lock().unwrap().clear();
+            Ok(())
+        });
+        m.add_method("Stop", |_, this, _: ()| -> mlua::Result<()> {
+            let s = this.state.lock().unwrap();
+            let mut sinks = s.active_sinks.lock().unwrap();
+            for (_, sink) in sinks.iter() {
+                sink.stop();
+            }
+            sinks.clear();
+            s.queue.lock().unwrap().clear();
+            Ok(())
+        });
+        m.add_method("Destroy", |_, this, _: ()| -> mlua::Result<()> {
+            let s = this.state.lock().unwrap();
+            let mut sinks = s.active_sinks.lock().unwrap();
+            for (_, sink) in sinks.iter() {
+                sink.stop();
+            }
+            sinks.clear();
+            drop(sinks);
+            s.queue.lock().unwrap().clear();
+            let id = s.id;
+            drop(s);
+            BYTE_SOURCE_REGISTRY.with(|r| {
+                r.borrow_mut().retain(|arc| arc.lock().map(|st| st.id != id).unwrap_or(true));
+            });
+            Ok(())
+        });
+    }
+}
+
+struct ByteSourceQueueSource {
+    queue: Arc<Mutex<VecDeque<f32>>>,
+    sample_rate: u32,
+    channels: u16,
+}
+
+impl Iterator for ByteSourceQueueSource {
+    type Item = f32;
+    fn next(&mut self) -> Option<f32> {
+        let mut q = self.queue.lock().unwrap();
+        Some(q.pop_front().unwrap_or(0.0))
+    }
+}
+
+impl Source for ByteSourceQueueSource {
+    fn current_frame_len(&self) -> Option<usize> {
+        None
+    }
+    fn channels(&self) -> u16 {
+        self.channels.max(1)
+    }
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate.max(8000)
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        None
+    }
+}
+
 #[cfg(feature = "voice")]
 pub struct VoiceChannelState {
     pub id: u64,
@@ -1197,6 +1394,7 @@ pub struct LinkHandle {
     pub id: u64,
     pub source_player_id: Option<u64>,
     pub source_voice_id: Option<u64>,
+    pub source_byte_source_id: Option<u64>,
     pub sink_output_id: Option<u64>,
     pub sink_byte_id: Option<u64>,
     pub modifier_ids: Vec<u64>,
@@ -1239,6 +1437,22 @@ impl UserData for LinkHandle {
                     }
                 });
             }
+            if let Some(_bs_id) = this.source_byte_source_id {
+                BYTE_SOURCE_REGISTRY.with(|r| {
+                    for arc in r.borrow().iter() {
+                        let s = arc.lock().unwrap();
+                        let mut sinks = s.active_sinks.lock().unwrap();
+                        sinks.retain(|(id, sink)| {
+                            if *id == link_id {
+                                sink.stop();
+                                false
+                            } else {
+                                true
+                            }
+                        });
+                    }
+                });
+            }
             Ok(())
         });
     }
@@ -1256,6 +1470,7 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
     let mut source_player: Option<Arc<Mutex<PlayerState>>> = None;
     #[cfg(feature = "voice")]
     let mut source_voice: Option<Arc<Mutex<VoiceChannelState>>> = None;
+    let mut source_byte_source: Option<Arc<Mutex<ByteSourceState>>> = None;
     let mut sink_output: Option<Arc<OutputState>> = None;
     let mut sink_byte: Option<Arc<Mutex<ByteSinkState>>> = None;
     let mut modifier_states: Vec<Arc<Mutex<ModifierState>>> = Vec::new();
@@ -1271,7 +1486,13 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
             }
         };
         if let Ok(p) = ud.borrow::<Player>() {
-            if source_player.is_some() {
+            if source_player.is_some() || source_byte_source.is_some() {
+                return Err(mlua::Error::RuntimeError(
+                    "SoundByte.Link: only one source allowed per link (Player)".into(),
+                ));
+            }
+            #[cfg(feature = "voice")]
+            if source_voice.is_some() {
                 return Err(mlua::Error::RuntimeError(
                     "SoundByte.Link: only one source allowed per link (Player)".into(),
                 ));
@@ -1281,12 +1502,27 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
         }
         #[cfg(feature = "voice")]
         if let Ok(v) = ud.borrow::<VoiceChannel>() {
-            if source_player.is_some() || source_voice.is_some() {
+            if source_player.is_some() || source_voice.is_some() || source_byte_source.is_some() {
                 return Err(mlua::Error::RuntimeError(
                     "SoundByte.Link: only one source allowed per link".into(),
                 ));
             }
             source_voice = Some(v.state.clone());
+            continue;
+        }
+        if let Ok(b) = ud.borrow::<ByteSource>() {
+            if source_player.is_some() || source_byte_source.is_some() {
+                return Err(mlua::Error::RuntimeError(
+                    "SoundByte.Link: only one source allowed per link".into(),
+                ));
+            }
+            #[cfg(feature = "voice")]
+            if source_voice.is_some() {
+                return Err(mlua::Error::RuntimeError(
+                    "SoundByte.Link: only one source allowed per link".into(),
+                ));
+            }
+            source_byte_source = Some(b.state.clone());
             continue;
         }
         if let Ok(o) = ud.borrow::<OutputNode>() {
@@ -1341,6 +1577,7 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
             id: link_id,
             source_player_id: Some(player_id),
             source_voice_id: None,
+            source_byte_source_id: None,
             sink_output_id: sink_output.as_ref().map(|o| o.id),
             sink_byte_id: sink_byte.as_ref().map(|b| b.lock().unwrap().id),
             modifier_ids: modifier_states.iter().map(|m| m.lock().unwrap().id).collect(),
@@ -1389,6 +1626,59 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
             id: link_id,
             source_player_id: None,
             source_voice_id: Some(voice_id),
+            source_byte_source_id: None,
+            sink_output_id: sink_output.as_ref().map(|o| o.id),
+            sink_byte_id: None,
+            modifier_ids: modifier_states.iter().map(|m| m.lock().unwrap().id).collect(),
+        });
+    }
+
+    if let Some(byte_src) = source_byte_source {
+        let (queue, sample_rate, channels) = {
+            let s = byte_src.lock().unwrap();
+            (s.queue.clone(), s.sample_rate, s.channels)
+        };
+        let mut source: Box<dyn Source<Item = f32> + Send> = Box::new(ByteSourceQueueSource {
+            queue,
+            sample_rate,
+            channels,
+        });
+        source = apply_modifier_chain(source, &modifier_states);
+
+        if let Some(out) = sink_output.as_ref() {
+            source = Box::new(SpatialAdapter {
+                inner: source,
+                state: out.spatial.clone(),
+                chan_idx: 0,
+                last_l: 0.0,
+                last_r: 0.0,
+            });
+            let h = output_handle()?;
+            let sink = Sink::try_new(&h).map_err(|e| {
+                mlua::Error::RuntimeError(format!("SoundByte ByteSource sink: {e}"))
+            })?;
+            sink.set_volume(out.spatial.lock().unwrap().volume);
+            sink.append(source);
+            sink.play();
+            byte_src
+                .lock()
+                .unwrap()
+                .active_sinks
+                .lock()
+                .unwrap()
+                .push((link_id, sink));
+        } else if sink_byte.is_some() {
+            return Err(mlua::Error::RuntimeError(
+                "SoundByte.Link: ByteSource → ByteSink is not supported (route a Player or pipe the bytes directly)".into(),
+            ));
+        }
+
+        let bs_id = byte_src.lock().unwrap().id;
+        return Ok(LinkHandle {
+            id: link_id,
+            source_player_id: None,
+            source_voice_id: None,
+            source_byte_source_id: Some(bs_id),
             sink_output_id: sink_output.as_ref().map(|o| o.id),
             sink_byte_id: None,
             modifier_ids: modifier_states.iter().map(|m| m.lock().unwrap().id).collect(),
@@ -1396,7 +1686,7 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
     }
 
     Err(mlua::Error::RuntimeError(
-        "SoundByte.Link: missing source (a Player or VoiceChannel must be one of the arguments)".into(),
+        "SoundByte.Link: missing source (a Player, VoiceChannel, or ByteSource must be one of the arguments)".into(),
     ))
 }
 
@@ -1544,6 +1834,15 @@ pub fn is_active() -> bool {
     if players_active {
         return true;
     }
+    let bs_active = BYTE_SOURCE_REGISTRY.with(|r| {
+        r.borrow().iter().any(|bs| {
+            let s = bs.lock().unwrap();
+            !s.active_sinks.lock().unwrap().is_empty()
+        })
+    });
+    if bs_active {
+        return true;
+    }
     #[cfg(feature = "voice")]
     {
         let voice_active = VOICE_REGISTRY.with(|r| {
@@ -1569,6 +1868,18 @@ pub fn shutdown() {
                     }
                 }
             }
+        }
+    });
+    BYTE_SOURCE_REGISTRY.with(|r| {
+        for arc in r.borrow().iter() {
+            let s = arc.lock().unwrap();
+            let mut sinks = s.active_sinks.lock().unwrap();
+            for (_, sink) in sinks.iter() {
+                sink.stop();
+            }
+            sinks.clear();
+            drop(sinks);
+            s.queue.lock().unwrap().clear();
         }
     });
     #[cfg(feature = "voice")]
