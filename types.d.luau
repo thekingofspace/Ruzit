@@ -1059,6 +1059,37 @@ export type SFX_API = {
 --   link:Unlink()
 -- =============================================================================
 
+type ModifierKind =
+	"Volume"
+	| "Pan"
+	| "Distortion"
+	| "Tremolo"
+	| "Vibrato"
+	| "BitCrusher"
+	| "NoiseGate"
+	| "Compressor"
+	| "Limiter"
+	| "Saturation"
+	| "RingMod"
+	| "Chorus"
+	| "Flanger"
+	| "StereoWiden"
+	| "Wobble"
+	| "Telephone"
+	| "Underwater"
+	| "Mute"
+	| "Speed"
+	| "Pitch"
+	| "PlaybackSpeed"
+	| "LowPass"
+	| "HighPass"
+	| "BandPass"
+	| "Echo"
+	| "Reverb"
+	| "FadeIn"
+	| "FadeOut"
+	| "Delay"
+
 declare class SoundByteModifier
 	-- One of: "Volume", "Speed", "Pitch", "Pan", "Distortion", "LowPass",
 	-- "HighPass", "Echo", "Reverb", "Tremolo", "FadeIn", "FadeOut",
@@ -1182,7 +1213,7 @@ export type SoundByte_API = {
 	NewByteSource: (sampleRate: number?, channels: number?) -> SoundByteByteSource,
 	-- Build a modifier of the given kind. See `SoundByteModifier.Kind`
 	-- for valid strings.
-	GetModifier: (kind: string) -> SoundByteModifier,
+	GetModifier: (kind: ModifierKind) -> SoundByteModifier,
 	-- Allocate a new voice channel. Errors if VoiceFlagEnabled is false.
 	GetVoiceChannel: () -> SoundByteVoiceChannel,
 	-- Wire a source → modifiers → sink. Order is significant for

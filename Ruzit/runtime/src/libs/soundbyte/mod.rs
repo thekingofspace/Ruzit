@@ -1022,6 +1022,15 @@ impl UserData for ByteSink {
     }
 }
 
+pub struct ByteSinkRoute {
+    pub link_id: u64,
+    pub sink: Arc<Mutex<ByteSinkState>>,
+    pub chain: Box<dyn Source<Item = f32> + Send>,
+    pub queue: Arc<Mutex<VecDeque<f32>>>,
+    pub sample_rate: u32,
+    pub channels: u16,
+}
+
 pub struct ByteSourceState {
     pub id: u64,
     pub enabled: bool,
@@ -1029,6 +1038,7 @@ pub struct ByteSourceState {
     pub sample_rate: u32,
     pub channels: u16,
     pub active_sinks: Mutex<Vec<(u64, Sink)>>,
+    pub byte_routes: Mutex<Vec<ByteSinkRoute>>,
     pub max_buffer_samples: usize,
 }
 
@@ -1051,6 +1061,7 @@ impl ByteSource {
             sample_rate: sr,
             channels: ch,
             active_sinks: Mutex::new(Vec::new()),
+            byte_routes: Mutex::new(Vec::new()),
             max_buffer_samples: (sr as usize) * (ch as usize) * 5,
         }));
         BYTE_SOURCE_REGISTRY.with(|r| r.borrow_mut().push(state.clone()));
@@ -1137,6 +1148,8 @@ impl UserData for ByteSource {
                 sink.stop();
             }
             sinks.clear();
+            drop(sinks);
+            s.byte_routes.lock().unwrap().clear();
             s.queue.lock().unwrap().clear();
             Ok(())
         });
@@ -1148,6 +1161,7 @@ impl UserData for ByteSource {
             }
             sinks.clear();
             drop(sinks);
+            s.byte_routes.lock().unwrap().clear();
             s.queue.lock().unwrap().clear();
             let id = s.id;
             drop(s);
@@ -1198,6 +1212,7 @@ pub struct VoiceChannelState {
     pub channels: u16,
     pub stream: Mutex<Option<cpal::Stream>>,
     pub active_sinks: Mutex<Vec<(u64, Sink)>>,
+    pub byte_routes: Mutex<Vec<ByteSinkRoute>>,
     pub peak_level: Arc<Mutex<f32>>,
 }
 
@@ -1224,6 +1239,7 @@ impl VoiceChannel {
             channels: 0,
             stream: Mutex::new(None),
             active_sinks: Mutex::new(Vec::new()),
+            byte_routes: Mutex::new(Vec::new()),
             peak_level: Arc::new(Mutex::new(0.0)),
         }));
         VOICE_REGISTRY.with(|r| r.borrow_mut().push(state.clone()));
@@ -1269,6 +1285,7 @@ impl UserData for VoiceChannel {
             }
             sinks.clear();
             drop(sinks);
+            s.byte_routes.lock().unwrap().clear();
             let _ = s.stream.lock().unwrap().take();
             Ok(())
         });
@@ -1280,6 +1297,7 @@ impl UserData for VoiceChannel {
             }
             sinks.clear();
             drop(sinks);
+            s.byte_routes.lock().unwrap().clear();
             let _ = s.stream.lock().unwrap().take();
             let id = s.id;
             drop(s);
@@ -1429,9 +1447,13 @@ impl UserData for LinkHandle {
                                 true
                             }
                         });
-                        let now_empty = sinks.is_empty();
+                        let sinks_empty = sinks.is_empty();
                         drop(sinks);
-                        if now_empty {
+                        let mut routes = s.byte_routes.lock().unwrap();
+                        routes.retain(|r| r.link_id != link_id);
+                        let routes_empty = routes.is_empty();
+                        drop(routes);
+                        if sinks_empty && routes_empty {
                             let _ = s.stream.lock().unwrap().take();
                         }
                     }
@@ -1450,6 +1472,8 @@ impl UserData for LinkHandle {
                                 true
                             }
                         });
+                        drop(sinks);
+                        s.byte_routes.lock().unwrap().retain(|r| r.link_id != link_id);
                     }
                 });
             }
@@ -1592,7 +1616,7 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
             (s.queue.clone(), s.sample_rate.max(48000), s.channels.max(1))
         };
         let mut source: Box<dyn Source<Item = f32> + Send> = Box::new(VoiceQueueSource {
-            queue,
+            queue: queue.clone(),
             sample_rate,
             channels,
         });
@@ -1614,11 +1638,14 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
             sink.play();
             voice.lock().unwrap().active_sinks.lock().unwrap().push((link_id, sink));
         } else if let Some(byte_sink) = sink_byte.as_ref() {
-            let _ = byte_sink;
-            return Err(mlua::Error::RuntimeError(
-                "SoundByte.Link: VoiceChannel → ByteSink is not yet implemented (Player → ByteSink works)"
-                    .into(),
-            ));
+            voice.lock().unwrap().byte_routes.lock().unwrap().push(ByteSinkRoute {
+                link_id,
+                sink: byte_sink.clone(),
+                chain: source,
+                queue,
+                sample_rate,
+                channels,
+            });
         }
 
         let voice_id = voice.lock().unwrap().id;
@@ -1628,7 +1655,7 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
             source_voice_id: Some(voice_id),
             source_byte_source_id: None,
             sink_output_id: sink_output.as_ref().map(|o| o.id),
-            sink_byte_id: None,
+            sink_byte_id: sink_byte.as_ref().map(|b| b.lock().unwrap().id),
             modifier_ids: modifier_states.iter().map(|m| m.lock().unwrap().id).collect(),
         });
     }
@@ -1639,7 +1666,7 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
             (s.queue.clone(), s.sample_rate, s.channels)
         };
         let mut source: Box<dyn Source<Item = f32> + Send> = Box::new(ByteSourceQueueSource {
-            queue,
+            queue: queue.clone(),
             sample_rate,
             channels,
         });
@@ -1667,10 +1694,15 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
                 .lock()
                 .unwrap()
                 .push((link_id, sink));
-        } else if sink_byte.is_some() {
-            return Err(mlua::Error::RuntimeError(
-                "SoundByte.Link: ByteSource → ByteSink is not supported (route a Player or pipe the bytes directly)".into(),
-            ));
+        } else if let Some(byte_sink) = sink_byte.as_ref() {
+            byte_src.lock().unwrap().byte_routes.lock().unwrap().push(ByteSinkRoute {
+                link_id,
+                sink: byte_sink.clone(),
+                chain: source,
+                queue,
+                sample_rate,
+                channels,
+            });
         }
 
         let bs_id = byte_src.lock().unwrap().id;
@@ -1680,7 +1712,7 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
             source_voice_id: None,
             source_byte_source_id: Some(bs_id),
             sink_output_id: sink_output.as_ref().map(|o| o.id),
-            sink_byte_id: None,
+            sink_byte_id: sink_byte.as_ref().map(|b| b.lock().unwrap().id),
             modifier_ids: modifier_states.iter().map(|m| m.lock().unwrap().id).collect(),
         });
     }
@@ -1688,6 +1720,50 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
     Err(mlua::Error::RuntimeError(
         "SoundByte.Link: missing source (a Player, VoiceChannel, or ByteSource must be one of the arguments)".into(),
     ))
+}
+
+fn drain_route(route: &mut ByteSinkRoute) {
+    let available = route.queue.lock().unwrap().len();
+    if available == 0 {
+        return;
+    }
+    let mut samples: Vec<f32> = Vec::with_capacity(available);
+    for _ in 0..available {
+        match route.chain.next() {
+            Some(s) => samples.push(s),
+            None => break,
+        }
+    }
+    if samples.is_empty() {
+        return;
+    }
+    route
+        .sink
+        .lock()
+        .unwrap()
+        .queue_pcm(samples, route.sample_rate, route.channels);
+}
+
+fn drain_byte_routes() {
+    BYTE_SOURCE_REGISTRY.with(|r| {
+        for arc in r.borrow().iter() {
+            let s = arc.lock().unwrap();
+            let mut routes = s.byte_routes.lock().unwrap();
+            for route in routes.iter_mut() {
+                drain_route(route);
+            }
+        }
+    });
+    #[cfg(feature = "voice")]
+    VOICE_REGISTRY.with(|r| {
+        for arc in r.borrow().iter() {
+            let s = arc.lock().unwrap();
+            let mut routes = s.byte_routes.lock().unwrap();
+            for route in routes.iter_mut() {
+                drain_route(route);
+            }
+        }
+    });
 }
 
 pub fn pump(lua: &Lua) {
@@ -1799,6 +1875,8 @@ pub fn pump(lua: &Lua) {
         }
     }
 
+    drain_byte_routes();
+
     let bytes: Vec<Arc<Mutex<ByteSinkState>>> = BYTE_REGISTRY
         .with(|r| r.borrow().iter().cloned().collect());
     for b in &bytes {
@@ -1838,6 +1916,7 @@ pub fn is_active() -> bool {
         r.borrow().iter().any(|bs| {
             let s = bs.lock().unwrap();
             !s.active_sinks.lock().unwrap().is_empty()
+                || !s.byte_routes.lock().unwrap().is_empty()
         })
     });
     if bs_active {
@@ -1879,6 +1958,7 @@ pub fn shutdown() {
             }
             sinks.clear();
             drop(sinks);
+            s.byte_routes.lock().unwrap().clear();
             s.queue.lock().unwrap().clear();
         }
     });
@@ -1892,6 +1972,7 @@ pub fn shutdown() {
             }
             sinks.clear();
             drop(sinks);
+            s.byte_routes.lock().unwrap().clear();
             let _ = s.stream.lock().unwrap().take();
         }
     });
