@@ -331,6 +331,149 @@ player:<span class="hl-fn">Destroy</span>()</code></pre>
     </div>
 </div>
 
+<h2 id="bytesource">ByteSource</h2>
+
+<p>
+    The mirror of <a href="#bytesink">ByteSink</a>. Where ByteSink turns a
+    live source into a stream of binary PCM packets, ByteSource takes
+    those packets back and plays them as if they were a Player or
+    VoiceChannel. It is the piece you wire on the receiving end of a
+    peer-to-peer voice loop: the remote machine sends bytes over the
+    network, you feed them to <code>:SendInput</code>, and they come out
+    of the OutputNode just like any other source &mdash; including
+    routing through modifiers (Reverb, LowPass, StereoWiden,
+    Telephone&hellip;) and 3D spatial output via
+    <code>output:Follow(part)</code>.
+</p>
+
+<p>
+    The audio format is the same little-endian f32 layout that
+    ByteSink emits, so in the typical case you just pass the
+    <code>OnPacket</code> string straight to
+    <code>source:SendInput(packet)</code>. Construct the source with
+    the same <em>sampleRate</em> and <em>channels</em> the producer is
+    using or playback comes out the wrong pitch.
+</p>
+
+<h3>Properties</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Enabled</span><span class="member-type">boolean</span></div>
+        <p class="member-desc">
+            Live toggle. When <code>false</code>,
+            <code>:SendInput</code> is a no-op and the queue stops
+            growing. Useful for mute UI without tearing down the link.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.SampleRate</span><span class="member-type">number</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Sample rate the queued bytes are interpreted at. Set at construction.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Channels</span><span class="member-type">number</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Number of interleaved channels (1 for mono, 2 for stereo, &hellip;).</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.QueueLength</span><span class="member-type">number</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Number of f32 samples currently buffered ahead of the playhead.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.BufferSeconds</span><span class="member-type">number</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            <code>QueueLength / (SampleRate * Channels)</code>. Read
+            this each tick to detect bufferbloat &mdash; if it grows
+            above 0.5 the network is producing faster than the speaker
+            consumes and you may want to <code>:Clear()</code>.
+        </p>
+    </div>
+</div>
+
+<h3>Methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">source:SendInput(packet)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Append a packet of little-endian f32 samples (a Lua string,
+            length must be a multiple of 4). The exact format emitted
+            by <a href="#bytesink"><code>ByteSink.OnPacket</code></a>.
+            The internal queue is capped at ~5&nbsp;s; older samples
+            are dropped if the producer outpaces the consumer.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">source:SendSamples(samples)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Append a Lua array of raw f32 samples (already decoded).
+            Convenient if you're generating audio in Luau directly.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">source:Clear()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Empty the buffer without tearing down links. Use when you detect bufferbloat.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">source:Stop()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Stop all downstream sinks routed from this source and clear
+            the queue. The LinkHandle is preserved &mdash; the next
+            <code>:SendInput</code> after a re-Link starts a fresh
+            playback chain.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">source:Destroy()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Stop and unregister the source. Subsequent
+            <code>:SendInput</code> calls do nothing. Safe to drop the
+            Lua handle afterwards.
+        </p>
+    </div>
+</div>
+
+<h3>Peer voice chat loop</h3>
+
+<p>
+    Two machines, one capturing and one playing. The capturing peer
+    builds a Player&nbsp;/&nbsp;VoiceChannel &rarr; ByteSink chain; the
+    playing peer builds a ByteSource &rarr; OutputNode chain and feeds
+    every received packet into <code>:SendInput</code>.
+</p>
+
+<pre><code><span class="hl-com">-- ============ Sender (mic owner) ============</span>
+<span class="hl-kw">local</span> mic   = SoundByte.<span class="hl-fn">GetVoiceChannel</span>()
+<span class="hl-kw">local</span> byte  = SoundByte.<span class="hl-fn">NewByte</span>()
+SoundByte.<span class="hl-fn">Link</span>(mic, byte)
+
+byte.OnPacket:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(packet)
+    lobby:<span class="hl-fn">SendToPeer</span>(<span class="hl-str">"voice"</span>, packet)
+<span class="hl-kw">end</span>)
+
+<span class="hl-com">-- ============ Receiver (everyone else) ============</span>
+<span class="hl-kw">local</span> source = SoundByte.<span class="hl-fn">NewByteSource</span>(<span class="hl-num">48000</span>, <span class="hl-num">1</span>)
+<span class="hl-kw">local</span> output = SoundByte.<span class="hl-fn">NewOutput</span>()
+<span class="hl-kw">local</span> reverb = SoundByte.<span class="hl-fn">GetModifier</span>(<span class="hl-str">"Reverb"</span>)
+reverb.Value = <span class="hl-num">0.15</span>
+
+SoundByte.<span class="hl-fn">Link</span>(source, reverb, output)
+
+lobby.OnVoicePacket:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(_peer, packet)
+    source:<span class="hl-fn">SendInput</span>(packet)
+<span class="hl-kw">end</span>)
+
+<span class="hl-com">-- Optional: 3D positional voice when the speaker has an avatar.</span>
+output:<span class="hl-fn">Follow</span>(peerCharacter.Head)</code></pre>
+
+<p>
+    ByteSource composes with every modifier and with
+    <code>OutputNode:Follow</code>, so positional voice, telephone-style
+    effects, or whisper / shout gain staging all work out of the box.
+    The source has no cpal dependency &mdash; it works on builds without
+    the <code>voice</code> feature, so receivers don't need a microphone
+    device.
+</p>
+
 <h2 id="voicechannel">VoiceChannel</h2>
 
 <p>
