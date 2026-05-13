@@ -184,21 +184,31 @@
 
 <h2 id="quick-start">Quick Start</h2>
 
-<p>Scaffold a new project and run it in three commands:</p>
+<p>Scaffold a new project and run it in a handful of commands:</p>
 
 <pre><code><span class="hl-com"># Drop the ruzit + ruzitrun binaries side-by-side somewhere on your PATH, then:</span>
 ruzit init MyGame
 cd MyGame
+ruzit scaffold     <span class="hl-com"># regenerate .luaurc aliases (run after adding/removing packages)</span>
 ruzit test</code></pre>
 
 <p>
     <code>ruzit init</code> writes a starter project to the named folder
     (<code>build.toml</code>, <code>Main.luau</code>, an empty
-    <code>assets/</code>) and fetches a fresh
-    <code>types.d.luau</code> from the master repo so autocomplete
-    is always current. The scaffolded <code>Main.luau</code> opens a
-    window, draws a cube, and exits on close â€” replace it with your
-    game.
+    <code>assets/</code>, a <code>.luaurc</code> with
+    <code>Game = "./"</code>, and <code>.vscode/settings.json</code>)
+    and fetches a fresh <code>types.d.luau</code> from the master repo
+    so autocomplete is always current. The scaffolded
+    <code>Main.luau</code> opens a window, draws a cube, and exits on
+    close &mdash; replace it with your game.
+</p>
+
+<p>
+    <code>ruzit scaffold</code> walks the project tree for any folder
+    containing a <code>ManagedInfo.toml</code> and writes one
+    <code>.luaurc</code> alias per package, pointing at the entry
+    file. Run it whenever you add, remove, or rename a package so
+    <code>require("@PkgId")</code> autocompletes in the editor.
 </p>
 
 <h3>The two binaries</h3>
@@ -235,7 +245,7 @@ ruzit test</code></pre>
 
 <p>See <a href="cli.html">CLI</a> for the full command reference.</p>
 
-<h3>The seven commands</h3>
+<h3>The eight commands</h3>
 
 <div class="member-list">
     <div class="member">
@@ -257,6 +267,19 @@ ruzit test</code></pre>
             Scaffold a Managed package folder
             (<code>ManagedInfo.toml</code> + <code>init.luau</code>)
             you can drop next to a project as a DLC.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ruzit scaffold [path]</span>
+        </div>
+        <p class="member-desc">
+            Regenerate <code>.luaurc</code> aliases by walking the
+            project tree. Every folder with a
+            <code>ManagedInfo.toml</code> becomes an alias
+            (<code>&lt;ID&gt; = "./path/to/init.luau"</code>) so
+            <code>require("@PkgId")</code> resolves directly to the
+            entry file. Always re-emits <code>Game = "./"</code>.
         </p>
     </div>
     <div class="member">
