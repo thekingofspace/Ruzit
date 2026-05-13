@@ -97,6 +97,23 @@ player:<span class="hl-fn">Destroy</span>()</code></pre>
     </div>
     <div class="member">
         <div class="member-header">
+            <span class="member-name">SoundByte.NewByteSource(sampleRate?, channels?)</span>
+            <span class="member-type">&rarr; ByteSource</span>
+        </div>
+        <p class="member-desc">
+            Allocate a queue-fed audio source. Feed it the byte packets
+            that arrive from a remote
+            <a href="#bytesink">ByteSink</a> via
+            <code>:SendInput(packet)</code> and Link it into an
+            <a href="#outputnode">OutputNode</a> to play. Defaults are
+            <code>48000</code> Hz, <code>1</code> channel &mdash; pass
+            the sample rate and channels the producing
+            <code>ByteSink</code> was emitting at so the decoded f32
+            samples come out at the right pitch.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
             <span class="member-name">SoundByte.GetModifier(kind)</span>
             <span class="member-type">&rarr; Modifier</span>
         </div>
@@ -122,8 +139,10 @@ player:<span class="hl-fn">Destroy</span>()</code></pre>
             <span class="member-type">&rarr; LinkHandle</span>
         </div>
         <p class="member-desc">
-            Wire a source (Player or VoiceChannel) through any number of
-            modifiers into a sink (OutputNode or ByteSink). Arguments can
+            Wire a source (Player, VoiceChannel, or ByteSource) through
+            any number of modifiers into a sink (OutputNode or ByteSink
+            &mdash; ByteSource &rarr; ByteSink is not supported, pipe
+            the bytes directly instead). Arguments can
             be in any order; Ruzit identifies each by type. Modifier
             ordering matters &mdash; modifiers apply left-to-right.
             Multiple Link calls on the same source create independent
