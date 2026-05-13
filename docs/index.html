@@ -277,9 +277,10 @@ ruzit test</code></pre>
             Regenerate <code>.luaurc</code> aliases by walking the
             project tree. Every folder with a
             <code>ManagedInfo.toml</code> becomes an alias
-            (<code>&lt;ID&gt; = "./path/to/init.luau"</code>) so
-            <code>require("@PkgId")</code> resolves directly to the
-            entry file. Always re-emits <code>Game = "./"</code>.
+            (<code>&lt;ID&gt; = "./path/to/folder"</code>) so
+            <code>require("@PkgId")</code> resolves to the entry file
+            inside, and <code>require("@PkgId/sub")</code> picks up
+            submodules. Always re-emits <code>Game = "./"</code>.
         </p>
     </div>
     <div class="member">

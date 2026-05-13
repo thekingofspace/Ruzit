@@ -141,13 +141,14 @@ ruzitrun --console                    attach/allocate a console for windowed lau
 
 <span class="hl-kw">$</span> ruzit scaffold
 [Ruzit] scaffold → /work/MyGame (scanning recursively)
-  alias  CoolMath → ./Packages/cool-math/init.luau
-  alias  Utils    → ./libs/utils/init.luau
+  alias  CoolMath → ./Packages/cool-math
+  alias  Utils    → ./libs/utils
 [Ruzit] scaffold done: wrote .luaurc (3 aliases)
 
 <span class="hl-com">-- in your code:</span>
-<span class="hl-kw">local</span> math = <span class="hl-fn">require</span>(<span class="hl-str">"@CoolMath"</span>)
-<span class="hl-kw">local</span> menu = <span class="hl-fn">require</span>(<span class="hl-str">"@Game/scenes/menu"</span>)</code></pre>
+<span class="hl-kw">local</span> math   = <span class="hl-fn">require</span>(<span class="hl-str">"@CoolMath"</span>)            <span class="hl-com">-- → Packages/cool-math/init.luau</span>
+<span class="hl-kw">local</span> vec    = <span class="hl-fn">require</span>(<span class="hl-str">"@CoolMath/vector"</span>)     <span class="hl-com">-- submodule inside the package</span>
+<span class="hl-kw">local</span> menu   = <span class="hl-fn">require</span>(<span class="hl-str">"@Game/scenes/menu"</span>)</code></pre>
 
 <div class="callout note">
     <strong>Scaffold is purely tooling.</strong> The aliases it writes
