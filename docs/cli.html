@@ -108,10 +108,12 @@ ruzitrun --console                    attach/allocate a console for windowed lau
     project tree. Any folder containing both a
     <code>ManagedInfo.toml</code> and its declared entry file is
     treated as a package: the manifest's <code>ID</code> becomes an
-    alias pointing at the entry file (the <code>Entry</code> field,
-    defaulting to <code>init.luau</code>) — <em>the file itself, not
-    the folder</em>, so <code>require("@PkgId")</code> resolves
-    directly to the module without an extra <code>/init</code>.
+    alias pointing at <em>the folder</em>. <code>require("@PkgId")</code>
+    then resolves to the entry file inside via Luau's directory
+    <code>init</code> lookup, and submodules are reachable as
+    <code>require("@PkgId/sub/module")</code>. The entry file's
+    existence is still checked &mdash; packages whose declared
+    <code>Entry</code> is missing are skipped.
 </p>
 
 <p>

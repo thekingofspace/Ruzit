@@ -743,7 +743,7 @@ pub fn cmd_scaffold(arg: Option<&String>) -> Result<(), String> {
             );
             continue;
         }
-        let rel = display_rel(&target, &entry_path);
+        let rel = display_rel(&target, &folder);
         let alias_path = format!("./{rel}");
         println!("  alias  {} → {alias_path}", info.id);
         aliases.push((info.id, alias_path));
