@@ -26,10 +26,12 @@ pub mod serde;
 pub mod sfx;
 pub mod shader;
 pub mod signal;
+#[cfg(feature = "steam")]
 pub mod steam;
 pub mod task;
 pub mod tween;
 pub mod video;
+#[cfg(feature = "voice")]
 pub mod voice;
 pub mod vr;
 pub mod window;

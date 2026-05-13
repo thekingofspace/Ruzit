@@ -84,8 +84,11 @@ fn install_close(lua: &Lua, t: &Table) -> mlua::Result<()> {
     t.set(
         "Close",
         lua.create_function(|_, code: Option<i32>| -> mlua::Result<()> {
-            crate::libs::steam::shutdown_p2p();
-            crate::libs::steam::force_steam_api_shutdown();
+            #[cfg(feature="steam")]
+            {
+                crate::libs::steam::shutdown_p2p();
+                crate::libs::steam::force_steam_api_shutdown();
+            }
             process::exit(code.unwrap_or(0));
         })?,
     )?;

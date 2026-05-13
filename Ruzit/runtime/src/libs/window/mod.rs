@@ -105,8 +105,11 @@ pub fn pump(lua: &Lua) {
         }
         APP.with(|a| *a.borrow_mut() = None);
         EVENT_LOOP.with(|el| *el.borrow_mut() = None);
-        crate::libs::steam::shutdown_p2p();
-        crate::libs::steam::force_steam_api_shutdown();
+        #[cfg(feature = "steam")]
+        {
+            crate::libs::steam::shutdown_p2p();
+            crate::libs::steam::force_steam_api_shutdown();
+        }
         std::process::exit(0);
     }
 }
