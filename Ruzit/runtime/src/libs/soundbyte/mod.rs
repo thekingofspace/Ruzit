@@ -2012,22 +2012,26 @@ fn apply_modifier_chain(
                 src = Box::new(ReverbMod::new(src, v.clamp(0.0, 1.0), 0.7));
             }
             ModifierKind::FadeIn => {
-                let v = m.lock().unwrap().value;
-                let dur = Duration::from_secs_f32(v.max(0.0));
-                src = Box::new(src.fade_in(dur));
+                let v = m.lock().unwrap().value.max(0.0);
+                if v > 0.001 {
+                    src = Box::new(src.fade_in(Duration::from_secs_f32(v)));
+                }
             }
             ModifierKind::FadeOut => {
-                let v = m.lock().unwrap().value;
-                src = Box::new(FadeOutMod::new(src, v.max(0.0) as f64));
+                let v = m.lock().unwrap().value.max(0.0);
+                if v > 0.001 {
+                    src = Box::new(FadeOutMod::new(src, v as f64));
+                }
             }
             ModifierKind::Delay => {
-                let v = m.lock().unwrap().value;
-                let dur = Duration::from_secs_f32(v.max(0.0));
-                src = Box::new(src.delay(dur));
+                let v = m.lock().unwrap().value.max(0.0);
+                if v > 0.001 {
+                    src = Box::new(src.delay(Duration::from_secs_f32(v)));
+                }
             }
             ModifierKind::Speed | ModifierKind::Pitch | ModifierKind::PlaybackSpeed => {
-                let v = m.lock().unwrap().value;
-                src = Box::new(src.speed(v.max(0.0)));
+                let v = m.lock().unwrap().value.max(0.01);
+                src = Box::new(src.speed(v));
             }
             ModifierKind::LowPass => {
                 let v = m.lock().unwrap().value;

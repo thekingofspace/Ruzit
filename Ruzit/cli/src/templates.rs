@@ -91,8 +91,17 @@ pub const VSCODE_SETTINGS: &str = r#"{
         "./types.d.luau"
     ],
     "luau-lsp.require.mode": "relativeToFile",
+    "luau-lsp.platform.type": "standard",
     "files.associations": {
         "*.luau": "luau"
+    }
+}
+"#;
+
+pub const LUAURC: &str = r#"{
+    "languageMode": "strict",
+    "aliases": {
+        "Game": "./"
     }
 }
 "#;

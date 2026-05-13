@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SoundByte - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.6">
-    <script src="theme.js?v=1.2.6"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.7">
+    <script src="theme.js?v=1.2.7"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.6" defer></script>
+<script src="sidebar.js?v=1.2.7" defer></script>
 
 <main>
 
@@ -140,9 +140,11 @@ player:<span class="hl-fn">Destroy</span>()</code></pre>
         </div>
         <p class="member-desc">
             Wire a source (Player, VoiceChannel, or ByteSource) through
-            any number of modifiers into a sink (OutputNode or ByteSink
-            &mdash; ByteSource &rarr; ByteSink is not supported, pipe
-            the bytes directly instead). Arguments can
+            any number of modifiers into a sink (OutputNode or ByteSink).
+            Streaming sources &rarr; ByteSink (VoiceChannel &rarr;
+            ByteSink, ByteSource &rarr; ByteSink) are pumped each tick:
+            samples flow through the modifier chain and out as
+            <code>OnPacket</code> bytes at ~20&nbsp;ms cadence. Arguments can
             be in any order; Ruzit identifies each by type. Modifier
             ordering matters &mdash; modifiers apply left-to-right.
             Multiple Link calls on the same source create independent

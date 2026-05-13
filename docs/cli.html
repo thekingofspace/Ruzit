@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CLI - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.6">
-    <script src="theme.js?v=1.2.6"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.7">
+    <script src="theme.js?v=1.2.7"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.6" defer></script>
+<script src="sidebar.js?v=1.2.7" defer></script>
 
 <main>
 
@@ -27,6 +27,7 @@
 
 <pre><code>ruzit init           [path]        scaffold a new project
 ruzit initpackage    [path]        scaffold a Managed package folder
+ruzit scaffold       [path]        regenerate .luaurc aliases from every manifest in the tree
 ruzit test           [path]        run a Luau file
 ruzit build          [path] [-o]   produce Generated/&lt;exe&gt; + Generated/Managed/*.managed
 ruzit package        [folder] [-o] produce &lt;id&gt;.scripts.managed + &lt;id&gt;.assets.managed
@@ -64,7 +65,8 @@ ruzitrun --console                    attach/allocate a console for windowed lau
         <tr><td><code>build.toml</code></td><td>Project metadata and build settings.</td></tr>
         <tr><td><code>Main.luau</code></td><td>The entry script the engine runs.</td></tr>
         <tr><td><code>types.d.luau</code></td><td>API type declarations for the Luau LSP. Always rewritten.</td></tr>
-        <tr><td><code>.vscode/settings.json</code></td><td>Wires luau-lsp up to <code>types.d.luau</code>.</td></tr>
+        <tr><td><code>.vscode/settings.json</code></td><td>Wires luau-lsp up to <code>types.d.luau</code>, sets <code>luau-lsp.require.mode</code> to <code>relativeToFile</code>, and pins <code>luau-lsp.platform.type</code> to <code>standard</code> so the LSP doesn't try to apply Roblox conventions.</td></tr>
+        <tr><td><code>.luaurc</code></td><td>Strict-mode flag plus an <code>aliases</code> map. Seeded with <code>Game = "./"</code> so <code>require("@Game/scenes/level1")</code> resolves from the project root regardless of which file is requiring it. Run <a href="#scaffold"><code>ruzit scaffold</code></a> to extend the aliases with one entry per package folder anywhere in the tree.</td></tr>
         <tr><td><code>assets/</code></td><td>Empty folder. Anything you drop in is auto-bundled.</td></tr>
         <tr><td><code>Packages/</code></td><td>Empty folder for third-party <code>.managed</code> drop-ins.</td></tr>
     </tbody>
@@ -96,6 +98,62 @@ ruzitrun --console                    attach/allocate a console for windowed lau
     <code>ruzit build</code> will pick it up as a DLC. See
     <a href="packages.html">Packages &amp; DLC</a> for the full lifecycle.
 </p>
+
+<h2 id="scaffold">ruzit scaffold</h2>
+
+<div class="sig">ruzit scaffold [path]</div>
+
+<p>
+    Regenerates <code>.luaurc</code> aliases by walking the entire
+    project tree. Any folder containing both a
+    <code>ManagedInfo.toml</code> and its declared entry file is
+    treated as a package: the manifest's <code>ID</code> becomes an
+    alias pointing at the entry file (the <code>Entry</code> field,
+    defaulting to <code>init.luau</code>) — <em>the file itself, not
+    the folder</em>, so <code>require("@PkgId")</code> resolves
+    directly to the module without an extra <code>/init</code>.
+</p>
+
+<p>
+    The walk is recursive but skips <code>.git</code>,
+    <code>Generated/</code>, <code>target/</code>,
+    <code>node_modules/</code>, and any dotfile directory. When a
+    folder with a manifest is found the walk stops descending into it
+    (packages don't nest aliases inside themselves).
+</p>
+
+<p>
+    Re-run any time you add, remove, or rename a package. The file is
+    overwritten in full, so any aliases you added by hand get blown
+    away — keep custom aliases in a separate file or commit them back
+    into <code>.luaurc</code> after each scaffold.
+</p>
+
+<p>
+    The <code>Game = "./"</code> alias is always re-emitted. Example:
+</p>
+
+<pre><code><span class="hl-com">-- Packages/cool-math/ManagedInfo.toml has ID = "CoolMath"</span>
+<span class="hl-com">-- Packages/cool-math/init.luau exists</span>
+<span class="hl-com">-- libs/utils/ManagedInfo.toml has ID = "Utils" (a hand-placed package)</span>
+
+<span class="hl-kw">$</span> ruzit scaffold
+[Ruzit] scaffold → /work/MyGame (scanning recursively)
+  alias  CoolMath → ./Packages/cool-math/init.luau
+  alias  Utils    → ./libs/utils/init.luau
+[Ruzit] scaffold done: wrote .luaurc (3 aliases)
+
+<span class="hl-com">-- in your code:</span>
+<span class="hl-kw">local</span> math = <span class="hl-fn">require</span>(<span class="hl-str">"@CoolMath"</span>)
+<span class="hl-kw">local</span> menu = <span class="hl-fn">require</span>(<span class="hl-str">"@Game/scenes/menu"</span>)</code></pre>
+
+<div class="callout note">
+    <strong>Scaffold is purely tooling.</strong> The aliases it writes
+    only affect <code>luau-lsp</code> autocomplete and Luau's own
+    require resolution — they don't change what the runtime loads.
+    At runtime, <code>require("@PkgId")</code> still goes through the
+    Managed package loader.
+</div>
 
 <h2 id="test">ruzit test</h2>
 

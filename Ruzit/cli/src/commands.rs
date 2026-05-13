@@ -570,6 +570,7 @@ pub fn cmd_init(arg: Option<&String>) -> Result<(), String> {
         ("build.toml", templates::BUILD_TOML),
         ("Main.luau", templates::MAIN_LUAU),
         (".vscode/settings.json", templates::VSCODE_SETTINGS),
+        (".luaurc", templates::LUAURC),
     ];
 
     let assets_dir = target.join("assets");
@@ -714,6 +715,96 @@ pub fn cmd_init_package(arg: Option<&String>) -> Result<(), String> {
         "        Drop this folder next to your project's build.toml — Build will auto-package it."
     );
     Ok(())
+}
+
+pub fn cmd_scaffold(arg: Option<&String>) -> Result<(), String> {
+    let target = match arg {
+        Some(s) => PathBuf::from(s),
+        None => env::current_dir().map_err(|e| format!("cwd: {e}"))?,
+    };
+    if !target.is_dir() {
+        return Err(format!("{} is not a directory", target.display()));
+    }
+
+    println!("[Ruzit] scaffold → {} (scanning recursively)", target.display());
+
+    let mut aliases: Vec<(String, String)> = vec![("Game".into(), "./".into())];
+    let mut found: Vec<(PathBuf, ManagedInfo)> = Vec::new();
+    walk_for_manifests(&target, &target, &mut found);
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+
+    for (folder, info) in found {
+        let entry_path = folder.join(&info.entry);
+        if !entry_path.is_file() {
+            println!(
+                "  skip   {} (entry '{}' not found)",
+                display_rel(&target, &folder),
+                info.entry
+            );
+            continue;
+        }
+        let rel = display_rel(&target, &entry_path);
+        let alias_path = format!("./{rel}");
+        println!("  alias  {} → {alias_path}", info.id);
+        aliases.push((info.id, alias_path));
+    }
+
+    let luaurc_path = target.join(".luaurc");
+    let mut body = String::from("{\n    \"languageMode\": \"strict\",\n    \"aliases\": {\n");
+    for (i, (k, v)) in aliases.iter().enumerate() {
+        let comma = if i + 1 == aliases.len() { "" } else { "," };
+        body.push_str(&format!("        \"{k}\": \"{v}\"{comma}\n"));
+    }
+    body.push_str("    }\n}\n");
+    fs::write(&luaurc_path, body)
+        .map_err(|e| format!("write {}: {e}", luaurc_path.display()))?;
+    println!(
+        "[Ruzit] scaffold done: wrote {} ({} alias{})",
+        display_rel(&target, &luaurc_path),
+        aliases.len(),
+        if aliases.len() == 1 { "" } else { "es" }
+    );
+    Ok(())
+}
+
+fn walk_for_manifests(
+    root: &Path,
+    dir: &Path,
+    out: &mut Vec<(PathBuf, ManagedInfo)>,
+) {
+    let manifest = dir.join("ManagedInfo.toml");
+    if manifest.is_file() {
+        match ManagedInfo::load(dir) {
+            Ok(info) => {
+                out.push((dir.to_path_buf(), info));
+                return;
+            }
+            Err(e) => {
+                println!("  skip   {} ({e})", display_rel(root, dir));
+            }
+        }
+    }
+
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for e in entries.flatten() {
+        let path = e.path();
+        if !path.is_dir() {
+            continue;
+        }
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            if name.starts_with('.')
+                || name == "Generated"
+                || name == "target"
+                || name == "node_modules"
+            {
+                continue;
+            }
+        }
+        walk_for_manifests(root, &path, out);
+    }
 }
 
 fn humanize(id: &str) -> String {

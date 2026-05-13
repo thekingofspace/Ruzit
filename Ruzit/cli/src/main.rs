@@ -13,6 +13,9 @@ fn print_usage() {
         "  ruzit initpackage    [path]        scaffold a Managed package folder (ManagedInfo.toml + init.luau)"
     );
     eprintln!(
+        "  ruzit scaffold       [path]        regenerate .luaurc aliases from Packages/* manifests"
+    );
+    eprintln!(
         "  ruzit test           [path]        run a Luau file (default: Main.luau in the cwd)"
     );
     eprintln!(
@@ -41,6 +44,7 @@ fn dispatch(args: &[String]) -> Result<(), String> {
         "InitPackage" | "initpackage" | "Init-Package" | "init-package" => {
             commands::cmd_init_package(args.get(1))
         }
+        "Scaffold" | "scaffold" => commands::cmd_scaffold(args.get(1)),
         "Test" | "test" => commands::cmd_test(args.get(1)),
         "Build" | "build" => {
             let (entry, output) = parse_path_and_output(&args[1..]);
