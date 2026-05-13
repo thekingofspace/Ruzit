@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -46,7 +46,7 @@
     The AppID is pulled from your build.toml <code>[steam]</code>
     table, falling back to <code>480</code> (Spacewar) if unset.
     The file appears for a few milliseconds during startup and never
-    lingers afterward â€” the AppID is effectively baked into the
+    lingers afterward — the AppID is effectively baked into the
     runtime binary. The user's Steam client must still be running and
     logged in for actual Steam API calls to succeed; if init fails,
     individual Steam calls return / error accordingly.
@@ -55,7 +55,7 @@
 <p>
     If a <code>steam_appid.txt</code> is already present next to the
     exe when the runtime starts (e.g., one you placed manually for
-    testing), the runtime leaves it alone â€” your file wins, and it
+    testing), the runtime leaves it alone — your file wins, and it
     won't be deleted on shutdown.
 </p>
 
@@ -96,8 +96,8 @@
 
 <p>
     Top-level signals reporting the local Steam client's connection to the
-    Steam backend. Affects <em>every</em> Steam-backed feature â€” lobbies,
-    matchmaking, friends, achievements/stat sync, cloud, etc. â€” so this is
+    Steam backend. Affects <em>every</em> Steam-backed feature — lobbies,
+    matchmaking, friends, achievements/stat sync, cloud, etc. — so this is
     the right place to globally pause networking when Steam goes offline.
 </p>
 
@@ -133,12 +133,12 @@
             Fires with <code>(lobbyId, friendId)</code> when a friend
             accepts a Steam invite to your game while it's already running
             (typically by clicking <em>Join Game</em> in the Steam overlay).
-            Steam doesn't auto-join â€” you decide what to do. The usual
+            Steam doesn't auto-join — you decide what to do. The usual
             handler is to call <code>Steam.Lobby.Join(lobbyId)</code> and
             switch your UI to the lobby/match flow. For cold launches
             (game wasn't running when the invite was clicked), Steam puts
             <code>+connect_lobby &lt;id&gt;</code> in the launch command
-            line â€” read it at startup via
+            line — read it at startup via
             <code>Steam.Launch.GetQueryParam("connect_lobby")</code>.
         </p>
     </div>
@@ -146,7 +146,7 @@
 
 <p>
     If you only care about lobby disconnects, hook
-    <code>SteamLobby.OnDisconnected</code> on the specific lobby â€” it
+    <code>SteamLobby.OnDisconnected</code> on the specific lobby — it
     distinguishes <code>"Disconnected"</code> from <code>"Kicked"</code> /
     <code>"Banned"</code>, and only fires for that lobby.
 </p>
@@ -166,7 +166,7 @@ Steam.OnLobbyJoinRequested:<span class="hl-fn">Connect</span>(<span class="hl-kw
 <pre><code><span class="hl-kw">local</span> Steam = <span class="hl-fn">import</span>(<span class="hl-str">"Steam"</span>)
 
 Steam.OnDisconnected:Connect(<span class="hl-kw">function</span>(reason)
-    <span class="hl-cmt">-- Pause matchmaking UI, show "reconnectingâ€¦" toast, etc.</span>
+    <span class="hl-cmt">-- Pause matchmaking UI, show "reconnecting…" toast, etc.</span>
     <span class="hl-fn">print</span>(<span class="hl-str">"Steam offline:"</span>, reason)
 <span class="hl-kw">end</span>)
 
@@ -204,7 +204,7 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
     <tbody>
         <tr><td><code>.Unlock(name)</code></td><td></td></tr>
         <tr><td><code>.Clear(name)</code></td><td></td></tr>
-        <tr><td><code>.IsUnlocked(name)</code></td><td>â†’ boolean</td></tr>
+        <tr><td><code>.IsUnlocked(name)</code></td><td>→ boolean</td></tr>
         <tr><td><code>.Store()</code></td><td>Push pending unlocks/stats to Steam.</td></tr>
     </tbody>
 </table>
@@ -215,8 +215,8 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
     <tbody>
         <tr><td><code>.SetInt(name, value)</code></td><td></td></tr>
         <tr><td><code>.SetFloat(name, value)</code></td><td></td></tr>
-        <tr><td><code>.GetInt(name)</code></td><td>â†’ number</td></tr>
-        <tr><td><code>.GetFloat(name)</code></td><td>â†’ number</td></tr>
+        <tr><td><code>.GetInt(name)</code></td><td>→ number</td></tr>
+        <tr><td><code>.GetFloat(name)</code></td><td>→ number</td></tr>
         <tr><td><code>.Store()</code></td><td>Push to Steam.</td></tr>
     </tbody>
 </table>
@@ -230,9 +230,9 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
 
 <table>
     <tbody>
-        <tr><td><code>.Create(maxMembers?, kind?)</code></td><td>â†’ <code>Signal&lt;SteamLobby?, string?&gt;</code></td></tr>
-        <tr><td><code>.Join(id)</code></td><td>â†’ <code>Signal&lt;SteamLobby?, string?&gt;</code></td></tr>
-        <tr><td><code>.List()</code></td><td>â†’ <code>Signal&lt;{ SteamLobbyInfo }&gt;</code></td></tr>
+        <tr><td><code>.Create(maxMembers?, kind?)</code></td><td>→ <code>Signal&lt;SteamLobby?, string?&gt;</code></td></tr>
+        <tr><td><code>.Join(id)</code></td><td>→ <code>Signal&lt;SteamLobby?, string?&gt;</code></td></tr>
+        <tr><td><code>.List()</code></td><td>→ <code>Signal&lt;{ SteamLobbyInfo }&gt;</code></td></tr>
     </tbody>
 </table>
 
@@ -261,15 +261,15 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
 
 <table>
     <tbody>
-        <tr><td><code>.IsAppInstalled(appId)</code></td><td>â†’ boolean</td></tr>
-        <tr><td><code>.IsDlcInstalled(appId)</code></td><td>â†’ boolean</td></tr>
-        <tr><td><code>.IsSubscribed()</code></td><td>â†’ boolean</td></tr>
-        <tr><td><code>.IsVacBanned()</code></td><td>â†’ boolean</td></tr>
-        <tr><td><code>.BuildId()</code></td><td>â†’ number</td></tr>
-        <tr><td><code>.InstallDir(appId)</code></td><td>â†’ string</td></tr>
-        <tr><td><code>.OwnerID()</code></td><td>â†’ string</td></tr>
-        <tr><td><code>.CurrentLanguage()</code></td><td>â†’ string</td></tr>
-        <tr><td><code>.AvailableLanguages()</code></td><td>â†’ <code>{ string }</code></td></tr>
+        <tr><td><code>.IsAppInstalled(appId)</code></td><td>→ boolean</td></tr>
+        <tr><td><code>.IsDlcInstalled(appId)</code></td><td>→ boolean</td></tr>
+        <tr><td><code>.IsSubscribed()</code></td><td>→ boolean</td></tr>
+        <tr><td><code>.IsVacBanned()</code></td><td>→ boolean</td></tr>
+        <tr><td><code>.BuildId()</code></td><td>→ number</td></tr>
+        <tr><td><code>.InstallDir(appId)</code></td><td>→ string</td></tr>
+        <tr><td><code>.OwnerID()</code></td><td>→ string</td></tr>
+        <tr><td><code>.CurrentLanguage()</code></td><td>→ string</td></tr>
+        <tr><td><code>.AvailableLanguages()</code></td><td>→ <code>{ string }</code></td></tr>
     </tbody>
 </table>
 
@@ -282,24 +282,24 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
 
 <div class="member-list">
     <div class="member">
-        <div class="member-header"><span class="member-name">.WriteFile(name, data)</span><span class="member-type">â†’ boolean</span></div>
+        <div class="member-header"><span class="member-name">.WriteFile(name, data)</span><span class="member-type">→ boolean</span></div>
         <p class="member-desc">Returns true on success.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">.ReadFile(name)</span><span class="member-type">â†’ string?</span></div>
+        <div class="member-header"><span class="member-name">.ReadFile(name)</span><span class="member-type">→ string?</span></div>
         <p class="member-desc">Nil if the file doesn't exist.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">.DeleteFile(name)</span><span class="member-type">â†’ boolean</span></div>
+        <div class="member-header"><span class="member-name">.DeleteFile(name)</span><span class="member-type">→ boolean</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">.FileExists(name)</span><span class="member-type">â†’ boolean</span></div>
+        <div class="member-header"><span class="member-name">.FileExists(name)</span><span class="member-type">→ boolean</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">.ListFiles()</span><span class="member-type">â†’ { SteamCloudFile }</span></div>
+        <div class="member-header"><span class="member-name">.ListFiles()</span><span class="member-type">→ { SteamCloudFile }</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">.Quota()</span><span class="member-type">â†’ { Total: number, Available: number }</span></div>
+        <div class="member-header"><span class="member-name">.Quota()</span><span class="member-type">→ { Total: number, Available: number }</span></div>
         <p class="member-desc">Both fields in bytes.</p>
     </div>
 </div>
@@ -308,27 +308,27 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
 
 <div class="member-list">
     <div class="member">
-        <div class="member-header"><span class="member-name">.SubscribedItems()</span><span class="member-type">â†’ { string }</span></div>
+        <div class="member-header"><span class="member-name">.SubscribedItems()</span><span class="member-type">→ { string }</span></div>
         <p class="member-desc">Item ids the user is subscribed to.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">.ItemState(id)</span><span class="member-type">â†’ WorkshopItemState</span></div>
+        <div class="member-header"><span class="member-name">.ItemState(id)</span><span class="member-type">→ WorkshopItemState</span></div>
         <p class="member-desc">Live install state. See <a href="#workshop-state">WorkshopItemState</a>.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">.InstallInfo(id)</span><span class="member-type">â†’ WorkshopInstallInfo?</span></div>
+        <div class="member-header"><span class="member-name">.InstallInfo(id)</span><span class="member-type">→ WorkshopInstallInfo?</span></div>
         <p class="member-desc">Local install info; nil while not installed.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">.DownloadProgress(id)</span><span class="member-type">â†’ { Downloaded: number, Total: number }?</span></div>
+        <div class="member-header"><span class="member-name">.DownloadProgress(id)</span><span class="member-type">→ { Downloaded: number, Total: number }?</span></div>
         <p class="member-desc">Live progress; nil if not downloading. Both in bytes.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">.DownloadItem(id, highPriority?)</span><span class="member-type">â†’ boolean</span></div>
+        <div class="member-header"><span class="member-name">.DownloadItem(id, highPriority?)</span><span class="member-type">→ boolean</span></div>
         <p class="member-desc">Force-trigger a download. <code>highPriority</code> jumps the Steam queue.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">.GetItem(id)</span><span class="member-type">â†’ WorkshopItem</span></div>
+        <div class="member-header"><span class="member-name">.GetItem(id)</span><span class="member-type">→ WorkshopItem</span></div>
         <p class="member-desc">
             Combined fetch: state flags + install info + a <code>Files()</code>
             helper. See <a href="#workshop-item">WorkshopItem</a>.
@@ -342,7 +342,7 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
     <div class="member">
         <div class="member-header">
             <span class="member-name">Steam.Server.Start(opts)</span>
-            <span class="member-type">â†’ SteamServer</span>
+            <span class="member-type">→ SteamServer</span>
         </div>
         <p class="member-desc">
             Spin up a Steam game server. Logon mode is set with
@@ -407,7 +407,7 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
     </tbody>
 </table>
 
-<!-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ─────────────────────────────────────────────────────────────────── -->
 <h2 id="objects">Object reference</h2>
 
 <p>
@@ -483,7 +483,7 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
             lobby member sends a P2P packet via <code>:Send</code> or
             <code>:Broadcast</code>. Bytes are the exact payload the
             sender passed in. Routed via Steam Networking Sockets
-            (NAT-friendly, encrypted, identified by SteamID â€” IPs are
+            (NAT-friendly, encrypted, identified by SteamID — IPs are
             never exposed). Messages from peers who aren't current
             members of any of your lobbies are silently dropped.
         </p>
@@ -497,7 +497,7 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
         <p class="member-desc">True once the lobby has been closed by the owner.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">lobby:Members()</span><span class="member-type">â†’ { string }</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">lobby:Members()</span><span class="member-type">→ { string }</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Snapshot of every member's Steam id.</p>
     </div>
     <div class="member">
@@ -509,28 +509,28 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">lobby:GetData(key)</span><span class="member-type">â†’ string?</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">lobby:GetData(key)</span><span class="member-type">→ string?</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">lobby:DeleteData(key)</span><span class="member-type">â†’ boolean</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">lobby:DeleteData(key)</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Delete a key from the lobby-wide store. Returns true if the key existed.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">lobby:GetAllData()</span><span class="member-type">â†’ { [string]: string }</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">lobby:GetAllData()</span><span class="member-type">→ { [string]: string }</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Full snapshot of every visible lobby-wide key/value pair.
             Engine-reserved <code>_ruzit_*</code> keys are filtered out.
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">lobby:MemberLimit()</span><span class="member-type">â†’ number?</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">lobby:MemberLimit()</span><span class="member-type">→ number?</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Configured maximum member count, or nil if Steam hasn't pushed the value yet.</p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">lobby:SendChat(message)</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">lobby:SetJoinable(joinable)</span><span class="member-type">â†’ boolean</span><span class="tag tag-method">method</span><span class="tag">owner-only</span></div>
+        <div class="member-header"><span class="member-name">lobby:SetJoinable(joinable)</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span><span class="tag">owner-only</span></div>
         <p class="member-desc">Owner-only. Toggle whether new players can join via <code>Steam.Lobby.Join</code>.</p>
     </div>
     <div class="member">
@@ -549,7 +549,7 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
             Owner-only. Kick a member by Steam id. The targeted client
             fires <code>OnKick</code> and auto-leaves. Other members
             observe the leave via <code>OnMemberLeft</code>. You can't
-            kick yourself â€” use <code>:Close()</code> or
+            kick yourself — use <code>:Close()</code> or
             <code>:Leave()</code>.
         </p>
     </div>
@@ -561,13 +561,13 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
         <div class="member-header"><span class="member-name">lobby:Send(memberId, data, reliability?)</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             P2P send to one specific lobby member. Uses Steam Networking
-            Sockets â€” relay-fallback, encrypted, NAT-friendly, addressed
+            Sockets — relay-fallback, encrypted, NAT-friendly, addressed
             by SteamID (no IPs ever leaked). The connection is opened
             lazily on the first send to that peer (one handshake, ~100ms
             on the relay path, instant on direct LAN).
         </p>
         <p class="member-desc">
-            <code>data</code> is raw bytes â€” pass any string / buffer
+            <code>data</code> is raw bytes — pass any string / buffer
             holding your serialized payload. <code>reliability</code>
             is one of <code>"Reliable"</code> (default, ordered, no-drop),
             <code>"Unreliable"</code> (fast, lossy, no order),
@@ -603,7 +603,7 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
     to the lobby-data store. Every Ruzit client watches those keys and
     auto-leaves / auto-fires <code>OnClose</code> / <code>OnKick</code>
     accordingly. Non-Ruzit clients (third-party tools talking directly to
-    Steam matchmaking) won't honor the flags â€” kicks/closes only work
+    Steam matchmaking) won't honor the flags — kicks/closes only work
     against players running your built game.
 </div>
 
@@ -611,7 +611,7 @@ Steam.OnConnected:Connect(<span class="hl-kw">function</span>()
 
 <p>
     <code>:Send</code> / <code>:Broadcast</code> / <code>OnMessage</code> are
-    backed by <strong>Steam Networking Sockets</strong> â€” Valve's modern P2P
+    backed by <strong>Steam Networking Sockets</strong> — Valve's modern P2P
     transport with NAT punch-through, free relay fallback, end-to-end
     encryption, and addressing by SteamID (peers never see each other's IPs).
     Use this for actual gameplay packets; <code>:SendChat</code> is rate-
@@ -626,10 +626,10 @@ Steam.Lobby.<span class="hl-fn">Create</span>(<span class="hl-num">8</span>, <sp
         <span class="hl-fn">print</span>(senderId, <span class="hl-str">"sent"</span>, #bytes, <span class="hl-str">"bytes"</span>)
     <span class="hl-kw">end</span>)
 
-    <span class="hl-cmt">-- Reliable (default) â€” ordered, no-loss. For chat, RPCs, state syncs.</span>
+    <span class="hl-cmt">-- Reliable (default) — ordered, no-loss. For chat, RPCs, state syncs.</span>
     lobby:<span class="hl-fn">Broadcast</span>(<span class="hl-str">"hello everyone"</span>)
 
-    <span class="hl-cmt">-- Unreliable â€” fast, may drop. For positions/inputs.</span>
+    <span class="hl-cmt">-- Unreliable — fast, may drop. For positions/inputs.</span>
     Heart:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>()
         lobby:<span class="hl-fn">Broadcast</span>(<span class="hl-fn">serialize_player_state</span>(), <span class="hl-str">"Unreliable"</span>)
     <span class="hl-kw">end</span>)
@@ -708,7 +708,7 @@ Steam.Lobby.<span class="hl-fn">Create</span>(<span class="hl-num">8</span>, <sp
             (<code>EndAuthSession</code> on the Steam SDK side). The
             backend will no longer regard them as authenticated. Your
             game's networking layer should also drop the underlying
-            socket / NetConnection â€” Steam's gameserver API only handles
+            socket / NetConnection — Steam's gameserver API only handles
             authentication, not transport.
         </p>
     </div>

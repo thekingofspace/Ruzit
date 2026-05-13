@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -49,7 +49,7 @@ on_peer_packet:Connect(<span class="hl-kw">function</span>(packet) chan:Push(pac
     <div class="member">
         <div class="member-header">
             <span class="member-name">Voice.StartCapture()</span>
-            <span class="member-type">â†’ VoiceCapture</span>
+            <span class="member-type">→ VoiceCapture</span>
         </div>
         <p class="member-desc">
             Open the default microphone. Encodes 20 ms Opus frames; fires
@@ -60,7 +60,7 @@ on_peer_packet:Connect(<span class="hl-kw">function</span>(packet) chan:Push(pac
     <div class="member">
         <div class="member-header">
             <span class="member-name">Voice.CreateChannel()</span>
-            <span class="member-type">â†’ VoiceChannel</span>
+            <span class="member-type">→ VoiceChannel</span>
         </div>
         <p class="member-desc">
             Per-peer playback channel. Each remote speaker gets one. Push
@@ -70,7 +70,7 @@ on_peer_packet:Connect(<span class="hl-kw">function</span>(packet) chan:Push(pac
     <div class="member">
         <div class="member-header">
             <span class="member-name">Voice.PlayPacket(packet, opts?)</span>
-            <span class="member-type">â†’ VoiceChannel</span>
+            <span class="member-type">→ VoiceChannel</span>
         </div>
         <p class="member-desc">
             Fire-and-forget: spin up a transient channel, decode + play the
@@ -84,7 +84,7 @@ on_peer_packet:Connect(<span class="hl-kw">function</span>(packet) chan:Push(pac
     <div class="member">
         <div class="member-header">
             <span class="member-name">Voice.NewRecorder()</span>
-            <span class="member-type">â†’ VoiceRecorder</span>
+            <span class="member-type">→ VoiceRecorder</span>
         </div>
         <p class="member-desc">
             Empty packet collector. Hook to <code>mic.OnPacket</code> OR to
@@ -95,20 +95,20 @@ on_peer_packet:Connect(<span class="hl-kw">function</span>(packet) chan:Push(pac
     <div class="member">
         <div class="member-header">
             <span class="member-name">Voice.LoadRecording(serialized)</span>
-            <span class="member-type">â†’ VoiceRecording</span>
+            <span class="member-type">→ VoiceRecording</span>
         </div>
         <p class="member-desc">Inverse of <code>recorder:Serialize()</code>.</p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">Voice.Record(duration)</span>
-            <span class="member-type">â†’ Signal&lt;VoiceRecording, string&gt;</span>
+            <span class="member-type">→ Signal&lt;VoiceRecording, string&gt;</span>
         </div>
         <p class="member-desc">
             One-shot mic recording. Opens the default input, captures for
             <code>duration</code> seconds (clamped to 1 hour), stops
             automatically, and fires the returned Signal once with
-            <code>(recording, serialized)</code> â€” the recording handle for
+            <code>(recording, serialized)</code> — the recording handle for
             local playback (<code>recording:PlayInto(channel)</code> or
             <code>Voice.PlayRecording(recording)</code>) and the serialized
             string for sending over the network / saving to disk / reloading
@@ -126,7 +126,7 @@ Voice.<span class="hl-fn">Record</span>(<span class="hl-num">3</span>):<span cla
     <div class="member">
         <div class="member-header">
             <span class="member-name">Voice.PlayRecording(data, opts?)</span>
-            <span class="member-type">â†’ VoiceChannel</span>
+            <span class="member-type">→ VoiceChannel</span>
         </div>
         <p class="member-desc">
             Fire-and-forget recording playback. <code>data</code> is either
@@ -177,7 +177,7 @@ Voice.<span class="hl-fn">Record</span>(<span class="hl-num">3</span>):<span cla
         <p class="member-desc">Stop and release the mic. After Stop, every other method is a no-op.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">cap:IsActive()</span><span class="member-type">â†’ boolean</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">cap:IsActive()</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">True between StartCapture and Stop.</p>
     </div>
     <div class="member">
@@ -195,7 +195,7 @@ Voice.<span class="hl-fn">Record</span>(<span class="hl-num">3</span>):<span cla
         <p class="member-desc">Alias for Pause/Resume that reads naturally with a state variable.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">cap:IsPaused()</span><span class="member-type">â†’ boolean</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">cap:IsPaused()</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">cap:SetThreshold(amplitude)</span><span class="tag tag-method">method</span></div>
@@ -207,7 +207,7 @@ Voice.<span class="hl-fn">Record</span>(<span class="hl-num">3</span>):<span cla
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">cap:GetThreshold()</span><span class="member-type">â†’ number</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">cap:GetThreshold()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
     </div>
 </div>
 
@@ -278,8 +278,8 @@ Voice.<span class="hl-fn">Record</span>(<span class="hl-num">3</span>):<span cla
         <tr><td><code>chan.Speed</code></td><td>number</td><td>Time + pitch. Clamps to 0.25..4.</td></tr>
         <tr><td><code>chan.Pitch</code></td><td>number</td><td>Alias for <code>Speed</code>.</td></tr>
         <tr><td><code>chan.Position</code></td><td>Vector?</td><td>World-space anchor. Set to <code>nil</code> to revert to non-positional.</td></tr>
-        <tr><td><code>chan.MinFalloff</code></td><td>number</td><td>Inner radius. Distances â‰¤ this play at full volume. Default <code>0</code>.</td></tr>
-        <tr><td><code>chan.MaxFalloff</code></td><td>number</td><td>Outer radius. Distances â‰¥ this are silent. Default <code>8</code>.</td></tr>
+        <tr><td><code>chan.MinFalloff</code></td><td>number</td><td>Inner radius. Distances ≤ this play at full volume. Default <code>0</code>.</td></tr>
+        <tr><td><code>chan.MaxFalloff</code></td><td>number</td><td>Outer radius. Distances ≥ this are silent. Default <code>8</code>.</td></tr>
     </tbody>
 </table>
 
@@ -324,15 +324,15 @@ Tween.<span class="hl-fn">new</span>(chan, <span class="hl-num">0.25</span>, <sp
         <p class="member-desc">Drop everything captured so far.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">rec:Length()</span><span class="member-type">â†’ number</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">rec:Length()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Total packet count.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">rec:Duration()</span><span class="member-type">â†’ number</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">rec:Duration()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Total recorded duration in seconds.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">rec:Serialize()</span><span class="member-type">â†’ string</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">rec:Serialize()</span><span class="member-type">→ string</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Length-prefixed binary serialization. Save with
             <code>IO.write</code> or to Steam Cloud, send over the
@@ -340,7 +340,7 @@ Tween.<span class="hl-fn">new</span>(chan, <span class="hl-num">0.25</span>, <sp
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">rec:ToRecording()</span><span class="member-type">â†’ VoiceRecording</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">rec:ToRecording()</span><span class="member-type">→ VoiceRecording</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Snapshot the current packet list as an immutable <code>VoiceRecording</code>.</p>
     </div>
 </div>
@@ -355,10 +355,10 @@ Tween.<span class="hl-fn">new</span>(chan, <span class="hl-num">0.25</span>, <sp
 
 <div class="member-list">
     <div class="member">
-        <div class="member-header"><span class="member-name">rec:PacketCount()</span><span class="member-type">â†’ number</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">rec:PacketCount()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">rec:Duration()</span><span class="member-type">â†’ number</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">rec:Duration()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
         <div class="member-header">

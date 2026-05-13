@@ -2853,8 +2853,11 @@ impl Iterator for MuteMod {
     type Item = f32;
     fn next(&mut self) -> Option<f32> {
         let s = self.inner.next()?;
-        let enabled = self.state.lock().unwrap().enabled;
-        if enabled { Some(0.0) } else { Some(s) }
+        let st = self.state.lock().unwrap();
+        if !st.enabled {
+            return Some(s);
+        }
+        if st.value >= 0.5 { Some(0.0) } else { Some(s) }
     }
 }
 impl Source for MuteMod {

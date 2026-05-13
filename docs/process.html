@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -142,7 +142,7 @@ Process.RenderStepped:Connect(<span class="hl-kw">function</span>(dt)
     <div class="member">
         <div class="member-header">
             <span class="member-name">Process.Env(name)</span>
-            <span class="member-type">â†’ string?</span>
+            <span class="member-type">→ string?</span>
         </div>
         <p class="member-desc">
             Read one variable. <code>nil</code> if unset.
@@ -153,7 +153,7 @@ Process.Env(<span class="hl-str">"NOPE"</span>)   <span class="hl-com">-- nil</s
     <div class="member">
         <div class="member-header">
             <span class="member-name">Process.Env()</span>
-            <span class="member-type">â†’ { [string]: string }</span>
+            <span class="member-type">→ { [string]: string }</span>
         </div>
         <p class="member-desc">Whole environment as a Lua table.</p>
     </div>
@@ -174,7 +174,7 @@ Process.Env(<span class="hl-str">"NOPE"</span>)   <span class="hl-com">-- nil</s
     <div class="member">
         <div class="member-header">
             <span class="member-name">Process.Args()</span>
-            <span class="member-type">â†’ { string }</span>
+            <span class="member-type">→ { string }</span>
         </div>
         <p class="member-desc">
             argv passed to Ruzit (or the launcher), with element [1] being
@@ -184,7 +184,7 @@ Process.Env(<span class="hl-str">"NOPE"</span>)   <span class="hl-com">-- nil</s
     <div class="member">
         <div class="member-header">
             <span class="member-name">Process.Close(code?)</span>
-            <span class="member-type">â†’ never</span>
+            <span class="member-type">→ never</span>
         </div>
         <p class="member-desc">
             Hard-exit. <code>code</code> defaults to 0. Doesn't run
@@ -196,7 +196,7 @@ Process.Env(<span class="hl-str">"NOPE"</span>)   <span class="hl-com">-- nil</s
     <div class="member">
         <div class="member-header">
             <span class="member-name">Process.Memory()</span>
-            <span class="member-type">â†’ MemorySnapshot</span>
+            <span class="member-type">→ MemorySnapshot</span>
         </div>
         <p class="member-desc">Snapshot of system memory. See <a href="#memory-obj">below</a>.</p>
     </div>

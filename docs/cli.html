@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -19,7 +19,7 @@
     Ruzit ships as a Cargo workspace with two binaries:
     <code>ruzit</code> (the dev tool for scaffolding, testing,
     building, and packaging) and <code>ruzitrun</code> (the runtime /
-    launcher template â€” runs games, serves as the EXE shipped games
+    launcher template — runs games, serves as the EXE shipped games
     are cut from). Drop both on your <code>PATH</code>; the CLI calls
     the runtime as a library for <code>test</code> and copies the
     <code>ruzitrun</code> binary as a template for <code>build</code>.
@@ -172,7 +172,7 @@ ruzitrun --console                    attach/allocate a console for windowed lau
 </p>
 
 <pre><code>ruzit test                       <span class="hl-com"># auto-find Main.luau</span>
-ruzit test ./MyGame              <span class="hl-com"># project dir â†’ MyGame/Main.luau</span>
+ruzit test ./MyGame              <span class="hl-com"># project dir → MyGame/Main.luau</span>
 ruzit test ./MyGame/scenes/level1.luau</code></pre>
 
 <p>
@@ -245,7 +245,7 @@ ruzit test ./MyGame/scenes/level1.luau</code></pre>
 </p>
 
 <pre><code>cd MyMod
-ruzit package                  <span class="hl-com"># â†’ MyMod/Generated/Managed/&lt;id&gt;.scripts.managed</span>
+ruzit package                  <span class="hl-com"># → MyMod/Generated/Managed/&lt;id&gt;.scripts.managed</span>
 ruzit package . -o ../release  <span class="hl-com"># custom output dir</span></code></pre>
 
 <p>
@@ -347,19 +347,19 @@ ruzit update</code></pre>
 <p>
     The CLI fetches a single platform-specific zip and extracts only
     the runtime binary inside it. The zip's contents are deliberately
-    plain-named so a manual download â†’ extract leaves you with files
+    plain-named so a manual download → extract leaves you with files
     you can run as <code>ruzit init</code> /
-    <code>ruzitrun --run â€¦</code> straight away:
+    <code>ruzitrun --run …</code> straight away:
 </p>
 
-<pre><code>{base}/ruzit-windows.zip   â†’  ruzit.exe + ruzitrun.exe   (update extracts ruzitrun.exe)
-{base}/ruzit-linux.zip     â†’  ruzit + ruzitrun           (update extracts ruzitrun)
-{base}/ruzit-macos.zip     â†’  ruzit + ruzitrun           (when built)</code></pre>
+<pre><code>{base}/ruzit-windows.zip   →  ruzit.exe + ruzitrun.exe   (update extracts ruzitrun.exe)
+{base}/ruzit-linux.zip     →  ruzit + ruzitrun           (update extracts ruzitrun)
+{base}/ruzit-macos.zip     →  ruzit + ruzitrun           (when built)</code></pre>
 
 <p>
     The default base URL is
     <code>https://github.com/thekingofspace/Ruzit/releases/latest/download</code>
-    â€” GitHub's own redirect that always points at the most recent
+    — GitHub's own redirect that always points at the most recent
     stable release. So a fresh install can run <code>ruzit
     update</code> with no setup. The bundled GitHub Actions
     workflow auto-publishes versioned releases on every push, see
@@ -420,13 +420,13 @@ ruzit update</code></pre>
     Releases are <strong>never</strong> marked as prereleases. The
     workflow uses <code>gh release create --latest</code>, so
     GitHub's <code>/releases/latest/</code> redirect resolves
-    automatically to whatever the most recent push produced â€” which
+    automatically to whatever the most recent push produced — which
     is what the CLI's default <code>RUZIT_RELEASE_BASE</code>
     targets.
 </p>
 
 <p>
-    To cut a new version: bump <code>version = "4.0.0"</code> â†’
+    To cut a new version: bump <code>version = "4.0.0"</code> →
     <code>"1.1.0"</code> in
     <code>Ruzit/runtime/Cargo.toml</code> (and the matching
     <code>core</code> + <code>cli</code> Cargo.tomls), commit, push.

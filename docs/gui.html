@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -34,7 +34,7 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">GUI.Basic.Square()</span>
-            <span class="member-type">â†’ Primitive</span>
+            <span class="member-type">→ Primitive</span>
         </div>
         <p class="member-desc">
             Solid-coloured rectangle. Tinted by <code>.Color</code>;
@@ -44,7 +44,7 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">GUI.Basic.Circle()</span>
-            <span class="member-type">â†’ Primitive</span>
+            <span class="member-type">→ Primitive</span>
         </div>
         <p class="member-desc">
             Solid-coloured circle inscribed in <code>.Size</code>. The
@@ -56,7 +56,7 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">GUI.Basic.Triangle()</span>
-            <span class="member-type">â†’ Primitive</span>
+            <span class="member-type">→ Primitive</span>
         </div>
         <p class="member-desc">
             Solid-coloured triangle inscribed in <code>.Size</code>: apex at
@@ -68,7 +68,7 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">GUI.Basic.Image(asset)</span>
-            <span class="member-type">â†’ Primitive</span>
+            <span class="member-type">→ Primitive</span>
         </div>
         <p class="member-desc">
             Textured rectangle. Pass an <code>ImageAsset</code>; the
@@ -78,7 +78,7 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">GUI.Basic.Font(asset)</span>
-            <span class="member-type">â†’ Primitive</span>
+            <span class="member-type">→ Primitive</span>
         </div>
         <p class="member-desc">
             Text label. Pass a <code>FontAsset</code>; glyphs are
@@ -88,7 +88,7 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">GUI.Basic.Clippable()</span>
-            <span class="member-type">â†’ Primitive</span>
+            <span class="member-type">→ Primitive</span>
             <span class="tag tag-new">new in 1.1</span>
         </div>
         <p class="member-desc">
@@ -200,7 +200,7 @@ mask.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</spa
     <div class="member">
         <div class="member-header">
             <span class="member-name">prim:GetPropertyChanged(propName)</span>
-            <span class="member-type">â†’ Signal&lt;any&gt;</span>
+            <span class="member-type">→ Signal&lt;any&gt;</span>
             <span class="tag tag-method">method</span>
             <span class="tag tag-new">new in 1.1</span>
         </div>
@@ -265,7 +265,7 @@ mask.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</spa
         <div class="member-header"><span class="member-name">prim:SetData(asset, name, value)</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">prim:GetData(asset, name)</span><span class="member-type">â†’ number?</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">prim:GetData(asset, name)</span><span class="member-type">→ number?</span><span class="tag tag-method">method</span></div>
     </div>
 </div>
 
@@ -481,7 +481,7 @@ player:<span class="hl-fn">JumpToFrame</span>(<span class="hl-str">"Down0000"</s
 
 <div class="member-list">
     <div class="member">
-        <div class="member-header"><span class="member-name">image:CreateTrack(frames, opts?)</span><span class="member-type">â†’ AnimatedImageTrack</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">image:CreateTrack(frames, opts?)</span><span class="member-type">→ AnimatedImageTrack</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Build an AnimatedImageTrack from a sequence of SubTexture
             names. <code>frames</code> is either an array
@@ -512,14 +512,14 @@ player:<span class="hl-fn">JumpToFrame</span>(<span class="hl-str">"Down0000"</s
         <p class="member-desc">Release the manual frame override.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">image:HasFrame(name)</span><span class="member-type">â†’ boolean</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">image:HasFrame(name)</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Whether the parsed atlas contains a SubTexture with this
             name.
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">image:GetFrameNames()</span><span class="member-type">â†’ { string }</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">image:GetFrameNames()</span><span class="member-type">→ { string }</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Every SubTexture name in source order. Handy for picking
             frame names dynamically (e.g. all frames starting with
@@ -527,7 +527,7 @@ player:<span class="hl-fn">JumpToFrame</span>(<span class="hl-str">"Down0000"</s
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">image:GetPrimitive()</span><span class="member-type">â†’ Primitive</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">image:GetPrimitive()</span><span class="member-type">→ Primitive</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             The underlying GUI Image primitive. Useful for clipping
             (<code>clippable:AddClippable(image:GetPrimitive())</code>)
@@ -668,20 +668,20 @@ img.Visible  = <span class="hl-kw">true</span></code></pre>
 
 <div class="member-list">
     <div class="member">
-        <div class="member-header"><span class="member-name">drawable:Width()</span><span class="member-type">â†’ number</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">drawable:Width()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">drawable:Height()</span><span class="member-type">â†’ number</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">drawable:Height()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">drawable:Source()</span><span class="member-type">â†’ string</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">drawable:Source()</span><span class="member-type">→ string</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Debug label for the drawable (e.g.
             <code>"&lt;drawable:128x128&gt;"</code>). Useful in logs.
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">drawable:Pixels()</span><span class="member-type">â†’ string</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">drawable:Pixels()</span><span class="member-type">→ string</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Return the current pixel buffer as a binary string
             (<code>width * height * 4</code> bytes of RGBA). Snapshot
@@ -689,7 +689,7 @@ img.Visible  = <span class="hl-kw">true</span></code></pre>
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">drawable:IsAlive()</span><span class="member-type">â†’ boolean</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">drawable:IsAlive()</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">drawable:WritePixel(x, y, color, transparency?)</span><span class="tag tag-method">method</span></div>
@@ -776,13 +776,13 @@ scratch:<span class="hl-fn">Apply</span>(board)        <span class="hl-com">-- s
 
 <div class="member-list">
     <div class="member">
-        <div class="member-header"><span class="member-name">canvas:Width()</span><span class="member-type">â†’ number</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">canvas:Width()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">canvas:Height()</span><span class="member-type">â†’ number</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">canvas:Height()</span><span class="member-type">→ number</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">canvas:Pixels()</span><span class="member-type">â†’ string</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">canvas:Pixels()</span><span class="member-type">→ string</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Snapshot of the current pixel buffer as RGBA bytes.</p>
     </div>
     <div class="member">
