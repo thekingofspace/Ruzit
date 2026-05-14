@@ -60,6 +60,7 @@ pub struct AnimationTrack {
     pub fade_time: f32,
     pub looped: bool,
     pub speed: f32,
+    pub priority: f32,
     pub time: f32,
     pub state: TrackState,
     pub keyframes: Vec<Keyframe>,
@@ -82,6 +83,7 @@ impl AnimationTrack {
             fade_time: 0.0,
             looped: false,
             speed: 1.0,
+            priority: 0.0,
             time: 0.0,
             state: TrackState::Stopped,
             keyframes: Vec::new(),
@@ -115,6 +117,10 @@ impl AnimationTrack {
 }
 
 pub type TrackRef = Arc<Mutex<AnimationTrack>>;
+
+pub fn lerp_cframe_pub(a: CFrame, b: CFrame, t: f32) -> CFrame {
+    lerp_cframe(a, b, t)
+}
 
 fn lerp_cframe(a: CFrame, b: CFrame, t: f32) -> CFrame {
     let pa = a.position;

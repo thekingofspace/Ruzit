@@ -904,6 +904,40 @@ snd:<span class="hl-fn">Play</span>()  <span class="hl-com">-- audio now follows
         <p class="member-desc">Time multiplier. 1.0 = normal speed; -1 reverses.</p>
     </div>
     <div class="member">
+        <div class="member-header"><span class="member-name">.Priority</span><span class="member-type">number</span></div>
+        <p class="member-desc">
+            Conflict-resolution weight when multiple tracks are playing
+            on the <em>same part</em>. Higher wins; default is
+            <code>0</code>. Tracks on different parts never conflict
+            &mdash; each part runs its own priority gate.
+        </p>
+        <ul>
+            <li>
+                <strong>Lower priority &rarr; output suppressed.</strong>
+                A walk loop at <code>Priority = 0</code> will keep
+                ticking (its clock advances, signals still fire) while
+                a shoot animation at <code>Priority = 1</code> drives
+                the visual output. When the shoot ends, walk's output
+                takes over automatically &mdash; no manual stop / play
+                needed.
+            </li>
+            <li>
+                <strong>Equal priority &rarr; merged.</strong>
+                Two tracks tied at the current max contribute together:
+                CFrame samples are <em>averaged</em>; vertex deformations
+                are <em>summed</em> as displacements relative to the
+                base mesh. So overlapping rig animations stack instead
+                of fighting.
+            </li>
+        </ul>
+        <pre><code><span class="hl-kw">local</span> walk  = char:<span class="hl-fn">GetAnimatedTrack</span>(walkAnim);  walk.Looped  = <span class="hl-kw">true</span>
+<span class="hl-kw">local</span> shoot = char:<span class="hl-fn">GetAnimatedTrack</span>(shootAnim)
+shoot.Priority = <span class="hl-num">1</span>   <span class="hl-com">-- one-shot shoot pose overrides walk while playing</span>
+
+walk:<span class="hl-fn">Play</span>()
+shoot:<span class="hl-fn">Play</span>()    <span class="hl-com">-- you see the shoot pose, but walk keeps its clock</span></code></pre>
+    </div>
+    <div class="member">
         <div class="member-header"><span class="member-name">.Length</span><span class="member-type">number</span><span class="tag tag-readonly">read-only</span></div>
     </div>
     <div class="member">

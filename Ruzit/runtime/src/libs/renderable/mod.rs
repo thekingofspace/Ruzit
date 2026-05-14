@@ -1406,6 +1406,11 @@ impl UserData for AnimationTrackHandle {
             this.track.lock().unwrap().speed = v;
             Ok(())
         });
+        f.add_field_method_get("Priority", |_, this| Ok(this.track.lock().unwrap().priority));
+        f.add_field_method_set("Priority", |_, this, v: f32| {
+            this.track.lock().unwrap().priority = v;
+            Ok(())
+        });
         f.add_field_method_get("Length", |_, this| Ok(this.track.lock().unwrap().duration));
         f.add_field_method_get("TimePosition", |_, this| {
             Ok(this.track.lock().unwrap().time)
@@ -1678,37 +1683,42 @@ pub fn tick_animations(lua: &Lua, dt: f32) {
             )
         };
         let (tracks, base_cframe, base_verts, base_indices, base_id) = snapshot;
+
+        let mut contributions: Vec<(f32, animation::TrackEval)> = Vec::new();
+
         for tref in tracks {
-            let mut track = tref.lock().unwrap();
-            let baseline_cf = track.baseline.cframe.unwrap_or(base_cframe);
-            let baseline_verts = track
-                .baseline
-                .vertices
-                .clone()
-                .or_else(|| base_verts.clone());
-            let baseline_indices = base_indices.clone();
-            let (Some(bv), Some(bi)) = (baseline_verts, baseline_indices) else {
-                let eval = animation::tick_track(
-                    &mut track,
-                    dt,
-                    baseline_cf,
-                    Arc::new(Vec::new()),
-                    Arc::new(Vec::new()),
-                );
-                drop(track);
-                if let Some(cf) = eval.cframe_override {
-                    let mut p = part_arc.lock().unwrap();
-                    p.cframe = cf;
-                }
-                continue;
+            let (eval, drained_events, played_key, stopped_key, did_loop_key, update_links, priority) = {
+                let mut track = tref.lock().unwrap();
+                let baseline_cf = track.baseline.cframe.unwrap_or(base_cframe);
+                let baseline_verts = track
+                    .baseline
+                    .vertices
+                    .clone()
+                    .or_else(|| base_verts.clone());
+                let baseline_indices = base_indices.clone();
+                let eval = match (baseline_verts, baseline_indices) {
+                    (Some(bv), Some(bi)) => {
+                        animation::tick_track(&mut track, dt, baseline_cf, bv, bi)
+                    }
+                    _ => animation::tick_track(
+                        &mut track,
+                        dt,
+                        baseline_cf,
+                        Arc::new(Vec::new()),
+                        Arc::new(Vec::new()),
+                    ),
+                };
+                let drained_events = std::mem::take(&mut track.pending_events);
+                (
+                    eval,
+                    drained_events,
+                    track.played_key.clone(),
+                    track.stopped_key.clone(),
+                    track.did_loop_key.clone(),
+                    track.update_links.clone(),
+                    track.priority,
+                )
             };
-            let eval = animation::tick_track(&mut track, dt, baseline_cf, bv, bi);
-            let drained_events = std::mem::take(&mut track.pending_events);
-            let played_key = track.played_key.clone();
-            let stopped_key = track.stopped_key.clone();
-            let did_loop_key = track.did_loop_key.clone();
-            let update_links = track.update_links.clone();
-            drop(track);
 
             for ev in drained_events {
                 match ev {
@@ -1740,26 +1750,92 @@ pub fn tick_animations(lua: &Lua, dt: f32) {
                 }
             }
 
-            let mut p = part_arc.lock().unwrap();
+            if eval.cframe_override.is_some() || eval.vertices_override.is_some() {
+                contributions.push((priority, eval));
+            }
+        }
+
+        if contributions.is_empty() {
+            continue;
+        }
+
+        let max_prio = contributions
+            .iter()
+            .map(|(p, _)| *p)
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        let mut final_cf: Option<CFrame> = None;
+        let mut cf_count: u32 = 0;
+        let mut final_verts: Option<Vec<mesh::Vertex3D>> = None;
+        let mut final_indices: Option<Arc<Vec<u32>>> = None;
+
+        for (prio, eval) in contributions {
+            if (prio - max_prio).abs() > 1e-6 {
+                continue;
+            }
             if let Some(cf) = eval.cframe_override {
-                p.cframe = cf;
+                match &mut final_cf {
+                    None => {
+                        final_cf = Some(cf);
+                        cf_count = 1;
+                    }
+                    Some(acc) => {
+                        cf_count += 1;
+                        let inv_n = 1.0 / cf_count as f32;
+                        *acc = animation::lerp_cframe_pub(*acc, cf, inv_n);
+                    }
+                }
             }
             if let Some(verts) = eval.vertices_override {
-                let id = base_id.unwrap_or(0);
-                let indices = eval.indices_for_normals.unwrap_or_else(|| {
-                    p.model
-                        .as_ref()
-                        .map(|m| m.indices.clone())
-                        .unwrap_or_else(|| Arc::new(Vec::new()))
-                });
-                p.deform_version = p.deform_version.wrapping_add(1);
-                p.deformed = Some(ModelRef {
-                    id,
-                    version: p.deform_version,
-                    vertices: verts,
-                    indices,
-                });
+                let base = match &base_verts {
+                    Some(b) => b.clone(),
+                    None => continue,
+                };
+                match &mut final_verts {
+                    None => {
+                        final_verts = Some((*verts).clone());
+                        final_indices = eval.indices_for_normals.clone();
+                    }
+                    Some(acc) => {
+                        let count = acc.len().min(verts.len()).min(base.len());
+                        for i in 0..count {
+                            let dx = verts[i].position[0] - base[i].position[0];
+                            let dy = verts[i].position[1] - base[i].position[1];
+                            let dz = verts[i].position[2] - base[i].position[2];
+                            acc[i].position[0] += dx;
+                            acc[i].position[1] += dy;
+                            acc[i].position[2] += dz;
+                        }
+                        if final_indices.is_none() {
+                            final_indices = eval.indices_for_normals.clone();
+                        }
+                    }
+                }
             }
+        }
+
+        let mut p = part_arc.lock().unwrap();
+        if let Some(cf) = final_cf {
+            p.cframe = cf;
+        }
+        if let Some(mut verts) = final_verts {
+            let id = base_id.unwrap_or(0);
+            let indices = final_indices.unwrap_or_else(|| {
+                p.model
+                    .as_ref()
+                    .map(|m| m.indices.clone())
+                    .unwrap_or_else(|| Arc::new(Vec::new()))
+            });
+            if cf_count > 0 || !indices.is_empty() {
+                mesh::recompute_normals(&mut verts, &indices);
+            }
+            p.deform_version = p.deform_version.wrapping_add(1);
+            p.deformed = Some(ModelRef {
+                id,
+                version: p.deform_version,
+                vertices: Arc::new(verts),
+                indices,
+            });
         }
     }
 }

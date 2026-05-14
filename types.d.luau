@@ -1683,6 +1683,15 @@ declare class AnimationTrack
 	FadeTime: number
 	Looped: boolean
 	Speed: number
+	-- Conflict-resolution weight when multiple tracks are playing on
+	-- the same part. Higher wins. Default 0. Tracks with priority
+	-- below the current max are still ticked (their internal clock
+	-- advances, signals fire) but their visual output is suppressed.
+	-- Tracks tied at the current max blend together: CFrame samples
+	-- are averaged, vertex-deform samples are summed as
+	-- displacements-from-base. Tracks on different parts never
+	-- conflict — each part runs its own priority gate.
+	Priority: number
 	Length: number
 	TimePosition: number
 	IsPlaying: boolean
