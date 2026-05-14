@@ -1,4 +1,3 @@
-﻿
 -- =============================================================================
 -- Ruzit Luau type declarations
 -- =============================================================================
@@ -1139,6 +1138,20 @@ declare class SoundByteOutput
 	-- from the part's CFrame.position. Call :Unfollow to release.
 	function Follow(self, part: BasePart): ()
 	function Unfollow(self): ()
+	-- Enumerate output devices visible to the OS (speakers, headsets,
+	-- virtual cables, ...). The order is host-dependent. Names are the
+	-- same strings accepted by :SetOutput.
+	function ListSelectableOutputs(self): { string }
+	-- Returns the OS-default output device's name, or nil if none.
+	function GetDefaultOutput(self): string?
+	-- The device name currently bound to this OutputNode via :SetOutput.
+	-- Returns nil when this node is routed through the default device.
+	function GetCurrentOutput(self): string?
+	-- Bind this OutputNode to a specific output device by name. Pass nil
+	-- to revert to the OS default. Reopens the underlying audio stream;
+	-- any in-flight playback for this node is cut and restarts on the
+	-- new device at the next Play().
+	function SetOutput(self, name: string?): ()
 end
 
 declare class SoundByteByte
@@ -1157,6 +1170,18 @@ declare class SoundByteVoiceChannel
 	Enabled: boolean
 	-- Voice activation amplitude threshold. 0 = always send.
 	Threshold: number
+	-- Enumerate input devices visible to the OS (microphones, virtual
+	-- cables, ...). Names are the same strings accepted by :SetInput.
+	function ListSelectableInputs(self): { string }
+	-- Returns the OS-default input device's name, or nil if none.
+	function GetDefaultInput(self): string?
+	-- The device name currently bound to this VoiceChannel via :SetInput.
+	-- Returns nil when capture uses the OS default microphone.
+	function GetCurrentInput(self): string?
+	-- Bind this VoiceChannel to a specific input device by name. Pass nil
+	-- to revert to the OS default. Tears down the existing capture
+	-- stream; a new one starts on the next Link / capture trigger.
+	function SetInput(self, name: string?): ()
 end
 
 declare class SoundByteByteSource

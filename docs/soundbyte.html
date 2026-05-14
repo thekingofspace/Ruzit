@@ -294,6 +294,48 @@ player:<span class="hl-fn">Destroy</span>()</code></pre>
         <div class="member-header"><span class="member-name">output:Unfollow()</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Drop the follow target. Reverts to <code>CFrame</code>/<code>Position</code>.</p>
     </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">output:ListSelectableOutputs()</span><span class="member-type">&rarr; { string }</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Enumerate every output device the OS exposes &mdash; speakers,
+            headsets, USB DACs, virtual audio cables. The returned
+            strings are the exact names accepted by
+            <code>:SetOutput</code>. Order is host-defined and may
+            change between boots.
+        </p>
+        <pre><code><span class="hl-kw">for</span> _, name <span class="hl-kw">in</span> output:<span class="hl-fn">ListSelectableOutputs</span>() <span class="hl-kw">do</span>
+    <span class="hl-fn">print</span>(name)
+<span class="hl-kw">end</span></code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">output:GetDefaultOutput()</span><span class="member-type">&rarr; string?</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            The OS-default output device name. <code>nil</code> if no
+            output is configured. Always one of the values returned by
+            <code>:ListSelectableOutputs</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">output:GetCurrentOutput()</span><span class="member-type">&rarr; string?</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            The device name this <code>OutputNode</code> is currently
+            pinned to via <code>:SetOutput</code>. Returns <code>nil</code>
+            while the node is routed through the default device.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">output:SetOutput(name)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Pin playback to a specific output device. Pass one of the
+            names from <code>:ListSelectableOutputs</code>, or
+            <code>nil</code> to revert to the OS default. The current
+            audio stream is torn down; the next
+            <code>player:Play()</code> opens a fresh stream on the new
+            device. Errors when no device matches the given name.
+        </p>
+        <pre><code><span class="hl-kw">local</span> headset = <span class="hl-fn">findHeadset</span>(output:<span class="hl-fn">ListSelectableOutputs</span>())
+output:<span class="hl-fn">SetOutput</span>(headset)</code></pre>
+    </div>
 </div>
 
 <h2 id="bytesink">ByteSink</h2>
@@ -534,6 +576,47 @@ output:<span class="hl-fn">Follow</span>(peerCharacter.Head)</code></pre>
             Stop everything <em>and</em> remove the channel from the
             internal registry. Subsequent use is a no-op.
         </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">mic:ListSelectableInputs()</span><span class="member-type">&rarr; { string }</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Enumerate every input device the OS exposes &mdash; physical
+            microphones, USB headsets, virtual audio cables. Names are
+            the exact strings accepted by <code>:SetInput</code>.
+        </p>
+        <pre><code><span class="hl-kw">for</span> _, name <span class="hl-kw">in</span> mic:<span class="hl-fn">ListSelectableInputs</span>() <span class="hl-kw">do</span>
+    <span class="hl-fn">print</span>(name)
+<span class="hl-kw">end</span></code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">mic:GetDefaultInput()</span><span class="member-type">&rarr; string?</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            The OS-default input device name. <code>nil</code> if no
+            input is configured.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">mic:GetCurrentInput()</span><span class="member-type">&rarr; string?</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            The device this <code>VoiceChannel</code> is pinned to via
+            <code>:SetInput</code>. Returns <code>nil</code> while
+            capture uses the OS default.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">mic:SetInput(name)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Pin capture to a specific input device. Pass one of the
+            names from <code>:ListSelectableInputs</code>, or
+            <code>nil</code> to revert to the OS default. The current
+            capture stream (if any) is torn down; a new one starts on
+            the next Link / capture trigger. The named device is
+            verified lazily &mdash; if it doesn't exist when capture
+            starts, <code>voice_ensure_capture</code> errors with
+            <em>no input device named '...'</em>.
+        </p>
+        <pre><code>mic:<span class="hl-fn">SetInput</span>(<span class="hl-str">"Headset (USB)"</span>)
+SoundByte.<span class="hl-fn">Link</span>(mic, output) <span class="hl-cmt">-- capture opens on the named device</span></code></pre>
     </div>
 </div>
 

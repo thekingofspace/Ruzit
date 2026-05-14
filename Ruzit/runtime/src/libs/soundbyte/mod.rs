@@ -38,6 +38,46 @@ fn output_handle() -> mlua::Result<OutputStreamHandle> {
     })
 }
 
+fn handle_for_output(state: &OutputState) -> mlua::Result<OutputStreamHandle> {
+    if let Some(h) = state.custom_handle.lock().unwrap().as_ref() {
+        return Ok(h.clone());
+    }
+    output_handle()
+}
+
+fn open_output_handle_for_device(name: &str) -> mlua::Result<OutputStreamHandle> {
+    use rodio::cpal::traits::{DeviceTrait, HostTrait};
+    let host = rodio::cpal::default_host();
+    let mut devices = host
+        .output_devices()
+        .map_err(|e| mlua::Error::RuntimeError(format!("output_devices: {e}")))?;
+    let device = devices
+        .find(|d| d.name().map(|n| n == name).unwrap_or(false))
+        .ok_or_else(|| {
+            mlua::Error::RuntimeError(format!("OutputNode:SetOutput: no output device named '{name}'"))
+        })?;
+    let (stream, handle) = OutputStream::try_from_device(&device)
+        .map_err(|e| mlua::Error::RuntimeError(format!("OutputNode:SetOutput open '{name}': {e}")))?;
+    std::mem::forget(stream);
+    Ok(handle)
+}
+
+fn list_output_device_names() -> mlua::Result<Vec<String>> {
+    use rodio::cpal::traits::{DeviceTrait, HostTrait};
+    let host = rodio::cpal::default_host();
+    let devices = host
+        .output_devices()
+        .map_err(|e| mlua::Error::RuntimeError(format!("output_devices: {e}")))?;
+    Ok(devices.filter_map(|d| d.name().ok()).collect())
+}
+
+fn default_output_device_name() -> Option<String> {
+    use rodio::cpal::traits::{DeviceTrait, HostTrait};
+    rodio::cpal::default_host()
+        .default_output_device()
+        .and_then(|d| d.name().ok())
+}
+
 pub fn create(lua: &Lua) -> mlua::Result<Table> {
     let t = lua.create_table()?;
 
@@ -350,6 +390,8 @@ pub struct OutputState {
     pub explicit_cframe: Mutex<Option<CFrame>>,
     pub follow_target: Mutex<Option<Arc<Mutex<crate::libs::renderable::PartState>>>>,
     pub linked_links: Mutex<Vec<u64>>,
+    pub device_name: Mutex<Option<String>>,
+    pub custom_handle: Mutex<Option<OutputStreamHandle>>,
 }
 
 #[derive(Clone)]
@@ -375,6 +417,8 @@ impl OutputNode {
                 explicit_cframe: Mutex::new(None),
                 follow_target: Mutex::new(None),
                 linked_links: Mutex::new(Vec::new()),
+                device_name: Mutex::new(None),
+                custom_handle: Mutex::new(None),
             }),
         }
     }
@@ -477,6 +521,39 @@ impl UserData for OutputNode {
             *this.state.follow_target.lock().unwrap() = None;
             if this.state.explicit_cframe.lock().unwrap().is_none() {
                 this.state.spatial.lock().unwrap().use_3d = false;
+            }
+            Ok(())
+        });
+
+        m.add_method("ListSelectableOutputs", |_, _this, _: ()| -> mlua::Result<Vec<String>> {
+            list_output_device_names()
+        });
+        m.add_method("GetDefaultOutput", |_, _this, _: ()| -> mlua::Result<Option<String>> {
+            Ok(default_output_device_name())
+        });
+        m.add_method("GetCurrentOutput", |_, this, _: ()| -> mlua::Result<Option<String>> {
+            Ok(this.state.device_name.lock().unwrap().clone())
+        });
+        m.add_method("SetOutput", |_, this, name: Value| -> mlua::Result<()> {
+            if let Some(sink) = this.state.sink.lock().unwrap().take() {
+                sink.stop();
+            }
+            match name {
+                Value::Nil => {
+                    *this.state.device_name.lock().unwrap() = None;
+                    *this.state.custom_handle.lock().unwrap() = None;
+                }
+                Value::String(s) => {
+                    let name = s.to_str()?.to_string();
+                    let handle = open_output_handle_for_device(&name)?;
+                    *this.state.custom_handle.lock().unwrap() = Some(handle);
+                    *this.state.device_name.lock().unwrap() = Some(name);
+                }
+                _ => {
+                    return Err(mlua::Error::RuntimeError(
+                        "OutputNode:SetOutput expects a device name string or nil".into(),
+                    ));
+                }
             }
             Ok(())
         });
@@ -780,7 +857,7 @@ fn play_routes(
 
             let mut sink_lock = out.sink.lock().unwrap();
             if sink_lock.is_none() {
-                let h = output_handle()?;
+                let h = handle_for_output(out)?;
                 let new_sink = Sink::try_new(&h).map_err(|e| {
                     mlua::Error::RuntimeError(format!("SoundByte sink: {e}"))
                 })?;
@@ -1214,6 +1291,7 @@ pub struct VoiceChannelState {
     pub active_sinks: Mutex<Vec<(u64, Sink)>>,
     pub byte_routes: Mutex<Vec<ByteSinkRoute>>,
     pub peak_level: Arc<Mutex<f32>>,
+    pub device_name: Mutex<Option<String>>,
 }
 
 #[cfg(feature = "voice")]
@@ -1241,6 +1319,7 @@ impl VoiceChannel {
             active_sinks: Mutex::new(Vec::new()),
             byte_routes: Mutex::new(Vec::new()),
             peak_level: Arc::new(Mutex::new(0.0)),
+            device_name: Mutex::new(None),
         }));
         VOICE_REGISTRY.with(|r| r.borrow_mut().push(state.clone()));
         Self { state }
@@ -1308,6 +1387,44 @@ impl UserData for VoiceChannel {
             });
             Ok(())
         });
+
+        m.add_method("ListSelectableInputs", |_, _this, _: ()| -> mlua::Result<Vec<String>> {
+            use cpal::traits::{DeviceTrait, HostTrait};
+            let host = cpal::default_host();
+            let iter = host
+                .input_devices()
+                .map_err(|e| mlua::Error::RuntimeError(format!("input_devices: {e}")))?;
+            Ok(iter.filter_map(|d| d.name().ok()).collect())
+        });
+        m.add_method("GetDefaultInput", |_, _this, _: ()| -> mlua::Result<Option<String>> {
+            use cpal::traits::{DeviceTrait, HostTrait};
+            Ok(cpal::default_host()
+                .default_input_device()
+                .and_then(|d| d.name().ok()))
+        });
+        m.add_method("GetCurrentInput", |_, this, _: ()| -> mlua::Result<Option<String>> {
+            Ok(this.state.lock().unwrap().device_name.lock().unwrap().clone())
+        });
+        m.add_method("SetInput", |_, this, name: Value| -> mlua::Result<()> {
+            let mut s = this.state.lock().unwrap();
+            let _ = s.stream.lock().unwrap().take();
+            match name {
+                Value::Nil => {
+                    *s.device_name.lock().unwrap() = None;
+                }
+                Value::String(v) => {
+                    *s.device_name.lock().unwrap() = Some(v.to_str()?.to_string());
+                }
+                _ => {
+                    return Err(mlua::Error::RuntimeError(
+                        "VoiceChannel:SetInput expects a device name string or nil".into(),
+                    ));
+                }
+            }
+            s.sample_rate = 0;
+            s.channels = 0;
+            Ok(())
+        });
     }
 }
 
@@ -1322,9 +1439,22 @@ fn voice_ensure_capture(state: &Arc<Mutex<VoiceChannelState>>) -> mlua::Result<(
         }
     }
     let host = cpal::default_host();
-    let device = host.default_input_device().ok_or_else(|| {
-        mlua::Error::RuntimeError("VoiceChannel: no default input device".into())
-    })?;
+    let selected_name = state.lock().unwrap().device_name.lock().unwrap().clone();
+    let device = if let Some(name) = selected_name.as_ref() {
+        let mut iter = host
+            .input_devices()
+            .map_err(|e| mlua::Error::RuntimeError(format!("input_devices: {e}")))?;
+        iter.find(|d| d.name().map(|n| &n == name).unwrap_or(false))
+            .ok_or_else(|| {
+                mlua::Error::RuntimeError(format!(
+                    "VoiceChannel: no input device named '{name}'"
+                ))
+            })?
+    } else {
+        host.default_input_device().ok_or_else(|| {
+            mlua::Error::RuntimeError("VoiceChannel: no default input device".into())
+        })?
+    };
     let supported = device.default_input_config().map_err(|e| {
         mlua::Error::RuntimeError(format!("VoiceChannel input config: {e}"))
     })?;
@@ -1630,7 +1760,7 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
                 last_l: 0.0,
                 last_r: 0.0,
             });
-            let h = output_handle()?;
+            let h = handle_for_output(out)?;
             let sink = Sink::try_new(&h)
                 .map_err(|e| mlua::Error::RuntimeError(format!("SoundByte voice sink: {e}")))?;
             sink.set_volume(out.spatial.lock().unwrap().volume);
@@ -1680,7 +1810,7 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
                 last_l: 0.0,
                 last_r: 0.0,
             });
-            let h = output_handle()?;
+            let h = handle_for_output(out)?;
             let sink = Sink::try_new(&h).map_err(|e| {
                 mlua::Error::RuntimeError(format!("SoundByte ByteSource sink: {e}"))
             })?;
