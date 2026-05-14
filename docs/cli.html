@@ -140,13 +140,13 @@ ruzitrun --console                    attach/allocate a console for windowed lau
 <span class="hl-com">-- libs/utils/ManagedInfo.toml has ID = "Utils" (a hand-placed package)</span>
 
 <span class="hl-kw">$</span> ruzit scaffold
-[Ruzit] scaffold â†’ /work/MyGame (scanning recursively)
-  alias  CoolMath â†’ ./Packages/cool-math
-  alias  Utils    â†’ ./libs/utils
+[Ruzit] scaffold -> /work/MyGame (scanning recursively)
+  alias  CoolMath -> ./Packages/cool-math
+  alias  Utils    -> ./libs/utils
 [Ruzit] scaffold done: wrote .luaurc (3 aliases)
 
 <span class="hl-com">-- in your code:</span>
-<span class="hl-kw">local</span> math   = <span class="hl-fn">require</span>(<span class="hl-str">"@CoolMath"</span>)            <span class="hl-com">-- â†’ Packages/cool-math/init.luau</span>
+<span class="hl-kw">local</span> math   = <span class="hl-fn">require</span>(<span class="hl-str">"@CoolMath"</span>)            <span class="hl-com">-- -> Packages/cool-math/init.luau</span>
 <span class="hl-kw">local</span> vec    = <span class="hl-fn">require</span>(<span class="hl-str">"@CoolMath/vector"</span>)     <span class="hl-com">-- submodule inside the package</span>
 <span class="hl-kw">local</span> menu   = <span class="hl-fn">require</span>(<span class="hl-str">"@Game/scenes/menu"</span>)</code></pre>
 
@@ -175,7 +175,7 @@ ruzitrun --console                    attach/allocate a console for windowed lau
 </p>
 
 <pre><code>ruzit test                       <span class="hl-com"># auto-find Main.luau</span>
-ruzit test ./MyGame              <span class="hl-com"># project dir â†’ MyGame/Main.luau</span>
+ruzit test ./MyGame              <span class="hl-com"># project dir -> MyGame/Main.luau</span>
 ruzit test ./MyGame/scenes/level1.luau</code></pre>
 
 <p>
@@ -248,7 +248,7 @@ ruzit test ./MyGame/scenes/level1.luau</code></pre>
 </p>
 
 <pre><code>cd MyMod
-ruzit package                  <span class="hl-com"># â†’ MyMod/Generated/Managed/&lt;id&gt;.scripts.managed</span>
+ruzit package                  <span class="hl-com"># -> MyMod/Generated/Managed/&lt;id&gt;.scripts.managed</span>
 ruzit package . -o ../release  <span class="hl-com"># custom output dir</span></code></pre>
 
 <p>
@@ -350,14 +350,14 @@ ruzit update</code></pre>
 <p>
     The CLI fetches a single platform-specific zip and extracts only
     the runtime binary inside it. The zip's contents are deliberately
-    plain-named so a manual download â†’ extract leaves you with files
+    plain-named so a manual download -> extract leaves you with files
     you can run as <code>ruzit init</code> /
     <code>ruzitrun --run â€¦</code> straight away:
 </p>
 
-<pre><code>{base}/ruzit-windows.zip   â†’  ruzit.exe + ruzitrun.exe   (update extracts ruzitrun.exe)
-{base}/ruzit-linux.zip     â†’  ruzit + ruzitrun           (update extracts ruzitrun)
-{base}/ruzit-macos.zip     â†’  ruzit + ruzitrun           (when built)</code></pre>
+<pre><code>{base}/ruzit-windows.zip   ->  ruzit.exe + ruzitrun.exe   (update extracts ruzitrun.exe)
+{base}/ruzit-linux.zip     ->  ruzit + ruzitrun           (update extracts ruzitrun)
+{base}/ruzit-macos.zip     ->  ruzit + ruzitrun           (when built)</code></pre>
 
 <p>
     The default base URL is
@@ -429,7 +429,7 @@ ruzit update</code></pre>
 </p>
 
 <p>
-    To cut a new version: bump <code>version = "4.0.0"</code> â†’
+    To cut a new version: bump <code>version = "4.0.0"</code> ->
     <code>"1.1.0"</code> in
     <code>Ruzit/runtime/Cargo.toml</code> (and the matching
     <code>core</code> + <code>cli</code> Cargo.tomls), commit, push.

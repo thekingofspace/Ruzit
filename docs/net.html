@@ -31,7 +31,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">Net.Request(method, url, body?, headers?)</span>
-            <span class="member-type">â†’ HttpResponse</span>
+            <span class="member-type">-> HttpResponse</span>
         </div>
         <p class="member-desc">
             Synchronous HTTP client. Throws on connection failure; non-2xx
@@ -70,14 +70,14 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">Net.TCP.Connect(addr)</span>
-            <span class="member-type">â†’ TcpConnection</span>
+            <span class="member-type">-> TcpConnection</span>
         </div>
         <p class="member-desc">Dial a remote <code>"host:port"</code>.</p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">Net.TCP.Host(addr)</span>
-            <span class="member-type">â†’ TcpListener</span>
+            <span class="member-type">-> TcpListener</span>
         </div>
         <p class="member-desc">Bind + listen on a local <code>"host:port"</code>. Pass <code>:0</code> for an OS-assigned port.</p>
     </div>
@@ -110,7 +110,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">Net.UDP.Bind(addr)</span>
-            <span class="member-type">â†’ UdpHandle</span>
+            <span class="member-type">-> UdpHandle</span>
         </div>
         <p class="member-desc">
             Open a UDP socket on the given local <code>"host:port"</code>.
@@ -141,7 +141,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">Net.IPC.Connect(name)</span>
-            <span class="member-type">â†’ IpcConnection</span>
+            <span class="member-type">-> IpcConnection</span>
         </div>
         <p class="member-desc">
             Dial a same-machine IPC endpoint. <code>name</code> is a bare
@@ -153,7 +153,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">Net.IPC.Host(name)</span>
-            <span class="member-type">â†’ IpcListener</span>
+            <span class="member-type">-> IpcListener</span>
         </div>
         <p class="member-desc">
             Create a same-machine IPC server with the given name. Same
@@ -174,14 +174,14 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">Net.Socket.Connect(url)</span>
-            <span class="member-type">â†’ WebSocketConn</span>
+            <span class="member-type">-> WebSocketConn</span>
         </div>
         <p class="member-desc">Pass a <code>ws://</code> or <code>wss://</code> URL.</p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">Net.Socket.Host(addr)</span>
-            <span class="member-type">â†’ WebSocketListener</span>
+            <span class="member-type">-> WebSocketListener</span>
         </div>
         <p class="member-desc">
             Pass <code>"addr:port"</code>. TLS isn't auto-enabled on

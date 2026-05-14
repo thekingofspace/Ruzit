@@ -32,7 +32,7 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
     <div class="member">
         <div class="member-header">
             <span class="member-name">Renderable.BasePart(shape?)</span>
-            <span class="member-type">â†’ BasePart</span>
+            <span class="member-type">-> BasePart</span>
         </div>
         <p class="member-desc">
             Spawn a primitive part. <code>shape</code> is
@@ -42,7 +42,7 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
     <div class="member">
         <div class="member-header">
             <span class="member-name">Renderable.BaseModel(asset)</span>
-            <span class="member-type">â†’ BasePart</span>
+            <span class="member-type">-> BasePart</span>
         </div>
         <p class="member-desc">
             Spawn a part backed by a <code>ModelAsset</code> (loaded via
@@ -65,7 +65,7 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
     <div class="member">
         <div class="member-header">
             <span class="member-name">Renderable.SimplifyMesh(asset, ratio?)</span>
-            <span class="member-type">â†’ ModelAsset</span>
+            <span class="member-type">-> ModelAsset</span>
         </div>
         <p class="member-desc">
             Polygon reduction by quantization clustering. <code>ratio</code>
@@ -605,7 +605,7 @@ lid_l.Size = Vector.<span class="hl-fn">new</span>(<span class="hl-num">0.08</sp
     <div class="member">
         <div class="member-header">
             <span class="member-name">part:GetPropertyChanged(propName)</span>
-            <span class="member-type">â†’ Signal&lt;any&gt;</span>
+            <span class="member-type">-> Signal&lt;any&gt;</span>
             <span class="tag tag-method">method</span>
             <span class="tag tag-new">new in 1.1</span>
         </div>
@@ -686,7 +686,7 @@ lid_l.Size = Vector.<span class="hl-fn">new</span>(<span class="hl-num">0.08</sp
     <div class="member">
         <div class="member-header">
             <span class="member-name">part:GetData(asset, name)</span>
-            <span class="member-type">â†’ number?</span>
+            <span class="member-type">-> number?</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -702,7 +702,7 @@ lid_l.Size = Vector.<span class="hl-fn">new</span>(<span class="hl-num">0.08</sp
     <div class="member">
         <div class="member-header">
             <span class="member-name">part:Deform(target, envelope, displacement)</span>
-            <span class="member-type">â†’ number</span>
+            <span class="member-type">-> number</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -732,7 +732,7 @@ lid_l.Size = Vector.<span class="hl-fn">new</span>(<span class="hl-num">0.08</sp
     <div class="member">
         <div class="member-header">
             <span class="member-name">part:LocalToWorld(local_offset)</span>
-            <span class="member-type">â†’ Vector</span>
+            <span class="member-type">-> Vector</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -747,7 +747,7 @@ lid_l.Size = Vector.<span class="hl-fn">new</span>(<span class="hl-num">0.08</sp
     <div class="member">
         <div class="member-header">
             <span class="member-name">part:WorldToLocal(world)</span>
-            <span class="member-type">â†’ Vector</span>
+            <span class="member-type">-> Vector</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -1016,7 +1016,7 @@ shoot:<span class="hl-fn">Play</span>()    <span class="hl-com">-- you see the s
         <div class="member-header"><span class="member-name">track:ClearKeyframes()</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">track:LinkToUpdate(interval)</span><span class="member-type">â†’ Signal&lt;number&gt;</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">track:LinkToUpdate(interval)</span><span class="member-type">-> Signal&lt;number&gt;</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Returns a Signal that fires every <code>interval</code>
             track-time seconds with the elapsed playback time.

@@ -63,7 +63,7 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
     <div class="member">
         <div class="member-header">
             <span class="member-name">DynMesh.new(base)</span>
-            <span class="member-type">â†’ DynMesh</span>
+            <span class="member-type">-> DynMesh</span>
         </div>
         <p class="member-desc">
             Wrap a BasePart as a DynMesh. Welds added to the
@@ -79,7 +79,7 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
     <div class="member">
         <div class="member-header">
             <span class="member-name">dm:Weld(target, opts?)</span>
-            <span class="member-type">â†’ number (weld id)</span>
+            <span class="member-type">-> number (weld id)</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -139,7 +139,7 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
     <div class="member">
         <div class="member-header">
             <span class="member-name">dm:Stretch(target, anchors)</span>
-            <span class="member-type">â†’ number</span>
+            <span class="member-type">-> number</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -155,7 +155,7 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
                 <li>Sets <code>target.CFrame.Position</code> to the
                     <em>centroid</em> (average) of all anchors.</li>
                 <li>Sets <code>target.CFrame.Rotation</code> to face
-                    the first â†’ last anchor (yaw + pitch).</li>
+                    the first -> last anchor (yaw + pitch).</li>
                 <li>Sets <code>target.Size.x</code> to the
                     <em>total polyline length</em> (sum of consecutive
                     anchor-to-anchor distances), so non-collinear
@@ -171,7 +171,7 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
     <div class="member">
         <div class="member-header">
             <span class="member-name">dm:Detach(weld_id)</span>
-            <span class="member-type">â†’ boolean</span>
+            <span class="member-type">-> boolean</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -187,7 +187,7 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
     <div class="member">
         <div class="member-header">
             <span class="member-name">dm:DetachByName(name)</span>
-            <span class="member-type">â†’ boolean</span>
+            <span class="member-type">-> boolean</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -199,7 +199,7 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
     <div class="member">
         <div class="member-header">
             <span class="member-name">dm:DetachPart(target)</span>
-            <span class="member-type">â†’ boolean</span>
+            <span class="member-type">-> boolean</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -211,7 +211,7 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
     <div class="member">
         <div class="member-header">
             <span class="member-name">dm:Clear()</span>
-            <span class="member-type">â†’ number</span>
+            <span class="member-type">-> number</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -224,7 +224,7 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
     <div class="member">
         <div class="member-header">
             <span class="member-name">dm:GetPart(weld_id)</span>
-            <span class="member-type">â†’ BasePart?</span>
+            <span class="member-type">-> BasePart?</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -237,7 +237,7 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
     <div class="member">
         <div class="member-header">
             <span class="member-name">dm:GetPartByName(name)</span>
-            <span class="member-type">â†’ BasePart?</span>
+            <span class="member-type">-> BasePart?</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -251,21 +251,21 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
     <div class="member">
         <div class="member-header">
             <span class="member-name">dm:GetParts()</span>
-            <span class="member-type">â†’ {{ Id, Name?, Part }}</span>
+            <span class="member-type">-> {{ Id, Name?, Part }}</span>
             <span class="tag tag-method">method</span>
         </div>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">dm:GetBase()</span>
-            <span class="member-type">â†’ BasePart</span>
+            <span class="member-type">-> BasePart</span>
             <span class="tag tag-method">method</span>
         </div>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">dm:IsAlive()</span>
-            <span class="member-type">â†’ boolean</span>
+            <span class="member-type">-> boolean</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -414,8 +414,8 @@ dm:Stretch(strap, {
     { vertex = <span class="hl-num">412</span> },                                <span class="hl-com">-- right hip</span>
 })
 
-<span class="hl-com">-- The strap's X-size = (88 â†’ chest) + (chest â†’ 412), so it's longer</span>
-<span class="hl-com">-- than the straight 88 â†’ 412 distance. The strap is centered on the</span>
+<span class="hl-com">-- The strap's X-size = (88 -> chest) + (chest -> 412), so it's longer</span>
+<span class="hl-com">-- than the straight 88 -> 412 distance. The strap is centered on the</span>
 <span class="hl-com">-- centroid of all three anchors and oriented from anchor[0] toward</span>
 <span class="hl-com">-- anchor[last].</span></code></pre>
 

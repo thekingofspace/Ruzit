@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -36,7 +36,7 @@ const MINIMIZED_CHANGED_KEY: &str = "ruzit_window_minimized_changed";
 const VISIBLE_CHANGED_KEY: &str = "ruzit_window_visible_changed";
 const ALWAYS_ON_TOP_CHANGED_KEY: &str = "ruzit_window_always_on_top_changed";
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum WindowChange {
     Resized { width: u32, height: u32 },
     Moved { x: i32, y: i32 },
@@ -44,10 +44,37 @@ enum WindowChange {
     ScaleFactor(f64),
 }
 
+fn try_fire_live(change: &WindowChange) -> bool {
+    let lua_ptr = ACTIVE_LUA.with(|c| *c.borrow());
+    let Some(lua_ptr) = lua_ptr else {
+        return false;
+    };
+    let lua: &Lua = unsafe { &*lua_ptr };
+    let Ok(signal) = lua.named_registry_value::<Table>(CHANGED_KEY) else {
+        return false;
+    };
+    if let Err(e) = fire_change(lua, &signal, *change) {
+        eprintln!("[Window] live Changed fire error: {e}");
+    }
+    true
+}
+
+fn try_fire_state_change(registry_key: &str, value: bool) {
+    let lua_ptr = ACTIVE_LUA.with(|c| *c.borrow());
+    let Some(lua_ptr) = lua_ptr else {
+        return;
+    };
+    let lua: &Lua = unsafe { &*lua_ptr };
+    fire_bool(lua, registry_key, value);
+}
+
 thread_local! {
     static EVENT_LOOP: RefCell<Option<EventLoop<()>>> = const { RefCell::new(None) };
     static APP: RefCell<Option<WindowApp>> = const { RefCell::new(None) };
     static CLOSE_CB: RefCell<Option<RegistryKey>> = const { RefCell::new(None) };
+    static ACTIVE_LUA: RefCell<Option<*const Lua>> = const { RefCell::new(None) };
+    static CURRENT_WINDOW: RefCell<Option<Arc<WinitWindow>>> = const { RefCell::new(None) };
+    static CLOSE_REQUESTED: Cell<bool> = const { Cell::new(false) };
 }
 
 pub fn create(lua: &Lua) -> mlua::Result<Table> {
@@ -57,11 +84,12 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
 }
 
 pub fn is_open() -> bool {
-    APP.with(|a| a.borrow().is_some())
+    CURRENT_WINDOW.with(|c| c.borrow().is_some())
 }
 
 pub fn pump(lua: &Lua) {
-    let (close_now, pending) = EVENT_LOOP.with(|el_cell| {
+    ACTIVE_LUA.with(|c| *c.borrow_mut() = Some(lua as *const Lua));
+    let (mut close_now, pending) = EVENT_LOOP.with(|el_cell| {
         APP.with(|app_cell| {
             let mut el_ref = el_cell.borrow_mut();
             let mut app_ref = app_cell.borrow_mut();
@@ -75,6 +103,15 @@ pub fn pump(lua: &Lua) {
             }
         })
     });
+    ACTIVE_LUA.with(|c| *c.borrow_mut() = None);
+    if CLOSE_REQUESTED.with(|c| c.replace(false)) {
+        close_now = true;
+        APP.with(|a| {
+            if let Some(app) = a.borrow_mut().as_mut() {
+                app.close_requested = true;
+            }
+        });
+    }
 
     if !close_now {
         APP.with(|a| {
@@ -104,6 +141,7 @@ pub fn pump(lua: &Lua) {
             }
         }
         APP.with(|a| *a.borrow_mut() = None);
+        CURRENT_WINDOW.with(|c| *c.borrow_mut() = None);
         EVENT_LOOP.with(|el| *el.borrow_mut() = None);
         #[cfg(feature = "steam")]
         {
@@ -287,6 +325,8 @@ struct WindowApp {
     gpu: Option<GpuState>,
     close_requested: bool,
     pending: Vec<WindowChange>,
+    last_maximized: bool,
+    last_minimized: bool,
 
     start: Instant,
 }
@@ -299,6 +339,8 @@ impl WindowApp {
             gpu: None,
             close_requested: false,
             pending: Vec::new(),
+            last_maximized: false,
+            last_minimized: false,
             start: Instant::now(),
         }
     }
@@ -370,7 +412,8 @@ impl ApplicationHandler for WindowApp {
             window.set_window_level(WindowLevel::Normal);
         }
 
-        self.window = Some(window);
+        self.window = Some(window.clone());
+        CURRENT_WINDOW.with(|c| *c.borrow_mut() = Some(window));
         self.gpu = Some(gpu);
         self.paint_frame();
     }
@@ -384,13 +427,30 @@ impl ApplicationHandler for WindowApp {
         match event {
             WindowEvent::CloseRequested => self.close_requested = true,
             WindowEvent::Resized(size) => {
-                self.pending.push(WindowChange::Resized {
-                    width: size.width,
-                    height: size.height,
-                });
                 if let Some(gpu) = self.gpu.as_mut() {
                     gpu.resize(size.width, size.height);
                 }
+                let change = WindowChange::Resized {
+                    width: size.width,
+                    height: size.height,
+                };
+                if !try_fire_live(&change) {
+                    self.pending.push(change);
+                }
+
+                if let Some(window) = self.window.as_ref() {
+                    let is_max = window.is_maximized();
+                    if is_max != self.last_maximized {
+                        self.last_maximized = is_max;
+                        try_fire_state_change(MAXIMIZED_CHANGED_KEY, is_max);
+                    }
+                    let is_min = size.width == 0 || size.height == 0;
+                    if is_min != self.last_minimized {
+                        self.last_minimized = is_min;
+                        try_fire_state_change(MINIMIZED_CHANGED_KEY, is_min);
+                    }
+                }
+
                 self.paint_frame();
             }
             WindowEvent::RedrawRequested => self.paint_frame(),
@@ -468,11 +528,7 @@ impl UserData for WindowHandle {
 
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
         m.add_method("Close", |_, _, _: ()| {
-            APP.with(|a| {
-                if let Some(app) = a.borrow_mut().as_mut() {
-                    app.close_requested = true;
-                }
-            });
+            CLOSE_REQUESTED.with(|c| c.set(true));
             Ok(())
         });
 
@@ -602,29 +658,21 @@ impl UserData for WindowHandle {
 }
 
 fn with_window<F: FnOnce(&Arc<WinitWindow>)>(f: F) {
-    APP.with(|a| {
-        if let Some(app) = a.borrow().as_ref() {
-            if let Some(window) = app.window.as_ref() {
-                f(window);
-            }
+    CURRENT_WINDOW.with(|c| {
+        if let Some(window) = c.borrow().as_ref() {
+            f(window);
         }
     });
 }
 
 pub fn with_window_static<F: FnOnce(&WinitWindow)>(f: F) {
-    APP.with(|a| {
-        if let Some(app) = a.borrow().as_ref() {
-            if let Some(window) = app.window.as_ref() {
-                f(window.as_ref());
-            }
+    CURRENT_WINDOW.with(|c| {
+        if let Some(window) = c.borrow().as_ref() {
+            f(window.as_ref());
         }
     });
 }
 
 fn with_window_get<R, F: FnOnce(&Arc<WinitWindow>) -> R>(f: F) -> Option<R> {
-    APP.with(|a| {
-        a.borrow()
-            .as_ref()
-            .and_then(|app| app.window.as_ref().map(f))
-    })
+    CURRENT_WINDOW.with(|c| c.borrow().as_ref().map(f))
 }

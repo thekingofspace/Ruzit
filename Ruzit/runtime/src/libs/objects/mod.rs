@@ -785,8 +785,11 @@ fn clone_text_state(t: &TextState) -> TextState {
         font: t.font.clone(),
         content: t.content.clone(),
         size_px: t.size_px,
-        color: t.color,
+        style: t.style,
+        underline: t.underline,
+        strikethrough: t.strikethrough,
         baked: None,
+        baked_color: None,
     }
 }
 

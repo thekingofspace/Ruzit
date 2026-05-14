@@ -34,7 +34,7 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">GUI.Basic.Square()</span>
-            <span class="member-type">â†’ Primitive</span>
+            <span class="member-type">-> Primitive</span>
         </div>
         <p class="member-desc">
             Solid-coloured rectangle. Tinted by <code>.Color</code>;
@@ -44,7 +44,7 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">GUI.Basic.Circle()</span>
-            <span class="member-type">â†’ Primitive</span>
+            <span class="member-type">-> Primitive</span>
         </div>
         <p class="member-desc">
             Solid-coloured circle inscribed in <code>.Size</code>. The
@@ -56,7 +56,7 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">GUI.Basic.Triangle()</span>
-            <span class="member-type">â†’ Primitive</span>
+            <span class="member-type">-> Primitive</span>
         </div>
         <p class="member-desc">
             Solid-coloured triangle inscribed in <code>.Size</code>: apex at
@@ -68,7 +68,7 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">GUI.Basic.Image(asset)</span>
-            <span class="member-type">â†’ Primitive</span>
+            <span class="member-type">-> Primitive</span>
         </div>
         <p class="member-desc">
             Textured rectangle. Pass an <code>ImageAsset</code>; the
@@ -78,17 +78,32 @@ hp.Color    = Color3.FromHex(<span class="hl-str">"#9bd13b"</span>)</code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">GUI.Basic.Font(asset)</span>
-            <span class="member-type">â†’ Primitive</span>
+            <span class="member-type">-> Primitive</span>
         </div>
         <p class="member-desc">
             Text label. Pass a <code>FontAsset</code>; glyphs are
-            rasterised at runtime sized by <code>.TextSize</code>.
+            rasterised at runtime sized by <code>.TextSize</code>
+            and colored by the primitive's <code>.Color</code>.
+            Supports synthetic styling
+            (<code>.FontStyle</code>, <code>.Underline</code>,
+            <code>.Strikethrough</code>) and inline color escapes in
+            <code>.Text</code> (see below). Styling is applied at
+            bake time &mdash; weight is a coverage dilation, italic
+            is a horizontal shear, and underline / strikethrough
+            are drawn rules. Pair with a real bold / italic TTF for
+            pixel-perfect typography.
         </p>
+        <pre><code><span class="hl-kw">local</span> label = GUI.Basic.<span class="hl-fn">Font</span>(font)
+label.Text          = <span class="hl-str">"Headline {#ff5050}danger{} resumed"</span>
+label.TextSize      = <span class="hl-num">48</span>
+label.FontStyle     = <span class="hl-str">"BoldItalic"</span>
+label.Underline     = <span class="hl-kw">true</span>
+label.Visible       = <span class="hl-kw">true</span></code></pre>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">GUI.Basic.Clippable()</span>
-            <span class="member-type">â†’ Primitive</span>
+            <span class="member-type">-> Primitive</span>
             <span class="tag tag-new">new in 1.1</span>
         </div>
         <p class="member-desc">
@@ -133,6 +148,7 @@ mask.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</spa
 <div class="member-list">
     <div class="member">
         <div class="member-header"><span class="member-name">.Shape</span><span class="member-type">"Square" | "Circle" | "Triangle" | "Image" | "Text" | "Clippable"</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc"><code>"Text"</code> covers both <code>Font</code> and <code>StyledFont</code> primitives &mdash; styling is a property toggle, not a separate shape.</p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">.Size</span><span class="member-type">Dim</span></div>
@@ -180,14 +196,43 @@ mask.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</spa
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">.Text</span><span class="member-type">string</span></div>
-        <p class="member-desc">Text content. No-op on non-Text primitives.</p>
+        <p class="member-desc">
+            Text content. No-op on non-Text primitives.
+            Glyphs are colored by the primitive's regular
+            <code>.Color</code> &mdash; there's no separate
+            <code>TextColor</code>. Inline color escapes are
+            supported: <code>{#RRGGBB}</code> or <code>{#RGB}</code>
+            switches the active color, <code>{}</code> resets to
+            the base <code>.Color</code>, and <code>{{</code> writes
+            a literal <code>{</code>. Tags whose contents don't
+            match are left as literal text.
+        </p>
+        <pre><code>label.Text = <span class="hl-str">"Loaded {#3cb371}OK{}, {#ff5050}3 errors{} found"</span></code></pre>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">.TextSize</span><span class="member-type">number</span></div>
         <p class="member-desc">Glyph height in pixels.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">.TextColor</span><span class="member-type">Color3</span></div>
+        <div class="member-header"><span class="member-name">.FontStyle</span><span class="member-type">string</span></div>
+        <p class="member-desc">
+            Synthetic font variant applied at bake time. Defaults to
+            <code>"Regular"</code>. Setting an unknown value errors;
+            call <code>primitive:ListFontStyles()</code> to
+            enumerate. Italic variants shear the glyphs ~12&deg;;
+            weight variants dilate (or erode) glyph coverage. Both
+            are inexpensive but visibly approximate &mdash; pair with
+            a real bold / italic TTF if you need typographic
+            precision.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Underline</span><span class="member-type">boolean</span></div>
+        <p class="member-desc">Draw a baseline rule. Off by default.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Strikethrough</span><span class="member-type">boolean</span></div>
+        <p class="member-desc">Draw a rule through x-height. Combinable with <code>.Underline</code>.</p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">.Changed</span><span class="member-type">Signal&lt;string&gt;</span><span class="tag tag-readonly">read-only</span></div>
@@ -200,7 +245,7 @@ mask.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</spa
     <div class="member">
         <div class="member-header">
             <span class="member-name">prim:GetPropertyChanged(propName)</span>
-            <span class="member-type">â†’ Signal&lt;any&gt;</span>
+            <span class="member-type">-> Signal&lt;any&gt;</span>
             <span class="tag tag-method">method</span>
             <span class="tag tag-new">new in 1.1</span>
         </div>
@@ -218,6 +263,28 @@ mask.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</spa
         <pre><code>square:<span class="hl-fn">GetPropertyChanged</span>(<span class="hl-str">"Position"</span>):<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(p)
     <span class="hl-fn">print</span>(p.x, p.y)
 <span class="hl-kw">end</span>)</code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">prim:ListFontStyles()</span>
+            <span class="member-type">-> { string }</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            <em>Only valid on Font primitives.</em> Returns every
+            value accepted by <code>.FontStyle</code>, in canonical
+            casing: <code>Regular</code>, <code>Italic</code>,
+            <code>Light</code>, <code>LightItalic</code>,
+            <code>Medium</code>, <code>MediumItalic</code>,
+            <code>SemiBold</code>, <code>SemiBoldItalic</code>,
+            <code>Bold</code>, <code>BoldItalic</code>,
+            <code>ExtraBold</code>, <code>ExtraBoldItalic</code>,
+            <code>Black</code>, <code>BlackItalic</code>. Use to
+            populate a dropdown or validate user input.
+        </p>
+        <pre><code><span class="hl-kw">for</span> _, style <span class="hl-kw">in</span> label:<span class="hl-fn">ListFontStyles</span>() <span class="hl-kw">do</span>
+    <span class="hl-fn">print</span>(style)
+<span class="hl-kw">end</span></code></pre>
     </div>
     <div class="member">
         <div class="member-header">
@@ -265,7 +332,7 @@ mask.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</spa
         <div class="member-header"><span class="member-name">prim:SetData(asset, name, value)</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">prim:GetData(asset, name)</span><span class="member-type">â†’ number?</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">prim:GetData(asset, name)</span><span class="member-type">-> number?</span><span class="tag tag-method">method</span></div>
     </div>
 </div>
 
@@ -481,7 +548,7 @@ player:<span class="hl-fn">JumpToFrame</span>(<span class="hl-str">"Down0000"</s
 
 <div class="member-list">
     <div class="member">
-        <div class="member-header"><span class="member-name">image:CreateTrack(frames, opts?)</span><span class="member-type">â†’ AnimatedImageTrack</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">image:CreateTrack(frames, opts?)</span><span class="member-type">-> AnimatedImageTrack</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Build an AnimatedImageTrack from a sequence of SubTexture
             names. <code>frames</code> is either an array
@@ -512,14 +579,14 @@ player:<span class="hl-fn">JumpToFrame</span>(<span class="hl-str">"Down0000"</s
         <p class="member-desc">Release the manual frame override.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">image:HasFrame(name)</span><span class="member-type">â†’ boolean</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">image:HasFrame(name)</span><span class="member-type">-> boolean</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Whether the parsed atlas contains a SubTexture with this
             name.
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">image:GetFrameNames()</span><span class="member-type">â†’ { string }</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">image:GetFrameNames()</span><span class="member-type">-> { string }</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Every SubTexture name in source order. Handy for picking
             frame names dynamically (e.g. all frames starting with
@@ -527,7 +594,7 @@ player:<span class="hl-fn">JumpToFrame</span>(<span class="hl-str">"Down0000"</s
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">image:GetPrimitive()</span><span class="member-type">â†’ Primitive</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">image:GetPrimitive()</span><span class="member-type">-> Primitive</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             The underlying GUI Image primitive. Useful for clipping
             (<code>clippable:AddClippable(image:GetPrimitive())</code>)
@@ -668,20 +735,20 @@ img.Visible  = <span class="hl-kw">true</span></code></pre>
 
 <div class="member-list">
     <div class="member">
-        <div class="member-header"><span class="member-name">drawable:Width()</span><span class="member-type">â†’ number</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">drawable:Width()</span><span class="member-type">-> number</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">drawable:Height()</span><span class="member-type">â†’ number</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">drawable:Height()</span><span class="member-type">-> number</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">drawable:Source()</span><span class="member-type">â†’ string</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">drawable:Source()</span><span class="member-type">-> string</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Debug label for the drawable (e.g.
             <code>"&lt;drawable:128x128&gt;"</code>). Useful in logs.
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">drawable:Pixels()</span><span class="member-type">â†’ string</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">drawable:Pixels()</span><span class="member-type">-> string</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Return the current pixel buffer as a binary string
             (<code>width * height * 4</code> bytes of RGBA). Snapshot
@@ -689,7 +756,7 @@ img.Visible  = <span class="hl-kw">true</span></code></pre>
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">drawable:IsAlive()</span><span class="member-type">â†’ boolean</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">drawable:IsAlive()</span><span class="member-type">-> boolean</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">drawable:WritePixel(x, y, color, transparency?)</span><span class="tag tag-method">method</span></div>
@@ -776,13 +843,13 @@ scratch:<span class="hl-fn">Apply</span>(board)        <span class="hl-com">-- s
 
 <div class="member-list">
     <div class="member">
-        <div class="member-header"><span class="member-name">canvas:Width()</span><span class="member-type">â†’ number</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">canvas:Width()</span><span class="member-type">-> number</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">canvas:Height()</span><span class="member-type">â†’ number</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">canvas:Height()</span><span class="member-type">-> number</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">canvas:Pixels()</span><span class="member-type">â†’ string</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">canvas:Pixels()</span><span class="member-type">-> string</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Snapshot of the current pixel buffer as RGBA bytes.</p>
     </div>
     <div class="member">

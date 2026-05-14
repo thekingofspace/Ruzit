@@ -29,7 +29,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.Info()</span>
-            <span class="member-type">â†’ GPUInfo</span>
+            <span class="member-type">-> GPUInfo</span>
         </div>
         <p class="member-desc">
             Static adapter info. Cached, calling repeatedly is
@@ -40,7 +40,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.Limits()</span>
-            <span class="member-type">â†’ GPULimits</span>
+            <span class="member-type">-> GPULimits</span>
         </div>
         <p class="member-desc">
             Hard limits the active GPU device reports. wgpu doesn't
@@ -52,7 +52,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.FrameStats()</span>
-            <span class="member-type">â†’ GPUFrameStats</span>
+            <span class="member-type">-> GPUFrameStats</span>
         </div>
         <p class="member-desc">
             FPS / frame time / scene part count. Updated once per heart
@@ -67,7 +67,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.Raycast(origin, direction, filter?, maxDistance?)</span>
-            <span class="member-type">â†’ RaycastHit?</span>
+            <span class="member-type">-> RaycastHit?</span>
         </div>
         <p class="member-desc">
             GPU-dispatched ray test against every renderable BasePart.
@@ -113,7 +113,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.ScreenToRay(point)</span>
-            <span class="member-type">â†’ (Vector, Vector)</span>
+            <span class="member-type">-> (Vector, Vector)</span>
         </div>
         <p class="member-desc">
             Convert a screen pixel (Mouse.Position style) to a world-space
@@ -125,7 +125,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.WorldToScreen(world)</span>
-            <span class="member-type">â†’ (Dim?, boolean)</span>
+            <span class="member-type">-> (Dim?, boolean)</span>
         </div>
         <p class="member-desc">
             Project a world-space point onto the screen.
@@ -148,7 +148,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.NewBuffer(size)</span>
-            <span class="member-type">â†’ GPUBuffer</span>
+            <span class="member-type">-> GPUBuffer</span>
         </div>
         <p class="member-desc">
             Allocate a GPU storage buffer of <code>size</code> floats.
@@ -197,7 +197,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetMaxFrameRate()</span>
-            <span class="member-type">â†’ number?</span>
+            <span class="member-type">-> number?</span>
         </div>
         <p class="member-desc">Current cap, or <code>nil</code> when uncapped.</p>
     </div>
@@ -221,7 +221,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetVSync()</span>
-            <span class="member-type">â†’ boolean</span>
+            <span class="member-type">-> boolean</span>
         </div>
         <p class="member-desc">
             True if the swapchain is currently in a VSync mode.
@@ -267,7 +267,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetPowerMode()</span>
-            <span class="member-type">â†’ "Quality" | "Performance" | "Auto"</span>
+            <span class="member-type">-> "Quality" | "Performance" | "Auto"</span>
         </div>
         <p class="member-desc">
             Current power-mode preference. Default is
@@ -277,7 +277,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetBounds(part, quality?)</span>
-            <span class="member-type">â†’ { { Position, Size, Min, Max } }</span>
+            <span class="member-type">-> { { Position, Size, Min, Max } }</span>
         </div>
         <p class="member-desc">
             Return one or more world-space AABBs covering a BasePart.
@@ -304,7 +304,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.CheckArea(center, size, quality?)</span>
-            <span class="member-type">â†’ { BasePart }</span>
+            <span class="member-type">-> { BasePart }</span>
         </div>
         <p class="member-desc">
             Return every renderable BasePart whose bounds (computed at
@@ -331,7 +331,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.OverlapSphere(center, radius, filter?)</span>
-            <span class="member-type">â†’ { BasePart }</span>
+            <span class="member-type">-> { BasePart }</span>
         </div>
         <p class="member-desc">
             Return every part whose AABB intersects the sphere centered
@@ -343,7 +343,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.OverlapBox(center, size, rotation?, filter?)</span>
-            <span class="member-type">â†’ { BasePart }</span>
+            <span class="member-type">-> { BasePart }</span>
         </div>
         <p class="member-desc">
             Return every part whose AABB intersects the oriented box at
@@ -359,7 +359,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.OverlapFrustum(filter?)</span>
-            <span class="member-type">â†’ { BasePart }</span>
+            <span class="member-type">-> { BasePart }</span>
         </div>
         <p class="member-desc">
             Return every part whose AABB is inside or intersects the
@@ -373,7 +373,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetItemsInZone(cframe, size, filter?)</span>
-            <span class="member-type">â†’ { BasePart }</span>
+            <span class="member-type">-> { BasePart }</span>
         </div>
         <p class="member-desc">
             Mesh-precise oriented-zone query. <code>cframe</code> places
@@ -433,7 +433,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetShadowsEnabled()</span>
-            <span class="member-type">â†’ boolean</span>
+            <span class="member-type">-> boolean</span>
         </div>
     </div>
     <div class="member">
@@ -453,7 +453,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetShadowMapQuality()</span>
-            <span class="member-type">â†’ number</span>
+            <span class="member-type">-> number</span>
         </div>
     </div>
     <div class="member">
@@ -472,7 +472,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetShadowDistance()</span>
-            <span class="member-type">â†’ number</span>
+            <span class="member-type">-> number</span>
         </div>
     </div>
     <div class="member">
@@ -490,7 +490,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetShadowBias()</span>
-            <span class="member-type">â†’ number</span>
+            <span class="member-type">-> number</span>
         </div>
     </div>
     <div class="member">
@@ -511,7 +511,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">GPU.GetShadowPCF()</span>
-            <span class="member-type">â†’ number</span>
+            <span class="member-type">-> number</span>
         </div>
     </div>
 </div>
@@ -611,7 +611,7 @@
     <div class="member">
         <div class="member-header">
             <span class="member-name">buf:Size()</span>
-            <span class="member-type">â†’ number</span>
+            <span class="member-type">-> number</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">

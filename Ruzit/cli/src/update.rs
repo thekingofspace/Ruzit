@@ -185,7 +185,7 @@ pub fn cmd_update(arg: Option<&String>) -> Result<(), String> {
     make_executable(&runtime_dest);
 
     println!(
-        "[ruzit] update complete from {}\n        â†’ {} ({} bytes)\n\
+        "[ruzit] update complete from {}\n        -> {} ({} bytes)\n\
          [ruzit] CLI binary unchanged. Reinstall ruzit{exe_ext} manually if you need a new CLI.",
         archive_url,
         runtime_dest.display(),

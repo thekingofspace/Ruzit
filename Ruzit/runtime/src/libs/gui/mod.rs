@@ -125,14 +125,104 @@ pub struct TextState {
     pub font: Arc<fontdue::Font>,
     pub content: String,
     pub size_px: f32,
-    pub color: Color3,
+    pub style: FontStyle,
+    pub underline: bool,
+    pub strikethrough: bool,
 
     pub baked: Option<Arc<ImageRef>>,
+    pub baked_color: Option<Color3>,
 }
 
 impl TextState {
     fn invalidate(&mut self) {
         self.baked = None;
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FontStyle {
+    Regular,
+    Italic,
+    Light,
+    LightItalic,
+    Medium,
+    MediumItalic,
+    SemiBold,
+    SemiBoldItalic,
+    Bold,
+    BoldItalic,
+    ExtraBold,
+    ExtraBoldItalic,
+    Black,
+    BlackItalic,
+}
+
+impl FontStyle {
+    pub const ALL: &'static [FontStyle] = &[
+        FontStyle::Regular,
+        FontStyle::Italic,
+        FontStyle::Light,
+        FontStyle::LightItalic,
+        FontStyle::Medium,
+        FontStyle::MediumItalic,
+        FontStyle::SemiBold,
+        FontStyle::SemiBoldItalic,
+        FontStyle::Bold,
+        FontStyle::BoldItalic,
+        FontStyle::ExtraBold,
+        FontStyle::ExtraBoldItalic,
+        FontStyle::Black,
+        FontStyle::BlackItalic,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FontStyle::Regular => "Regular",
+            FontStyle::Italic => "Italic",
+            FontStyle::Light => "Light",
+            FontStyle::LightItalic => "LightItalic",
+            FontStyle::Medium => "Medium",
+            FontStyle::MediumItalic => "MediumItalic",
+            FontStyle::SemiBold => "SemiBold",
+            FontStyle::SemiBoldItalic => "SemiBoldItalic",
+            FontStyle::Bold => "Bold",
+            FontStyle::BoldItalic => "BoldItalic",
+            FontStyle::ExtraBold => "ExtraBold",
+            FontStyle::ExtraBoldItalic => "ExtraBoldItalic",
+            FontStyle::Black => "Black",
+            FontStyle::BlackItalic => "BlackItalic",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<FontStyle> {
+        Self::ALL.iter().copied().find(|st| st.as_str().eq_ignore_ascii_case(s))
+    }
+
+    fn is_italic(self) -> bool {
+        matches!(
+            self,
+            FontStyle::Italic
+                | FontStyle::LightItalic
+                | FontStyle::MediumItalic
+                | FontStyle::SemiBoldItalic
+                | FontStyle::BoldItalic
+                | FontStyle::ExtraBoldItalic
+                | FontStyle::BlackItalic
+        )
+    }
+
+    fn weight_dilation_px(self, size_px: f32) -> f32 {
+        let scale = (size_px / 24.0).max(0.5);
+        let base = match self {
+            FontStyle::Light | FontStyle::LightItalic => -0.4,
+            FontStyle::Regular | FontStyle::Italic => 0.0,
+            FontStyle::Medium | FontStyle::MediumItalic => 0.35,
+            FontStyle::SemiBold | FontStyle::SemiBoldItalic => 0.8,
+            FontStyle::Bold | FontStyle::BoldItalic => 1.4,
+            FontStyle::ExtraBold | FontStyle::ExtraBoldItalic => 2.2,
+            FontStyle::Black | FontStyle::BlackItalic => 3.0,
+        };
+        base * scale
     }
 }
 
@@ -310,16 +400,131 @@ fn build_snapshot() -> Vec<RenderItem> {
 }
 
 fn bake_text_if_dirty(s: &mut PrimitiveState) -> Option<Arc<ImageRef>> {
+    let base_color = s.color;
     let ts = s.text.as_mut()?;
-    if let Some(img) = &ts.baked {
-        return Some(img.clone());
+    let cached_ok = match (&ts.baked, ts.baked_color) {
+        (Some(img), Some(c)) if color_eq(c, base_color) => Some(img.clone()),
+        _ => None,
+    };
+    if let Some(img) = cached_ok {
+        return Some(img);
     }
-    let baked = bake_text(&ts.font, &ts.content, ts.size_px, ts.color);
+    let baked = bake_text(
+        &ts.font,
+        &ts.content,
+        ts.size_px,
+        base_color,
+        ts.style,
+        ts.underline,
+        ts.strikethrough,
+    );
     ts.baked = Some(baked.clone());
+    ts.baked_color = Some(base_color);
     Some(baked)
 }
 
-fn bake_text(font: &fontdue::Font, content: &str, size_px: f32, color: Color3) -> Arc<ImageRef> {
+fn color_eq(a: Color3, b: Color3) -> bool {
+    a.r == b.r && a.g == b.g && a.b == b.b
+}
+
+fn parse_color_runs(content: &str, base: Color3) -> (Vec<Color3>, Vec<(String, u16)>) {
+    let mut colors: Vec<Color3> = vec![base];
+    let mut runs: Vec<(String, u16)> = Vec::new();
+    let mut buf = String::new();
+    let mut current_idx: u16 = 0;
+    let bytes = content.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'{' {
+            if i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+                buf.push('{');
+                i += 2;
+                continue;
+            }
+            if let Some(close_rel) = content[i + 1..].find('}') {
+                let tag = &content[i + 1..i + 1 + close_rel];
+                if let Some(new_color) = parse_color_tag(tag, base) {
+                    if !buf.is_empty() {
+                        runs.push((std::mem::take(&mut buf), current_idx));
+                    }
+                    let idx = colors
+                        .iter()
+                        .position(|c| color_eq(*c, new_color))
+                        .unwrap_or_else(|| {
+                            let n = colors.len();
+                            colors.push(new_color);
+                            n
+                        });
+                    current_idx = idx as u16;
+                    i = i + 1 + close_rel + 1;
+                    continue;
+                }
+            }
+        }
+        let ch_len = utf8_char_len(bytes[i]);
+        buf.push_str(&content[i..i + ch_len]);
+        i += ch_len;
+    }
+    if !buf.is_empty() {
+        runs.push((buf, current_idx));
+    }
+    (colors, runs)
+}
+
+fn parse_color_tag(tag: &str, base: Color3) -> Option<Color3> {
+    let tag = tag.trim();
+    if tag.is_empty() {
+        return Some(base);
+    }
+    let hex = tag.strip_prefix('#')?;
+    match hex.len() {
+        3 => {
+            let r = u8::from_str_radix(&hex[0..1], 16).ok()?;
+            let g = u8::from_str_radix(&hex[1..2], 16).ok()?;
+            let b = u8::from_str_radix(&hex[2..3], 16).ok()?;
+            Some(Color3::new(
+                (r * 17) as f32 / 255.0,
+                (g * 17) as f32 / 255.0,
+                (b * 17) as f32 / 255.0,
+            ))
+        }
+        6 => {
+            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+            Some(Color3::new(
+                r as f32 / 255.0,
+                g as f32 / 255.0,
+                b as f32 / 255.0,
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn utf8_char_len(b: u8) -> usize {
+    if b < 0x80 {
+        1
+    } else if b < 0xC0 {
+        1
+    } else if b < 0xE0 {
+        2
+    } else if b < 0xF0 {
+        3
+    } else {
+        4
+    }
+}
+
+fn bake_text(
+    font: &fontdue::Font,
+    content: &str,
+    size_px: f32,
+    base_color: Color3,
+    style: FontStyle,
+    underline: bool,
+    strikethrough: bool,
+) -> Arc<ImageRef> {
     use fontdue::layout::{CoordinateSystem, Layout, TextStyle};
     let id = asset::next_shader_id();
     if content.is_empty() || size_px < 1.0 {
@@ -330,8 +535,22 @@ fn bake_text(font: &fontdue::Font, content: &str, size_px: f32, color: Color3) -
             data: Arc::new(vec![0, 0, 0, 0]),
         });
     }
-    let mut layout: Layout<()> = Layout::new(CoordinateSystem::PositiveYDown);
-    layout.append(&[font], &TextStyle::new(content, size_px, 0));
+    let (colors, runs) = parse_color_runs(content, base_color);
+    if runs.is_empty() {
+        return Arc::new(ImageRef {
+            id,
+            width: 1,
+            height: 1,
+            data: Arc::new(vec![0, 0, 0, 0]),
+        });
+    }
+    let mut layout: Layout<u16> = Layout::new(CoordinateSystem::PositiveYDown);
+    for (segment, idx) in &runs {
+        layout.append(
+            &[font],
+            &TextStyle::with_user_data(segment.as_str(), size_px, 0, *idx),
+        );
+    }
     let glyphs = layout.glyphs();
     if glyphs.is_empty() {
         return Arc::new(ImageRef {
@@ -348,36 +567,125 @@ fn bake_text(font: &fontdue::Font, content: &str, size_px: f32, color: Color3) -
         max_x = max_x.max(g.x as i32 + g.width as i32);
         max_y = max_y.max(g.y as i32 + g.height as i32);
     }
-    let width = max_x.max(1) as u32;
-    let height = max_y.max(1) as u32;
-    let mut buf = vec![0u8; (width * height * 4) as usize];
-    let cr = (color.r * 255.0).round().clamp(0.0, 255.0) as u8;
-    let cg = (color.g * 255.0).round().clamp(0.0, 255.0) as u8;
-    let cb = (color.b * 255.0).round().clamp(0.0, 255.0) as u8;
+
+    let italic = style.is_italic();
+    let italic_slope: f32 = if italic { 0.22 } else { 0.0 };
+    let dilation = style.weight_dilation_px(size_px);
+    let extra_pad = dilation.abs().ceil().max(0.0) as i32 + 1;
+    let italic_extra = (max_y as f32 * italic_slope).ceil() as i32;
+
+    let pad_left = extra_pad.max(italic_extra);
+    let pad_right = extra_pad + italic_extra;
+    let pad_top = extra_pad;
+    let pad_bottom = extra_pad + if underline { (size_px / 16.0).ceil() as i32 + 1 } else { 0 };
+
+    let width = (max_x + pad_left + pad_right).max(1) as u32;
+    let height = (max_y + pad_top + pad_bottom).max(1) as u32;
+    let mut alpha = vec![0u8; (width * height) as usize];
+    let mut color_idx_map = vec![0u16; (width * height) as usize];
+
     for g in glyphs {
         let (_metrics, bitmap) = font.rasterize_config(g.key);
         let gw = g.width as i32;
         let gh = g.height as i32;
-        let gx = g.x as i32;
-        let gy = g.y as i32;
+        let gx = g.x as i32 + pad_left;
+        let gy = g.y as i32 + pad_top;
+        let g_color_idx = g.user_data;
         for j in 0..gh {
+            let shear_off = if italic {
+                ((max_y - (g.y as i32 + j)) as f32 * italic_slope).round() as i32
+            } else {
+                0
+            };
             for i in 0..gw {
-                let alpha = bitmap[(j * gw + i) as usize];
-                if alpha == 0 {
+                let a = bitmap[(j * gw + i) as usize];
+                if a == 0 {
                     continue;
                 }
-                let px = gx + i;
+                let px = gx + i + shear_off;
                 let py = gy + j;
                 if px < 0 || py < 0 || px as u32 >= width || py as u32 >= height {
                     continue;
                 }
-                let off = ((py as u32 * width + px as u32) * 4) as usize;
-                buf[off] = cr;
-                buf[off + 1] = cg;
-                buf[off + 2] = cb;
-                buf[off + 3] = alpha;
+                let off = (py as u32 * width + px as u32) as usize;
+                if alpha[off] < a {
+                    alpha[off] = a;
+                    color_idx_map[off] = g_color_idx;
+                }
             }
         }
+    }
+
+    if dilation > 0.05 {
+        let (new_alpha, new_idx) = dilate_alpha_colored(
+            &alpha,
+            &color_idx_map,
+            width as i32,
+            height as i32,
+            dilation,
+        );
+        alpha = new_alpha;
+        color_idx_map = new_idx;
+    } else if dilation < -0.05 {
+        alpha = erode_alpha(&alpha, width as i32, height as i32, -dilation);
+    }
+
+    if underline {
+        let thickness = ((size_px / 16.0).round() as i32).max(1);
+        let y_start = (max_y + pad_top + (size_px / 8.0).round() as i32).clamp(0, height as i32 - 1);
+        let y_end = (y_start + thickness).clamp(0, height as i32);
+        let x_start = pad_left.max(0).min(width as i32);
+        let x_end = (max_x + pad_left + italic_extra).clamp(0, width as i32);
+        for y in y_start..y_end {
+            for x in x_start..x_end {
+                let off = (y as u32 * width + x as u32) as usize;
+                alpha[off] = 255;
+                color_idx_map[off] = 0;
+            }
+        }
+    }
+    if strikethrough {
+        let thickness = ((size_px / 16.0).round() as i32).max(1);
+        let y_center = pad_top + (max_y as f32 * 0.62).round() as i32;
+        let y_start = (y_center - thickness / 2).clamp(0, height as i32 - 1);
+        let y_end = (y_start + thickness).clamp(0, height as i32);
+        let x_start = pad_left.max(0).min(width as i32);
+        let x_end = (max_x + pad_left + italic_extra).clamp(0, width as i32);
+        for y in y_start..y_end {
+            for x in x_start..x_end {
+                let off = (y as u32 * width + x as u32) as usize;
+                alpha[off] = 255;
+                color_idx_map[off] = 0;
+            }
+        }
+    }
+
+    let palette: Vec<[u8; 3]> = colors
+        .iter()
+        .map(|c| {
+            [
+                (c.r * 255.0).round().clamp(0.0, 255.0) as u8,
+                (c.g * 255.0).round().clamp(0.0, 255.0) as u8,
+                (c.b * 255.0).round().clamp(0.0, 255.0) as u8,
+            ]
+        })
+        .collect();
+
+    let mut buf = vec![0u8; (width * height * 4) as usize];
+    for i in 0..(width * height) as usize {
+        let a = alpha[i];
+        if a == 0 {
+            continue;
+        }
+        let rgb = palette
+            .get(color_idx_map[i] as usize)
+            .copied()
+            .unwrap_or(palette[0]);
+        let off = i * 4;
+        buf[off] = rgb[0];
+        buf[off + 1] = rgb[1];
+        buf[off + 2] = rgb[2];
+        buf[off + 3] = a;
     }
     Arc::new(ImageRef {
         id,
@@ -385,6 +693,91 @@ fn bake_text(font: &fontdue::Font, content: &str, size_px: f32, color: Color3) -
         height,
         data: Arc::new(buf),
     })
+}
+
+fn dilate_alpha_colored(
+    src: &[u8],
+    src_idx: &[u16],
+    width: i32,
+    height: i32,
+    amount: f32,
+) -> (Vec<u8>, Vec<u16>) {
+    let radius = amount.round() as i32;
+    let frac = (amount - radius as f32).clamp(0.0, 1.0);
+    if radius <= 0 && frac < 0.05 {
+        return (src.to_vec(), src_idx.to_vec());
+    }
+    let mut dst = vec![0u8; src.len()];
+    let mut dst_idx = vec![0u16; src.len()];
+    let r = radius.max(1);
+    for y in 0..height {
+        for x in 0..width {
+            let mut best: u8 = 0;
+            let mut best_idx: u16 = 0;
+            for dy in -r..=r {
+                let yy = y + dy;
+                if yy < 0 || yy >= height {
+                    continue;
+                }
+                for dx in -r..=r {
+                    let xx = x + dx;
+                    if xx < 0 || xx >= width {
+                        continue;
+                    }
+                    let off = (yy * width + xx) as usize;
+                    let v = src[off];
+                    if v > best {
+                        best = v;
+                        best_idx = src_idx[off];
+                    }
+                }
+            }
+            let here = (y * width + x) as usize;
+            let blended = if frac > 0.05 && best > 0 {
+                let src_v = src[here];
+                let mix = src_v as f32 * (1.0 - frac) + best as f32 * frac;
+                mix.round().clamp(0.0, 255.0) as u8
+            } else {
+                best
+            };
+            dst[here] = blended;
+            dst_idx[here] = if src[here] >= best { src_idx[here] } else { best_idx };
+        }
+    }
+    (dst, dst_idx)
+}
+
+fn erode_alpha(src: &[u8], width: i32, height: i32, amount: f32) -> Vec<u8> {
+    let radius = amount.round().max(1.0) as i32;
+    let mut dst = vec![0u8; src.len()];
+    for y in 0..height {
+        for x in 0..width {
+            let mut worst: u8 = 255;
+            for dy in -radius..=radius {
+                let yy = y + dy;
+                if yy < 0 || yy >= height {
+                    worst = 0;
+                    break;
+                }
+                for dx in -radius..=radius {
+                    let xx = x + dx;
+                    if xx < 0 || xx >= width {
+                        worst = 0;
+                        break;
+                    }
+                    let v = src[(yy * width + xx) as usize];
+                    if v < worst {
+                        worst = v;
+                    }
+                }
+                if worst == 0 {
+                    break;
+                }
+            }
+            dst[(y * width + x) as usize] = worst;
+        }
+    }
+    dst
 }
 
 pub struct GuiPrimitive {
@@ -422,8 +815,11 @@ impl GuiPrimitive {
             font: asset.font.clone(),
             content: String::new(),
             size_px: 24.0,
-            color: Color3::new(1.0, 1.0, 1.0),
+            style: FontStyle::Regular,
+            underline: false,
+            strikethrough: false,
             baked: None,
+            baked_color: None,
         };
 
         Self::with_state(lua, Shape::Text, None, Some(text_state), Dim::new(0.0, 0.0))
@@ -764,34 +1160,97 @@ impl UserData for GuiPrimitive {
             fire_prop_changed(lua, prop_sig, Value::Number(new_size as f64));
             Ok(())
         });
-        f.add_field_method_get("TextColor", |_, this| -> mlua::Result<Color3> {
+        f.add_field_method_get("FontStyle", |_, this| -> mlua::Result<String> {
             let s = this.state.lock().unwrap();
             Ok(s.text
                 .as_ref()
-                .map(|t| t.color)
-                .unwrap_or(Color3::new(1.0, 1.0, 1.0)))
+                .map(|t| t.style.as_str().to_string())
+                .unwrap_or_else(|| "Regular".to_string()))
         });
-        f.add_field_method_set("TextColor", |lua, this, value: AnyUserData| {
-            this.ensure_alive("set TextColor")?;
-            let color = *value.borrow::<Color3>().map_err(|_| {
-                mlua::Error::RuntimeError("TextColor expects a Primitives.Color3".into())
+        f.add_field_method_set("FontStyle", |lua, this, value: String| {
+            this.ensure_alive("set FontStyle")?;
+            let parsed = FontStyle::parse(&value).ok_or_else(|| {
+                mlua::Error::RuntimeError(format!(
+                    "FontStyle: unknown style '{value}'. Use GUI.ListFontStyles() to enumerate."
+                ))
             })?;
+            let style_str = parsed.as_str().to_string();
             let (signal_table, prop_sig) = {
                 let mut s = this.state.lock().unwrap();
                 let ts = s.text.as_mut().ok_or_else(|| {
-                    mlua::Error::RuntimeError("TextColor is only valid on Font primitives".into())
+                    mlua::Error::RuntimeError(
+                        "FontStyle is only valid on Font primitives".into(),
+                    )
                 })?;
-                if ts.color.r != color.r || ts.color.g != color.g || ts.color.b != color.b {
-                    ts.color = color;
+                if ts.style != parsed {
+                    ts.style = parsed;
                     ts.invalidate();
                 }
                 (
                     s.changed_signal.clone(),
-                    s.prop_signals.get("TextColor").cloned(),
+                    s.prop_signals.get("FontStyle").cloned(),
                 )
             };
-            fire_changed(lua, signal_table, "TextColor")?;
-            fire_prop_changed(lua, prop_sig, Value::UserData(lua.create_userdata(color)?));
+            fire_changed(lua, signal_table, "FontStyle")?;
+            fire_prop_changed(
+                lua,
+                prop_sig,
+                Value::String(lua.create_string(&style_str)?),
+            );
+            Ok(())
+        });
+
+        f.add_field_method_get("Underline", |_, this| -> mlua::Result<bool> {
+            let s = this.state.lock().unwrap();
+            Ok(s.text.as_ref().map(|t| t.underline).unwrap_or(false))
+        });
+        f.add_field_method_set("Underline", |lua, this, value: bool| {
+            this.ensure_alive("set Underline")?;
+            let (signal_table, prop_sig) = {
+                let mut s = this.state.lock().unwrap();
+                let ts = s.text.as_mut().ok_or_else(|| {
+                    mlua::Error::RuntimeError(
+                        "Underline is only valid on Font primitives".into(),
+                    )
+                })?;
+                if ts.underline != value {
+                    ts.underline = value;
+                    ts.invalidate();
+                }
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("Underline").cloned(),
+                )
+            };
+            fire_changed(lua, signal_table, "Underline")?;
+            fire_prop_changed(lua, prop_sig, Value::Boolean(value));
+            Ok(())
+        });
+
+        f.add_field_method_get("Strikethrough", |_, this| -> mlua::Result<bool> {
+            let s = this.state.lock().unwrap();
+            Ok(s.text.as_ref().map(|t| t.strikethrough).unwrap_or(false))
+        });
+        f.add_field_method_set("Strikethrough", |lua, this, value: bool| {
+            this.ensure_alive("set Strikethrough")?;
+            let (signal_table, prop_sig) = {
+                let mut s = this.state.lock().unwrap();
+                let ts = s.text.as_mut().ok_or_else(|| {
+                    mlua::Error::RuntimeError(
+                        "Strikethrough is only valid on Font primitives".into(),
+                    )
+                })?;
+                if ts.strikethrough != value {
+                    ts.strikethrough = value;
+                    ts.invalidate();
+                }
+                (
+                    s.changed_signal.clone(),
+                    s.prop_signals.get("Strikethrough").cloned(),
+                )
+            };
+            fire_changed(lua, signal_table, "Strikethrough")?;
+            fire_prop_changed(lua, prop_sig, Value::Boolean(value));
             Ok(())
         });
     }
@@ -804,6 +1263,22 @@ impl UserData for GuiPrimitive {
                 ensure_prop_signal(lua, &mut s, &prop)
             },
         );
+
+        m.add_method("ListFontStyles", |lua, this, _: ()| -> mlua::Result<Table> {
+            {
+                let s = this.state.lock().unwrap();
+                if s.text.is_none() {
+                    return Err(mlua::Error::RuntimeError(
+                        "ListFontStyles: only valid on Font primitives".into(),
+                    ));
+                }
+            }
+            let t = lua.create_table()?;
+            for (i, st) in FontStyle::ALL.iter().enumerate() {
+                t.set(i as i64 + 1, st.as_str())?;
+            }
+            Ok(t)
+        });
 
         m.add_method(
             "AddClippable",

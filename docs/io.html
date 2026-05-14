@@ -35,7 +35,7 @@ IO.write(<span class="hl-str">"saves/slot1.json"</span>, <span class="hl-fn">tos
     <div class="member">
         <div class="member-header">
             <span class="member-name">IO.read(path)</span>
-            <span class="member-type">â†’ string</span>
+            <span class="member-type">-> string</span>
         </div>
         <p class="member-desc">
             Open, read everything, close. Throws if the file can't be
@@ -61,7 +61,7 @@ IO.write(<span class="hl-str">"saves/slot1.json"</span>, <span class="hl-fn">tos
     <div class="member">
         <div class="member-header">
             <span class="member-name">IO.exists(path)</span>
-            <span class="member-type">â†’ boolean</span>
+            <span class="member-type">-> boolean</span>
         </div>
         <p class="member-desc">True for files OR directories.</p>
     </div>
@@ -86,7 +86,7 @@ IO.write(<span class="hl-str">"saves/slot1.json"</span>, <span class="hl-fn">tos
     <div class="member">
         <div class="member-header">
             <span class="member-name">IO.list(path)</span>
-            <span class="member-type">â†’ { string }</span>
+            <span class="member-type">-> { string }</span>
         </div>
         <p class="member-desc">
             List directory entries (names only, not full paths). Order is
@@ -96,7 +96,7 @@ IO.write(<span class="hl-str">"saves/slot1.json"</span>, <span class="hl-fn">tos
     <div class="member">
         <div class="member-header">
             <span class="member-name">IO.getpath(path)</span>
-            <span class="member-type">â†’ string</span>
+            <span class="member-type">-> string</span>
         </div>
         <p class="member-desc">
             Resolve a (possibly relative) path against Ruzit's current
@@ -161,7 +161,7 @@ IO.<span class="hl-fn">write</span>(root .. IO.Separator .. <span class="hl-str"
     <div class="member">
         <div class="member-header">
             <span class="member-name">IO.open(path, mode?)</span>
-            <span class="member-type">â†’ IOHandle</span>
+            <span class="member-type">-> IOHandle</span>
         </div>
         <p class="member-desc">
             Open a streaming handle. <code>mode</code> follows
@@ -190,7 +190,7 @@ IO.<span class="hl-fn">write</span>(root .. IO.Separator .. <span class="hl-str"
     <div class="member">
         <div class="member-header">
             <span class="member-name">handle:read(format?)</span>
-            <span class="member-type">â†’ string</span>
+            <span class="member-type">-> string</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -236,7 +236,7 @@ IO.<span class="hl-fn">write</span>(root .. IO.Separator .. <span class="hl-str"
     <div class="member">
         <div class="member-header">
             <span class="member-name">handle:path()</span>
-            <span class="member-type">â†’ string</span>
+            <span class="member-type">-> string</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">

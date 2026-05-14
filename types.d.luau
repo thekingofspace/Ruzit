@@ -1,4 +1,4 @@
--- =============================================================================
+﻿-- =============================================================================
 -- Ruzit Luau type declarations
 -- =============================================================================
 -- This file is consumed by luau-lsp to give you hover docs, autocomplete, and
@@ -255,8 +255,8 @@ export type Process_API = {
 	-- land after gameplay state has finalised.
 	RenderStepped: Signal<number>,
 	-- Read environment variables. Two forms:
-	--   Process.Env("PATH") â†’ "..."  (or nil if unset)
-	--   Process.Env()       â†’ { ["PATH"] = "...", ... }  (whole map)
+	--   Process.Env("PATH") -> "..."  (or nil if unset)
+	--   Process.Env()       -> { ["PATH"] = "...", ... }  (whole map)
 	Env: ((name: string) -> string?) & (() -> { [string]: string }),
 	-- Set an env var on the running process (and inherited children).
 	SetEnv: (name: string, value: string) -> (),
@@ -1240,7 +1240,7 @@ export type SoundByte_API = {
 	GetModifier: (kind: ModifierKind) -> SoundByteModifier,
 	-- Allocate a new voice channel. Errors if VoiceFlagEnabled is false.
 	GetVoiceChannel: () -> SoundByteVoiceChannel,
-	-- Wire a source â†’ modifiers â†’ sink. Order is significant for
+	-- Wire a source -> modifiers -> sink. Order is significant for
 	-- modifiers (left-to-right in the call). Returns a LinkHandle that
 	-- can :Unlink() to detach.
 	Link: (...any) -> SoundByteLink,
@@ -1299,7 +1299,7 @@ declare class Dim
 	-- +Y is down, matching pixel coords).
 	X: number
 	Y: number
-	-- Linearly interpolate between self and other. t=0 â†’ self, t=1 â†’ other.
+	-- Linearly interpolate between self and other. t=0 -> self, t=1 -> other.
 	function Lerp(self, other: Dim, t: number): Dim
 	-- Rescale this Dim from one reference size to another. Useful for
 	-- prebuilt UI: design at a fixed reference (say 400x400), then call
@@ -1518,7 +1518,7 @@ export type Vector_API = {
 export type CFrame_API = {
 	-- CFrame.new(position?, rotation?). Either argument is optional.
 	new: (position: Vector?, rotation: Vector?) -> CFrame,
-	-- Build a rotation-only CFrame from Euler angles (radians, applied Xâ†’Yâ†’Z).
+	-- Build a rotation-only CFrame from Euler angles (radians, applied X->Y->Z).
 	Angles: (rx: number, ry: number, rz: number) -> CFrame,
 	-- Build a CFrame at `eye`, oriented so its forward axis points at
 	-- `target`. `up` defaults to (0, 1, 0). The returned rotation is in
@@ -1979,17 +1979,34 @@ declare class Primitive
 	-- Fires with the property name that was set ("Position", "Size", "Text", etc.).
 	Changed: Signal<string>
 	-- Text-only properties (read/write on Square/Circle/etc. is a no-op).
+	-- Glyph color comes from the primitive's regular `Color` (above) â€”
+	-- there's no separate TextColor. Multi-color text is achieved by
+	-- embedding `{#RRGGBB}` or `{#RGB}` tags in `Text`; `{}` resets to
+	-- the primitive's base `Color`, and `{{` is a literal `{`. Tags
+	-- with malformed contents are left as literal text.
 	Text: string
 	-- Glyph height in pixels.
 	TextSize: number
-	-- Glyph color. Color (above) tints the box itself; TextColor tints
-	-- letters specifically.
-	TextColor: Color3
+	-- Font weight / italic variant applied synthetically at bake time.
+	-- Defaults to "Regular". Use `primitive:ListFontStyles()` to
+	-- enumerate the valid strings. Setting an unknown value errors.
+	FontStyle: string
+	-- Draw a baseline underline rule beneath the glyphs at bake time.
+	Underline: boolean
+	-- Draw a horizontal rule through the glyphs at x-height at bake
+	-- time. Combinable with Underline.
+	Strikethrough: boolean
 	-- Per-property change signal. Fires with the new value as the only
 	-- argument every time `propName` changes â€” `Position` fires with a
 	-- Dim, `Color` with a Color3, `Transparency` with a number, etc.
 	-- Lazy: properties no one listens to cost zero.
 	function GetPropertyChanged(self, propName: string): Signal<any>
+	-- Text-only: enumerate every value accepted by `.FontStyle`, in
+	-- canonical casing ("Regular", "Italic", "Light", "LightItalic",
+	-- "Medium", "MediumItalic", "SemiBold", "SemiBoldItalic", "Bold",
+	-- "BoldItalic", "ExtraBold", "ExtraBoldItalic", "Black",
+	-- "BlackItalic"). Errors on non-Font primitives.
+	function ListFontStyles(self): { string }
 	-- Remove from the scene. Fires "Destroyed" on Changed first.
 	function Destroy(self): ()
 	-- Custom shader hooks for this primitive's draw call.
@@ -2270,8 +2287,11 @@ export type GUI_API = {
 		Triangle: () -> Primitive,
 		-- Textured rectangle. The asset's pixels become the surface.
 		Image: (asset: ImageAsset) -> Primitive,
-		-- Text label. Uses the FontAsset to rasterize glyphs at runtime
-		-- (sized by .TextSize / colored by .TextColor).
+		-- Text label. Uses the FontAsset to rasterize glyphs at runtime,
+		-- sized by `.TextSize` and colored by the primitive's `.Color`
+		-- (with optional `{#RRGGBB}` inline color tags in `.Text` for
+		-- multi-color runs). Supports synthetic styling via
+		-- `.FontStyle`, `.Underline`, `.Strikethrough`.
 		Font: (asset: FontAsset) -> Primitive,
 		-- Invisible clip container with a pixel-space Position+Size.
 		-- Doesn't render itself â€” its purpose is to be a parent for
@@ -4410,7 +4430,7 @@ declare class DynMesh
 	--   * Sets the target's CFrame.Position to the centroid (average)
 	--     of all anchor points, so adding mid-path waypoints recenters
 	--     the part.
-	--   * Sets the target's CFrame.Rotation to face first â†’ last
+	--   * Sets the target's CFrame.Rotation to face first -> last
 	--     anchor (yaw + pitch). The part itself stays straight.
 	--   * Sets target.Size.x to the TOTAL polyline length (sum of
 	--     consecutive anchor-to-anchor distances), so a sequence of
@@ -4628,7 +4648,7 @@ export type PhysicsPlaneOptions = {
 	-- Number of rayon worker threads to spin up for this plane's simulation
 	-- step. Defaults to 1 (no thread pool, single-threaded inline). Set to
 	-- the number of CPU cores you want to dedicate. Object integration and
-	-- physicsâ†’part commits parallelize across this pool when the plane has
+	-- physics->part commits parallelize across this pool when the plane has
 	-- enough objects (â‰¥ 64) to make the dispatch overhead worth it.
 	Threads: number?,
 	-- Per-second linear velocity damping. Each tick:
@@ -4699,7 +4719,7 @@ export type PhysicsPlaneOptions = {
 	--     laws, stable stacking, no floating soup. Use this for accurate
 	--     scenes (player movement, vehicles, balanced piles).
 	--   â€¢ `true` â€” runs the wgpu compute shader I wrote earlier. Each
-	--     frame the buffer is packed CPUâ†’GPU, two compute dispatches run
+	--     frame the buffer is packed CPU->GPU, two compute dispatches run
 	--     (integrate, then collide) ping-ponging between storage buffers,
 	--     and the result is mapped back. **Faster for bulk scenes** â€”
 	--     NÂ²-on-GPU still beats CPU rayon for thousands of independent
@@ -4791,7 +4811,7 @@ declare class PhysicsObject
 	-- BasePart and fires its Changed signal (Size affects collision AABB).
 	Size: Vector
 	-- Body-local center-of-mass offset from the BasePart's origin. Default
-	-- `Vector(0, 0, 0)` (CoM coincides with origin â†’ balanced object,
+	-- `Vector(0, 0, 0)` (CoM coincides with origin -> balanced object,
 	-- no contact-driven rotation). When set non-zero, the simulator
 	-- switches the object to real rotational inertia, and contact
 	-- patches that don't sit under the CoM produce tipping torque
