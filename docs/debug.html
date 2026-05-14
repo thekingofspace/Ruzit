@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Debug - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.7">
-    <script src="theme.js?v=1.2.7"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.8">
+    <script src="theme.js?v=1.2.8"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.7" defer></script>
+<script src="sidebar.js?v=1.2.8" defer></script>
 
 <main>
 
@@ -53,7 +53,7 @@ Debug.MonitorFrameDrops(<span class="hl-num">35</span>):Connect(<span class="hl-
     <div class="member">
         <div class="member-header">
             <span class="member-name">Debug.Flag(name)</span>
-            <span class="member-type">→ DebugFlag</span>
+            <span class="member-type">â†’ DebugFlag</span>
         </div>
         <p class="member-desc">
             Allocate a named flag for measuring a span. The name
@@ -64,17 +64,17 @@ Debug.MonitorFrameDrops(<span class="hl-num">35</span>):Connect(<span class="hl-
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">Debug.Memory()</span><span class="member-type">→ number</span></div>
+        <div class="member-header"><span class="member-name">Debug.Memory()</span><span class="member-type">â†’ number</span></div>
         <p class="member-desc">
             Process resident memory in bytes (latest sample,
             refreshed every ~500 ms by the sampler thread).
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">Debug.MemoryMB()</span><span class="member-type">→ number</span></div>
+        <div class="member-header"><span class="member-name">Debug.MemoryMB()</span><span class="member-type">â†’ number</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">Debug.CpuPercent()</span><span class="member-type">→ number</span></div>
+        <div class="member-header"><span class="member-name">Debug.CpuPercent()</span><span class="member-type">â†’ number</span></div>
         <p class="member-desc">
             Process CPU usage as a percentage. Sysinfo reports this
             as a sum across logical cores, so a fully busy 8-core
@@ -82,7 +82,7 @@ Debug.MonitorFrameDrops(<span class="hl-num">35</span>):Connect(<span class="hl-
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">Debug.FrameDrops()</span><span class="member-type">→ number</span></div>
+        <div class="member-header"><span class="member-name">Debug.FrameDrops()</span><span class="member-type">â†’ number</span></div>
         <p class="member-desc">
             Total frame drops the heart loop has flagged since
             process start. A frame drop is a tick whose total time
@@ -90,7 +90,7 @@ Debug.MonitorFrameDrops(<span class="hl-num">35</span>):Connect(<span class="hl-
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">Debug.PeakFrameMs()</span><span class="member-type">→ number</span></div>
+        <div class="member-header"><span class="member-name">Debug.PeakFrameMs()</span><span class="member-type">â†’ number</span></div>
         <p class="member-desc">
             Largest single-frame time in milliseconds since the last
             <code>ResetPeak</code>. Useful for spike hunting.
@@ -104,13 +104,13 @@ Debug.MonitorFrameDrops(<span class="hl-num">35</span>):Connect(<span class="hl-
         <p class="member-desc">
             Frames longer than this count as a drop and feed
             <code>FrameDrops</code> / <code>MonitorFrameDrops</code>.
-            Default 25 (≈ a missed 60 Hz tick).
+            Default 25 (â‰ˆ a missed 60 Hz tick).
         </p>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">Debug.MonitorFrameDrops(threshold_ms?)</span>
-            <span class="member-type">→ Signal&lt;number&gt;</span>
+            <span class="member-type">â†’ Signal&lt;number&gt;</span>
         </div>
         <p class="member-desc">
             Subscribe to frame-drop events. The Signal fires once
@@ -121,7 +121,7 @@ Debug.MonitorFrameDrops(<span class="hl-num">35</span>):Connect(<span class="hl-
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">Debug.GpuSubmitAvgMs()</span><span class="member-type">→ number</span></div>
+        <div class="member-header"><span class="member-name">Debug.GpuSubmitAvgMs()</span><span class="member-type">â†’ number</span></div>
         <p class="member-desc">
             Average milliseconds spent in
             <code>queue.submit</code> since the last
@@ -151,7 +151,7 @@ Debug.MonitorFrameDrops(<span class="hl-num">35</span>):Connect(<span class="hl-
     <div class="member">
         <div class="member-header">
             <span class="member-name">flag:End()</span>
-            <span class="member-type">→ table</span>
+            <span class="member-type">â†’ table</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -162,11 +162,11 @@ Debug.MonitorFrameDrops(<span class="hl-num">35</span>):Connect(<span class="hl-
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">flag:Last()</span><span class="member-type">→ table</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">flag:Last()</span><span class="member-type">â†’ table</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">The most recent <code>{ last_ms, last_mem_delta_mb, last_frame_drops }</code>. Empty until the first <code>:End</code>.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">flag:Name()</span><span class="member-type">→ string</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">flag:Name()</span><span class="member-type">â†’ string</span><span class="tag tag-method">method</span></div>
     </div>
 </div>
 

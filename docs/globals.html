@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Globals - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.7">
-    <script src="theme.js?v=1.2.7"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.8">
+    <script src="theme.js?v=1.2.8"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.7" defer></script>
+<script src="sidebar.js?v=1.2.8" defer></script>
 
 <main>
 
@@ -31,14 +31,14 @@
     references it, not some single global value.
 </div>
 
-<!-- ─────────────────────────────────────────────────────────────────── -->
+<!-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <h2 id="import">import</h2>
 
 <div class="member-list">
     <div class="member">
         <div class="member-header">
             <span class="member-name">import(name)</span>
-            <span class="member-type">→ &lt;library API&gt;</span>
+            <span class="member-type">â†’ &lt;library API&gt;</span>
         </div>
         <p class="member-desc">
             Library accessor. Pass any name from
@@ -84,14 +84,14 @@
     sidebar.
 </p>
 
-<!-- ─────────────────────────────────────────────────────────────────── -->
+<!-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <h2 id="require">require</h2>
 
 <div class="member-list">
     <div class="member">
         <div class="member-header">
             <span class="member-name">require(name)</span>
-            <span class="member-type">→ any</span>
+            <span class="member-type">â†’ any</span>
         </div>
         <p class="member-desc">
             Load a Luau module from the project bundle (or a loaded DLC /
@@ -284,7 +284,7 @@ DLC/PhysicsDLC/           <span class="hl-com"># a DLC package, ID "PhysicsDLC"<
 <span class="hl-kw">local</span> hud  = Asset.GetAsset(<span class="hl-str">"Image"</span>, <span class="hl-str">"@Game/ui.hud"</span>)       <span class="hl-com">-- game's ui/hud.png</span>
 <span class="hl-kw">local</span> rig  = Asset.GetAsset(<span class="hl-str">"Model"</span>, <span class="hl-str">"@PhysicsDLC/rigid"</span>)  <span class="hl-com">-- DLC asset</span></code></pre>
 
-<!-- ─────────────────────────────────────────────────────────────────── -->
+<!-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <h2 id="dirname">__dirname</h2>
 
 <div class="member-list">
@@ -314,14 +314,14 @@ DLC/PhysicsDLC/           <span class="hl-com"># a DLC package, ID "PhysicsDLC"<
     <code>IO.read</code>.
 </p>
 
-<!-- ─────────────────────────────────────────────────────────────────── -->
+<!-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <h2 id="load">load</h2>
 
 <div class="member-list">
     <div class="member">
         <div class="member-header">
             <span class="member-name">load(path)</span>
-            <span class="member-type">→ any</span>
+            <span class="member-type">â†’ any</span>
         </div>
         <p class="member-desc">
             Pull a Luau script in from <strong>the real filesystem</strong>
@@ -425,7 +425,7 @@ mod.run()
     For in-memory text use <code>Asset.FromString("File", ...)</code>.
 </div>
 
-<!-- ─────────────────────────────────────────────────────────────────── -->
+<!-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <h2 id="print">print</h2>
 
 <div class="member-list">

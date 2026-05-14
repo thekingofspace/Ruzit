@@ -1,23 +1,23 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SFX - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.7">
-    <script src="theme.js?v=1.2.7"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.8">
+    <script src="theme.js?v=1.2.8"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.7" defer></script>
+<script src="sidebar.js?v=1.2.8" defer></script>
 
 <main>
 
 <h1>SFX <span class="tag tag-deprecated">deprecated</span></h1>
 
 <div class="deprecation-banner">
-    <strong>Deprecated as of 1.2.7.</strong> SFX is the legacy single-Sound
+    <strong>Deprecated as of 1.2.8.</strong> SFX is the legacy single-Sound
     audio API. New code should use
     <a href="soundbyte.html">SoundByte</a> &mdash; a graph-routed audio
     system with sources, sinks, modifiers, link/unlink, and tween hooks on
@@ -46,7 +46,7 @@ snd:Play()</code></pre>
     <div class="member">
         <div class="member-header">
             <span class="member-name">SFX.LoadSound(data)</span>
-            <span class="member-type">→ Sound</span>
+            <span class="member-type">â†’ Sound</span>
         </div>
         <p class="member-desc">
             Wrap a <code>SoundData</code> into a playable <code>Sound</code>.
@@ -74,8 +74,8 @@ snd:Play()</code></pre>
         <tr><td><code>SFX.Volume(factor)</code></td><td>Linear gain.</td></tr>
         <tr><td><code>SFX.Speed(factor)</code></td><td>Time + pitch.</td></tr>
         <tr><td><code>SFX.Pan(amount)</code></td><td>Stereo pan, -1 to +1.</td></tr>
-        <tr><td><code>SFX.FadeIn(seconds)</code></td><td>0→1 envelope from start.</td></tr>
-        <tr><td><code>SFX.FadeOut(seconds)</code></td><td>1→0 envelope at end.</td></tr>
+        <tr><td><code>SFX.FadeIn(seconds)</code></td><td>0â†’1 envelope from start.</td></tr>
+        <tr><td><code>SFX.FadeOut(seconds)</code></td><td>1â†’0 envelope at end.</td></tr>
         <tr><td><code>SFX.LowPass(freq)</code></td><td>Biquad lowpass at the given Hz.</td></tr>
         <tr><td><code>SFX.HighPass(freq)</code></td><td>Biquad highpass.</td></tr>
         <tr><td><code>SFX.Delay(seconds)</code></td><td>Wait before producing audio.</td></tr>
@@ -164,14 +164,14 @@ music.DidLoop:Connect(<span class="hl-kw">function</span>()
         <div class="member-header"><span class="member-name">snd:Stop()</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">snd:IsPlaying()</span><span class="member-type">→ boolean</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">snd:IsPlaying()</span><span class="member-type">â†’ boolean</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">snd:Reset()</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Drop all fluent shaders and attachments, back to a clean state.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">snd:LinkToUpdate(interval)</span><span class="member-type">→ Signal&lt;number&gt;</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">snd:LinkToUpdate(interval)</span><span class="member-type">â†’ Signal&lt;number&gt;</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Fires every <code>interval</code> seconds with elapsed playback
             time. Useful for syncing animation / particles to audio.
@@ -240,14 +240,14 @@ snd.Reverb  = { Mix = <span class="hl-num">0.4</span>, Decay = <span class="hl-n
     <div class="member">
         <div class="member-header"><span class="member-name">.MinFalloff</span><span class="member-type">number</span></div>
         <p class="member-desc">
-            Inner radius. Distances ≤ this play at full volume. Defaults
+            Inner radius. Distances â‰¤ this play at full volume. Defaults
             to <code>0</code>.
         </p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">.MaxFalloff</span><span class="member-type">number</span></div>
         <p class="member-desc">
-            Outer radius. Distances ≥ this are silent. Defaults to
+            Outer radius. Distances â‰¥ this are silent. Defaults to
             <code>20</code>.
         </p>
     </div>
@@ -301,7 +301,7 @@ t:Play()</code></pre>
         <div class="member-header"><span class="member-name">snd:SetData(asset, name, value)</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">snd:GetData(asset, name)</span><span class="member-type">→ number?</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">snd:GetData(asset, name)</span><span class="member-type">â†’ number?</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">snd:ApplyShader(shader)</span><span class="tag tag-method">method</span></div>

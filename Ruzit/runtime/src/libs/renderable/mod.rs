@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+﻿use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -1314,7 +1314,7 @@ impl UserData for PartHandle {
             "GetTrack",
             |_, _this, _name: String| -> mlua::Result<AnimationTrackHandle> {
                 Err(mlua::Error::RuntimeError(
-                    "BasePart:GetTrack is deprecated and non-functional as of 1.2.7. \
+                    "BasePart:GetTrack is deprecated and non-functional as of 1.2.8. \
                      Load an AnimationSet via Asset.GetAsset(\"AnimationSet\", path), \
                      pull an Animation with set:GetAnimation(name), then bind it with \
                      part:GetAnimatedTrack(animation)."

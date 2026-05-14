@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.7">
-    <script src="theme.js?v=1.2.7"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.8">
+    <script src="theme.js?v=1.2.8"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.7" defer></script>
+<script src="sidebar.js?v=1.2.8" defer></script>
 
 <main>
 
@@ -58,7 +58,7 @@ video:Play()
         </tr>
         <tr>
             <td><code>.mp4</code></td>
-            <td>extracted as 16-bit PCM WAV → SoundData</td>
+            <td>extracted as 16-bit PCM WAV â†’ SoundData</td>
             <td>Delegated to <code>ffmpeg</code> on PATH. Whatever codec ffmpeg reads (H.264, H.265, AV1, etc.).</td>
         </tr>
         <tr>
@@ -72,7 +72,7 @@ video:Play()
 <div class="callout warn">
     <strong>MP4 / MOV require <code>ffmpeg</code> on PATH.</strong>
     Real video codecs (H.264 / HEVC / AV1) are not bundled with the
-    runtime — adding them would balloon the binary by tens of MB and
+    runtime â€” adding them would balloon the binary by tens of MB and
     introduces real licensing complications. Instead, the engine
     shells out to a system-installed
     <a href="https://ffmpeg.org/download.html" target="_blank" rel="noopener">ffmpeg</a>
@@ -88,7 +88,7 @@ video:Play()
     <strong>For shipped games:</strong> include <code>ffmpeg</code>
     next to the launcher EXE (Windows) or document it as a runtime
     dependency. If you can't ship ffmpeg with your game, pre-convert
-    the source MP4 / MOV to an animated GIF at build time — the
+    the source MP4 / MOV to an animated GIF at build time â€” the
     GIF path needs no system deps and works everywhere.
 </div>
 
@@ -118,23 +118,23 @@ video:Play()
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">video:Width()</span><span class="member-type">→ number</span></div>
+        <div class="member-header"><span class="member-name">video:Width()</span><span class="member-type">â†’ number</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">video:Height()</span><span class="member-type">→ number</span></div>
+        <div class="member-header"><span class="member-name">video:Height()</span><span class="member-type">â†’ number</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">video:FrameCount()</span><span class="member-type">→ number</span></div>
+        <div class="member-header"><span class="member-name">video:FrameCount()</span><span class="member-type">â†’ number</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">video:FrameDelayMs()</span><span class="member-type">→ number</span></div>
+        <div class="member-header"><span class="member-name">video:FrameDelayMs()</span><span class="member-type">â†’ number</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">video:Length()</span><span class="member-type">→ number</span></div>
-        <p class="member-desc">Total length in seconds (FrameCount × FrameDelayMs ÷ 1000).</p>
+        <div class="member-header"><span class="member-name">video:Length()</span><span class="member-type">â†’ number</span></div>
+        <p class="member-desc">Total length in seconds (FrameCount Ã— FrameDelayMs Ã· 1000).</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">video:Source()</span><span class="member-type">→ string</span></div>
+        <div class="member-header"><span class="member-name">video:Source()</span><span class="member-type">â†’ string</span></div>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">video:Play()</span><span class="tag tag-method">method</span></div>
@@ -149,7 +149,7 @@ video:Play()
     <div class="member">
         <div class="member-header">
             <span class="member-name">video:CurrentImage()</span>
-            <span class="member-type">→ ImageAsset</span>
+            <span class="member-type">â†’ ImageAsset</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">

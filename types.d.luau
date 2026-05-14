@@ -1,4 +1,4 @@
-
+﻿
 -- =============================================================================
 -- Ruzit Luau type declarations
 -- =============================================================================
@@ -68,7 +68,7 @@ export type IO_API = {
 	-- System paths. All resolved per-OS using XDG conventions on Linux,
 	-- standard %APPDATA% / known-folders on Windows, and ~/Library on
 	-- macOS. Each can be `nil` if the OS doesn't expose that location
-	-- (rare). Read-only — these are snapshots taken when IO was first
+	-- (rare). Read-only â€” these are snapshots taken when IO was first
 	-- imported.
 	-- User home directory (`~` on Linux/macOS, `C:\Users\<user>` on Windows).
 	Home: string?,
@@ -256,8 +256,8 @@ export type Process_API = {
 	-- land after gameplay state has finalised.
 	RenderStepped: Signal<number>,
 	-- Read environment variables. Two forms:
-	--   Process.Env("PATH") → "..."  (or nil if unset)
-	--   Process.Env()       → { ["PATH"] = "...", ... }  (whole map)
+	--   Process.Env("PATH") â†’ "..."  (or nil if unset)
+	--   Process.Env()       â†’ { ["PATH"] = "...", ... }  (whole map)
 	Env: ((name: string) -> string?) & (() -> { [string]: string }),
 	-- Set an env var on the running process (and inherited children).
 	SetEnv: (name: string, value: string) -> (),
@@ -386,7 +386,7 @@ end
 --
 --   Setting a name that isn't declared throws, typo guard.
 --
--- ──────────────────────────────────────────────────────────────────────────
+-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- 2D primitive fragment contract
 --   (FragmentAsset attached to Primitive, or fed to SetSkybox / SetPostEffect)
 --
@@ -408,7 +408,7 @@ end
 --   };
 --   @group(0) @binding(0) var<uniform> U: RuzitUni;
 --   @group(0) @binding(1) var IMG: texture_2d<f32>;        // bound asset, or
---                                                          // 1×1 white if none
+--                                                          // 1Ã—1 white if none
 --   @group(0) @binding(2) var IMG_SAMP: sampler;
 --   fn p(idx: u32) -> f32                  // @ruzit param accessor
 --   fn ruzit_inside_shape(uv, shape): bool // mask for the primitive's geometry
@@ -426,7 +426,7 @@ end
 --       return tex * U.color;
 --   }
 --
--- ──────────────────────────────────────────────────────────────────────────
+-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- 3D part fragment contract
 --   (FragmentAsset attached to BasePart)
 --
@@ -484,7 +484,7 @@ end
 --   @group(0) @binding(0) var<uniform> F: Frame;
 --   @group(0) @binding(1) var<uniform> I: Instance;
 --   @group(0) @binding(2) var IMG: texture_2d<f32>;     // BasePart.Texture,
---                                                       // or 1×1 white
+--                                                       // or 1Ã—1 white
 --                                                       // when Texture=nil
 --   @group(0) @binding(3) var IMG_SAMP: sampler;
 --   @group(0) @binding(4) var<storage, read> SDATA: array<f32>;
@@ -495,7 +495,7 @@ end
 --                            -- positions, animation curves, custom mesh
 --                            -- attributes. Up to your GPU's
 --                            -- max_storage_buffer_binding_size (typically
---                            -- ≥ 128 MB on desktop). Indexed as
+--                            -- â‰¥ 128 MB on desktop). Indexed as
 --                            -- `SDATA[idx]`.
 --
 -- Engine-provided WGSL helpers (declared in the prelude, call directly):
@@ -513,7 +513,7 @@ end
 --
 --   fresnel_schlick(cos_theta, F0: vec3<f32>) -> vec3<f32>
 --     Schlick Fresnel reflectance approximation. cos_theta = max(dot(N,V),0).
---     F0 ≈ vec3(0.04) for dielectrics, metal albedo for metals.
+--     F0 â‰ˆ vec3(0.04) for dielectrics, metal albedo for metals.
 --
 --   to_screen_uv(world_pos) -> vec3<f32>
 --     Project a world point to (uv.xy, ndc.z). Top-left-origin uv. Returns
@@ -571,7 +571,7 @@ end
 --   GPU.SetBuffer(lut)
 --   part:SetData(myShader, "size", 256)
 --
--- ──────────────────────────────────────────────────────────────────────────
+-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Coming later (NOT yet implemented):
 --   * Render-to-texture: render the 3D scene from any camera into a
 --     reusable Texture you can sample from another shader (mirrors,
@@ -668,7 +668,7 @@ export type Asset_API = {
 	-- buffers handed back from another system (Steam avatars, etc.).
 	FromPixels: (width: number, height: number, rgba: string) -> ImageAsset,
 
-	-- ── Bulk loading / unloading ──────────────────────────────────────────
+	-- â”€â”€ Bulk loading / unloading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 	-- The Preload / BulkLoad / Drop trio shares a SINGLE process-wide
 	-- asset cache, keyed by resolved (target package, kind, path), not
 	-- by which script called the loader. Any script can preload, look
@@ -980,8 +980,8 @@ declare class Sound
 	-- 3D world position. Listener = the active Renderable.Camera. Set to
 	-- nil to revert to non-positional (centered) playback.
 	Position: Vector?
-	-- Inner / outer falloff radii. Distances ≤ MinFalloff play at full
-	-- volume; distances ≥ MaxFalloff are silent; in between is a smooth
+	-- Inner / outer falloff radii. Distances â‰¤ MinFalloff play at full
+	-- volume; distances â‰¥ MaxFalloff are silent; in between is a smooth
 	-- roll-off. Defaults: 0 / 20.
 	MinFalloff: number
 	MaxFalloff: number
@@ -1035,7 +1035,7 @@ export type SFX_API = {
 }
 
 -- =============================================================================
--- SoundByte — graph-routed audio system. The replacement for the old SFX/Voice
+-- SoundByte â€” graph-routed audio system. The replacement for the old SFX/Voice
 -- modules (which remain importable for back-compat but are now deprecated).
 --
 -- Build a graph by linking sources (Player, VoiceChannel) through modifiers
@@ -1125,8 +1125,8 @@ end
 declare class SoundByteOutput
 	-- 0 = silent. >1 boosts.
 	Volume: number
-	-- Inner / outer falloff radii. Distance ≤ MinDistance plays at full
-	-- volume; ≥ MaxDistance is silent; smooth roll-off between.
+	-- Inner / outer falloff radii. Distance â‰¤ MinDistance plays at full
+	-- volume; â‰¥ MaxDistance is silent; smooth roll-off between.
 	FalloffMinDistance: number
 	FalloffMaxDistance: number
 	-- Pose this output in 3D. Setting to nil reverts to non-spatial.
@@ -1169,7 +1169,7 @@ declare class SoundByteByteSource
 	Channels: number
 	-- Current number of buffered f32 samples waiting to be played.
 	QueueLength: number
-	-- QueueLength / (SampleRate * Channels) — how much audio is buffered
+	-- QueueLength / (SampleRate * Channels) â€” how much audio is buffered
 	-- ahead of the playhead.
 	BufferSeconds: number
 	-- Feed a packet of little-endian f32 samples (same format as
@@ -1207,7 +1207,7 @@ export type SoundByte_API = {
 	NewByte: () -> SoundByteByte,
 	-- Allocate a queue-fed audio source. Feed it the byte packets that
 	-- arrive from a remote SoundByteByte via :SendInput and Link it into
-	-- an OutputNode to play. Defaults: 48000 Hz, 1 channel — pass
+	-- an OutputNode to play. Defaults: 48000 Hz, 1 channel â€” pass
 	-- (sampleRate, channels) to match the producing SoundByteByte.
 	NewByteSource: (sampleRate: number?, channels: number?) -> SoundByteByteSource,
 	-- Build a modifier of the given kind. See `SoundByteModifier.Kind`
@@ -1215,7 +1215,7 @@ export type SoundByte_API = {
 	GetModifier: (kind: ModifierKind) -> SoundByteModifier,
 	-- Allocate a new voice channel. Errors if VoiceFlagEnabled is false.
 	GetVoiceChannel: () -> SoundByteVoiceChannel,
-	-- Wire a source → modifiers → sink. Order is significant for
+	-- Wire a source â†’ modifiers â†’ sink. Order is significant for
 	-- modifiers (left-to-right in the call). Returns a LinkHandle that
 	-- can :Unlink() to detach.
 	Link: (...any) -> SoundByteLink,
@@ -1274,15 +1274,15 @@ declare class Dim
 	-- +Y is down, matching pixel coords).
 	X: number
 	Y: number
-	-- Linearly interpolate between self and other. t=0 → self, t=1 → other.
+	-- Linearly interpolate between self and other. t=0 â†’ self, t=1 â†’ other.
 	function Lerp(self, other: Dim, t: number): Dim
 	-- Rescale this Dim from one reference size to another. Useful for
 	-- prebuilt UI: design at a fixed reference (say 400x400), then call
 	-- `:Scale(reference, target)` at runtime to map the layout to the
 	-- current window size.
-	--   reference   — the design-time size the dim was authored against.
-	--   target      — the runtime size to map into (e.g. Window.GetSize()).
-	--   maintainRatio — when true, both axes use the smaller of the two
+	--   reference   â€” the design-time size the dim was authored against.
+	--   target      â€” the runtime size to map into (e.g. Window.GetSize()).
+	--   maintainRatio â€” when true, both axes use the smaller of the two
 	--                   scale factors so the aspect ratio is preserved
 	--                   (good for letter-boxed UI). Default false.
 	function Scale(self, reference: Dim, target: Dim, maintainRatio: boolean?): Dim
@@ -1344,7 +1344,7 @@ declare class Vector
 	function __unm(self): Vector
 	-- Component-wise comparisons. `==`, `<`, `<=` return true only when
 	-- ALL THREE axes match the relation (so `<` is partial-order, not
-	-- magnitude-based — use `.Magnitude` for length comparisons).
+	-- magnitude-based â€” use `.Magnitude` for length comparisons).
 	function __eq(self, other: Vector): boolean
 	function __lt(self, other: Vector): boolean
 	function __le(self, other: Vector): boolean
@@ -1361,7 +1361,7 @@ declare class ModelAsset
 	-- `{ Min, Max, Size, Center }` as Vectors. Useful for sizing
 	-- DistortionBoxes / DynMesh anchors against the actual mesh,
 	-- since exported model units vary wildly (some FBX exports are
-	-- ±1, some are ±100).
+	-- Â±1, some are Â±100).
 	function LocalBounds(self): { Min: Vector, Max: Vector, Size: Vector, Center: Vector }
 	-- Per-instance free, see top of Asset section. Destroys every
 	-- BasePart spawned from this model (BaseModel / SimplifyMesh
@@ -1425,8 +1425,8 @@ declare class CFrame
 	-- pose?" checks where direct == would fail due to floating-point
 	-- jitter.
 	-- Note: rotation is compared as raw Euler radians, not as angular
-	-- distance — so two visually identical rotations that differ by a
-	-- multiple of 2π will NOT compare equal. Wrap your bounds yourself
+	-- distance â€” so two visually identical rotations that differ by a
+	-- multiple of 2Ï€ will NOT compare equal. Wrap your bounds yourself
 	-- if you care.
 	function FuzzyEq(self, other: CFrame, epsilon: number?): boolean
 end
@@ -1493,7 +1493,7 @@ export type Vector_API = {
 export type CFrame_API = {
 	-- CFrame.new(position?, rotation?). Either argument is optional.
 	new: (position: Vector?, rotation: Vector?) -> CFrame,
-	-- Build a rotation-only CFrame from Euler angles (radians, applied X→Y→Z).
+	-- Build a rotation-only CFrame from Euler angles (radians, applied Xâ†’Yâ†’Z).
 	Angles: (rx: number, ry: number, rz: number) -> CFrame,
 	-- Build a CFrame at `eye`, oriented so its forward axis points at
 	-- `target`. `up` defaults to (0, 1, 0). The returned rotation is in
@@ -1546,7 +1546,7 @@ declare class BasePart
 	--   * ImageAsset (loaded from disk / generated)
 	--   * DynImg     (live-composited canvas of GUI primitives)
 	--   * DrawableImg (CPU-mutable image you draw to with shape
-	--                  primitives — see GUI.DrawableImg)
+	--                  primitives â€” see GUI.DrawableImg)
 	-- For DynImg / DrawableImg the texture refreshes whenever the
 	-- underlying buffer changes, so a UI you keep mutating in Lua
 	-- becomes a live texture you can wallpaper onto a 3D part.
@@ -1581,7 +1581,7 @@ declare class BasePart
 	-- "IgnoreInRaycast", "Lit", "Destroyed".
 	Changed: Signal<string>
 	-- Per-property signal that fires with the new value as the only
-	-- argument every time `propName` changes. Lazily created — properties
+	-- argument every time `propName` changes. Lazily created â€” properties
 	-- nobody listens to cost zero per tick. Useful for reactive code that
 	-- only cares about one specific field instead of filtering Changed by
 	-- name. For PhysicsService-driven parts the "CFrame" signal also
@@ -1602,7 +1602,7 @@ declare class BasePart
 	function SetData(self, asset: ShaderAsset | FragmentAsset, name: string, value: number): ()
 	function GetData(self, asset: ShaderAsset | FragmentAsset, name: string): number?
 
-	-- ── Mesh deformation ──────────────────────────────────────────────────
+	-- â”€â”€ Mesh deformation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 	-- Push every vertex within `envelope` units of `target.Position` by
 	-- `displacement * smoothstep(distance / envelope)`. Smooth radial
 	-- falloff, per-Part copy of the mesh, deforming one Part doesn't
@@ -1614,7 +1614,7 @@ declare class BasePart
 	-- those.
 	function ResetDeformation(self): ()
 
-	-- ── Local <-> world helpers ──────────────────────────────────────────
+	-- â”€â”€ Local <-> world helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 	-- Convert an offset in the part's local space to a world-space
 	-- position. `Vector.new(0, 3, 0)` returns the world point 3 units
 	-- "above" the part (along its rotated local Y axis), accounting for
@@ -1624,7 +1624,7 @@ declare class BasePart
 	-- part's local frame.
 	function WorldToLocal(self, world: Vector): Vector
 
-	-- ── Animation tracks ─────────────────────────────────────────────────
+	-- â”€â”€ Animation tracks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 	-- Bind an Animation (from `AnimationSet:GetAnimation`) to this part
 	-- and return the playable AnimationTrack. One Animation can be bound
 	-- to many parts, so a single FBX of clips can drive every character
@@ -1635,7 +1635,7 @@ declare class BasePart
 	-- prior :GetAnimatedTrack call).
 	function GetTracks(self): { AnimationTrack }
 
-	-- ⚠ Deprecated and non-functional as of 1.2.7. Models no longer
+	-- âš  Deprecated and non-functional as of 1.2.8. Models no longer
 	-- carry their own animations: load an AnimationSet via
 	-- `Asset.GetAsset("AnimationSet", ...)`, pull an Animation with
 	-- `set:GetAnimation(name)`, then bind it with
@@ -1643,7 +1643,7 @@ declare class BasePart
 	-- error.
 	function GetTrack(self, name: string): AnimationTrack
 
-	-- ── Audio anchoring ──────────────────────────────────────────────────
+	-- â”€â”€ Audio anchoring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 	-- Pin an SFX Sound or VoiceChannel to this part. While linked, the
 	-- engine copies `part.CFrame.Position` into the audio's `Position`
 	-- property every heart tick, so the source follows the part in 3D
@@ -1686,7 +1686,7 @@ declare class AnimationTrack
 	-- Tracks tied at the current max blend together: CFrame samples
 	-- are averaged, vertex-deform samples are summed as
 	-- displacements-from-base. Tracks on different parts never
-	-- conflict — each part runs its own priority gate.
+	-- conflict â€” each part runs its own priority gate.
 	Priority: number
 	Length: number
 	TimePosition: number
@@ -1738,7 +1738,7 @@ export type Renderable_API = {
 
 	-- Polygon reduction (level-of-detail). Returns a NEW ModelAsset whose
 	-- geometry is a quantization-clustered LOD of the input. `ratio` is a
-	-- 0..1 hint (default 0.5 ≈ ~half the vertex count); the result tends
+	-- 0..1 hint (default 0.5 â‰ˆ ~half the vertex count); the result tends
 	-- to be coarser than the ratio suggests on small meshes, since the
 	-- grid is uniform. Animations are loaded separately via
 	-- `Asset.GetAsset("AnimationSet", path)`, so simplifying a model
@@ -1751,7 +1751,7 @@ export type Renderable_API = {
 	-- shrink an eyelid box to blink an eye, stretch a torso box to
 	-- elongate a body, all without authoring a real skeleton.
 	--
-	-- ⚠ Arguments are interpreted in the part's LOCAL MESH SPACE — the
+	-- âš  Arguments are interpreted in the part's LOCAL MESH SPACE â€” the
 	-- raw vertex coordinates from the asset, BEFORE the engine
 	-- multiplies by part.Size / part.CFrame at render time. Do NOT pass
 	-- world coordinates. For procedural shapes ("Cube" / "Sphere") the
@@ -1765,7 +1765,7 @@ export type Renderable_API = {
 	--
 	-- Symptom of passing world coords by mistake: `box.VertexCount == 0`
 	-- and the mesh doesn't visibly warp. Debug with a probe box at the
-	-- origin with Size = (1e6, 1e6, 1e6) — it should capture every
+	-- origin with Size = (1e6, 1e6, 1e6) â€” it should capture every
 	-- vertex if you've got the coordinate system right.
 	--
 	-- Captured vertices remember their position relative to the box's
@@ -1800,7 +1800,7 @@ export type Renderable_API = {
 }
 
 -- =============================================================================
--- EffectVolume — 3D particle emitter. Lifetime is in seconds, Rate is in
+-- EffectVolume â€” 3D particle emitter. Lifetime is in seconds, Rate is in
 -- particles/sec. The volume is invisible; only the particles draw.
 -- =============================================================================
 
@@ -1854,7 +1854,7 @@ declare class EffectVolume
 	Acceleration: Vector
 	-- Per-particle randomized force, sampled once at spawn and added to
 	-- Acceleration each tick. Each axis is an independent {min, max} range
-	-- in world units/sec². Missing axes default to {0, 0}.
+	-- in world units/secÂ². Missing axes default to {0, 0}.
 	-- Example: `{ X = {min = -1, max = 1}, Y = {min = 4, max = 8} }`
 	RandomizeForce: { X: NumberRange?, Y: NumberRange?, Z: NumberRange? }
 	-- Per-second velocity damping. 0 = none, 1 = halve per second.
@@ -1937,17 +1937,17 @@ declare class Primitive
 	-- Applies to Square / Image / Font / Triangle / Circle / Clippable
 	-- and to AnimatedImage and DrawableImg (since both rendered through
 	-- Primitive). Spatial queries (GUI.Raycast, GUI.OverlapBox, etc.)
-	-- still test against the un-rotated AABB for now — visual rotation
+	-- still test against the un-rotated AABB for now â€” visual rotation
 	-- only.
 	Rotation: number
 	-- Tint when Texture-less / image tint when textured / glyph color for Text.
 	Color: Color3
-	-- 0 (opaque) … 1 (fully transparent).
+	-- 0 (opaque) â€¦ 1 (fully transparent).
 	Transparency: number
 	-- Higher = drawn on top. Defaults to 0.
 	ZIndex: number
 	-- Hide without destroying. Equivalent to setting Render=false on parts.
-	-- DEFAULTS TO FALSE on every freshly-created Primitive — set this to
+	-- DEFAULTS TO FALSE on every freshly-created Primitive â€” set this to
 	-- true once you've finished configuring size / position / image /
 	-- text so half-built primitives don't flash on screen.
 	Visible: boolean
@@ -1961,7 +1961,7 @@ declare class Primitive
 	-- letters specifically.
 	TextColor: Color3
 	-- Per-property change signal. Fires with the new value as the only
-	-- argument every time `propName` changes — `Position` fires with a
+	-- argument every time `propName` changes â€” `Position` fires with a
 	-- Dim, `Color` with a Color3, `Transparency` with a number, etc.
 	-- Lazy: properties no one listens to cost zero.
 	function GetPropertyChanged(self, propName: string): Signal<any>
@@ -1974,11 +1974,11 @@ declare class Primitive
 	function SetData(self, asset: ShaderAsset | FragmentAsset, name: string, value: number): ()
 	function GetData(self, asset: ShaderAsset | FragmentAsset, name: string): number?
 
-	-- ── ClippableUI methods (only valid when Shape == "Clippable") ───────
+	-- â”€â”€ ClippableUI methods (only valid when Shape == "Clippable") â”€â”€â”€â”€â”€â”€â”€
 	-- Register `child` to be clipped to this Clippable's current
 	-- Position+Size every frame. Pixels of `child` outside this rect are
 	-- cut at the wgpu scissor stage. Reading the Clippable's Size /
-	-- Position retroactively re-clips every child on the next snapshot —
+	-- Position retroactively re-clips every child on the next snapshot â€”
 	-- you don't need to re-add them. Children added to the wrong shape
 	-- raise an error. Last-add-wins for multi-parenting.
 	function AddClippable(self, child: Primitive): ()
@@ -2012,7 +2012,7 @@ end
 --   3. Assign the resulting DynImg as a part's `.Texture`. The 3D
 --      part displays the live canvas.
 --
--- Each canvas is a fixed-size pixel buffer (width × height RGBA8). Layers
+-- Each canvas is a fixed-size pixel buffer (width Ã— height RGBA8). Layers
 -- are sorted by `Primitive.ZIndex` (lower = drawn first), then alpha-blended.
 -- Primitives' `.Position` and `.Size` are read in pixel-space, with
 -- (0, 0) at the top-left of the canvas (NOT the screen).
@@ -2091,7 +2091,7 @@ declare class DrawableImg
 	-- Overwrite the entire buffer with one color + alpha. Doesn't
 	-- blend.
 	function Fill(self, color: Color3, transparency: number?): ()
-	-- Reset every pixel to (0, 0, 0, 0) — fully transparent black.
+	-- Reset every pixel to (0, 0, 0, 0) â€” fully transparent black.
 	function Clear(self): ()
 	-- Alpha-blend a `CanvasBuffer`'s contents onto this drawable at
 	-- the given offset (default (0, 0)).
@@ -2135,11 +2135,11 @@ export type DynImg_API = {
 }
 
 -- =============================================================================
--- AnimatedImage — TextureAtlas-driven sprite-sheet animation primitive
+-- AnimatedImage â€” TextureAtlas-driven sprite-sheet animation primitive
 -- (returned by `GUI.AnimatedImage(xml, source)`).
 --
 -- The XML is Sparrow / Flash-style: a `<TextureAtlas>` root with named
--- `<SubTexture>` frames. The XML itself does NOT define animations — it
+-- `<SubTexture>` frames. The XML itself does NOT define animations â€” it
 -- just chops the spritesheet into named pieces. You build animations at
 -- runtime via `:CreateTrack(frames, opts)` which gives you a track with
 -- its own FPS / Looped / Priority and DidLoop / Ended signals.
@@ -2208,7 +2208,7 @@ export type AnimatedImage = {
 	-- Defaults: FPS = 12, Looped = false, Priority = 1. All three are
 	-- live-editable on the returned track.
 	--
-	-- Each call returns a fresh track with its own signals — useful
+	-- Each call returns a fresh track with its own signals â€” useful
 	-- for layered animation (a base "idle" and a transient "hurt").
 	-- Tracks belong to this AnimatedImage; destroying the image stops
 	-- every track.
@@ -2249,19 +2249,19 @@ export type GUI_API = {
 		-- (sized by .TextSize / colored by .TextColor).
 		Font: (asset: FontAsset) -> Primitive,
 		-- Invisible clip container with a pixel-space Position+Size.
-		-- Doesn't render itself — its purpose is to be a parent for
+		-- Doesn't render itself â€” its purpose is to be a parent for
 		-- children added via `:AddClippable(child)`. Anything inside
 		-- those children that falls outside the Clippable's rect is
 		-- cut at the GPU scissor stage. Resizing or moving the
 		-- Clippable retroactively re-clips every child the next frame,
 		-- so it works as a scrolling viewport, masked overlay, draggable
-		-- panel, etc. Works on every other primitive type — including
+		-- panel, etc. Works on every other primitive type â€” including
 		-- DynImg-backed Image primitives, since they're already a
 		-- single textured rectangle by the time clipping runs.
 		Clippable: () -> Primitive,
 	},
 
-	-- ── DrawableImg / CanvasBuffer ────────────────────────────────────
+	-- â”€â”€ DrawableImg / CanvasBuffer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 	-- Build a fixed-size CPU-side mutable image. Has all the standard
 	-- image accessors (Width, Height, Source, Pixels) plus drawing
 	-- methods (DrawRect / DrawCube, DrawLine, DrawCircle, WritePixel,
@@ -2379,7 +2379,7 @@ export type GUI_API = {
 }
 
 -- =============================================================================
--- UIEffectVolume — 2D particle emitter for screen-space effects.
+-- UIEffectVolume â€” 2D particle emitter for screen-space effects.
 -- =============================================================================
 
 -- 2D vector input. Accepts a Dim or any table { X = .., Y = .. } / { x, y }.
@@ -2411,7 +2411,7 @@ declare class UIEffectVolume
 	-- 2D pixel-space force (same for every particle).
 	Acceleration: Vec2Input
 	-- Per-particle randomized force, sampled once at spawn and added to
-	-- Acceleration each tick. Pixels/sec². 2D only — Z is silently
+	-- Acceleration each tick. Pixels/secÂ². 2D only â€” Z is silently
 	-- ignored if you pass it.
 	RandomizeForce: { X: NumberRange?, Y: NumberRange? }
 	Drag: number
@@ -2432,7 +2432,7 @@ end
 
 type _GuiLegacyMoved_ = {
 
-	-- ── Skybox ────────────────────────────────────────────────────────
+	-- â”€â”€ Skybox â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 	-- Install a fragment shader that runs across the whole window before
 	-- the 3D scene draws. Replaces the flat clear color with whatever the
 	-- shader produces, gradient sky, procedural stars, animated clouds,
@@ -2442,7 +2442,7 @@ type _GuiLegacyMoved_ = {
 	-- Contract: same FragmentAsset shape as a 2D primitive shader (uses
 	-- the RuzitUni / IMG / p(idx) prelude). The shader is run on a
 	-- fullscreen quad; in.uv is 0..1 over the window. The texture
-	-- binding (IMG) is a 1×1 white default, there's no scene texture to
+	-- binding (IMG) is a 1Ã—1 white default, there's no scene texture to
 	-- sample in the skybox pass. Useful uniforms:
 	--   U.resolution, window pixel size for aspect-correct math.
 	--   U.time, seconds since window opened, for animation.
@@ -2466,7 +2466,7 @@ type _GuiLegacyMoved_ = {
 	SetSkybox: (asset: ShaderAsset | FragmentAsset) -> SceneShader,
 	-- Remove the active skybox; reverts to the flat clear color.
 	ClearSkybox: () -> (),
-	-- ── Post-processing ──────────────────────────────────────────────
+	-- â”€â”€ Post-processing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 	-- Install a fragment shader that runs ONCE per frame as the final
 	-- pass, every cube, model, GUI primitive, skybox, and shader is
 	-- composited into a single 2D image first, then your post shader
@@ -2487,7 +2487,7 @@ type _GuiLegacyMoved_ = {
 	--   return textureSample(IMG, IMG_SAMP, in.uv);
 	--
 	-- The shader runs on a fullscreen quad covering the whole window,
-	-- in.uv ∈ [0,1] with top-left origin. Use U.resolution if you need
+	-- in.uv âˆˆ [0,1] with top-left origin. Use U.resolution if you need
 	-- pixel-space math (e.g. neighbor taps for blur), U.time for
 	-- animation, and `p(idx)` to read live params.
 	--
@@ -2545,7 +2545,7 @@ export type Mouse_API = {
 	-- "Deprecated" section in the Mouse docs for a one-line migration.
 	InputReceived: Signal<MouseButton, "Begin" | "End">,
 	-- Fires with (deltaX: number, deltaY: number) in lines (one notch of a
-	-- standard mouse wheel = ±1). +deltaY is scroll up / away from the user;
+	-- standard mouse wheel = Â±1). +deltaY is scroll up / away from the user;
 	-- +deltaX is scroll right. Precise touchpads emit fractional values.
 	Scrolled: Signal<number, number>,
 	-- Same as assigning Mouse.Cursor.
@@ -2565,7 +2565,7 @@ export type Mouse_API = {
 -- =============================================================================
 
 -- =============================================================================
--- LightingService — thin wrapper around the engine's directional sun + ambient
+-- LightingService â€” thin wrapper around the engine's directional sun + ambient
 -- term, plus an opt-in registry for which parts get that lighting applied.
 --
 -- New BaseParts default to `obj.Lit = false` (flat colored output). Call
@@ -2600,7 +2600,7 @@ export type LightSource = {
 	Range: number,
 	-- Hint flag for shadow casting. Read by shaders as a 0/1 value via
 	-- the packed light buffer. The default 3D shader doesn't act on
-	-- this yet — custom shaders can.
+	-- this yet â€” custom shaders can.
 	CastShadow: boolean,
 	-- Distance attenuation exponent. 2.0 is physical inverse-square in
 	-- the demo shader (built on `(1 - d / Range)^Falloff`). Lower
@@ -2621,7 +2621,7 @@ export type LightSource = {
 	-- Attach a custom Frag3D shader asset. The shader id is stored on
 	-- the light and exposed to user code that wants to render with
 	-- per-light shader variants. The default pipeline doesn't dispatch
-	-- it — this is data you can read from your own shader / Lua code.
+	-- it â€” this is data you can read from your own shader / Lua code.
 	AttachShader: (self: LightSource, shader: any) -> (),
 	-- Remove a previously attached shader.
 	DetachShader: (self: LightSource) -> (),
@@ -2634,7 +2634,7 @@ export type LightSource = {
 }
 
 -- Options table accepted by `LightingService.GenerateLightSource`. Every
--- field is optional — the defaults give you a white point light at the
+-- field is optional â€” the defaults give you a white point light at the
 -- origin with brightness 1 and range 16.
 export type LightSourceOptions = {
 	CFrame: CFrame?,
@@ -2682,7 +2682,7 @@ export type LightingService_API = {
 	RemoveObject: (self: LightingService_API, part: BasePart) -> (),
 	-- Whether the part is currently in engine-managed lighting.
 	IsObjectManaged: (self: LightingService_API, part: BasePart) -> boolean,
-	-- ── Skybox ─────────────────────────────────────────────────────────
+	-- â”€â”€ Skybox â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 	-- Install a fragment shader that runs across the whole window before
 	-- the 3D scene draws. Replaces the flat clear color with whatever the
 	-- shader produces (gradient sky, procedural stars, animated clouds,
@@ -2693,7 +2693,7 @@ export type LightingService_API = {
 	SetSkybox: (asset: ShaderAsset | FragmentAsset) -> SceneShader,
 	-- Remove the active skybox; reverts to the flat clear color.
 	ClearSkybox: () -> (),
-	-- ── Post-processing ────────────────────────────────────────────────
+	-- â”€â”€ Post-processing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 	-- Install a fragment shader that runs ONCE per frame as the final
 	-- pass. The composited scene is bound as IMG; sample via
 	-- textureSample(IMG, IMG_SAMP, in.uv). Used for color grading,
@@ -2703,7 +2703,7 @@ export type LightingService_API = {
 	ClearPostEffect: () -> (),
 	-- Spawn a new LightSource and add it to the active light registry.
 	-- `kind` is "PointLight" or "Spotlight". `opts` is a table of
-	-- LightSourceOptions. The returned LightSource is mutable —
+	-- LightSourceOptions. The returned LightSource is mutable â€”
 	-- assign to .CFrame / .Color / .Brightness etc. between frames
 	-- and the next UploadLights call picks up the changes.
 	GenerateLightSource: (kind: "PointLight" | "Spotlight", opts: LightSourceOptions?) -> LightSource,
@@ -2727,7 +2727,7 @@ export type LightingService_API = {
 }
 
 -- =============================================================================
--- TweenService — Rust-side tween/interpolation engine. Tweens are created
+-- TweenService â€” Rust-side tween/interpolation engine. Tweens are created
 -- once from Lua then stepped entirely on the Rust heart loop, so the per-frame
 -- interpolation never crosses the Lua VM. The Lua VM only re-enters when a
 -- tween's `Completed` signal fires (once per tween, not per frame).
@@ -2775,33 +2775,33 @@ export type Tween = {
 export type TweenService_API = {
 	-- Create a tween. `target` is a tweenable userdata. `duration` is
 	-- in seconds. `style` is the easing family ("Linear", "Bounce",
-	-- "Cubic", …) and `direction` is the direction prefix ("In", "Out",
-	-- "InOut") — both are separate so you don't have to concatenate
+	-- "Cubic", â€¦) and `direction` is the direction prefix ("In", "Out",
+	-- "InOut") â€” both are separate so you don't have to concatenate
 	-- them. `direction` defaults to `"Out"` if omitted or nil.
 	-- `properties` is a table of `{ propertyName = goalValue }`.
 	--
 	-- Supported targets and properties:
-	--   BasePart        — CFrame (CFrame), Color (Color3), Size (Vector)
-	--   DistortionBox   — CFrame (CFrame), Size (Vector)
-	--   GUI primitive   — Position (Dim), Size (Dim), Color (Color3),
+	--   BasePart        â€” CFrame (CFrame), Color (Color3), Size (Vector)
+	--   DistortionBox   â€” CFrame (CFrame), Size (Vector)
+	--   GUI primitive   â€” Position (Dim), Size (Dim), Color (Color3),
 	--                     Transparency (number), ZIndex (number),
 	--                     Rotation (number, degrees)
-	--   SFX Sound       — Volume (number), Pitch / Speed (number),
+	--   SFX Sound       â€” Volume (number), Pitch / Speed (number),
 	--                     Pan (number), Distortion (number),
 	--                     Position (Vector), MinFalloff (number),
 	--                     MaxFalloff (number)
-	--   VoiceChannel    — Volume (number), Pitch / Speed (number),
+	--   VoiceChannel    â€” Volume (number), Pitch / Speed (number),
 	--                     Position (Vector), MinFalloff (number),
 	--                     MaxFalloff (number)
-	--   Movable         — CFrame (CFrame, 3D mode) or Position (Dim, 2D
+	--   Movable         â€” CFrame (CFrame, 3D mode) or Position (Dim, 2D
 	--                     mode). Children move/rotate by the delta.
-	--   Sizable         — Size (Vector for 3D, Dim for 2D). Children
+	--   Sizable         â€” Size (Vector for 3D, Dim for 2D). Children
 	--                     scale by the ratio.
-	--   Billboard       — Position (Vector world-space), Size (Dim
+	--   Billboard       â€” Position (Vector world-space), Size (Dim
 	--                     pixel canvas).
 	--   SoundByte
-	--    Modifier       — Value, Min, Max (all numbers).
-	--    OutputNode     — Volume (number), FalloffMinDistance,
+	--    Modifier       â€” Value, Min, Max (all numbers).
+	--    OutputNode     â€” Volume (number), FalloffMinDistance,
 	--                     FalloffMaxDistance, Position (Vector),
 	--                     CFrame (CFrame).
 	--
@@ -2894,8 +2894,8 @@ declare class VoiceChannel
 	Pitch: number
 	-- 3D world anchor. Set to nil to revert to non-positional.
 	Position: Vector?
-	-- Inner / outer falloff radii. Distances ≤ MinFalloff play at full
-	-- volume; distances ≥ MaxFalloff are silent; smooth roll-off in
+	-- Inner / outer falloff radii. Distances â‰¤ MinFalloff play at full
+	-- volume; distances â‰¥ MaxFalloff are silent; smooth roll-off in
 	-- between. Defaults: 0 / 8.
 	MinFalloff: number
 	MaxFalloff: number
@@ -2965,7 +2965,7 @@ export type Voice_API = {
 	--   * `recording` is a VoiceRecording you can pipe straight into a
 	--     channel via `recording:PlayInto(channel)`, or send to
 	--     Voice.PlayRecording for a fire-and-forget channel.
-	--   * `serialized` is the same recording as bytes (a string) — use this
+	--   * `serialized` is the same recording as bytes (a string) â€” use this
 	--     to send over the network, write to disk, or stash for later
 	--     replay via Voice.LoadRecording.
 	-- Duration is clamped to 1 hour. The returned Signal fires at most once.
@@ -3015,7 +3015,7 @@ declare class SteamLobby
 	-- Fires with (memberSteamId: string?). Nil when lobby-wide data changed,
 	-- otherwise the id of the member whose per-member data changed.
 	OnDataUpdate: Signal<string?>
-	-- Fires when the LOCAL user is involuntarily removed from the lobby —
+	-- Fires when the LOCAL user is involuntarily removed from the lobby â€”
 	-- i.e. lost network connection, was kicked, or was banned. Does NOT
 	-- fire when you call :Leave() yourself. Argument is the reason:
 	-- "Disconnected" | "Kicked" | "Banned". After this fires the lobby
@@ -3034,7 +3034,7 @@ declare class SteamLobby
 	OnKick: Signal<string>
 	-- Fires when another lobby member sends a P2P packet via :Send or
 	-- :Broadcast. Args: (senderSteamId: string, bytes: string). The
-	-- bytes are the exact payload the sender passed in — Ruzit doesn't
+	-- bytes are the exact payload the sender passed in â€” Ruzit doesn't
 	-- impose any framing or serialization on top. P2P uses Steam's
 	-- relay-network: NAT-friendly, encrypted, identified by SteamID
 	-- (no IPs ever exposed). Up to ~1 MB per message; reliable channel
@@ -3072,17 +3072,17 @@ declare class SteamLobby
 	function Close(self): ()
 	-- Owner-only. Kick a member by Steam id. The targeted member's client
 	-- fires OnKick and auto-leaves. Other members observe the leave via
-	-- OnMemberLeft. Cannot kick yourself — use :Close() or :Leave() instead.
+	-- OnMemberLeft. Cannot kick yourself â€” use :Close() or :Leave() instead.
 	function Kick(self, userId: string): ()
 	-- Open Steam's invite-friends overlay for this lobby.
 	function ShowInviteDialog(self): ()
 	-- P2P send to one specific lobby member. Uses Steam Networking
 	-- Sockets (relay-fallback, encrypted, NAT-friendly). The connection
 	-- is established lazily on the first send to that peer.
-	-- `data` is raw bytes — anything you can serialize into a string
+	-- `data` is raw bytes â€” anything you can serialize into a string
 	-- (JSON, msgpack, your own format). `reliability` is "Reliable"
-	-- (default — ordered, no-drop, like TCP) or "Unreliable" (fast,
-	-- lossy, no order — best for hot-path packets like positions).
+	-- (default â€” ordered, no-drop, like TCP) or "Unreliable" (fast,
+	-- lossy, no order â€” best for hot-path packets like positions).
 	-- "ReliableNoNagle" / "UnreliableNoDelay" disable the Nagle
 	-- buffering for latency-sensitive RPCs.
 	-- The peer must be a current member of this lobby; raises
@@ -3141,17 +3141,17 @@ end
 
 export type SteamPersonaState = "Offline" | "Online" | "Busy" | "Away" | "Snooze" | "LookingToTrade" | "LookingToPlay"
 -- Reason the local user was removed from a SteamLobby.
--- "Disconnected" — network drop / Steam client lost connection.
--- "Kicked"       — owner removed you.
--- "Banned"       — owner kicked AND banned you (rejoining will fail).
+-- "Disconnected" â€” network drop / Steam client lost connection.
+-- "Kicked"       â€” owner removed you.
+-- "Banned"       â€” owner kicked AND banned you (rejoining will fail).
 export type SteamDisconnectReason = "Disconnected" | "Kicked" | "Banned"
 -- Reliability tier for SteamLobby:Send / :Broadcast.
--- "Reliable"          — ordered, no-loss, like TCP. Default.
--- "Unreliable"        — fast, lossy, no ordering. Best for positions / inputs.
--- "ReliableNoNagle"   — reliable but flush immediately (no batching). Use for
+-- "Reliable"          â€” ordered, no-loss, like TCP. Default.
+-- "Unreliable"        â€” fast, lossy, no ordering. Best for positions / inputs.
+-- "ReliableNoNagle"   â€” reliable but flush immediately (no batching). Use for
 --                        latency-sensitive RPCs where you don't want to wait
 --                        for the Nagle timer to coalesce small writes.
--- "UnreliableNoDelay" — unreliable AND don't queue if the connection isn't
+-- "UnreliableNoDelay" â€” unreliable AND don't queue if the connection isn't
 --                        ready. Drops the message instead of buffering.
 export type SteamReliability = "Reliable" | "Unreliable" | "ReliableNoNagle" | "UnreliableNoDelay"
 export type SteamAvatarSize = "small" | "medium" | "large"
@@ -3210,7 +3210,7 @@ export type Steam_API = {
 	-- libsteam_api.so on Linux, libsteam_api.dylib on macOS) is sitting
 	-- next to the executable. Use `ruzit fetch-deps` to drop it in.
 	-- The AppID (from your build.toml [steam] table, or 480 if unset)
-	-- is baked into the runtime — at SDK init the runtime briefly
+	-- is baked into the runtime â€” at SDK init the runtime briefly
 	-- writes `steam_appid.txt` next to the exe, lets Steam SDK read
 	-- it, then immediately deletes it, so the game can boot without
 	-- being launched through the Steam client and without leaving
@@ -3227,7 +3227,7 @@ export type Steam_API = {
 	-- Fires with (reason: string) when the local Steam client loses its
 	-- connection to the Steam backend. Affects EVERY Steam-backed feature
 	-- (lobbies, matchmaking, friends, achievements/stat sync, cloud, etc.)
-	-- — gracefully pause networking until OnConnected fires.
+	-- â€” gracefully pause networking until OnConnected fires.
 	OnDisconnected: Signal<string>,
 	-- Fires with no arguments when the local Steam client (re)connects to
 	-- the Steam backend after a disconnect.
@@ -3237,7 +3237,7 @@ export type Steam_API = {
 	-- will keep attempting; otherwise it has given up.
 	OnConnectFailure: Signal<string, boolean>,
 	-- Force-close every P2P connection and the listen socket. Normally
-	-- you don't need this — connections clean up automatically on lobby
+	-- you don't need this â€” connections clean up automatically on lobby
 	-- close/leave/disconnect, and the engine calls Shutdown for you when
 	-- the heart loop exits. Call manually if you're about to do an
 	-- abrupt exit (os.exit, panic, etc.) and want clean Steam teardown
@@ -3245,7 +3245,7 @@ export type Steam_API = {
 	Shutdown: () -> (),
 	-- Fires with (lobbyId: string, friendId: string) when a friend
 	-- accepts a Steam invite to YOUR game while you're already running.
-	-- Steam doesn't auto-join — you decide what to do (auto-join, prompt
+	-- Steam doesn't auto-join â€” you decide what to do (auto-join, prompt
 	-- the user, etc.). Typical handler:
 	--     Steam.OnLobbyJoinRequested:Connect(function(lobbyId)
 	--         Steam.Lobby.Join(lobbyId):Connect(function(lobby)
@@ -3253,13 +3253,13 @@ export type Steam_API = {
 	--         end)
 	--     end)
 	-- For cold launches (game wasn't running when the invite was clicked),
-	-- Steam puts "+connect_lobby <id>" in the launch command line — read it
+	-- Steam puts "+connect_lobby <id>" in the launch command line â€” read it
 	-- via Steam.Launch.GetQueryParam("connect_lobby") at startup.
 	OnLobbyJoinRequested: Signal<string, string>,
 	-- Bring up Valve's relay-network for P2P (cross-NAT punch-through,
 	-- relay fallback when direct fails). Call ONCE at startup if your
 	-- game ships to players on different networks. Skip it for local
-	-- LAN / same-machine testing — direct P2P works without it, and
+	-- LAN / same-machine testing â€” direct P2P works without it, and
 	-- skipping avoids spinning up the relay sockets (which Steam's SDK
 	-- can't fully tear down before process exit, leading to the
 	-- "still have sockets open" shutdown warning). Costs a few seconds
@@ -3556,7 +3556,7 @@ export type Gamepad_API = {
 --
 -- Coordinate space: BodyCframe is world-relative, it's where the player's
 -- VR rig sits in the scene. HeadCframe is the headset pose; the engine
--- composes Body ∘ Head onto the active 3D camera each frame so existing
+-- composes Body âˆ˜ Head onto the active 3D camera each frame so existing
 -- BasePart / Renderable code keeps working without any VR-aware changes.
 --
 -- GUI: 2D primitives created via the GUI library stay screen-locked in VR
@@ -3698,16 +3698,16 @@ export type VR_API = {
 }
 
 -- =============================================================================
--- VirtualReality — high-level VR import that always loads (so games can
+-- VirtualReality â€” high-level VR import that always loads (so games can
 -- write `if VR.HasVrFlag and VR.IsVrPresent then ...` without an import
 -- failing on builds without VR support). Backed by the `indite` crate
--- (OpenXR ↔ WGPU bridge) when the runtime is compiled with `--features vr`.
+-- (OpenXR â†” WGPU bridge) when the runtime is compiled with `--features vr`.
 -- =============================================================================
 
 -- Returned by `controller:Attatch(target)`. Lives until `:Destroy()`.
 -- While alive, the held part's world CFrame is recomputed each frame
 -- as `BodyCFrame * controller.CFrame * Offset`, so the part follows
--- the controller exactly — no per-frame Luau bookkeeping. Physics-
+-- the controller exactly â€” no per-frame Luau bookkeeping. Physics-
 -- tracked parts get auto-anchored on attach and restored on destroy.
 export type VirtualRealityAttatchment = {
 	-- CFrame offset applied on top of the controller pose. Tweak this
@@ -3725,7 +3725,7 @@ export type VirtualRealityAttatchment = {
 }
 
 export type VirtualRealityController = {
-	-- "Left" or "Right" — which hand this controller represents.
+	-- "Left" or "Right" â€” which hand this controller represents.
 	Side: "Left" | "Right",
 	-- Tracked pose, in body-local space (relative to BodyCFrame).
 	CFrame: CFrame,
@@ -3785,12 +3785,12 @@ export type VirtualReality_API = {
 	-- Windows registry probe). Evaluated at import time. Always
 	-- false when HasVrFlag is false.
 	IsVrPresent: boolean,
-	-- Player-rig body pose in world space. Writable — set this to
+	-- Player-rig body pose in world space. Writable â€” set this to
 	-- teleport, snap-turn, or otherwise move the rig. The engine
 	-- composes this with the headset pose onto the active camera
 	-- each frame (HeadMoved fires after each composition).
 	BodyCFrame: CFrame,
-	-- Headset pose in body-local space. Read-only — written by the
+	-- Headset pose in body-local space. Read-only â€” written by the
 	-- VR backend each frame.
 	HeadCFrame: CFrame,
 	-- True while the camera is bound to the VR pipeline.
@@ -3817,7 +3817,7 @@ export type VirtualReality_API = {
 	GetEyePose: (VirtualReality_API?, side: "Left" | "Right") -> CFrame,
 	-- The two controller handles. Returned as an array
 	-- (`conns[1] = Left`, `conns[2] = Right`) AND keyed (`.Left`,
-	-- `.Right`) — pick whichever access pattern reads better.
+	-- `.Right`) â€” pick whichever access pattern reads better.
 	GetControllers: (VirtualReality_API?) -> {
 		[number]: VirtualRealityController,
 		Left: VirtualRealityController,
@@ -3926,7 +3926,7 @@ export type GPU_API = {
 	-- Geometry: dispatched on the GPU as a compute pass, one thread per
 	-- part. Cubes are tested as oriented bounding boxes (CFrame + Size).
 	-- Spheres are tested as ellipsoids (CFrame + Size). Models with mesh
-	-- data are tested per-triangle via Möller-Trumbore in part-local
+	-- data are tested per-triangle via MÃ¶ller-Trumbore in part-local
 	-- space, so corners and concavities hit precisely instead of the
 	-- bounding box. Models without mesh data fall back to OBB. Parts
 	-- with Render = false or IgnoreInRaycast = true are skipped. Falls
@@ -3993,7 +3993,7 @@ export type GPU_API = {
 	-- Cap or uncap the heart-loop tick rate. Pass nil (or 0) to remove
 	-- the cap and run as fast as the system allows; pass a positive
 	-- number to throttle to that frames-per-second target. The
-	-- engine ships UNCAPPED by default — frames run as fast as
+	-- engine ships UNCAPPED by default â€” frames run as fast as
 	-- the renderer + game logic allow, bounded only by the swap-
 	-- chain present mode (see SetVSync). The cap is applied by
 	-- sleeping at the end of each tick if the frame finished
@@ -4003,7 +4003,7 @@ export type GPU_API = {
 	SetMaxFrameRate: (fps: number?) -> (),
 	-- Read the current cap. Returns nil when uncapped.
 	GetMaxFrameRate: () -> number?,
-	-- Toggle vertical sync on the swapchain. Default is OFF —
+	-- Toggle vertical sync on the swapchain. Default is OFF â€”
 	-- the engine prefers Mailbox (uncapped, tear-free) when the
 	-- driver supports it, falling back to Immediate, then
 	-- FifoRelaxed, then Fifo. Turning VSync on hard-caps presents
@@ -4018,20 +4018,20 @@ export type GPU_API = {
 	-- Set the GPU power mode. Affects which adapter the engine
 	-- requests at startup (and so which clock-speed bias the
 	-- driver applies).
-	--   "Quality"     — HighPerformance adapter. Discrete GPU on
+	--   "Quality"     â€” HighPerformance adapter. Discrete GPU on
 	--                   dual-GPU laptops, max-FPS bias. Best for
 	--                   shooters / action games where you want
 	--                   the highest sustained FPS the hardware
 	--                   can give. Default.
-	--   "Performance" — LowPower adapter. Integrated GPU when
+	--   "Performance" â€” LowPower adapter. Integrated GPU when
 	--                   present, battery-friendly. Use for
 	--                   stylized / lightweight games where
 	--                   battery life matters more than peak FPS.
-	--   "Auto"        — Whatever the driver picks by default
+	--   "Auto"        â€” Whatever the driver picks by default
 	--                   (often LowPower on laptops).
 	-- Adapter selection happens at startup, so calling this
 	-- AFTER the window is open only updates the value reported
-	-- by GetPowerMode and persists it for the next launch — the
+	-- by GetPowerMode and persists it for the next launch â€” the
 	-- live adapter doesn't change. Set this before opening the
 	-- window (or in build.toml's startup script) for the change
 	-- to take effect this run.
@@ -4075,7 +4075,7 @@ export type GPU_API = {
 	-- the zone is fully inside a large part. Optional filter callback,
 	-- same shape as the other Overlap queries.
 	GetItemsInZone: (cframe: CFrame, size: Vector, filter: ((BasePart) -> boolean)?) -> { BasePart },
-	-- ── Shadow configuration ─────────────────────────────────────────
+	-- â”€â”€ Shadow configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 	-- The default 3D shader reads these values from the Frame uniform
 	-- and adjusts its terminator + receive-shadow behavior. With
 	-- shadows enabled, the lambert term becomes a smoothstep at the
@@ -4086,7 +4086,7 @@ export type GPU_API = {
 	-- past that distance.
 	--
 	-- Real depth-map sampling (per-light render passes, comparison
-	-- samplers, cascade splits) is scaffolded for a future pass — this
+	-- samplers, cascade splits) is scaffolded for a future pass â€” this
 	-- API ships now so games can author their lighting against it
 	-- already.
 	SetShadowsEnabled: (on: boolean) -> (),
@@ -4311,7 +4311,7 @@ export type Debug_API = {
 	PeakFrameMs: () -> number,
 	ResetPeak: () -> (),
 	-- Set the threshold (in milliseconds) above which a heart tick
-	-- counts as a frame drop. Default is 25 (≈ a missed 60 Hz tick).
+	-- counts as a frame drop. Default is 25 (â‰ˆ a missed 60 Hz tick).
 	SetFrameDropThreshold: (ms: number) -> (),
 	-- Subscribe to frame-drop events. Returns a Signal that fires once
 	-- per dropped frame with the frame time in milliseconds. If
@@ -4338,7 +4338,7 @@ declare class DynMesh
 	-- Weld a BasePart to this mesh. Returns a numeric weld id you can
 	-- pass to :GetPart / :Detach later. The opts table accepts:
 	--   kind     = "Static" | "Attach" | "Joint", default "Static"
-	--                "Static" / "Attach" — rigid follow. The welded
+	--                "Static" / "Attach" â€” rigid follow. The welded
 	--                  part's CFrame is captured at link time (its
 	--                  current world position becomes the local
 	--                  offset), then the part tracks the base each
@@ -4349,7 +4349,7 @@ declare class DynMesh
 	--                  locally while the body moves. Animations
 	--                  PLAYING on the welded part still get
 	--                  overwritten by the weld.
-	--                "Joint" — hierarchical follow. The welded part
+	--                "Joint" â€” hierarchical follow. The welded part
 	--                  is dragged along by the base's per-tick motion
 	--                  but keeps its own pose on top, so animation
 	--                  tracks playing on the welded part keep working
@@ -4385,7 +4385,7 @@ declare class DynMesh
 	--   * Sets the target's CFrame.Position to the centroid (average)
 	--     of all anchor points, so adding mid-path waypoints recenters
 	--     the part.
-	--   * Sets the target's CFrame.Rotation to face first → last
+	--   * Sets the target's CFrame.Rotation to face first â†’ last
 	--     anchor (yaw + pitch). The part itself stays straight.
 	--   * Sets target.Size.x to the TOTAL polyline length (sum of
 	--     consecutive anchor-to-anchor distances), so a sequence of
@@ -4510,12 +4510,12 @@ export type Task_API = {
 	-- the underlying thread so you can pass it to Task.Cancel later.
 	-- Errors inside `fn` are caught and printed.
 	Spawn: (fn: () -> ()) -> thread,
-	-- Run `fn` at the END of the current tick's scheduler pass — after
+	-- Run `fn` at the END of the current tick's scheduler pass â€” after
 	-- every Spawn / Delay / Schedule / Repeat that is due this tick.
 	-- Useful when you want to schedule cleanup that should run AFTER
 	-- everyone else has had a chance to react to this frame's events.
 	-- If a Defer'd callback calls Defer again, the new one runs on the
-	-- NEXT tick (not the current one) — so you can't accidentally
+	-- NEXT tick (not the current one) â€” so you can't accidentally
 	-- infinite-loop within a single frame. Returns the thread so you
 	-- can cancel before it fires.
 	Defer: (fn: () -> ()) -> thread,
@@ -4526,8 +4526,8 @@ export type Task_API = {
 	Delay: (seconds: number, fn: () -> ()) -> thread,
 	-- Yield the current coroutine for `seconds` real time, then resume
 	-- it on a future scheduler pump. The engine runs every script in
-	-- a coroutine — entry script, signal handlers, Spawn / Delay /
-	-- Defer threads — so Wait is always callable, no setup needed.
+	-- a coroutine â€” entry script, signal handlers, Spawn / Delay /
+	-- Defer threads â€” so Wait is always callable, no setup needed.
 	-- Returns no values; use it as a fire-and-forget sleep:
 	--     play_intro()
 	--     Task.Wait(1.5)
@@ -4553,8 +4553,8 @@ export type Task_API = {
 	-- Returns true if `id` existed.
 	SetInterval: (id: string, interval: number) -> boolean,
 	-- Cancel a task by string id OR by thread reference.
-	--   * string  — cancel a Schedule / Repeat by id (existing behavior).
-	--   * thread  — cancel a Spawn / Delay / Defer by the thread it
+	--   * string  â€” cancel a Schedule / Repeat by id (existing behavior).
+	--   * thread  â€” cancel a Spawn / Delay / Defer by the thread it
 	--               returned. The thread is marked for cancellation;
 	--               on the next scheduler pump it's skipped (instead
 	--               of being resumed) and its registration cleared.
@@ -4588,7 +4588,7 @@ export type Register_API = {
 }
 
 -- =============================================================================
--- PhysicsService — Rust-side rigid-body simulation that wraps existing
+-- PhysicsService â€” Rust-side rigid-body simulation that wraps existing
 -- `Renderable.BasePart`s. All state and integration live in Rust; the only
 -- Lua-side cost is a single field read or method call. Each `PhysicsPlane`
 -- can run on its own rayon thread pool (set via the `Threads` option) and
@@ -4597,30 +4597,30 @@ export type Register_API = {
 -- =============================================================================
 
 export type PhysicsPlaneOptions = {
-	-- Default acceleration applied to every non-anchored object (units/sec²).
+	-- Default acceleration applied to every non-anchored object (units/secÂ²).
 	-- Defaults to Vector(0, -50, 0) which feels like Earth gravity at game scale.
 	Gravity: Vector?,
 	-- Number of rayon worker threads to spin up for this plane's simulation
 	-- step. Defaults to 1 (no thread pool, single-threaded inline). Set to
 	-- the number of CPU cores you want to dedicate. Object integration and
-	-- physics→part commits parallelize across this pool when the plane has
-	-- enough objects (≥ 64) to make the dispatch overhead worth it.
+	-- physicsâ†’part commits parallelize across this pool when the plane has
+	-- enough objects (â‰¥ 64) to make the dispatch overhead worth it.
 	Threads: number?,
 	-- Per-second linear velocity damping. Each tick:
 	-- `velocity *= max(0, 1 - LinearDamping * dt)`. Default 0.10. Higher
 	-- values make objects come to rest faster (think air drag).
 	LinearDamping: number?,
-	-- Same as LinearDamping but for angular velocity. Default 0.30 — kills
+	-- Same as LinearDamping but for angular velocity. Default 0.30 â€” kills
 	-- tumbling fairly quickly so stacked piles settle visually.
 	AngularDamping: number?,
 	-- Quadratic drag coefficient. Each tick, every non-anchored body has
 	-- `F = -Drag * |v| * v` applied as an additional force. Unlike the
-	-- linear `LinearDamping` term, drag scales with v² so at low speed it
-	-- barely matters but at high speed it dominates — exactly what you
+	-- linear `LinearDamping` term, drag scales with vÂ² so at low speed it
+	-- barely matters but at high speed it dominates â€” exactly what you
 	-- want for "feels like underwater": small impulses barely move, big
 	-- impulses still travel a long way, things never quite stop the same
 	-- way they do in air. Default 0.0 (off). Reasonable underwater values
-	-- are around 1.0 – 4.0.
+	-- are around 1.0 â€“ 4.0.
 	Drag: number?,
 	-- Constant upward acceleration applied per non-anchored body each
 	-- tick. Positive values counteract gravity (set to about `-Gravity.Y`
@@ -4630,7 +4630,7 @@ export type PhysicsPlaneOptions = {
 	Buoyancy: number?,
 	-- Constant world-space force applied to every non-anchored body in
 	-- the plane each tick, on top of gravity / drag / buoyancy. Units
-	-- are force (mass·units/sec²), so a heavier body accelerates less
+	-- are force (massÂ·units/secÂ²), so a heavier body accelerates less
 	-- from the same value. Useful for global wind, conveyor pushes,
 	-- magnetic fields, etc. Defaults to Vector(0, 0, 0).
 	ConstantForce: Vector?,
@@ -4642,7 +4642,7 @@ export type PhysicsPlaneOptions = {
 	-- always reflects with Bounciness, even at near-zero speeds).
 	RestThreshold: number?,
 	-- Number of constraint-solver iterations rapier runs each tick.
-	-- Default 4. Bump to 8–16 for tall stacks or dense piles where
+	-- Default 4. Bump to 8â€“16 for tall stacks or dense piles where
 	-- residual penetration shows up; clamped to [1, 64]. When
 	-- `LoopSolver` is true this is ignored (rapier runs at the high
 	-- internal cap).
@@ -4650,13 +4650,13 @@ export type PhysicsPlaneOptions = {
 	-- When true, the solver is pinned to a high fixed iteration count
 	-- (64) so any reasonable scene reaches the residual below which
 	-- rapier's Projected Gauss-Seidel solver does negligible work per
-	-- pass — effectively "iterate until stable" with the safety of a
+	-- pass â€” effectively "iterate until stable" with the safety of a
 	-- hard upper bound. Trades a modest extra per-tick CPU cost for
 	-- visibly stable stacks. Use it when you don't want to manually
 	-- tune `SolverIterations` for the worst pile in your scene.
 	LoopSolver: boolean?,
 	-- Disable rapier's sleep optimisation. By default a body whose
-	-- kinetic energy falls below a threshold is put to sleep — its
+	-- kinetic energy falls below a threshold is put to sleep â€” its
 	-- forces, contacts, and integration are skipped each tick until
 	-- something wakes it back up. With `NeverSleep = true` every body
 	-- in this plane stays active every tick: gravity, friction, and
@@ -4668,17 +4668,17 @@ export type PhysicsPlaneOptions = {
 	-- since rapier can't optimise away the resting bodies. Default false.
 	NeverSleep: boolean?,
 	-- Pick the simulation backend.
-	--   • `false` (default) — runs rapier3d on the CPU. Real rigid-body
+	--   â€¢ `false` (default) â€” runs rapier3d on the CPU. Real rigid-body
 	--     physics: proper OBB collision, contact manifolds, sleeping
 	--     islands, friction + restitution that obey Coulomb / restitution
 	--     laws, stable stacking, no floating soup. Use this for accurate
 	--     scenes (player movement, vehicles, balanced piles).
-	--   • `true` — runs the wgpu compute shader I wrote earlier. Each
-	--     frame the buffer is packed CPU→GPU, two compute dispatches run
+	--   â€¢ `true` â€” runs the wgpu compute shader I wrote earlier. Each
+	--     frame the buffer is packed CPUâ†’GPU, two compute dispatches run
 	--     (integrate, then collide) ping-ponging between storage buffers,
-	--     and the result is mapped back. **Faster for bulk scenes** —
-	--     N²-on-GPU still beats CPU rayon for thousands of independent
-	--     objects — **but contact resolution is coarser**: AABB-only
+	--     and the result is mapped back. **Faster for bulk scenes** â€”
+	--     NÂ²-on-GPU still beats CPU rayon for thousands of independent
+	--     objects â€” **but contact resolution is coarser**: AABB-only
 	--     collision, single-point contacts, no Baumgarte stabilisation,
 	--     no sleeping. Corners can clip slightly, stacks are less stable,
 	--     and rotation is locked for non-Sphere shapes. Use it when you
@@ -4686,7 +4686,7 @@ export type PhysicsPlaneOptions = {
 	--     fields, decoration that physically interacts but doesn't need
 	--     to be load-bearing.
 	-- Requires the wgpu device to be initialised (a Window has been
-	-- opened) — set it on a plane created before the window and the
+	-- opened) â€” set it on a plane created before the window and the
 	-- first tick after the device exists will pick up the GPU path.
 	DeferGpu: boolean?,
 }
@@ -4713,12 +4713,12 @@ declare class PhysicsObject
 	ConstantForce: Vector
 	-- Total mass (kg). Drives `:ApplyImpulse` (heavier = smaller velocity
 	-- change for the same impulse). When set, the simulator picks a
-	-- collider density of `Weight ÷ volume`.
+	-- collider density of `Weight Ã· volume`.
 	Weight: number
-	-- Material density (kg / unit³). Lets you specify "this part is
+	-- Material density (kg / unitÂ³). Lets you specify "this part is
 	-- iron, that part is balsa wood" without computing volumes by hand.
 	-- When set non-zero, density wins over Weight: rapier rebuilds the
-	-- collider's mass and inertia tensor as `density × volume`. Setting
+	-- collider's mass and inertia tensor as `density Ã— volume`. Setting
 	-- it to 0 reverts to the Weight-driven path. Reading Density always
 	-- returns the effective density rapier is using right now (either
 	-- the explicit value, or `Weight / current volume`).
@@ -4729,7 +4729,7 @@ declare class PhysicsObject
 	-- two objects touch is `sqrt(Friction_a * Friction_b)`. Drives both
 	-- static (parts at rest don't slide off each other under gravity)
 	-- and kinetic (sliding parts decelerate naturally) friction. Default
-	-- 0.5 — feels like wood-on-wood. Set close to 0 for ice / smooth
+	-- 0.5 â€” feels like wood-on-wood. Set close to 0 for ice / smooth
 	-- surfaces, close to 1 for rubber / grippy surfaces.
 	Friction: number
 	-- When true, the object doesn't integrate (no gravity, no velocity step).
@@ -4739,26 +4739,26 @@ declare class PhysicsObject
 	-- When true, this object participates in collision resolution against
 	-- other CanCollide objects in the same plane.
 	CanCollide: boolean
-	-- Simulation-fidelity dial for this object (clamped 1–32, default 1).
+	-- Simulation-fidelity dial for this object (clamped 1â€“32, default 1).
 	-- Two behaviours stack as it rises:
-	--  • **Sub-stepping.** The plane sub-steps the whole simulation at
+	--  â€¢ **Sub-stepping.** The plane sub-steps the whole simulation at
 	--    `max(HitBoxQuality)` across its objects, so finer integration
 	--    means smoother gravity, less velocity drift, and fast-moving
 	--    parts don't tunnel through thin walls. Friction also integrates
 	--    more accurately (less per-tick slip), so things stick where
 	--    they should.
-	--  • **Contact-driven rotation.** Collision detection is AABB-only
+	--  â€¢ **Contact-driven rotation.** Collision detection is AABB-only
 	--    (axis-aligned bounding box) and doesn't follow rotated
 	--    geometry, so contact impulses produce rotation ONLY on Spheres
 	--    at `HitBoxQuality > 1`. Cubes, models, and low-quality spheres
 	--    are treated as having infinite rotational inertia for contacts
-	--    — they translate but don't spin from collisions, which
+	--    â€” they translate but don't spin from collisions, which
 	--    prevents the visually-broken "spinning in place while sliding"
 	--    artifact you'd otherwise get on a flat AABB cube. Direct
 	--    rotation (writing `AngularVelocity`, calling `RotateTo`,
 	--    assigning a rotated CFrame) still works on every shape.
 	-- The plane sub-steps at `max(HitBoxQuality)`, so one high-quality
-	-- object lifts the cost for everyone — keep it on the parts that
+	-- object lifts the cost for everyone â€” keep it on the parts that
 	-- need precision (the player's ball, the bullet, the falling crate)
 	-- and leave static props at 1.
 	HitBoxQuality: number
@@ -4766,12 +4766,12 @@ declare class PhysicsObject
 	-- BasePart and fires its Changed signal (Size affects collision AABB).
 	Size: Vector
 	-- Body-local center-of-mass offset from the BasePart's origin. Default
-	-- `Vector(0, 0, 0)` (CoM coincides with origin → balanced object,
+	-- `Vector(0, 0, 0)` (CoM coincides with origin â†’ balanced object,
 	-- no contact-driven rotation). When set non-zero, the simulator
 	-- switches the object to real rotational inertia, and contact
 	-- patches that don't sit under the CoM produce tipping torque
 	-- under gravity. This is the knob for "weld a heavy part to one
-	-- side and watch it tip" — set it to wherever the welded mass sits
+	-- side and watch it tip" â€” set it to wherever the welded mass sits
 	-- relative to your part's origin (e.g. `Vector(0, 0, 1)` for a
 	-- weight stuck to the +Z face), or call
 	-- `:RecalculateCenterOfMass()` to derive it from the BasePart's
@@ -4805,7 +4805,7 @@ declare class PhysicsObject
 	-- Pin a grab point on the object to a world-space target with a
 	-- clamped spring-damper. The grab point is given in object-local
 	-- coordinates (centre of the body = Vector.new(0,0,0)). The target
-	-- is a world CFrame — position pulls the grab point in, rotation
+	-- is a world CFrame â€” position pulls the grab point in, rotation
 	-- drives a torque trying to align the body's orientation with the
 	-- target's. Pass `force` = max force/torque magnitude per step; the
 	-- spring is gain-clamped at this value, so light objects snap to
@@ -4825,7 +4825,7 @@ declare class PhysicsObject
 	-- Walks the wrapped BasePart's mesh and writes the vertex centroid
 	-- into `CenterOfMass`. Picks the deformed mesh first (if `Deform`
 	-- is active) and falls back to the source model. Useful after a
-	-- DynMesh / Deform mutation that asymmetrically reshapes the part —
+	-- DynMesh / Deform mutation that asymmetrically reshapes the part â€”
 	-- call this to refresh the CoM so physics tipping behaviour matches
 	-- the new mass distribution. No-op for parts without a model
 	-- (set `CenterOfMass` directly in that case).
@@ -4869,7 +4869,7 @@ declare class PhysicsPlane
 	-- snapped to zero instead of bouncing. Required for stable piles.
 	RestThreshold: number
 	-- Number of constraint-solver iterations rapier runs per tick
-	-- (1–64). Higher = better convergence on dense piles, more CPU.
+	-- (1â€“64). Higher = better convergence on dense piles, more CPU.
 	-- Default 4. Ignored when LoopSolver is true.
 	SolverIterations: number
 	-- Pin solver iterations at a high fixed cap (functionally
@@ -4888,7 +4888,7 @@ declare class PhysicsPlane
 	ObjectCount: number
 
 	-- Wrap a BasePart with physics. Returns a PhysicsObject. The part's
-	-- CFrame becomes lazily driven by the simulation — the heavy BasePart
+	-- CFrame becomes lazily driven by the simulation â€” the heavy BasePart
 	-- mutex is never locked per-tick; only a small Mutex<CFrame> override
 	-- is updated. Reading `part.CFrame` from Lua transparently returns the
 	-- simulated value.
@@ -4901,12 +4901,12 @@ declare class PhysicsPlane
 	function Step(self, dt: number): ()
 	-- Destroy the plane: every PhysicsObject is removed and its wrapped
 	-- BasePart is left frozen at its last simulated CFrame (BaseParts are
-	-- NOT destroyed — only the physics goes away).
+	-- NOT destroyed â€” only the physics goes away).
 	function Destroy(self): ()
 end
 
 -- =============================================================================
--- Objects — misc library of useful non-specific composition objects.
+-- Objects â€” misc library of useful non-specific composition objects.
 --
 -- `ClonableContainer` holds a child set and can be deep-cloned (including
 -- deformations, color changes, attached shaders and their param state).
@@ -5021,7 +5021,7 @@ export type Billboard = {
 	-- top-left, like a normal screen GUI but parented to the canvas.
 	Size: Dim,
 	-- If false (default), children render at a fixed pixel size on
-	-- screen no matter how far away the camera is — the classic "always
+	-- screen no matter how far away the camera is â€” the classic "always
 	-- the same size" billboard. If true, the canvas (and every child)
 	-- scales with distance like a real 3D object: walking closer makes
 	-- it bigger, walking away makes it smaller.

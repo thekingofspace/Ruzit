@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Objects - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.7">
-    <script src="theme.js?v=1.2.7"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.8">
+    <script src="theme.js?v=1.2.8"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.7" defer></script>
+<script src="sidebar.js?v=1.2.8" defer></script>
 
 <main>
 
@@ -110,7 +110,7 @@ copy:<span class="hl-fn">AddChild</span>(playerModel)
     <div class="member">
         <div class="member-header">
             <span class="member-name">Objects.ClonableContainer()</span>
-            <span class="member-type">→ ClonableContainer</span>
+            <span class="member-type">â†’ ClonableContainer</span>
         </div>
     </div>
     <div class="member">
@@ -125,7 +125,7 @@ copy:<span class="hl-fn">AddChild</span>(playerModel)
     <div class="member">
         <div class="member-header">
             <span class="member-name">container:Clone()</span>
-            <span class="member-type">→ ClonableContainer</span>
+            <span class="member-type">â†’ ClonableContainer</span>
         </div>
         <p class="member-desc">
             Deep-clone the container. Every child is re-spawned and
@@ -162,7 +162,7 @@ copy:<span class="hl-fn">AddChild</span>(playerModel)
     <div class="member">
         <div class="member-header">
             <span class="member-name">container:RemoveChild(child)</span>
-            <span class="member-type">→ boolean</span>
+            <span class="member-type">â†’ boolean</span>
         </div>
         <p class="member-desc">
             Detach <code>child</code> from the list. Returns
@@ -173,7 +173,7 @@ copy:<span class="hl-fn">AddChild</span>(playerModel)
     <div class="member">
         <div class="member-header">
             <span class="member-name">container:GetChildren()</span>
-            <span class="member-type">→ { any }</span>
+            <span class="member-type">â†’ { any }</span>
         </div>
     </div>
     <div class="member">
@@ -196,7 +196,7 @@ copy:<span class="hl-fn">AddChild</span>(playerModel)
     <div class="member">
         <div class="member-header">
             <span class="member-name">Objects.Movable()</span>
-            <span class="member-type">→ Movable</span>
+            <span class="member-type">â†’ Movable</span>
         </div>
     </div>
     <div class="member">
@@ -238,14 +238,14 @@ copy:<span class="hl-fn">AddChild</span>(playerModel)
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">m:RemoveChild(child)</span><span class="member-type">→ boolean</span></div>
+        <div class="member-header"><span class="member-name">m:RemoveChild(child)</span><span class="member-type">â†’ boolean</span></div>
         <p class="member-desc">
             Detach a child. Returns true on success. Fires the stored
             removeFn if registered, leaves the child alive.
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">m:GetChildren()</span><span class="member-type">→ { any }</span></div>
+        <div class="member-header"><span class="member-name">m:GetChildren()</span><span class="member-type">â†’ { any }</span></div>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">m:Destroy()</span></div>
@@ -267,7 +267,7 @@ copy:<span class="hl-fn">AddChild</span>(playerModel)
     <div class="member">
         <div class="member-header">
             <span class="member-name">Objects.Sizable()</span>
-            <span class="member-type">→ Sizable</span>
+            <span class="member-type">â†’ Sizable</span>
         </div>
     </div>
     <div class="member">
@@ -299,14 +299,14 @@ copy:<span class="hl-fn">AddChild</span>(playerModel)
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">s:RemoveChild(child)</span><span class="member-type">→ boolean</span></div>
+        <div class="member-header"><span class="member-name">s:RemoveChild(child)</span><span class="member-type">â†’ boolean</span></div>
         <p class="member-desc">
             Detach a child. Returns true on success. Fires the stored
             removeFn if registered, leaves the child alive.
         </p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">s:GetChildren()</span><span class="member-type">→ { any }</span></div>
+        <div class="member-header"><span class="member-name">s:GetChildren()</span><span class="member-type">â†’ { any }</span></div>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">s:Destroy()</span></div>
@@ -359,8 +359,8 @@ bb:<span class="hl-fn">AddChild</span>(name)</code></pre>
         <tr><td><code>Position</code></td><td>Vector</td><td>(0, 0, 0)</td><td>World-space anchor. Canvas is centered on this point's screen projection.</td></tr>
         <tr><td><code>Size</code></td><td>Dim</td><td>(300, 300)</td><td>Pixel canvas size. Child positions are offsets inside it (0,0 = top-left).</td></tr>
         <tr><td><code>ScaleWithCamera</code></td><td>boolean</td><td>false</td><td>See below.</td></tr>
-        <tr><td><code>Alive</code></td><td>boolean</td><td>—</td><td>Read-only.</td></tr>
-        <tr><td><code>ChildCount</code></td><td>number</td><td>—</td><td>Read-only. Drops dead refs lazily.</td></tr>
+        <tr><td><code>Alive</code></td><td>boolean</td><td>â€”</td><td>Read-only.</td></tr>
+        <tr><td><code>ChildCount</code></td><td>number</td><td>â€”</td><td>Read-only. Drops dead refs lazily.</td></tr>
     </tbody>
 </table>
 
@@ -368,7 +368,7 @@ bb:<span class="hl-fn">AddChild</span>(name)</code></pre>
 
 <p>
     <strong>False (default):</strong> the canvas is a fixed pixel size
-    on screen. A 300×300 Billboard always covers 300×300 pixels
+    on screen. A 300Ã—300 Billboard always covers 300Ã—300 pixels
     regardless of camera distance &mdash; the classic Roblox-style
     nameplate billboard.
 </p>
@@ -396,7 +396,7 @@ bb:<span class="hl-fn">AddChild</span>(name)</code></pre>
         <p class="member-desc">Unlink. The primitive returns to screen-space rendering.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">bb:GetChildren()</span><span class="member-type">→ { GuiPrimitive }</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">bb:GetChildren()</span><span class="member-type">â†’ { GuiPrimitive }</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">bb:Destroy()</span><span class="tag tag-method">method</span></div>

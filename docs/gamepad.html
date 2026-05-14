@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gamepad - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.7">
-    <script src="theme.js?v=1.2.7"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.8">
+    <script src="theme.js?v=1.2.8"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.7" defer></script>
+<script src="sidebar.js?v=1.2.8" defer></script>
 
 <main>
 
@@ -67,7 +67,7 @@ Gamepad.InputChanged:Connect(<span class="hl-kw">function</span>(ev)
     <div class="member">
         <div class="member-header">
             <span class="member-name">Gamepad.GetGamepads()</span>
-            <span class="member-type">→ { GamepadInfo }</span>
+            <span class="member-type">â†’ { GamepadInfo }</span>
         </div>
         <p class="member-desc">
             Enumerate connected pads. Cheap (cached state), safe
@@ -77,7 +77,7 @@ Gamepad.InputChanged:Connect(<span class="hl-kw">function</span>(ev)
     <div class="member">
         <div class="member-header">
             <span class="member-name">Gamepad.IsButtonDown(pad, name)</span>
-            <span class="member-type">→ boolean</span>
+            <span class="member-type">â†’ boolean</span>
         </div>
         <p class="member-desc">
             Snapshot of whether <code>name</code> is currently held on the
@@ -88,7 +88,7 @@ Gamepad.InputChanged:Connect(<span class="hl-kw">function</span>(ev)
     <div class="member">
         <div class="member-header">
             <span class="member-name">Gamepad.GetAxis(pad, name)</span>
-            <span class="member-type">→ number</span>
+            <span class="member-type">â†’ number</span>
         </div>
         <p class="member-desc">
             Current axis value: -1..1 for stick X/Y, 0..1 for triggers.
@@ -98,7 +98,7 @@ Gamepad.InputChanged:Connect(<span class="hl-kw">function</span>(ev)
     <div class="member">
         <div class="member-header">
             <span class="member-name">Gamepad.GetBatteryLevel(pad)</span>
-            <span class="member-type">→ number?</span>
+            <span class="member-type">â†’ number?</span>
         </div>
         <p class="member-desc">
             0..1 charge level, or <code>nil</code> for wired pads /
@@ -113,7 +113,7 @@ Gamepad.InputChanged:Connect(<span class="hl-kw">function</span>(ev)
     <div class="member">
         <div class="member-header">
             <span class="member-name">Gamepad.SetVibration(pad, low, high, duration)</span>
-            <span class="member-type">→ boolean</span>
+            <span class="member-type">â†’ boolean</span>
         </div>
         <p class="member-desc">
             <code>low</code> drives the strong / low-frequency motor
@@ -127,7 +127,7 @@ Gamepad.InputChanged:Connect(<span class="hl-kw">function</span>(ev)
     <div class="member">
         <div class="member-header">
             <span class="member-name">Gamepad.Vibrate(pad, intensity, duration)</span>
-            <span class="member-type">→ boolean</span>
+            <span class="member-type">â†’ boolean</span>
         </div>
         <p class="member-desc">Convenience: drives both motors at the same intensity.</p>
     </div>

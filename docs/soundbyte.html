@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SoundByte - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.7">
-    <script src="theme.js?v=1.2.7"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.8">
+    <script src="theme.js?v=1.2.8"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.7" defer></script>
+<script src="sidebar.js?v=1.2.8" defer></script>
 
 <main>
 
@@ -259,11 +259,11 @@ player:<span class="hl-fn">Destroy</span>()</code></pre>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">.FalloffMinDistance</span><span class="member-type">number</span></div>
-        <p class="member-desc">Distances ≤ this play at full volume.</p>
+        <p class="member-desc">Distances â‰¤ this play at full volume.</p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">.FalloffMaxDistance</span><span class="member-type">number</span></div>
-        <p class="member-desc">Distances ≥ this are silent. Between is a smooth roll-off.</p>
+        <p class="member-desc">Distances â‰¥ this are silent. Between is a smooth roll-off.</p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">.CFrame</span><span class="member-type">CFrame?</span></div>
@@ -575,11 +575,11 @@ output:<span class="hl-fn">Follow</span>(peerCharacter.Head)</code></pre>
         <tr><td><code>Speed</code></td><td>snapshot</td><td>multiplier (1 = real-time)</td><td>Time + pitch (resampling).</td></tr>
         <tr><td><code>Pitch</code></td><td>snapshot</td><td>multiplier</td><td>Alias for Speed.</td></tr>
         <tr><td><code>PlaybackSpeed</code></td><td>snapshot</td><td>multiplier</td><td>Alias for Speed.</td></tr>
-        <tr><td><code>Pan</code></td><td>live</td><td>−1 &hellip; 1</td><td>Stereo pan, sin/cos pan law.</td></tr>
+        <tr><td><code>Pan</code></td><td>live</td><td>âˆ’1 &hellip; 1</td><td>Stereo pan, sin/cos pan law.</td></tr>
         <tr><td><code>Distortion</code></td><td>live</td><td>0 &hellip; 1</td><td>Tanh saturation.</td></tr>
         <tr><td><code>LowPass</code></td><td>snapshot</td><td>Hz</td><td>Biquad lowpass.</td></tr>
         <tr><td><code>HighPass</code></td><td>snapshot</td><td>Hz</td><td>Biquad highpass.</td></tr>
-        <tr><td><code>BandPass</code></td><td>snapshot</td><td>center Hz</td><td>Highpass(value/2) → Lowpass(value*2).</td></tr>
+        <tr><td><code>BandPass</code></td><td>snapshot</td><td>center Hz</td><td>Highpass(value/2) â†’ Lowpass(value*2).</td></tr>
         <tr><td><code>Echo</code></td><td>snapshot</td><td>delay ms</td><td>Single-tap delay with feedback 0.4, mix 0.4.</td></tr>
         <tr><td><code>Reverb</code></td><td>snapshot</td><td>mix 0 &hellip; 1</td><td>4-comb + 2-allpass reverb, decay 0.7.</td></tr>
         <tr><td><code>Tremolo</code></td><td>live</td><td>rate Hz</td><td>Amplitude LFO, depth 0.5.</td></tr>
@@ -590,12 +590,12 @@ output:<span class="hl-fn">Follow</span>(peerCharacter.Head)</code></pre>
         <tr><td><code>BitCrusher</code></td><td>live</td><td>bits 1 &hellip; 16</td><td>Sample quantization. Low values = chiptune crunch.</td></tr>
         <tr><td><code>NoiseGate</code></td><td>live</td><td>threshold 0 &hellip; 1</td><td>Samples below threshold are silenced.</td></tr>
         <tr><td><code>Compressor</code></td><td>live</td><td>threshold 0 &hellip; 1</td><td>Envelope-tracking compressor (sqrt ratio).</td></tr>
-        <tr><td><code>Limiter</code></td><td>live</td><td>ceiling 0 &hellip; 1</td><td>Hard clip at ±ceiling.</td></tr>
+        <tr><td><code>Limiter</code></td><td>live</td><td>ceiling 0 &hellip; 1</td><td>Hard clip at Â±ceiling.</td></tr>
         <tr><td><code>Saturation</code></td><td>live</td><td>amount 0 &hellip; 1</td><td>Soft warm tanh-style drive.</td></tr>
         <tr><td><code>RingMod</code></td><td>live</td><td>carrier Hz</td><td>Multiplies signal by a sine carrier. Robotic / metallic.</td></tr>
         <tr><td><code>Chorus</code></td><td>live</td><td>mix 0 &hellip; 1</td><td>15 ms LFO-modulated delay mixed with dry.</td></tr>
         <tr><td><code>Flanger</code></td><td>live</td><td>mix 0 &hellip; 1</td><td>Short modulated delay with feedback.</td></tr>
-        <tr><td><code>StereoWiden</code></td><td>live</td><td>width 0 &hellip; 2</td><td>Mid/side expansion. Needs ≥ 2 input channels.</td></tr>
+        <tr><td><code>StereoWiden</code></td><td>live</td><td>width 0 &hellip; 2</td><td>Mid/side expansion. Needs â‰¥ 2 input channels.</td></tr>
         <tr><td><code>Wobble</code></td><td>live</td><td>rate Hz</td><td>Heavy amplitude LFO (depth 0.85). Underwater pulsing.</td></tr>
         <tr><td><code>Telephone</code></td><td>live</td><td>drive 0 &hellip; 1</td><td>300 Hz / 3400 Hz band-limit + tanh drive.</td></tr>
         <tr><td><code>Underwater</code></td><td>live</td><td>amount 0 &hellip; 1</td><td>600 Hz lowpass + slow amplitude wobble.</td></tr>

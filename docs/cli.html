@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CLI - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.7">
-    <script src="theme.js?v=1.2.7"></script>
+    <link rel="stylesheet" href="style.css?v=1.2.8">
+    <script src="theme.js?v=1.2.8"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.7" defer></script>
+<script src="sidebar.js?v=1.2.8" defer></script>
 
 <main>
 
@@ -19,7 +19,7 @@
     Ruzit ships as a Cargo workspace with two binaries:
     <code>ruzit</code> (the dev tool for scaffolding, testing,
     building, and packaging) and <code>ruzitrun</code> (the runtime /
-    launcher template — runs games, serves as the EXE shipped games
+    launcher template â€” runs games, serves as the EXE shipped games
     are cut from). Drop both on your <code>PATH</code>; the CLI calls
     the runtime as a library for <code>test</code> and copies the
     <code>ruzitrun</code> binary as a template for <code>build</code>.
@@ -127,7 +127,7 @@ ruzitrun --console                    attach/allocate a console for windowed lau
 <p>
     Re-run any time you add, remove, or rename a package. The file is
     overwritten in full, so any aliases you added by hand get blown
-    away — keep custom aliases in a separate file or commit them back
+    away â€” keep custom aliases in a separate file or commit them back
     into <code>.luaurc</code> after each scaffold.
 </p>
 
@@ -140,20 +140,20 @@ ruzitrun --console                    attach/allocate a console for windowed lau
 <span class="hl-com">-- libs/utils/ManagedInfo.toml has ID = "Utils" (a hand-placed package)</span>
 
 <span class="hl-kw">$</span> ruzit scaffold
-[Ruzit] scaffold → /work/MyGame (scanning recursively)
-  alias  CoolMath → ./Packages/cool-math
-  alias  Utils    → ./libs/utils
+[Ruzit] scaffold â†’ /work/MyGame (scanning recursively)
+  alias  CoolMath â†’ ./Packages/cool-math
+  alias  Utils    â†’ ./libs/utils
 [Ruzit] scaffold done: wrote .luaurc (3 aliases)
 
 <span class="hl-com">-- in your code:</span>
-<span class="hl-kw">local</span> math   = <span class="hl-fn">require</span>(<span class="hl-str">"@CoolMath"</span>)            <span class="hl-com">-- → Packages/cool-math/init.luau</span>
+<span class="hl-kw">local</span> math   = <span class="hl-fn">require</span>(<span class="hl-str">"@CoolMath"</span>)            <span class="hl-com">-- â†’ Packages/cool-math/init.luau</span>
 <span class="hl-kw">local</span> vec    = <span class="hl-fn">require</span>(<span class="hl-str">"@CoolMath/vector"</span>)     <span class="hl-com">-- submodule inside the package</span>
 <span class="hl-kw">local</span> menu   = <span class="hl-fn">require</span>(<span class="hl-str">"@Game/scenes/menu"</span>)</code></pre>
 
 <div class="callout note">
     <strong>Scaffold is purely tooling.</strong> The aliases it writes
     only affect <code>luau-lsp</code> autocomplete and Luau's own
-    require resolution — they don't change what the runtime loads.
+    require resolution â€” they don't change what the runtime loads.
     At runtime, <code>require("@PkgId")</code> still goes through the
     Managed package loader.
 </div>
@@ -175,7 +175,7 @@ ruzitrun --console                    attach/allocate a console for windowed lau
 </p>
 
 <pre><code>ruzit test                       <span class="hl-com"># auto-find Main.luau</span>
-ruzit test ./MyGame              <span class="hl-com"># project dir → MyGame/Main.luau</span>
+ruzit test ./MyGame              <span class="hl-com"># project dir â†’ MyGame/Main.luau</span>
 ruzit test ./MyGame/scenes/level1.luau</code></pre>
 
 <p>
@@ -248,7 +248,7 @@ ruzit test ./MyGame/scenes/level1.luau</code></pre>
 </p>
 
 <pre><code>cd MyMod
-ruzit package                  <span class="hl-com"># → MyMod/Generated/Managed/&lt;id&gt;.scripts.managed</span>
+ruzit package                  <span class="hl-com"># â†’ MyMod/Generated/Managed/&lt;id&gt;.scripts.managed</span>
 ruzit package . -o ../release  <span class="hl-com"># custom output dir</span></code></pre>
 
 <p>
@@ -350,19 +350,19 @@ ruzit update</code></pre>
 <p>
     The CLI fetches a single platform-specific zip and extracts only
     the runtime binary inside it. The zip's contents are deliberately
-    plain-named so a manual download → extract leaves you with files
+    plain-named so a manual download â†’ extract leaves you with files
     you can run as <code>ruzit init</code> /
-    <code>ruzitrun --run …</code> straight away:
+    <code>ruzitrun --run â€¦</code> straight away:
 </p>
 
-<pre><code>{base}/ruzit-windows.zip   →  ruzit.exe + ruzitrun.exe   (update extracts ruzitrun.exe)
-{base}/ruzit-linux.zip     →  ruzit + ruzitrun           (update extracts ruzitrun)
-{base}/ruzit-macos.zip     →  ruzit + ruzitrun           (when built)</code></pre>
+<pre><code>{base}/ruzit-windows.zip   â†’  ruzit.exe + ruzitrun.exe   (update extracts ruzitrun.exe)
+{base}/ruzit-linux.zip     â†’  ruzit + ruzitrun           (update extracts ruzitrun)
+{base}/ruzit-macos.zip     â†’  ruzit + ruzitrun           (when built)</code></pre>
 
 <p>
     The default base URL is
     <code>https://github.com/thekingofspace/Ruzit/releases/latest/download</code>
-    — GitHub's own redirect that always points at the most recent
+    â€” GitHub's own redirect that always points at the most recent
     stable release. So a fresh install can run <code>ruzit
     update</code> with no setup. The bundled GitHub Actions
     workflow auto-publishes versioned releases on every push, see
@@ -423,13 +423,13 @@ ruzit update</code></pre>
     Releases are <strong>never</strong> marked as prereleases. The
     workflow uses <code>gh release create --latest</code>, so
     GitHub's <code>/releases/latest/</code> redirect resolves
-    automatically to whatever the most recent push produced — which
+    automatically to whatever the most recent push produced â€” which
     is what the CLI's default <code>RUZIT_RELEASE_BASE</code>
     targets.
 </p>
 
 <p>
-    To cut a new version: bump <code>version = "4.0.0"</code> →
+    To cut a new version: bump <code>version = "4.0.0"</code> â†’
     <code>"1.1.0"</code> in
     <code>Ruzit/runtime/Cargo.toml</code> (and the matching
     <code>core</code> + <code>cli</code> Cargo.tomls), commit, push.
