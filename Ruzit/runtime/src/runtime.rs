@@ -207,7 +207,9 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             "TweenService" => libs::tween::create(lua)?,
             #[cfg(feature = "voice")]
             "Voice" => libs::voice::create(lua)?,
+            #[cfg(feature = "vr")]
             "VR" => libs::vr::create(lua)?,
+            "VirtualReality" => libs::virtual_reality::create(lua)?,
             "Window" => libs::window::create(lua)?,
             other => {
                 return Err(mlua::Error::RuntimeError(format!(

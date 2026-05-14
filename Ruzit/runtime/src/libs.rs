@@ -34,5 +34,7 @@ pub mod tween;
 pub mod video;
 #[cfg(feature = "voice")]
 pub mod voice;
+#[cfg(feature = "vr")]
 pub mod vr;
+pub mod virtual_reality;
 pub mod window;

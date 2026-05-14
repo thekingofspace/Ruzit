@@ -160,6 +160,23 @@
                 start; if absent, <code>Steam</code> calls error early.
             </td>
         </tr>
+        <tr>
+            <td><code>vr</code></td>
+            <td><code>indite</code> (OpenXR &harr; WGPU)</td>
+            <td>
+                VR pose tracking, controller input, and the legacy
+                <a href="vr.html"><code>VR</code></a> module. Without
+                this flag, the
+                <a href="virtualreality.html"><code>VirtualReality</code></a>
+                import still loads but
+                <code>VirtualReality.HasVrFlag</code> is
+                <code>false</code> and <code>LinkCamera()</code> is a
+                no-op &mdash; gate any VR code on
+                <code>HasVrFlag</code> for clean degradation. Requires
+                <code>rustc &ge; 1.92</code> (indite pulls in
+                <code>wgpu 28</code>).
+            </td>
+        </tr>
     </tbody>
 </table>
 

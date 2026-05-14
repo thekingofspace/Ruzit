@@ -25,6 +25,7 @@ pub const IMPORT_LIBS: &[&str] = &[
     "Steam",
     "Voice",
     "VR",
+    "VirtualReality",
     "Window",
 ];
 

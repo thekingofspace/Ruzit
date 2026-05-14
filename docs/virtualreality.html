@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VirtualReality - Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css?v=1.2.7">
+    <script src="theme.js?v=1.2.7"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=1.2.7" defer></script>
+
+<main>
+
+<h1>VirtualReality</h1>
+<p class="lede">
+    High-level VR import. Unlike the legacy
+    <a href="vr.html"><code>VR</code></a> module, <code>VirtualReality</code>
+    <em>always loads</em> &mdash; on builds compiled without the
+    <code>vr</code> Cargo feature, <code>HasVrFlag</code> is
+    <code>false</code> and <code>LinkCamera()</code> is a no-op, so you
+    can ship one Luau codebase that gracefully degrades on non-VR
+    builds.
+</p>
+
+<p>
+    When the <code>vr</code> feature is enabled, the runtime pulls in
+    <a href="https://github.com/celphase/indite" target="_blank" rel="noopener"><code>indite</code></a>
+    (an OpenXR &harr; WGPU bridge) and binds head + controller poses
+    through to this API. Compile with
+    <code>cargo build --release --features vr</code> (requires
+    <code>rustc &ge; 1.92</code>, since indite pulls in
+    <code>wgpu 28</code>).
+</p>
+
+<pre><code><span class="hl-kw">local</span> VR = <span class="hl-fn">import</span>(<span class="hl-str">"VirtualReality"</span>)
+<span class="hl-kw">local</span> primitives = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>)
+
+<span class="hl-kw">if</span> VR.HasVrFlag <span class="hl-kw">and</span> VR.IsVrPresent <span class="hl-kw">then</span>
+    VR.<span class="hl-fn">LinkCamera</span>()
+
+    VR.HeadMoved:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>()
+        <span class="hl-fn">print</span>(VR:<span class="hl-fn">HeadToWorldSpace</span>())
+    <span class="hl-kw">end</span>)
+
+    VR.BodyCFrame = primitives.CFrame.<span class="hl-fn">new</span>(vector.<span class="hl-fn">create</span>(<span class="hl-num">0</span>, <span class="hl-num">1</span>, <span class="hl-num">0</span>))
+
+    <span class="hl-kw">local</span> conns = VR.<span class="hl-fn">GetControllers</span>()  <span class="hl-com">-- {Left, Right}</span>
+    <span class="hl-kw">local</span> Left  = conns[<span class="hl-num">1</span>]
+    <span class="hl-kw">local</span> Right = conns[<span class="hl-num">2</span>]
+
+    Left.Moved:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>()
+        <span class="hl-fn">print</span>(Left:<span class="hl-fn">ToWorldSpace</span>())
+    <span class="hl-kw">end</span>)
+
+    Right.OnInput:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(name, value, state)
+        <span class="hl-kw">if</span> name == <span class="hl-str">"Trigger"</span> <span class="hl-kw">and</span> state == <span class="hl-str">"Begin"</span> <span class="hl-kw">then</span>
+            Right:<span class="hl-fn">Vibrate</span>(<span class="hl-num">0.05</span>)
+        <span class="hl-kw">end</span>
+    <span class="hl-kw">end</span>)
+<span class="hl-kw">end</span></code></pre>
+
+<h2 id="api">API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">VR.HasVrFlag</span>
+            <span class="member-type">boolean</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            Compile-time flag. <code>true</code> when the runtime was
+            built with <code>--features vr</code>. Always check this
+            before calling <code>LinkCamera()</code> &mdash; on
+            non-VR builds every VR-related call is a no-op.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">VR.IsVrPresent</span>
+            <span class="member-type">boolean</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            Evaluated at import time. <code>true</code> if a VR
+            runtime is installed on the host (env-var probe +
+            Windows registry check for OpenXR's
+            <code>ActiveRuntime</code>). Always <code>false</code>
+            when <code>HasVrFlag</code> is false.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">VR.BodyCFrame</span>
+            <span class="member-type">CFrame</span>
+        </div>
+        <p class="member-desc">
+            Player-rig body pose in world space. Write this to
+            teleport, snap-turn, or otherwise move the rig. The engine
+            composes <code>BodyCFrame</code> with the live head pose
+            onto the active camera each frame, so the user's actual
+            head motion is preserved on top of whatever you script.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">VR.HeadCFrame</span>
+            <span class="member-type">CFrame</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            Headset pose in body-local space. Driven by the VR backend
+            each frame.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">VR.IsLinked</span>
+            <span class="member-type">boolean</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            <code>true</code> while the engine's camera is bound to
+            the VR pipeline. Becomes <code>false</code> after
+            <code>UnlinkCamera()</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">VR.HeadMoved</span>
+            <span class="member-type">Signal&lt;CFrame&gt;</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            Fires every time the backend reports a new head pose.
+            Payload is the new body-local <code>HeadCFrame</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">VR:LinkCamera()</span>
+            <span class="member-type">&rarr; boolean</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Bind the engine's active camera to the VR pipeline. Returns
+            <code>true</code> on success (requires
+            <code>HasVrFlag</code>). After a successful link the
+            engine adds <code>BodyCFrame</code> to the headset pose
+            and writes the result to the camera each frame.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">VR:UnlinkCamera()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">Release the camera back to non-VR control. Idempotent.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">VR:HeadToWorldSpace()</span>
+            <span class="member-type">&rarr; CFrame</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Compose <code>BodyCFrame</code> with <code>HeadCFrame</code>
+            and return the headset's world-space pose. Convenient inside
+            <code>HeadMoved</code> handlers.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">VR:Recenter()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Re-anchor the play space so the current head pose becomes
+            the origin. Common after a teleport or seated &rarr;
+            standing transition.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">VR:GetEyePose(side)</span>
+            <span class="member-type">&rarr; CFrame</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            World-space pose of one eye, derived from
+            <code>HeadCFrame</code> &plusmn; half-IPD. Useful for
+            stereo-aware effects.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">VR:GetControllers()</span>
+            <span class="member-type">&rarr; { Controller }</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Returns a table with the pair of controller handles. Both
+            access patterns work:
+            <code>conns[1] / conns[2]</code> (Left / Right) or
+            <code>conns.Left / conns.Right</code>.
+        </p>
+    </div>
+</div>
+
+<h2 id="controller">Controller</h2>
+
+<p>
+    Returned by <code>VR:GetControllers()</code>. The same logical
+    controller is returned on every call; signals you connect remain
+    live across re-fetches.
+</p>
+
+<h3>Properties</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Side</span><span class="member-type">"Left" | "Right"</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.CFrame</span><span class="member-type">CFrame</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Body-local pose. Compose with <code>VR.BodyCFrame</code> for world space, or call <code>:ToWorldSpace()</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Trigger</span><span class="member-type">number 0&hellip;1</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Grip</span><span class="member-type">number 0&hellip;1</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Thumbstick</span><span class="member-type">Vector</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc"><code>x = -1&hellip;1</code> horizontal, <code>y = -1&hellip;1</code> vertical, <code>z = 0</code>. Poll directly or subscribe via <code>OnInput</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Velocity</span><span class="member-type">Vector</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.AngularVelocity</span><span class="member-type">Vector</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.IsConnected</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.BatteryLevel</span><span class="member-type">number?</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc"><code>0&hellip;1</code>, or <code>nil</code> if the runtime doesn't report it.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Moved</span><span class="member-type">Signal&lt;CFrame&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Fires on every pose update with the new body-local CFrame.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnInput</span><span class="member-type">Signal&lt;string, number, "Begin"|"End"&gt;</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Fires <code>(name, value, state)</code> for trigger /
+            grip / thumbstick / button changes. <code>name</code> is
+            the OpenXR input identifier
+            (<code>"Trigger"</code>, <code>"Grip"</code>,
+            <code>"Thumbstick"</code>,
+            <code>"ThumbstickClick"</code>,
+            <code>"A"</code>, <code>"B"</code>, <code>"X"</code>,
+            <code>"Y"</code>, <code>"Menu"</code>, &hellip;).
+            <code>state = "Begin"</code> on press / cross-into-active,
+            <code>"End"</code> on release.
+        </p>
+    </div>
+</div>
+
+<h3>Methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">controller:ToWorldSpace()</span><span class="member-type">&rarr; CFrame</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Compose <code>controller.CFrame</code> with
+            <code>VR.BodyCFrame</code> and return the world-space pose.
+            Use this for raycasts, attaching weapons / hands, or
+            triggering world interactions.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">controller:Vibrate(duration, frequency?, amplitude?)</span><span class="member-type">&rarr; boolean</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Fire a haptic pulse. <code>duration</code> in seconds;
+            <code>frequency</code> (Hz) and <code>amplitude</code>
+            (<code>0&hellip;1</code>) default to a short click pulse.
+            Returns <code>true</code> on devices that support haptics.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">controller:StopVibration()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Cancel any in-flight pulses on this controller.</p>
+    </div>
+</div>
+
+<div class="callout note">
+    <strong>VirtualReality vs VR.</strong>
+    The legacy <a href="vr.html"><code>VR</code></a> module is now
+    behind the <code>vr</code> Cargo feature &mdash; on builds without
+    it, <code>import("VR")</code> fails. New code should prefer
+    <code>VirtualReality</code>, which always loads and gates its
+    own behavior on <code>HasVrFlag</code>.
+</div>
+
+</main>
+</body>
+</html>

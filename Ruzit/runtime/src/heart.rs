@@ -31,7 +31,9 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         crate::libs::window::pump(lua);
         crate::libs::input::pump(lua);
         crate::libs::gamepad::pump(lua);
+        #[cfg(feature = "vr")]
         crate::libs::vr::pump(lua);
+        crate::libs::virtual_reality::pump(lua);
         crate::libs::sfx::pump(lua);
         crate::libs::soundbyte::pump(lua);
         #[cfg(feature = "steam")]

@@ -14,7 +14,19 @@
 
 <main>
 
-<h1>VR</h1>
+<h1>VR <span class="tag tag-deprecated">deprecated</span></h1>
+
+<div class="deprecation-banner">
+    <strong>Deprecated as of 1.2.7.</strong> New code should use
+    <a href="virtualreality.html"><code>VirtualReality</code></a>
+    &mdash; the always-loading replacement that exposes a
+    <code>HasVrFlag</code> property for graceful degradation on
+    non-VR builds. The legacy <code>VR</code> import is now gated
+    behind the <code>vr</code> Cargo feature
+    (<code>import("VR")</code> errors out on builds compiled without
+    <code>--features vr</code>) and won't receive new functionality.
+</div>
+
 <p class="lede">
     Head-mounted display + motion-controller integration. Two-step
     lifecycle: detect, then link.

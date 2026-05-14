@@ -53,12 +53,14 @@ opus = { version = "0.3", optional = true }
 steamworks = { version = "0.11", optional = true }
 steamworks-sys = { version = "0.11", optional = true }
 cpal = {version = "0.15", optional = true}
+indite = { git = "https://github.com/celphase/indite", optional = true }
 
 
 [features]
 default = []
 steam = ["dep:steamworks", "dep:steamworks-sys"]
 voice = ["dep:opus", "dep:cpal"]
+vr = ["dep:indite"]
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

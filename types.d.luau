@@ -3631,6 +3631,104 @@ export type VR_API = {
 }
 
 -- =============================================================================
+-- VirtualReality — high-level VR import that always loads (so games can
+-- write `if VR.HasVrFlag and VR.IsVrPresent then ...` without an import
+-- failing on builds without VR support). Backed by the `indite` crate
+-- (OpenXR ↔ WGPU bridge) when the runtime is compiled with `--features vr`.
+-- =============================================================================
+
+export type VirtualRealityController = {
+	-- "Left" or "Right" — which hand this controller represents.
+	Side: "Left" | "Right",
+	-- Tracked pose, in body-local space (relative to BodyCFrame).
+	CFrame: CFrame,
+	-- 0..1 trigger pull.
+	Trigger: number,
+	-- 0..1 grip squeeze.
+	Grip: number,
+	-- x = -1..1 horizontal, y = -1..1 vertical, z = 0.
+	Thumbstick: Vector,
+	-- Linear / angular velocity reported by the runtime.
+	Velocity: Vector,
+	AngularVelocity: Vector,
+	-- True while the runtime reports the controller as tracked + paired.
+	IsConnected: boolean,
+	-- 0..1 battery charge, or nil if the runtime doesn't report it.
+	BatteryLevel: number?,
+	-- Fires on every pose update with the new body-local CFrame.
+	Moved: Signal<CFrame>,
+	-- Per-controller input events. Fires (name, value, "Begin"|"End")
+	-- where name is the OpenXR input identifier ("Trigger", "Grip",
+	-- "Thumbstick", "ThumbstickClick", "A", "B", "X", "Y", "Menu", ...).
+	OnInput: Signal<string, number, "Begin" | "End">,
+
+	-- Compose this controller's pose with BodyCFrame to get its world
+	-- position. Use this for raycasts, attaching weapons / hands, etc.
+	ToWorldSpace: (self: VirtualRealityController) -> CFrame,
+	-- Fire a haptic pulse. duration in seconds; frequency (Hz) and
+	-- amplitude (0..1) default to a short click if omitted. Returns
+	-- true when the pulse was scheduled, false on devices without
+	-- haptics.
+	Vibrate: (
+		self: VirtualRealityController,
+		duration: number,
+		frequency: number?,
+		amplitude: number?
+	) -> boolean,
+	StopVibration: (self: VirtualRealityController) -> (),
+}
+
+export type VirtualReality_API = {
+	-- Compile-time flag. True when the runtime was built with the
+	-- `vr` Cargo feature (which pulls in `indite` / OpenXR). When
+	-- false, `LinkCamera()` is a no-op and `IsVrPresent` is always
+	-- false. Check this first to decide whether to even attempt VR.
+	HasVrFlag: boolean,
+	-- True if a VR runtime is installed on the host (env vars +
+	-- Windows registry probe). Evaluated at import time. Always
+	-- false when HasVrFlag is false.
+	IsVrPresent: boolean,
+	-- Player-rig body pose in world space. Writable — set this to
+	-- teleport, snap-turn, or otherwise move the rig. The engine
+	-- composes this with the headset pose onto the active camera
+	-- each frame (HeadMoved fires after each composition).
+	BodyCFrame: CFrame,
+	-- Headset pose in body-local space. Read-only — written by the
+	-- VR backend each frame.
+	HeadCFrame: CFrame,
+	-- True while the camera is bound to the VR pipeline.
+	IsLinked: boolean,
+	-- Fires every time the backend reports a new head pose. Payload
+	-- is the new local HeadCFrame.
+	HeadMoved: Signal<CFrame>,
+
+	-- Bind the engine's active camera to the VR pipeline. Returns
+	-- true when binding succeeded (which requires HasVrFlag). After
+	-- a successful LinkCamera, BodyCFrame is added to the headset
+	-- pose to produce the camera's world transform each frame.
+	LinkCamera: (VirtualReality_API?) -> boolean,
+	-- Release the camera back to non-VR control. Idempotent.
+	UnlinkCamera: (VirtualReality_API?) -> (),
+	-- Compose BodyCFrame with HeadCFrame to get the headset's world
+	-- pose. Callable as either `VR.HeadToWorldSpace()` or
+	-- `VR:HeadToWorldSpace()`.
+	HeadToWorldSpace: (VirtualReality_API?) -> CFrame,
+	-- Re-anchor the play space so the current head pose becomes the
+	-- origin. Common after a teleport / seated transition.
+	Recenter: (VirtualReality_API?) -> (),
+	-- World-space pose of one eye, offset from the head by half-IPD.
+	GetEyePose: (VirtualReality_API?, side: "Left" | "Right") -> CFrame,
+	-- The two controller handles. Returned as an array
+	-- (`conns[1] = Left`, `conns[2] = Right`) AND keyed (`.Left`,
+	-- `.Right`) — pick whichever access pattern reads better.
+	GetControllers: (VirtualReality_API?) -> {
+		[number]: VirtualRealityController,
+		Left: VirtualRealityController,
+		Right: VirtualRealityController,
+	},
+}
+
+-- =============================================================================
 -- GPU, info about the active graphics adapter, frame stats, and a CPU-side
 -- raycast against the 3D scene. Useful for click-to-select, line-of-sight
 -- gameplay checks, and surfacing hardware capabilities to settings menus.
@@ -4864,6 +4962,7 @@ export type Imports = {
 	TweenService: TweenService_API,
 	Voice: Voice_API,
 	VR: VR_API,
+	VirtualReality: VirtualReality_API,
 	Window: Window_API,
 }
 
