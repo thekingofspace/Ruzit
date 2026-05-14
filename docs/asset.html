@@ -330,7 +330,25 @@ mesh:Free()</code></pre>
         <div class="member-header"><span class="member-name">model:TriangleCount()</span><span class="member-type">→ number</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">model:Source()</span><span class="member-type">→ string</span></div>
+        <div class="member-header"><span class="member-name">model:Source()</span><span class="member-type">&rarr; string</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">model:LocalBounds()</span><span class="member-type">&rarr; { Min, Max, Size, Center }</span></div>
+        <p class="member-desc">
+            AABB of the raw vertex positions in <strong>mesh-local
+            space</strong> &mdash; BEFORE <code>part.Size</code> /
+            <code>part.CFrame</code> is applied. Each field is a
+            <code>Vector</code>. Exported model units vary wildly
+            (some FBX exports are <code>&plusmn;1</code>, some are
+            <code>&plusmn;100</code>), so use this to size
+            <a href="renderable.html#distortionbox"><code>DistortionBox</code></a>
+            volumes or <a href="renderable.html#dynmesh-weld"><code>DynMesh:Weld</code></a>
+            anchors against the mesh's actual extents instead of
+            guessing.
+        </p>
+        <pre><code><span class="hl-kw">local</span> b = model:<span class="hl-fn">LocalBounds</span>()
+<span class="hl-com">-- Cover the entire mesh with one box, centred where the mesh actually is.</span>
+Renderable.<span class="hl-fn">DistortionBox</span>(part, CFrame.<span class="hl-fn">new</span>(b.Center), b.Size * <span class="hl-num">1.05</span>)</code></pre>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">model:Free()</span></div>
@@ -344,10 +362,98 @@ mesh:Free()</code></pre>
 </div>
 
 <p>
-    FBX files additionally carry every animation clip (AnimationStack)
-    parsed out of the file. They surface on the resulting Part via
-    <code>part:GetTrackNames()</code> and <code>part:GetTrack(name)</code>.
+    Models carry geometry only as of 1.2.7 &mdash; animation clips are
+    loaded separately as an <a href="#animationset">AnimationSet</a>
+    and bound to parts via
+    <code>part:GetAnimatedTrack(animation)</code>.
 </p>
+
+<h2 id="animationset">AnimationSetAsset</h2>
+
+<p>
+    A bundle of vertex-deformation animation clips extracted from an
+    FBX file. Models and animations live in separate assets so one FBX
+    of clips (e.g. <code>walk</code>, <code>run</code>, <code>jump</code>)
+    can drive any number of meshes that match the imported skeleton's
+    vertex layout. Load with
+    <code>Asset.GetAsset("AnimationSet", "Animations/Walk.fbx")</code>.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Asset = <span class="hl-fn">import</span>(<span class="hl-str">"Asset"</span>)
+<span class="hl-kw">local</span> Renderable = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
+
+<span class="hl-kw">local</span> mesh   = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"Model"</span>, <span class="hl-str">"chars.hero"</span>)
+<span class="hl-kw">local</span> anims  = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"AnimationSet"</span>, <span class="hl-str">"chars.hero_anims"</span>)
+<span class="hl-fn">print</span>(anims:<span class="hl-fn">ListAnimations</span>())  <span class="hl-com">-- { "Idle", "Walk", "Run", ... }</span>
+
+<span class="hl-kw">local</span> walk = anims:<span class="hl-fn">GetAnimation</span>(<span class="hl-str">"Walk"</span>)
+
+<span class="hl-kw">local</span> hero = Renderable.<span class="hl-fn">BaseModel</span>(mesh)
+<span class="hl-kw">local</span> track = hero:<span class="hl-fn">GetAnimatedTrack</span>(walk)
+track.Looped = <span class="hl-kw">true</span>
+track:<span class="hl-fn">Play</span>()
+
+<span class="hl-com">-- Bind the same Animation to a second part -- they tick independently.</span>
+<span class="hl-kw">local</span> sidekick = Renderable.<span class="hl-fn">BaseModel</span>(mesh)
+sidekick:<span class="hl-fn">GetAnimatedTrack</span>(walk):<span class="hl-fn">Play</span>()</code></pre>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">set:ListAnimations()</span><span class="member-type">&rarr; { string }</span></div>
+        <p class="member-desc">Names of every clip in the set, in FBX import order.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">set:GetAnimation(name)</span><span class="member-type">&rarr; Animation</span></div>
+        <p class="member-desc">
+            Pull a single named animation. Errors if the name doesn't
+            match. The returned <code>Animation</code> is shareable
+            &mdash; pass it to <code>part:GetAnimatedTrack(animation)</code>
+            on as many parts as you want; each call builds a fresh
+            playback track using the same source keyframes.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">set:Count()</span><span class="member-type">&rarr; number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">set:Source()</span><span class="member-type">&rarr; string</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">set:Free()</span></div>
+        <p class="member-desc">
+            See <a href="#free">:Free()</a>. Drops the set from the
+            asset cache. Existing <code>Animation</code> handles
+            (which hold their own <code>Arc</code> on the keyframes)
+            keep working until they themselves are released.
+        </p>
+    </div>
+</div>
+
+<h2 id="animation">Animation</h2>
+
+<p>
+    A single named clip pulled out of an
+    <a href="#animationset">AnimationSetAsset</a>. Cheap to clone, safe
+    to share across parts. Bind with
+    <code>part:GetAnimatedTrack(animation)</code> to get a playable
+    <a href="renderable.html#animationtrack">AnimationTrack</a>.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">animation:Name()</span><span class="member-type">&rarr; string</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">animation:Duration()</span><span class="member-type">&rarr; number</span></div>
+        <p class="member-desc">Length of the clip in seconds.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">animation:KeyframeCount()</span><span class="member-type">&rarr; number</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">animation:Source()</span><span class="member-type">&rarr; string</span></div>
+    </div>
+</div>
 
 <h2 id="sound">SoundData</h2>
 

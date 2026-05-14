@@ -103,6 +103,14 @@ pub struct ObjectState {
     pub com_offset: Vector,
     pub density: f32,
     pub rapier_body: Option<RigidBodyHandle>,
+    pub pin: Option<PinSpec>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PinSpec {
+    pub max_force: f32,
+    pub relative: Vector,
+    pub target: CFrame,
 }
 
 pub fn create(lua: &Lua) -> mlua::Result<Table> {
@@ -624,7 +632,55 @@ fn sync_obj_to_rapier(
 
     let force = NaVec3::new(fx, fy, fz);
     body.reset_forces(true);
+    body.reset_torques(true);
     body.add_force(force, true);
+
+    if let Some(pin) = obj.pin {
+        let iso = *body.position();
+        let grab_local = NaVec3::new(pin.relative.x, pin.relative.y, pin.relative.z);
+        let grab_world = iso * rapier3d::na::Point3::from(grab_local);
+        let grab_world_v = NaVec3::new(grab_world.x, grab_world.y, grab_world.z);
+        let target_v = NaVec3::new(pin.target.position.x, pin.target.position.y, pin.target.position.z);
+        let delta = target_v - grab_world_v;
+
+        let lin_at = body.velocity_at_point(&grab_world);
+        let spring_k = pin.max_force.max(0.0);
+        let damp_k = pin.max_force.max(0.0) * 0.15;
+        let mut pull = delta * spring_k - lin_at * damp_k;
+        let mag = pull.norm();
+        if mag > pin.max_force {
+            pull *= pin.max_force / mag.max(1e-6);
+        }
+        body.add_force_at_point(pull, grab_world, true);
+
+        let cur_rot = iso.rotation;
+        let target_rot = UnitQuaternion::from_euler_angles(
+            pin.target.rotation.x,
+            pin.target.rotation.y,
+            pin.target.rotation.z,
+        );
+        let delta_rot = target_rot * cur_rot.inverse();
+        let (axis_angle_vec, angle) = if let Some(axis) = delta_rot.axis() {
+            let mut a = delta_rot.angle();
+            if a > std::f32::consts::PI {
+                a -= std::f32::consts::TAU;
+            }
+            (NaVec3::new(axis.x, axis.y, axis.z) * a, a.abs())
+        } else {
+            (NaVec3::zeros(), 0.0)
+        };
+        let _ = angle;
+        let av = body.angvel();
+        let torque_k = pin.max_force.max(0.0) * 0.5;
+        let torque_damp = pin.max_force.max(0.0) * 0.1;
+        let mut torque = axis_angle_vec * torque_k - av * torque_damp;
+        let tmag = torque.norm();
+        let torque_cap = pin.max_force.max(0.0);
+        if tmag > torque_cap {
+            torque *= torque_cap / tmag.max(1e-6);
+        }
+        body.add_torque(torque, true);
+    }
 }
 
 fn sync_rapier_to_obj(obj: &mut ObjectState, rapier: &RapierPlane) {
@@ -824,6 +880,7 @@ impl UserData for PlaneHandle {
                 com_offset: Vector::new(0.0, 0.0, 0.0),
                 density: 0.0,
                 rapier_body: None,
+                pin: None,
             };
             this.state.lock().unwrap().objects.insert(id, obj);
             Ok(ObjectHandle {
@@ -1071,6 +1128,60 @@ impl UserData for ObjectHandle {
     }
 
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method("SetPin", |_, this, args: MultiValue| -> mlua::Result<()> {
+            let mut iter = args.into_iter();
+            let first = iter.next();
+            let force_val = match first {
+                None | Some(Value::Nil) => {
+                    this.with_obj_mut("SetPin", |o| o.pin = None)?;
+                    return Ok(());
+                }
+                Some(v) => v,
+            };
+            let force: f32 = match force_val {
+                Value::Number(n) => n as f32,
+                Value::Integer(n) => n as f32,
+                _ => {
+                    return Err(mlua::Error::RuntimeError(
+                        "SetPin: first argument must be a force (number) or nil to clear"
+                            .into(),
+                    ));
+                }
+            };
+            let relative: Vector = match iter.next() {
+                Some(Value::UserData(ud)) => *ud.borrow::<Vector>().map_err(|_| {
+                    mlua::Error::RuntimeError(
+                        "SetPin: second argument must be a Vector (object-local grab point)".into(),
+                    )
+                })?,
+                _ => {
+                    return Err(mlua::Error::RuntimeError(
+                        "SetPin: missing relative grab point (Vector)".into(),
+                    ));
+                }
+            };
+            let target: CFrame = match iter.next() {
+                Some(Value::UserData(ud)) => *ud.borrow::<CFrame>().map_err(|_| {
+                    mlua::Error::RuntimeError(
+                        "SetPin: third argument must be a CFrame (world target)".into(),
+                    )
+                })?,
+                _ => {
+                    return Err(mlua::Error::RuntimeError(
+                        "SetPin: missing target CFrame".into(),
+                    ));
+                }
+            };
+            this.with_obj_mut("SetPin", |o| {
+                o.pin = Some(PinSpec {
+                    max_force: force.max(0.0),
+                    relative,
+                    target,
+                });
+            })?;
+            Ok(())
+        });
+
         m.add_method("ApplyImpulse", |_, this, v: Vector| {
             this.with_obj_mut("ApplyImpulse", |o| {
                 if o.anchored {
@@ -1901,3 +2012,53 @@ fn step_plane_gpu(plane_arc: &Arc<Mutex<PlaneState>>, dt: f32) -> bool {
     renderable::bump_parts_dirty();
     true
 }
+
+pub fn find_object_for_part(
+    part: &Arc<Mutex<PartState>>,
+) -> Option<(Arc<Mutex<PlaneState>>, u64)> {
+    PLANES.with(|c| {
+        for plane_arc in c.borrow().iter() {
+            let plane = plane_arc.lock().unwrap();
+            if !plane.alive {
+                continue;
+            }
+            for (id, obj) in plane.objects.iter() {
+                if obj.alive && Arc::ptr_eq(&obj.part, part) {
+                    return Some((plane_arc.clone(), *id));
+                }
+            }
+        }
+        None
+    })
+}
+
+pub fn set_object_anchored(
+    plane: &Arc<Mutex<PlaneState>>,
+    id: u64,
+    anchored: bool,
+) -> Option<bool> {
+    let mut plane = plane.lock().unwrap();
+    let obj = plane.objects.get_mut(&id)?;
+    let prev = obj.anchored;
+    obj.anchored = anchored;
+    if anchored {
+        obj.velocity = Vector::new(0.0, 0.0, 0.0);
+        obj.angular_velocity = Vector::new(0.0, 0.0, 0.0);
+    }
+    Some(prev)
+}
+
+pub fn drive_object_to(plane: &Arc<Mutex<PlaneState>>, id: u64, cf: CFrame) {
+    let mut plane = plane.lock().unwrap();
+    if let Some(obj) = plane.objects.get_mut(&id) {
+        if !obj.alive {
+            return;
+        }
+        obj.position = cf.position;
+        obj.rotation = cf.rotation;
+        if let Ok(mut g) = obj.override_cell.lock() {
+            *g = cf;
+        }
+    }
+}
+

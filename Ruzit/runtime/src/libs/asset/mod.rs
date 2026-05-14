@@ -189,6 +189,7 @@ fn read_for_kind(
         "Shader" => SHADER_EXTS,
         "Fragment" => FRAGMENT_EXTS,
         "Model" => MODEL_EXTS,
+        "AnimationSet" => MODEL_EXTS,
         "Font" => FONT_EXTS,
         "File" => {
             return read_file_bytes(fs, owner, path)
@@ -197,7 +198,7 @@ fn read_for_kind(
         }
         other => {
             return Err(format!(
-                "unknown kind '{other}' (try 'Image', 'Sound', 'Shader', 'Fragment', 'Model', 'Font', 'File')"
+                "unknown kind '{other}' (try 'Image', 'Sound', 'Shader', 'Fragment', 'Model', 'AnimationSet', 'Font', 'File')"
             ));
         }
     };
@@ -427,6 +428,7 @@ pub fn from_bytes(lua: &Lua, kind: &str, bytes: Vec<u8>, source: String) -> mlua
         "Shader" => parse_text::<ShaderAsset>(lua, bytes, source),
         "Fragment" => parse_text::<FragmentAsset>(lua, bytes, source),
         "Model" => parse_model(lua, bytes, source),
+        "AnimationSet" => parse_animation_set(lua, bytes, source),
         "Font" => parse_font(lua, bytes, source),
         "File" => {
             let s = String::from_utf8(bytes).map_err(|e| {
@@ -497,10 +499,11 @@ fn get_asset(lua: &Lua, fs: &Fs, owner: &str, kind: &str, path: &str) -> mlua::R
         "Shader" => load_text::<ShaderAsset>(lua, fs, owner, path, SHADER_EXTS, "Shader"),
         "Fragment" => load_text::<FragmentAsset>(lua, fs, owner, path, FRAGMENT_EXTS, "Fragment"),
         "Model" => load_model(lua, fs, owner, path),
+        "AnimationSet" => load_animation_set(lua, fs, owner, path),
         "Font" => load_font(lua, fs, owner, path),
         "File" => load_file(lua, fs, owner, path),
         other => Err(mlua::Error::RuntimeError(format!(
-            "Asset.GetAsset: unknown kind '{other}' (try 'Image', 'Sound', 'Shader', 'Fragment', 'Model', 'Font', 'File')"
+            "Asset.GetAsset: unknown kind '{other}' (try 'Image', 'Sound', 'Shader', 'Fragment', 'Model', 'AnimationSet', 'Font', 'File')"
         ))),
     }
 }
@@ -602,22 +605,43 @@ fn parse_model(lua: &Lua, bytes: Vec<u8>, source: String) -> mlua::Result<Value>
     let is_fbx =
         bytes.starts_with(b"Kaydara FBX Binary") || source.to_ascii_lowercase().ends_with(".fbx");
 
-    let (mesh, animations) = if is_fbx {
+    let mesh = if is_fbx {
         let loaded = crate::libs::renderable::mesh::load_fbx_full(&bytes)
             .map_err(|e| mlua::Error::RuntimeError(format!("Model parse '{source}': {e}")))?;
-        (loaded.mesh, loaded.animations)
+        loaded.mesh
     } else {
         let text = String::from_utf8(bytes)
             .map_err(|e| mlua::Error::RuntimeError(format!("Model '{source}' not UTF-8: {e}")))?;
-        let mesh = crate::libs::renderable::mesh::load_obj(&text)
-            .map_err(|e| mlua::Error::RuntimeError(format!("Model parse '{source}': {e}")))?;
-        (mesh, Vec::new())
+        crate::libs::renderable::mesh::load_obj(&text)
+            .map_err(|e| mlua::Error::RuntimeError(format!("Model parse '{source}': {e}")))?
     };
     let asset = ModelAsset {
         id: next_shader_id(),
         vertices: Arc::new(mesh.vertices),
         indices: Arc::new(mesh.indices),
-        animations: Arc::new(animations),
+        source,
+    };
+    Ok(Value::UserData(lua.create_userdata(asset)?))
+}
+
+fn load_animation_set(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value> {
+    let (bytes, source) = read_bytes(fs, owner, path, MODEL_EXTS, "AnimationSet")?;
+    parse_animation_set(lua, bytes, source)
+}
+
+fn parse_animation_set(lua: &Lua, bytes: Vec<u8>, source: String) -> mlua::Result<Value> {
+    let is_fbx =
+        bytes.starts_with(b"Kaydara FBX Binary") || source.to_ascii_lowercase().ends_with(".fbx");
+    if !is_fbx {
+        return Err(mlua::Error::RuntimeError(format!(
+            "AnimationSet '{source}': only FBX files carry animation data (got non-FBX bytes)"
+        )));
+    }
+    let loaded = crate::libs::renderable::mesh::load_fbx_full(&bytes)
+        .map_err(|e| mlua::Error::RuntimeError(format!("AnimationSet parse '{source}': {e}")))?;
+    let asset = AnimationSetAsset {
+        id: next_shader_id(),
+        animations: Arc::new(loaded.animations),
         source,
     };
     Ok(Value::UserData(lua.create_userdata(asset)?))
@@ -885,8 +909,6 @@ pub struct ModelAsset {
     pub id: u64,
     pub vertices: Arc<Vec<crate::libs::renderable::mesh::Vertex3D>>,
     pub indices: Arc<Vec<u32>>,
-
-    pub animations: Arc<Vec<crate::libs::renderable::mesh::FbxAnimClip>>,
     pub source: String,
 }
 
@@ -899,9 +921,106 @@ impl UserData for ModelAsset {
             Ok((this.indices.len() / 3) as i64)
         });
         m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
+        m.add_method("LocalBounds", |lua, this, _: ()| -> mlua::Result<Table> {
+            if this.vertices.is_empty() {
+                let t = lua.create_table()?;
+                let zero = crate::libs::primitives::Vector::new(0.0, 0.0, 0.0);
+                t.set("Min", zero)?;
+                t.set("Max", zero)?;
+                t.set("Size", zero)?;
+                t.set("Center", zero)?;
+                return Ok(t);
+            }
+            let mut min = [f32::INFINITY; 3];
+            let mut max = [f32::NEG_INFINITY; 3];
+            for v in this.vertices.iter() {
+                for i in 0..3 {
+                    if v.position[i] < min[i] {
+                        min[i] = v.position[i];
+                    }
+                    if v.position[i] > max[i] {
+                        max[i] = v.position[i];
+                    }
+                }
+            }
+            let to_vec = |a: [f32; 3]| crate::libs::primitives::Vector::new(a[0], a[1], a[2]);
+            let size = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
+            let center = [
+                (min[0] + max[0]) * 0.5,
+                (min[1] + max[1]) * 0.5,
+                (min[2] + max[2]) * 0.5,
+            ];
+            let t = lua.create_table()?;
+            t.set("Min", to_vec(min))?;
+            t.set("Max", to_vec(max))?;
+            t.set("Size", to_vec(size))?;
+            t.set("Center", to_vec(center))?;
+            Ok(t)
+        });
         m.add_method("Free", |lua, this, _: ()| {
             free_asset_by_id(lua, "Model", this.id);
             Ok(())
+        });
+    }
+}
+
+pub struct AnimationSetAsset {
+    pub id: u64,
+    pub animations: Arc<Vec<crate::libs::renderable::mesh::FbxAnimClip>>,
+    pub source: String,
+}
+
+impl UserData for AnimationSetAsset {
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
+        m.add_method("Count", |_, this, _: ()| Ok(this.animations.len() as i64));
+        m.add_method("ListAnimations", |lua, this, _: ()| -> mlua::Result<Table> {
+            let t = lua.create_table()?;
+            for (i, clip) in this.animations.iter().enumerate() {
+                t.set(i + 1, clip.name.clone())?;
+            }
+            Ok(t)
+        });
+        m.add_method(
+            "GetAnimation",
+            |lua, this, name: String| -> mlua::Result<Value> {
+                let clip = this
+                    .animations
+                    .iter()
+                    .find(|c| c.name == name)
+                    .cloned()
+                    .ok_or_else(|| {
+                        mlua::Error::RuntimeError(format!(
+                            "AnimationSet:GetAnimation: no animation named '{name}' in '{}'",
+                            this.source
+                        ))
+                    })?;
+                Ok(Value::UserData(lua.create_userdata(AnimationAsset {
+                    clip: Arc::new(clip),
+                    source: this.source.clone(),
+                })?))
+            },
+        );
+        m.add_method("Free", |lua, this, _: ()| {
+            free_asset_by_id(lua, "AnimationSet", this.id);
+            Ok(())
+        });
+    }
+}
+
+#[derive(Clone)]
+pub struct AnimationAsset {
+    pub clip: Arc<crate::libs::renderable::mesh::FbxAnimClip>,
+    pub source: String,
+}
+
+impl UserData for AnimationAsset {
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method("Name", |_, this, _: ()| Ok(this.clip.name.clone()));
+        m.add_method("Duration", |_, this, _: ()| Ok(this.clip.duration));
+        m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
+        m.add_method("KeyframeCount", |_, this, _: ()| {
+            Ok(this.clip.samples.len() as i64)
         });
     }
 }

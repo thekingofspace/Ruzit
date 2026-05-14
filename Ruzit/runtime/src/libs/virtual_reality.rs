@@ -1,24 +1,18 @@
-// High-level `import("VirtualReality")` API.
-//
-// Always compiled. When the `vr` Cargo feature is on, the optional
-// `indite` crate is linked in and real OpenXR-backed pose updates can
-// drive this state on each heart tick (the actual indite↔wgpu bridge
-// is staged for a follow-up — indite needs wgpu 28 and we're on wgpu
-// 22, so this module currently runs in a no-op backend mode but
-// exposes the full Lua API so games can be written against it today).
-//
-// `HasVrFlag` reports `cfg!(feature = "vr")` so Luau code can branch
-// gracefully on the build target.
-
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use mlua::{
-    Lua, MultiValue, Table, UserData, UserDataFields, UserDataMethods, Value,
+    AnyUserData, Lua, MultiValue, Table, UserData, UserDataFields, UserDataMethods, Value,
 };
 
+use crate::libs::dynmesh::DynMeshHandle;
+use crate::libs::physics::{self, PlaneState};
 use crate::libs::primitives::{CFrame, Vector};
-use crate::libs::renderable::set_camera_cframe;
+use crate::libs::renderable::{self, set_camera_cframe, PartHandle, PartState};
 use crate::libs::signal;
+
+static NEXT_ATTATCH_ID: AtomicU64 = AtomicU64::new(1);
 
 thread_local! {
     static STATE: RefCell<VrState> = RefCell::new(VrState::default());
@@ -36,6 +30,17 @@ struct VrState {
     right_moved: Option<Table>,
     left_input: Option<Table>,
     right_input: Option<Table>,
+
+    attachments: Vec<AttatchEntry>,
+}
+
+#[derive(Clone)]
+struct AttatchEntry {
+    id: u64,
+    side: Side,
+    target: Arc<Mutex<PartState>>,
+    offset: CFrame,
+    physics: Option<(Arc<Mutex<PlaneState>>, u64, bool)>,
 }
 
 #[derive(Clone, Copy)]
@@ -81,6 +86,7 @@ impl Default for VrState {
             right_moved: None,
             left_input: None,
             right_input: None,
+            attachments: Vec::new(),
         }
     }
 }
@@ -151,11 +157,34 @@ fn compose_world(body: CFrame, local: CFrame) -> CFrame {
 }
 
 pub fn pump(_lua: &Lua) {
-    let (linked, body, head) = with_state(|s| (s.linked, s.body, s.head));
-    if !linked {
+    let (linked, body, head, left_cf, right_cf, attachments) = with_state(|s| {
+        (
+            s.linked,
+            s.body,
+            s.head,
+            s.left.cframe,
+            s.right.cframe,
+            s.attachments.clone(),
+        )
+    });
+    if linked {
+        set_camera_cframe(compose_world(body, head));
+    }
+    if attachments.is_empty() {
         return;
     }
-    set_camera_cframe(compose_world(body, head));
+    for a in &attachments {
+        let controller_local = match a.side {
+            Side::Left => left_cf,
+            Side::Right => right_cf,
+        };
+        let controller_world = compose_world(body, controller_local);
+        let world = compose_world(controller_world, a.offset);
+        renderable::write_part_cframe_silent(&a.target, world);
+        if let Some((plane, id, _)) = &a.physics {
+            physics::drive_object_to(plane, *id, world);
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -211,10 +240,6 @@ impl UserData for VRController {
             Ok(sig)
         });
 
-        // Fires `(name: string, value: number, "Begin"|"End")` for trigger /
-        // grip / thumbstick clicks / button events. Names match the OpenXR
-        // input bindings ("Trigger", "Grip", "Thumbstick", "A", "B", "X", "Y",
-        // "Menu", "ThumbstickClick").
         f.add_field_method_get("OnInput", |lua, this| {
             let existing = with_state(|s| match this.side {
                 Side::Left => s.left_input.clone(),
@@ -239,6 +264,36 @@ impl UserData for VRController {
         });
 
         m.add_method(
+            "Attatch",
+            |_, this, target: AnyUserData| -> mlua::Result<AttatchmentHandle> {
+                let part_state = if let Ok(p) = target.borrow::<PartHandle>() {
+                    p.state.clone()
+                } else if let Ok(d) = target.borrow::<DynMeshHandle>() {
+                    d.inner.lock().unwrap().base.clone()
+                } else {
+                    return Err(mlua::Error::RuntimeError(
+                        "Attatch: target must be a BasePart or DynMesh".into(),
+                    ));
+                };
+                let phys = physics::find_object_for_part(&part_state).map(|(plane, id)| {
+                    let prev = physics::set_object_anchored(&plane, id, true).unwrap_or(false);
+                    (plane, id, prev)
+                });
+                let id = NEXT_ATTATCH_ID.fetch_add(1, Ordering::Relaxed);
+                let zero = Vector::new(0.0, 0.0, 0.0);
+                let entry = AttatchEntry {
+                    id,
+                    side: this.side,
+                    target: part_state,
+                    offset: CFrame::new(zero, zero),
+                    physics: phys,
+                };
+                with_state_mut(|s| s.attachments.push(entry));
+                Ok(AttatchmentHandle { id })
+            },
+        );
+
+        m.add_method(
             "Vibrate",
             |_, _this, (_duration, _frequency, _amplitude): (f32, Option<f32>, Option<f32>)|
              -> mlua::Result<bool> { Ok(false) },
@@ -247,6 +302,76 @@ impl UserData for VRController {
         m.add_method("StopVibration", |_, _this, _: ()| -> mlua::Result<()> {
             Ok(())
         });
+    }
+}
+
+pub struct AttatchmentHandle {
+    id: u64,
+}
+
+impl UserData for AttatchmentHandle {
+    fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
+        f.add_field_method_get("Offset", |_, this| {
+            let cf = with_state(|s| {
+                s.attachments
+                    .iter()
+                    .find(|a| a.id == this.id)
+                    .map(|a| a.offset)
+            });
+            Ok(cf.unwrap_or_else(|| {
+                let zero = Vector::new(0.0, 0.0, 0.0);
+                CFrame::new(zero, zero)
+            }))
+        });
+        f.add_field_method_set("Offset", |_, this, value: AnyUserData| {
+            let cf = *value
+                .borrow::<CFrame>()
+                .map_err(|_| mlua::Error::RuntimeError("Offset expects a CFrame".into()))?;
+            with_state_mut(|s| {
+                if let Some(a) = s.attachments.iter_mut().find(|a| a.id == this.id) {
+                    a.offset = cf;
+                }
+            });
+            Ok(())
+        });
+        f.add_field_method_get("IsAlive", |_, this| {
+            Ok(with_state(|s| s.attachments.iter().any(|a| a.id == this.id)))
+        });
+        f.add_field_method_get("Side", |_, this| {
+            let s = with_state(|s| {
+                s.attachments
+                    .iter()
+                    .find(|a| a.id == this.id)
+                    .map(|a| a.side)
+            });
+            Ok(match s {
+                Some(Side::Left) => "Left",
+                Some(Side::Right) => "Right",
+                None => "Detached",
+            })
+        });
+    }
+
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method("Destroy", |_, this, _: ()| -> mlua::Result<()> {
+            destroy_attatchment(this.id);
+            Ok(())
+        });
+    }
+}
+
+fn destroy_attatchment(id: u64) {
+    let removed = with_state_mut(|s| {
+        if let Some(idx) = s.attachments.iter().position(|a| a.id == id) {
+            Some(s.attachments.remove(idx))
+        } else {
+            None
+        }
+    });
+    if let Some(a) = removed {
+        if let Some((plane, obj_id, prev)) = a.physics {
+            physics::set_object_anchored(&plane, obj_id, prev);
+        }
     }
 }
 
@@ -348,10 +473,8 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         "GetControllers",
         lua.create_function(|lua, _: MultiValue| -> mlua::Result<Table> {
             let t = lua.create_table()?;
-            // Array form per the new API contract: conns[1] = Left, conns[2] = Right.
             t.set(1, lua.create_userdata(VRController { side: Side::Left })?)?;
             t.set(2, lua.create_userdata(VRController { side: Side::Right })?)?;
-            // Also expose named accessors so `controllers.Left` works.
             t.set("Left", lua.create_userdata(VRController { side: Side::Left })?)?;
             t.set("Right", lua.create_userdata(VRController { side: Side::Right })?)?;
             Ok(t)

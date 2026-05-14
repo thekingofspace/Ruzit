@@ -297,15 +297,60 @@ fn fs_main(in: VsOut) -&gt; @location(0) vec4&lt;f32&gt; {
 
 <p>
     The <code>cframe</code> and <code>size</code> arguments are in the
-    part's <strong>local mesh space</strong> &mdash; the unit-cube
-    space the engine scales by <code>part.Size</code> at render time.
-    For procedural shapes this is roughly the
-    <code>[-0.5, 0.5]</code> cube; for loaded models it's whatever the
-    source <code>.obj</code> / <code>.fbx</code> exported. So a box
-    centred at <code>(0, 0.4, 0)</code> with size
-    <code>(0.6, 0.3, 0.6)</code> covers roughly the top of a unit
-    cube &mdash; the "head" region of a humanoid mesh authored with
-    its head at the top.
+    part's <strong>local mesh space</strong> &mdash; the raw vertex
+    coordinates from the asset, BEFORE the engine multiplies by
+    <code>part.Size</code> and <code>part.CFrame</code> at render
+    time. For procedural shapes (<code>"Cube"</code>,
+    <code>"Sphere"</code>) the mesh is the unit cube
+    <code>[-0.5, 0.5]</code>; for loaded models it's whatever extents
+    the source <code>.obj</code> / <code>.fbx</code> exported &mdash;
+    typically <code>[-1, 1]</code> but it can be much larger or
+    smaller. So a box centred at <code>(0, 0.4, 0)</code> with size
+    <code>(0.6, 0.3, 0.6)</code> covers the top of a unit cube.
+</p>
+
+<div class="callout warn">
+    <strong>Don't pass world coordinates.</strong>
+    Boxes live in the mesh's <em>native</em> vertex space.
+    <code>part.Size</code>, <code>part.CFrame</code>, and the world
+    position of the part don't change where you place the box.
+    Common symptoms of getting this wrong: every box reports
+    <code>VertexCount = 0</code> (mesh untouched), or the mesh
+    appears to vanish (vertices flung millions of units off-screen
+    because <code>MOVE_AMP</code> was scaled to the wrong unit).
+</div>
+
+<p>
+    Easiest way to get the right scale: ask the model itself with
+    <a href="asset.html#model"><code>asset:LocalBounds()</code></a>,
+    which returns the AABB <code>{ Min, Max, Size, Center }</code> in
+    mesh-local units. Size your boxes and animation amplitudes as
+    fractions of <code>bounds.Size</code> and they'll always be
+    proportional to whatever the source file was exported at.
+</p>
+
+<pre><code><span class="hl-kw">local</span> b = baseAsset:<span class="hl-fn">LocalBounds</span>()
+<span class="hl-fn">print</span>(b.Size)  <span class="hl-com">-- e.g. Vector(2.1, 4.0, 0.8) for a tall thin coffin</span>
+
+<span class="hl-com">-- Cover the entire mesh, centred where it actually is:</span>
+<span class="hl-kw">local</span> whole = Renderable.<span class="hl-fn">DistortionBox</span>(part, CFrame.<span class="hl-fn">new</span>(b.Center), b.Size * <span class="hl-num">1.05</span>)
+
+<span class="hl-com">-- Or grab just the top slab and wobble it. MOVE_AMP scales to the mesh too.</span>
+<span class="hl-kw">local</span> topY      = b.Center.Y + b.Size.Y * <span class="hl-num">0.25</span>
+<span class="hl-kw">local</span> MOVE_AMP  = b.Size.Y * <span class="hl-num">0.15</span>
+<span class="hl-kw">local</span> top = Renderable.<span class="hl-fn">DistortionBox</span>(
+    part,
+    CFrame.<span class="hl-fn">new</span>(Vector.<span class="hl-fn">new</span>(b.Center.X, topY, b.Center.Z)),
+    Vector.<span class="hl-fn">new</span>(b.Size.X * <span class="hl-num">1.1</span>, b.Size.Y * <span class="hl-num">0.5</span>, b.Size.Z * <span class="hl-num">1.1</span>)
+)</code></pre>
+
+<p>
+    If <code>VertexCount = 0</code> on a freshly created box, the box
+    is outside the mesh in local space &mdash; double-check
+    <code>b.Min</code> / <code>b.Max</code>. If the box captures
+    correctly but the mesh visibly disappears once you start animating,
+    your <code>MOVE_AMP</code> is too large for the mesh scale
+    &mdash; scale it down as a fraction of <code>b.Size</code>.
 </p>
 
 <h3>Lifecycle</h3>
@@ -717,38 +762,51 @@ lid_l.Size = Vector.<span class="hl-fn">new</span>(<span class="hl-num">0.08</sp
 <div class="member-list">
     <div class="member">
         <div class="member-header">
-            <span class="member-name">part:GetTrack(name)</span>
-            <span class="member-type">→ AnimationTrack</span>
+            <span class="member-name">part:GetAnimatedTrack(animation)</span>
+            <span class="member-type">&rarr; AnimationTrack</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
-            Get or create a track scoped to this part. If the source
-            <code>ModelAsset</code> is an FBX with a matching
-            AnimationStack, the track is pre-populated from the FBX
-            curves.
+            Bind an
+            <a href="asset.html#animation"><code>Animation</code></a>
+            (pulled from an
+            <a href="asset.html#animationset"><code>AnimationSet</code></a>
+            via <code>set:GetAnimation(name)</code>) to this part and
+            return a playable
+            <a href="#animation-track">AnimationTrack</a>. The same
+            <code>Animation</code> can be bound to many parts &mdash;
+            keyframes are shared, but each track has its own playback
+            cursor / Play / Stop state.
         </p>
+        <pre><code><span class="hl-kw">local</span> anims = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"AnimationSet"</span>, <span class="hl-str">"chars.hero_anims"</span>)
+<span class="hl-kw">local</span> walk  = anims:<span class="hl-fn">GetAnimation</span>(<span class="hl-str">"Walk"</span>)
+
+<span class="hl-kw">local</span> track = hero:<span class="hl-fn">GetAnimatedTrack</span>(walk)
+track.Looped = <span class="hl-kw">true</span>
+track:<span class="hl-fn">Play</span>()</code></pre>
     </div>
     <div class="member">
         <div class="member-header">
             <span class="member-name">part:GetTracks()</span>
-            <span class="member-type">→ { AnimationTrack }</span>
+            <span class="member-type">&rarr; { AnimationTrack }</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
-            Every track currently attached to this part, both
-            FBX-derived clips that have been instantiated by
-            <code>:GetTrack</code> and user-authored ones.
+            Every track currently bound to this part (each one came
+            from a prior <code>:GetAnimatedTrack</code> call).
         </p>
     </div>
     <div class="member">
         <div class="member-header">
-            <span class="member-name">part:GetTrackNames()</span>
-            <span class="member-type">→ { string }</span>
-            <span class="tag tag-method">method</span>
+            <span class="member-name">part:GetTrack(name)</span>
+            <span class="tag tag-deprecated">deprecated</span>
         </div>
         <p class="member-desc">
-            Names of every animation clip baked into the source FBX.
-            Empty for OBJ / synthesised meshes.
+            Non-functional as of 1.2.7. Calling it raises a runtime
+            error. Models no longer carry their own animations &mdash;
+            load an
+            <a href="asset.html#animationset"><code>AnimationSet</code></a>
+            and bind with <code>part:GetAnimatedTrack(animation)</code>.
         </p>
     </div>
     <div class="member">
@@ -806,13 +864,16 @@ snd:<span class="hl-fn">Play</span>()  <span class="hl-com">-- audio now follows
 
 <ul>
     <li>
-        <code>part:GetTrack("clipName")</code> on an FBX-backed Part,
-        the track is pre-loaded with translation/rotation keyframes from
-        the matching AnimationStack.
+        <code>part:GetAnimatedTrack(animation)</code>, where
+        <code>animation</code> was pulled from an
+        <a href="asset.html#animationset"><code>AnimationSet</code></a>.
+        The track is pre-loaded with translation / rotation keyframes
+        from the matching FBX AnimationStack.
     </li>
     <li>
-        <code>part:GetTrack("custom")</code> followed by
-        <code>track:AddKeyframe(...)</code>, fully scripted keyframes.
+        Author-built &mdash; bind an Animation, then call
+        <code>track:Reset()</code> + <code>track:AddKeyframe(...)</code>
+        to overwrite the imported curves with fully scripted keyframes.
     </li>
 </ul>
 

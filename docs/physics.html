@@ -773,6 +773,35 @@ crate:<span class="hl-fn">RecalculateCenterOfMass</span>()</code></pre>
     </div>
     <div class="member">
         <div class="member-header">
+            <span class="member-name" id="setpin">obj:SetPin(force, relative, target)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Pin a grab point on the object to a world-space target with
+            a clamped spring-damper. The grab point
+            (<code>relative</code>) is given in object-local coordinates
+            (centre of the body is <code>vector.create(0, 0, 0)</code>);
+            <code>target</code> is a world <code>CFrame</code> whose
+            position pulls the grab point in and whose rotation drives a
+            torque to align the body's orientation with the target's.
+            <code>force</code> caps the per-step magnitude &mdash; light
+            objects snap to target instantly, heavy ones drag, and an
+            object the force can't lift won't move at all. Pass
+            <code>nil</code> to release.
+        </p>
+        <pre><code><span class="hl-com">-- Drag a crate towards the cursor's world hit; partial force so heavy</span>
+<span class="hl-com">-- crates feel sluggish and the player can be blocked by walls.</span>
+crate:<span class="hl-fn">SetPin</span>(<span class="hl-num">2000</span>, vector.<span class="hl-fn">create</span>(<span class="hl-num">0</span>, <span class="hl-num">0.5</span>, <span class="hl-num">0</span>), CFrame.<span class="hl-fn">new</span>(hit.Position))
+
+<span class="hl-com">-- VR "soft grab": pin the held object to the controller pose so it</span>
+<span class="hl-com">-- still collides with the world (vs. :Attatch which teleports).</span>
+crate:<span class="hl-fn">SetPin</span>(<span class="hl-num">800</span>, vector.<span class="hl-fn">create</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>), Right:<span class="hl-fn">ToWorldSpace</span>())
+
+<span class="hl-com">-- Release:</span>
+crate:<span class="hl-fn">SetPin</span>(<span class="hl-kw">nil</span>)</code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
             <span class="member-name">obj:RecalculateCenterOfMass()</span>
             <span class="tag tag-method">method</span>
             <span class="tag tag-new">new in 1.1</span>

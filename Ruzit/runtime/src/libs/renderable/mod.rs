@@ -45,6 +45,7 @@ pub struct AttachedShader3D {
 #[derive(Clone)]
 pub struct ModelRef {
     pub id: u64,
+    pub version: u64,
     pub vertices: Arc<Vec<mesh::Vertex3D>>,
     pub indices: Arc<Vec<u32>>,
 }
@@ -91,8 +92,6 @@ pub struct PartState {
     pub lit: bool,
 
     pub tracks: Vec<TrackRef>,
-
-    pub source_animations: Option<Arc<Vec<mesh::FbxAnimClip>>>,
 
     pub physics_override: Option<Arc<Mutex<CFrame>>>,
 
@@ -293,12 +292,13 @@ pub fn tick_distortion_boxes() {
         }
         if any_change {
             mesh::recompute_normals(&mut working, &base_model.indices);
+            p.deform_version = p.deform_version.wrapping_add(1);
             p.deformed = Some(ModelRef {
                 id: base_model.id,
+                version: p.deform_version,
                 vertices: Arc::new(working),
                 indices: base_model.indices.clone(),
             });
-            p.deform_version = p.deform_version.wrapping_add(1);
             bump_parts_dirty();
         }
     }
@@ -674,14 +674,13 @@ impl PartHandle {
     }
 
     pub fn new_shape(lua: &Lua, shape: PartShape, model: Option<ModelRef>) -> mlua::Result<Self> {
-        Self::new_shape_with(lua, shape, model, None)
+        Self::new_shape_with(lua, shape, model)
     }
 
     fn new_shape_with(
         lua: &Lua,
         shape: PartShape,
         model: Option<ModelRef>,
-        source_animations: Option<Arc<Vec<mesh::FbxAnimClip>>>,
     ) -> mlua::Result<Self> {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         let changed_signal = signal::new_instance(lua)?;
@@ -704,7 +703,6 @@ impl PartHandle {
             ignore_raycast: false,
             lit: false,
             tracks: Vec::new(),
-            source_animations,
             physics_override: None,
             prop_signals: HashMap::new(),
         }));
@@ -768,6 +766,21 @@ static CAMERA_VERSION: AtomicU64 = AtomicU64::new(1);
 static LIGHTING_VERSION: AtomicU64 = AtomicU64::new(1);
 
 pub fn bump_parts_dirty() {
+    PARTS_VERSION.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn write_part_cframe_silent(state: &Arc<Mutex<PartState>>, cf: CFrame) {
+    if let Ok(mut s) = state.lock() {
+        if !s.alive {
+            return;
+        }
+        s.cframe = cf;
+        if let Some(o) = &s.physics_override {
+            if let Ok(mut g) = o.lock() {
+                *g = cf;
+            }
+        }
+    }
     PARTS_VERSION.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -1245,12 +1258,13 @@ impl UserData for PartHandle {
                     [d.x, d.y, d.z],
                 );
                 mesh::recompute_normals(&mut working, &base_model.indices);
+                s.deform_version = s.deform_version.wrapping_add(1);
                 s.deformed = Some(ModelRef {
                     id: base_id,
+                    version: s.deform_version,
                     vertices: Arc::new(working),
                     indices: base_model.indices.clone(),
                 });
-                s.deform_version = s.deform_version.wrapping_add(1);
                 Ok(touched as u32)
             },
         );
@@ -1298,45 +1312,40 @@ impl UserData for PartHandle {
 
         m.add_method(
             "GetTrack",
-            |_, this, name: String| -> mlua::Result<AnimationTrackHandle> {
-                this.ensure_alive("GetTrack")?;
-                let mut s = this.state.lock().unwrap();
-                if let Some(existing) = s
-                    .tracks
-                    .iter()
-                    .find(|t| t.lock().unwrap().name == name)
-                    .cloned()
-                {
-                    return Ok(AnimationTrackHandle {
-                        track: existing,
-                        part: this.state.clone(),
-                    });
-                }
-                let mut track = AnimationTrack::new(name.clone());
-                if let Some(anims) = &s.source_animations {
-                    if let Some(clip) = anims.iter().find(|c| c.name == name) {
-                        populate_track_from_fbx(&mut track, clip);
-                    }
-                }
+            |_, _this, _name: String| -> mlua::Result<AnimationTrackHandle> {
+                Err(mlua::Error::RuntimeError(
+                    "BasePart:GetTrack is deprecated and non-functional as of 1.2.7. \
+                     Load an AnimationSet via Asset.GetAsset(\"AnimationSet\", path), \
+                     pull an Animation with set:GetAnimation(name), then bind it with \
+                     part:GetAnimatedTrack(animation)."
+                        .into(),
+                ))
+            },
+        );
+
+        m.add_method(
+            "GetAnimatedTrack",
+            |_, this, anim_ud: AnyUserData| -> mlua::Result<AnimationTrackHandle> {
+                this.ensure_alive("GetAnimatedTrack")?;
+                let anim = anim_ud.borrow::<crate::libs::asset::AnimationAsset>().map_err(|_| {
+                    mlua::Error::RuntimeError(
+                        "GetAnimatedTrack expects an Animation (from AnimationSet:GetAnimation)"
+                            .into(),
+                    )
+                })?;
+                let mut track = AnimationTrack::new(anim.clip.name.clone());
+                populate_track_from_fbx(&mut track, &anim.clip);
                 let new_track = Arc::new(Mutex::new(track));
-                s.tracks.push(new_track.clone());
+                {
+                    let mut s = this.state.lock().unwrap();
+                    s.tracks.push(new_track.clone());
+                }
                 Ok(AnimationTrackHandle {
                     track: new_track,
                     part: this.state.clone(),
                 })
             },
         );
-
-        m.add_method("GetTrackNames", |lua, this, _: ()| -> mlua::Result<Table> {
-            let s = this.state.lock().unwrap();
-            let out = lua.create_table()?;
-            if let Some(anims) = &s.source_animations {
-                for (i, clip) in anims.iter().enumerate() {
-                    out.set(i + 1, clip.name.clone())?;
-                }
-            }
-            Ok(out)
-        });
 
         m.add_method("GetTracks", |lua, this, _: ()| -> mlua::Result<Table> {
             let s = this.state.lock().unwrap();
@@ -1513,16 +1522,17 @@ impl UserData for AnimationTrackHandle {
                     .as_ref()
                     .map(|m| Arc::ptr_eq(&m.vertices, &verts))
                     .unwrap_or(false);
+                p.deform_version = p.deform_version.wrapping_add(1);
                 if same_as_base {
                     p.deformed = None;
                 } else if let Some(m) = base_model {
                     p.deformed = Some(ModelRef {
                         id: m.id,
+                        version: p.deform_version,
                         vertices: verts,
                         indices: m.indices.clone(),
                     });
                 }
-                p.deform_version = p.deform_version.wrapping_add(1);
             }
             Ok(())
         });
@@ -1742,12 +1752,13 @@ pub fn tick_animations(lua: &Lua, dt: f32) {
                         .map(|m| m.indices.clone())
                         .unwrap_or_else(|| Arc::new(Vec::new()))
                 });
+                p.deform_version = p.deform_version.wrapping_add(1);
                 p.deformed = Some(ModelRef {
                     id,
+                    version: p.deform_version,
                     vertices: verts,
                     indices,
                 });
-                p.deform_version = p.deform_version.wrapping_add(1);
             }
         }
     }
@@ -1818,15 +1829,11 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
             })?;
             let model = ModelRef {
                 id: ma.id,
+                version: 0,
                 vertices: ma.vertices.clone(),
                 indices: ma.indices.clone(),
             };
-            let anims = if ma.animations.is_empty() {
-                None
-            } else {
-                Some(ma.animations.clone())
-            };
-            PartHandle::new_shape_with(lua, PartShape::Model, Some(model), anims)
+            PartHandle::new_shape_with(lua, PartShape::Model, Some(model))
         })?,
     )?;
 
@@ -1905,8 +1912,6 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                     id,
                     vertices: Arc::new(simplified.vertices),
                     indices: Arc::new(simplified.indices),
-
-animations: ma.animations.clone(),
                     source: format!("{} (LOD {:.0}%)", ma.source, r * 100.0),
                 };
                 lua.create_userdata(new_asset)

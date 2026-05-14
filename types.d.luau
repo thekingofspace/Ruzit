@@ -640,6 +640,7 @@ export type Asset_API = {
 		& ((kind: "Shader", path: string) -> ShaderAsset)
 		& ((kind: "Fragment", path: string) -> FragmentAsset)
 		& ((kind: "Model", path: string) -> ModelAsset)
+		& ((kind: "AnimationSet", path: string) -> AnimationSetAsset)
 		& ((kind: "Font", path: string) -> FontAsset)
 		& ((kind: "File", path: string) -> string),
 	-- Build an asset from a raw byte string in memory, no filesystem touch.
@@ -650,6 +651,7 @@ export type Asset_API = {
 		& ((kind: "Shader", data: string, label: string?) -> ShaderAsset)
 		& ((kind: "Fragment", data: string, label: string?) -> FragmentAsset)
 		& ((kind: "Model", data: string, label: string?) -> ModelAsset)
+		& ((kind: "AnimationSet", data: string, label: string?) -> AnimationSetAsset)
 		& ((kind: "Font", data: string, label: string?) -> FontAsset)
 		& ((kind: "File", data: string, label: string?) -> string),
 	-- Load an asset from any disk path (mod folders, Workshop items, user
@@ -661,6 +663,7 @@ export type Asset_API = {
 		& ((kind: "Shader", path: string) -> ShaderAsset)
 		& ((kind: "Fragment", path: string) -> FragmentAsset)
 		& ((kind: "Model", path: string) -> ModelAsset)
+		& ((kind: "AnimationSet", path: string) -> AnimationSetAsset)
 		& ((kind: "Font", path: string) -> FontAsset)
 		& ((kind: "File", path: string) -> string)
 		& ((kind: "Auto", path: string) -> any),
@@ -1357,10 +1360,50 @@ declare class ModelAsset
 	-- Triangle count (== indices/3).
 	function TriangleCount(self): number
 	function Source(self): string
+	-- AABB of the raw vertex positions (mesh-local coordinates, BEFORE
+	-- any part.Size / part.CFrame is applied). Returns
+	-- `{ Min, Max, Size, Center }` as Vectors. Useful for sizing
+	-- DistortionBoxes / DynMesh anchors against the actual mesh,
+	-- since exported model units vary wildly (some FBX exports are
+	-- ±1, some are ±100).
+	function LocalBounds(self): { Min: Vector, Max: Vector, Size: Vector, Center: Vector }
 	-- Per-instance free, see top of Asset section. Destroys every
 	-- BasePart spawned from this model (BaseModel / SimplifyMesh
 	-- output) and drops it from the asset cache.
 	function Free(self): ()
+end
+
+-- Reusable container of vertex-displacement animation clips, extracted
+-- from an FBX file. Load via `Asset.GetAsset("AnimationSet", path)`.
+-- Models no longer carry their own animations -- you import the mesh as
+-- a Model and the animations as a separate AnimationSet, then bind any
+-- single Animation to any number of BaseParts with `:GetAnimatedTrack`.
+declare class AnimationSetAsset
+	-- Number of animations in the set.
+	function Count(self): number
+	-- Names of every animation in the set, in import order.
+	function ListAnimations(self): { string }
+	-- Look up a single animation by name. Errors if the name doesn't
+	-- match. The returned `Animation` is cheap to clone -- pass it to
+	-- as many parts as you like; every `:GetAnimatedTrack` call builds
+	-- a fresh playback track on the target part using the same
+	-- source keyframes.
+	function GetAnimation(self, name: string): Animation
+	function Source(self): string
+	function Free(self): ()
+end
+
+-- A single named animation clip pulled out of an AnimationSet. Bind to
+-- a BasePart or MeshPart with `part:GetAnimatedTrack(animation)` to get
+-- an AnimationTrack you can play / stop / loop. Reusable -- the same
+-- Animation can drive any number of parts simultaneously.
+declare class Animation
+	function Name(self): string
+	-- Duration in seconds.
+	function Duration(self): number
+	function Source(self): string
+	-- Total keyframe count in this clip.
+	function KeyframeCount(self): number
 end
 
 declare class CFrame
@@ -1586,16 +1629,23 @@ declare class BasePart
 	function WorldToLocal(self, world: Vector): Vector
 
 	-- ── Animation tracks ─────────────────────────────────────────────────
-	-- Get (or create) an AnimationTrack scoped to this part. If the source
-	-- ModelAsset is an FBX with a matching AnimationStack, the track's
-	-- keyframes are auto-populated from the FBX curves on first creation.
-	function GetTrack(self, name: string): AnimationTrack
-	-- Every track currently attached to the part (FBX-derived or
-	-- user-created via GetTrack).
+	-- Bind an Animation (from `AnimationSet:GetAnimation`) to this part
+	-- and return the playable AnimationTrack. One Animation can be bound
+	-- to many parts, so a single FBX of clips can drive every character
+	-- in the scene -- the keyframes are shared, but the playback cursor /
+	-- :Play() / :Stop() state is per-track.
+	function GetAnimatedTrack(self, animation: Animation): AnimationTrack
+	-- Every track currently bound to this part (each one came from a
+	-- prior :GetAnimatedTrack call).
 	function GetTracks(self): { AnimationTrack }
-	-- Names of every animation clip baked into the source FBX file. Empty
-	-- for OBJ / synthesised meshes / FBX exports without animations.
-	function GetTrackNames(self): { string }
+
+	-- ⚠ Deprecated and non-functional as of 1.2.7. Models no longer
+	-- carry their own animations: load an AnimationSet via
+	-- `Asset.GetAsset("AnimationSet", ...)`, pull an Animation with
+	-- `set:GetAnimation(name)`, then bind it with
+	-- `part:GetAnimatedTrack(animation)`. Calling this raises a runtime
+	-- error.
+	function GetTrack(self, name: string): AnimationTrack
 
 	-- ── Audio anchoring ──────────────────────────────────────────────────
 	-- Pin an SFX Sound or VoiceChannel to this part. While linked, the
@@ -1616,11 +1666,13 @@ end
 -- AnimationTrack, playable animation clip for a single BasePart.
 -- =============================================================================
 -- Tracks come from one of two places:
---   * `part:GetTrack("clipName")` on an FBX-backed Part, the track is
---     pre-loaded with translation/rotation keyframes parsed from the FBX
---     AnimationStack matching that name.
---   * `part:GetTrack("custom")` followed by `track:AddKeyframe(...)`,
---     fully scripted keyframes you author at runtime.
+--   * `part:GetAnimatedTrack(animation)` where `animation` came out of
+--     an `AnimationSet` loaded via `Asset.GetAsset("AnimationSet", ...)`.
+--     The track is pre-loaded with translation / rotation keyframes
+--     parsed from the FBX AnimationStack.
+--   * Author-built: `part:GetAnimatedTrack(animation)` (or a Reset()'d
+--     track) followed by `track:AddKeyframe(...)` calls, fully scripted
+--     keyframes at runtime.
 --
 -- Tracks tick in the engine heart loop at ~60 Hz. While a track is playing
 -- it overrides `part.CFrame` for CFrame keyframes and the part's mesh for
@@ -1683,8 +1735,9 @@ export type Renderable_API = {
 	-- geometry is a quantization-clustered LOD of the input. `ratio` is a
 	-- 0..1 hint (default 0.5 ≈ ~half the vertex count); the result tends
 	-- to be coarser than the ratio suggests on small meshes, since the
-	-- grid is uniform. The returned asset inherits the source's animation
-	-- clips so swapping it in for distant parts keeps `:GetTrack` working.
+	-- grid is uniform. Animations are loaded separately via
+	-- `Asset.GetAsset("AnimationSet", path)`, so simplifying a model
+	-- doesn't affect any animation tracks bound to it.
 	SimplifyMesh: (asset: ModelAsset, ratio: number?) -> ModelAsset,
 
 	-- Define a region inside a part's mesh that you can move / rotate /
@@ -1693,13 +1746,22 @@ export type Renderable_API = {
 	-- shrink an eyelid box to blink an eye, stretch a torso box to
 	-- elongate a body, all without authoring a real skeleton.
 	--
-	-- Arguments are interpreted in the part's LOCAL mesh space (the
-	-- unit-cube space the engine scales by part.Size at render time):
-	--   * `cframe` is the box's center + rotation. Pick the spot in
-	--     model space the box should anchor at.
+	-- ⚠ Arguments are interpreted in the part's LOCAL MESH SPACE — the
+	-- raw vertex coordinates from the asset, BEFORE the engine
+	-- multiplies by part.Size / part.CFrame at render time. Do NOT pass
+	-- world coordinates. For procedural shapes ("Cube" / "Sphere") the
+	-- mesh is the unit cube [-0.5, 0.5]; for loaded models it's whatever
+	-- the source .obj / .fbx exported.
+	--
+	--   * `cframe` is the box's center + rotation in mesh space.
 	--   * `size` is the box's full extent on each axis. Vertices whose
-	--     model-space position falls inside the cframe-rotated box of
+	--     mesh-local position falls inside the cframe-rotated box of
 	--     this size are captured.
+	--
+	-- Symptom of passing world coords by mistake: `box.VertexCount == 0`
+	-- and the mesh doesn't visibly warp. Debug with a probe box at the
+	-- origin with Size = (1e6, 1e6, 1e6) — it should capture every
+	-- vertex if you've got the coordinate system right.
 	--
 	-- Captured vertices remember their position relative to the box's
 	-- frame (normalized to [-0.5, 0.5] on each axis). Updating
@@ -3637,6 +3699,26 @@ export type VR_API = {
 -- (OpenXR ↔ WGPU bridge) when the runtime is compiled with `--features vr`.
 -- =============================================================================
 
+-- Returned by `controller:Attatch(target)`. Lives until `:Destroy()`.
+-- While alive, the held part's world CFrame is recomputed each frame
+-- as `BodyCFrame * controller.CFrame * Offset`, so the part follows
+-- the controller exactly — no per-frame Luau bookkeeping. Physics-
+-- tracked parts get auto-anchored on attach and restored on destroy.
+export type VirtualRealityAttatchment = {
+	-- CFrame offset applied on top of the controller pose. Tweak this
+	-- to position the held object in the hand (grip rotation, palm
+	-- offset, etc.). Default is identity.
+	Offset: CFrame,
+	-- `false` once `:Destroy()` has been called (or the runtime cleaned
+	-- the attachment up).
+	IsAlive: boolean,
+	-- `"Left"` or `"Right"` while alive; `"Detached"` after Destroy.
+	Side: "Left" | "Right" | "Detached",
+	-- Detach the target part. Physics-tracked parts have their prior
+	-- Anchored state restored.
+	Destroy: (self: VirtualRealityAttatchment) -> (),
+}
+
 export type VirtualRealityController = {
 	-- "Left" or "Right" — which hand this controller represents.
 	Side: "Left" | "Right",
@@ -3665,6 +3747,16 @@ export type VirtualRealityController = {
 	-- Compose this controller's pose with BodyCFrame to get its world
 	-- position. Use this for raycasts, attaching weapons / hands, etc.
 	ToWorldSpace: (self: VirtualRealityController) -> CFrame,
+	-- Attatch a BasePart or DynMesh to this controller. The runtime
+	-- updates the held part's world CFrame each frame so you don't
+	-- have to drive it from a Heartbeat loop. Physics-tracked parts
+	-- are auto-anchored while held and restored on the returned
+	-- Attatchment's `:Destroy()`. Set the returned `.Offset` to
+	-- position the part relative to the hand.
+	Attatch: (
+		self: VirtualRealityController,
+		target: BasePart | DynMesh
+	) -> VirtualRealityAttatchment,
 	-- Fire a haptic pulse. duration in seconds; frequency (Hz) and
 	-- amplitude (0..1) default to a short click if omitted. Returns
 	-- true when the pulse was scheduled, false on devices without
@@ -4704,6 +4796,26 @@ declare class PhysicsObject
 	function RotateTo(self, target: Vector, strength: number?): ()
 	-- Stop trying to rotate toward a target. Existing angular velocity stays.
 	function StopRotateTo(self): ()
+
+	-- Pin a grab point on the object to a world-space target with a
+	-- clamped spring-damper. The grab point is given in object-local
+	-- coordinates (centre of the body = Vector.new(0,0,0)). The target
+	-- is a world CFrame — position pulls the grab point in, rotation
+	-- drives a torque trying to align the body's orientation with the
+	-- target's. Pass `force` = max force/torque magnitude per step; the
+	-- spring is gain-clamped at this value, so light objects snap to
+	-- target instantly and heavy objects drag (or won't move at all if
+	-- the force can't overcome gravity + mass). Call `:SetPin(nil)` to
+	-- release. Typical use: drag-an-object minigames, VR "grab-with-
+	-- physics" feel where the held thing still responds to obstacles.
+	function SetPin(
+		self,
+		force: number,
+		relative: Vector,
+		target: CFrame
+	): ()
+	-- Clear a previously set pin. Equivalent to `SetPin(nil)`.
+	function SetPin(self, force: nil): ()
 
 	-- Walks the wrapped BasePart's mesh and writes the vertex centroid
 	-- into `CenterOfMass`. Picks the deformed mesh first (if `Deform`

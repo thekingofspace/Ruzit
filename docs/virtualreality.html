@@ -285,6 +285,31 @@
         </p>
     </div>
     <div class="member">
+        <div class="member-header"><span class="member-name">controller:Attatch(target)</span><span class="member-type">&rarr; Attatchment</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Attach a BasePart or DynMesh to this controller. The
+            runtime updates the held part's world CFrame each frame
+            (<code>BodyCFrame * controller.CFrame * Attatchment.Offset</code>)
+            so you don't have to drive it from a Heartbeat callback.
+            Returns an
+            <a href="#attatchment">Attatchment</a> handle &mdash; set
+            its <code>.Offset</code> to position the part in the hand,
+            call <code>:Destroy()</code> to release. Physics-tracked
+            parts are <strong>auto-anchored</strong> while held and the
+            prior anchor state is restored on <code>:Destroy()</code>,
+            so the held thing stops obeying gravity / collisions for
+            the duration of the grab without any extra bookkeeping.
+        </p>
+        <pre><code><span class="hl-kw">local</span> sword = Renderable.<span class="hl-fn">BasePart</span>(<span class="hl-str">"Cube"</span>)
+sword.Size = vector.<span class="hl-fn">create</span>(<span class="hl-num">0.05</span>, <span class="hl-num">0.05</span>, <span class="hl-num">1.2</span>)
+
+<span class="hl-kw">local</span> hold = Right:<span class="hl-fn">Attatch</span>(sword)
+hold.Offset = CFrame.<span class="hl-fn">new</span>(vector.<span class="hl-fn">create</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">-0.6</span>))  <span class="hl-com">-- forward in palm</span>
+
+<span class="hl-com">-- later, release it:</span>
+hold:<span class="hl-fn">Destroy</span>()</code></pre>
+    </div>
+    <div class="member">
         <div class="member-header"><span class="member-name">controller:Vibrate(duration, frequency?, amplitude?)</span><span class="member-type">&rarr; boolean</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Fire a haptic pulse. <code>duration</code> in seconds;
@@ -297,6 +322,52 @@
         <div class="member-header"><span class="member-name">controller:StopVibration()</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Cancel any in-flight pulses on this controller.</p>
     </div>
+</div>
+
+<h2 id="attatchment">Attatchment</h2>
+
+<p>
+    Returned by <code>controller:Attatch(target)</code>. The runtime
+    drives the held part's CFrame each frame; you only touch the
+    attachment to retune the hand-offset or release it.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Offset</span><span class="member-type">CFrame</span></div>
+        <p class="member-desc">
+            CFrame offset applied on top of the controller pose. Tweak
+            this to position the held object in the hand &mdash; grip
+            rotation, palm offset, tool tip-out-the-front, etc.
+            Defaults to identity.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Side</span><span class="member-type">"Left" | "Right" | "Detached"</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.IsAlive</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">attatchment:Destroy()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Detach the part. For physics-tracked parts the prior
+            Anchored state is restored, so a dynamic object regains
+            gravity / collisions and continues from wherever the
+            controller dropped it.
+        </p>
+    </div>
+</div>
+
+<div class="callout note">
+    <strong>Soft-grab variant.</strong> For a grab that still pushes
+    against world geometry (so the held thing can hit walls, players,
+    etc.), don't use <code>:Attatch</code> &mdash; use
+    <a href="physics.html#setpin"><code>PhysicsObject:SetPin</code></a>
+    each frame against the controller's
+    <code>:ToWorldSpace()</code>. Attatch is "rigid grab" (the part
+    teleports with the hand); SetPin is "spring grab" (the part is
+    pulled toward the hand but can be stopped by obstacles).
 </div>
 
 <div class="callout note">

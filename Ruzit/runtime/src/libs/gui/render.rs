@@ -423,6 +423,7 @@ struct ModelBuffers {
     vertex: wgpu::Buffer,
     index: wgpu::Buffer,
     index_count: u32,
+    version: u64,
 }
 
 impl GpuState {
@@ -1065,8 +1066,10 @@ impl GpuState {
     }
 
     fn ensure_model_buffers(&mut self, model: &renderable::ModelRef) {
-        if self.model_buffers.contains_key(&model.id) {
-            return;
+        if let Some(existing) = self.model_buffers.get(&model.id) {
+            if existing.version == model.version {
+                return;
+            }
         }
         let vertex = self
             .device
@@ -1088,6 +1091,7 @@ impl GpuState {
                 vertex,
                 index,
                 index_count: model.indices.len() as u32,
+                version: model.version,
             },
         );
     }
