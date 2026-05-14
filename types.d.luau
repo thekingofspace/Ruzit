@@ -607,19 +607,36 @@ declare class FontAsset
 	function Free(self): ()
 end
 
+-- Lookup record that maps each `kind` string to the asset userdata returned
+-- by the Asset loaders. Add a new kind here and every loader signature
+-- (GetAsset / FromString / ImportAsset) picks it up automatically.
+export type AssetByKind = {
+	Image: ImageAsset,
+	Sound: SoundData,
+	Shader: ShaderAsset,
+	Fragment: FragmentAsset,
+	Model: ModelAsset,
+	AnimationSet: AnimationSetAsset,
+	Font: FontAsset,
+	File: string,
+}
+
+export type AssetKind = keyof<AssetByKind>
+
 export type Asset_API = {
 	-- Load a typed asset from your project's assets/ folder (when running
 	-- `Ruzit Test`) or from a bundled .managed package (in a built game).
 	--
 	-- kind picks both the loader and the return type. Each kind accepts a
 	-- fixed set of file extensions, so you usually pass the path WITHOUT one:
-	--   Image    .png .jpg .jpeg .bmp .gif .webp
-	--   Sound    .ogg .mp3 .wav .flac
-	--   Shader   .shader .glsl .wgsl .hlsl .vert .metal
-	--   Fragment .frag .fragment .fs .glslf
-	--   Model    .obj .fbx
-	--   Font     .ttf .otf
-	--   File     any file, returned as its raw UTF-8 string contents
+	--   Image        .png .jpg .jpeg .bmp .gif .webp
+	--   Sound        .ogg .mp3 .wav .flac
+	--   Shader       .shader .glsl .wgsl .hlsl .vert .metal
+	--   Fragment     .frag .fragment .fs .glslf
+	--   Model        .obj .fbx
+	--   AnimationSet .fbx
+	--   Font         .ttf .otf
+	--   File         any file, returned as its raw UTF-8 string contents
 	--
 	-- path forms:
 	--   "foo.bar.baz", same package as the caller. Dots are folder
@@ -634,38 +651,17 @@ export type Asset_API = {
 	--   Asset.GetAsset("Image", "ui.logo")              -- assets/ui/logo.png
 	--   Asset.GetAsset("Model", "props.crate")          -- assets/props/crate.fbx (or .obj)
 	--   Asset.GetAsset("Sound", "@SfxPack/explode")     -- from a sibling package
-	--   Asset.GetAsset("File", "data/levels.json")     -- raw text contents
-	GetAsset: ((kind: "Image", path: string) -> ImageAsset)
-		& ((kind: "Sound", path: string) -> SoundData)
-		& ((kind: "Shader", path: string) -> ShaderAsset)
-		& ((kind: "Fragment", path: string) -> FragmentAsset)
-		& ((kind: "Model", path: string) -> ModelAsset)
-		& ((kind: "AnimationSet", path: string) -> AnimationSetAsset)
-		& ((kind: "Font", path: string) -> FontAsset)
-		& ((kind: "File", path: string) -> string),
+	--   Asset.GetAsset("File", "data/levels.json")      -- raw text contents
+	GetAsset: <K>(kind: AssetKind & K, path: string) -> index<AssetByKind, K>,
 	-- Build an asset from a raw byte string in memory, no filesystem touch.
 	-- `label` is shown by Source(); it has no functional effect. Useful for
 	-- assets you fetched over the network or assembled procedurally.
-	FromString: ((kind: "Image", data: string, label: string?) -> ImageAsset)
-		& ((kind: "Sound", data: string, label: string?) -> SoundData)
-		& ((kind: "Shader", data: string, label: string?) -> ShaderAsset)
-		& ((kind: "Fragment", data: string, label: string?) -> FragmentAsset)
-		& ((kind: "Model", data: string, label: string?) -> ModelAsset)
-		& ((kind: "AnimationSet", data: string, label: string?) -> AnimationSetAsset)
-		& ((kind: "Font", data: string, label: string?) -> FontAsset)
-		& ((kind: "File", data: string, label: string?) -> string),
+	FromString: <K>(kind: AssetKind & K, data: string, label: string?) -> index<AssetByKind, K>,
 	-- Load an asset from any disk path (mod folders, Workshop items, user
 	-- profile, etc.). Pass "Auto" or "" as the kind to infer it from the
 	-- file extension. Useful for mods that drop loose files alongside the
 	-- game and load them at runtime.
-	ImportAsset: ((kind: "Image", path: string) -> ImageAsset)
-		& ((kind: "Sound", path: string) -> SoundData)
-		& ((kind: "Shader", path: string) -> ShaderAsset)
-		& ((kind: "Fragment", path: string) -> FragmentAsset)
-		& ((kind: "Model", path: string) -> ModelAsset)
-		& ((kind: "AnimationSet", path: string) -> AnimationSetAsset)
-		& ((kind: "Font", path: string) -> FontAsset)
-		& ((kind: "File", path: string) -> string)
+	ImportAsset: (<K>(kind: AssetKind & K, path: string) -> index<AssetByKind, K>)
 		& ((kind: "Auto", path: string) -> any),
 	-- Build an ImageAsset from raw RGBA8 pixels. `rgba` must be exactly
 	-- width * height * 4 bytes. Useful for procedural textures or pixel
