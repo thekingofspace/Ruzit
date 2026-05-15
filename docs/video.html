@@ -72,7 +72,7 @@ video:Play()
 <div class="callout warn">
     <strong>MP4 / MOV require <code>ffmpeg</code> on PATH.</strong>
     Real video codecs (H.264 / HEVC / AV1) are not bundled with the
-    runtime â€” adding them would balloon the binary by tens of MB and
+    runtime — adding them would balloon the binary by tens of MB and
     introduces real licensing complications. Instead, the engine
     shells out to a system-installed
     <a href="https://ffmpeg.org/download.html" target="_blank" rel="noopener">ffmpeg</a>
@@ -88,7 +88,7 @@ video:Play()
     <strong>For shipped games:</strong> include <code>ffmpeg</code>
     next to the launcher EXE (Windows) or document it as a runtime
     dependency. If you can't ship ffmpeg with your game, pre-convert
-    the source MP4 / MOV to an animated GIF at build time â€” the
+    the source MP4 / MOV to an animated GIF at build time — the
     GIF path needs no system deps and works everywhere.
 </div>
 
@@ -131,7 +131,7 @@ video:Play()
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">video:Length()</span><span class="member-type">-> number</span></div>
-        <p class="member-desc">Total length in seconds (FrameCount Ã— FrameDelayMs Ã· 1000).</p>
+        <p class="member-desc">Total length in seconds (FrameCount × FrameDelayMs ÷ 1000).</p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">video:Source()</span><span class="member-type">-> string</span></div>

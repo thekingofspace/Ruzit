@@ -935,7 +935,7 @@ burst.TimeScaleTransparency = { [<span class="hl-num">0</span>] = <span class="h
         <tr><td><code>Position</code></td><td>Dim</td><td>(0.5, 0)</td><td>Emitter center in pixels.</td></tr>
         <tr><td><code>Size</code></td><td>Dim</td><td>(0, 100)</td><td>Full extent of the spawn box.</td></tr>
         <tr><td><code>ZIndex</code></td><td>number</td><td>0</td><td>Order against other GUI primitives.</td></tr>
-        <tr><td><code>Image</code></td><td>ImageAsset / DynImg / DrawableImg?</td><td>â€”</td><td>Sprite texture.</td></tr>
+        <tr><td><code>Image</code></td><td>ImageAsset / DynImg / DrawableImg?</td><td>—</td><td>Sprite texture.</td></tr>
         <tr><td><code>Enabled</code></td><td>boolean</td><td>true</td><td>Disable to stop spawning.</td></tr>
         <tr><td><code>Rate</code></td><td>number</td><td>20</td><td>Particles/sec.</td></tr>
         <tr><td><code>MaxParticles</code></td><td>number</td><td>1024</td><td>Hard cap.</td></tr>
@@ -944,7 +944,7 @@ burst.TimeScaleTransparency = { [<span class="hl-num">0</span>] = <span class="h
         <tr><td><code>ParticleSize</code></td><td>{ Min, Max }</td><td>16..16</td><td>Base sprite size in pixels.</td></tr>
         <tr><td><code>Rotation</code> / <code>RotSpeed</code></td><td>{ Min, Max }</td><td>0..0</td><td>Per-particle.</td></tr>
         <tr><td><code>Acceleration</code></td><td>Vec2 / Dim / { X, Y }</td><td>(0, 200)</td><td>2D pixel-space force applied to every particle equally.</td></tr>
-        <tr><td><code>RandomizeForce</code></td><td>{ X?, Y? }</td><td>all zero</td><td>Per-particle randomized force in pixels/secÂ². Each axis is a <code>{min, max}</code> range sampled at spawn. Example: <code>{ X = {min = -50, max = 50}, Y = {min = -120, max = 0} }</code>.</td></tr>
+        <tr><td><code>RandomizeForce</code></td><td>{ X?, Y? }</td><td>all zero</td><td>Per-particle randomized force in pixels/sec². Each axis is a <code>{min, max}</code> range sampled at spawn. Example: <code>{ X = {min = -50, max = 50}, Y = {min = -120, max = 0} }</code>.</td></tr>
         <tr><td><code>Drag</code></td><td>number</td><td>0</td><td>Velocity damping per second.</td></tr>
         <tr><td><code>Spread</code></td><td>number</td><td>0</td><td>Cone half-angle in degrees.</td></tr>
         <tr><td><code>EmissionDirection</code></td><td>Vec2 / Dim / { X, Y }</td><td>(0, -1)</td><td>Initial velocity direction.</td></tr>
@@ -974,7 +974,7 @@ burst.TimeScaleTransparency = { [<span class="hl-num">0</span>] = <span class="h
         </div>
         <p class="member-desc">
             Same particle WGSL contract as the 3D
-            <a href="renderable.html#effectvolume">EffectVolume</a> â€”
+            <a href="renderable.html#effectvolume">EffectVolume</a> —
             see <a href="renderable.html#particle-shaders">Particle
             shaders</a> for the binding layout and the
             <code>VsOut</code> inputs. Both 2D and 3D particles use the
@@ -1042,7 +1042,7 @@ burst.TimeScaleTransparency = { [<span class="hl-num">0</span>] = <span class="h
             Every visible primitive whose AABB overlaps the rectangle
             centered at <code>center</code> with full extents
             <code>size</code>. <code>quality</code> is accepted for
-            parity with the 3D API but ignored â€” 2D primitives have no
+            parity with the 3D API but ignored — 2D primitives have no
             sub-quad geometry.
         </p>
     </div>

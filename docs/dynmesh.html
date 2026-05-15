@@ -89,7 +89,7 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
                 <li><code>kind = "Static" | "Attach" | "Joint"</code>,
                     default <code>"Static"</code>:
                     <ul>
-                        <li><strong>Static / Attach</strong> â€” rigid
+                        <li><strong>Static / Attach</strong> — rigid
                             follow. On link the target's <em>current
                             world CFrame</em> is captured as the
                             local offset, so the part visually
@@ -103,7 +103,7 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
                             while the body moves.
                             Animations playing on the welded part
                             are still overwritten by the weld.</li>
-                        <li><strong>Joint</strong> â€” hierarchical
+                        <li><strong>Joint</strong> — hierarchical
                             follow. The welded part is dragged along
                             by the base's per-tick motion but keeps
                             its own pose on top, so animation tracks
@@ -148,7 +148,7 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
             <code>{ point = Vector }</code> (a fixed offset in the
             base part's local space) or
             <code>{ vertex = number }</code> (a vertex index on the
-            base mesh â€” live-tracked, deform- and animation-aware).
+            base mesh — live-tracked, deform- and animation-aware).
             Per tick the engine:
             <ul>
                 <li>Resolves every anchor to a world-space point.</li>
@@ -162,7 +162,7 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
                     waypoints stretch the part further than the
                     straight span.</li>
             </ul>
-            The part itself stays straight â€” see
+            The part itself stays straight — see
             <a href="#stretch-examples">examples</a> below for how to
             chain multiple stretches into a bent rope / arc.
             <code>:Detach</code> restores the target's original X size.
@@ -176,7 +176,7 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
         </div>
         <p class="member-desc">
             Remove a weld by id. <strong>The welded BasePart is not
-            destroyed</strong> â€” it stays alive in the scene at its
+            destroyed</strong> — it stays alive in the scene at its
             last computed pose and just stops being driven by this
             DynMesh. Stretch welds restore the target's original X
             Size on detach; Joint welds release their parent-follow
@@ -340,7 +340,7 @@ dm:Stretch(cape, { { vertex = <span class="hl-num">88</span> }, { vertex = <span
 <pre><code><span class="hl-kw">local</span> dm  = DynMesh.<span class="hl-fn">new</span>(head)
 <span class="hl-kw">local</span> id  = dm:<span class="hl-fn">Weld</span>(eye_l)              <span class="hl-com">-- captures eye_l's current world CFrame</span>
 
-<span class="hl-com">-- Look 20Â° to the right (locally â€” head still moves the eye around).</span>
+<span class="hl-com">-- Look 20° to the right (locally — head still moves the eye around).</span>
 eye_l.CFrame = CFrame.<span class="hl-fn">new</span>(eye_l.CFrame.Position, Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, math.<span class="hl-fn">rad</span>(<span class="hl-num">20</span>), <span class="hl-num">0</span>))</code></pre>
 
 <p>
@@ -424,7 +424,7 @@ dm:Stretch(strap, {
 <p>
     Vertex anchors track the live mesh. As the parent runs an
     animation track, the welded vertices move and the stretch
-    reshapes itself automatically â€” no per-frame Lua code:
+    reshapes itself automatically — no per-frame Lua code:
 </p>
 
 <pre><code><span class="hl-kw">local</span> arc = Renderable.BasePart(<span class="hl-str">"Cube"</span>)
@@ -444,7 +444,7 @@ body:GetTrack(<span class="hl-str">"cast_spell"</span>):Play()
 <h3>Explicit reposition (changing anchors at runtime)</h3>
 
 <p>
-    Sometimes the path itself needs to change â€” a rope re-pinning
+    Sometimes the path itself needs to change — a rope re-pinning
     onto a different vertex when the player picks up a new tool, a
     cable swinging to a new attachment point. Just detach the old
     stretch and re-stretch with new anchors:
@@ -471,7 +471,7 @@ id = dm:Stretch(cable, {
 
 <p>
     A single <code>Stretch</code> always renders as a straight
-    part â€” the part itself doesn't bend. For a rope that actually
+    part — the part itself doesn't bend. For a rope that actually
     curves, chain multiple stretches with shared interior
     waypoints. Each segment is its own BasePart welded with its
     own <code>Stretch</code> call, and consecutive segments share
@@ -541,7 +541,7 @@ id = dm:Stretch(cable, {
 <p>
     The rule that makes this work: <strong>welds and stretches
     can't share the same target part</strong> (the second one
-    overwrites the first every tick â€” last weld wins on a given
+    overwrites the first every tick — last weld wins on a given
     target). To combine them, build a small hierarchy: weld the
     primary part to its anchor, then wrap that primary part as its
     own DynMesh and use it as the anchor for stretches. The whole
@@ -612,7 +612,7 @@ ribbon.Color = Color3.FromRGB(<span class="hl-num">200</span>, <span class="hl-n
 <p>
     If you just want a part to bend / stretch between two live mesh
     points, a single <code>:Stretch</code> with vertex anchors is
-    enough â€” no weld required. A sleeve between shoulder and wrist
+    enough — no weld required. A sleeve between shoulder and wrist
     is one Stretch call. The combo pattern is only needed when:
 </p>
 

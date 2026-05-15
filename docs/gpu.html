@@ -74,7 +74,7 @@
             One compute thread per part runs in parallel: cubes test as
             oriented bounding boxes (CFrame + Size), spheres as
             ellipsoids (CFrame + Size), and <strong>models with mesh
-            data test per-triangle</strong> via MÃ¶ller-Trumbore in
+            data test per-triangle</strong> via Möller-Trumbore in
             part-local space, so corners and concavities hit precisely
             instead of bounding boxes. Models without mesh data fall
             back to OBB. Parts with <code>Render = false</code> or
@@ -283,17 +283,17 @@
             Return one or more world-space AABBs covering a BasePart.
             Each entry is <code>{ Position, Size, Min, Max }</code> with
             <code>Position</code> the AABB center and <code>Size</code>
-            its full extents (max âˆ’ min). Honors deformations,
+            its full extents (max − min). Honors deformations,
             current animation state, and DynMesh-driven movement, so
             the boxes follow the live mesh.
         </p>
         <p class="member-desc">
             <code>quality</code> controls how many boxes you get:
             <ul>
-                <li><strong>1 (default)</strong> â€” single box that
+                <li><strong>1 (default)</strong> — single box that
                     encloses the entire part. Cheapest. Always
                     accurate for cubes / spheres.</li>
-                <li><strong>2+</strong> â€” split a model's vertices
+                <li><strong>2+</strong> — split a model's vertices
                     into N bins along the longest axis and return a
                     tight AABB per bin. Useful for long thin meshes
                     where one big box is loose. Cubes and spheres

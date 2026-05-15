@@ -61,7 +61,7 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
         </p>
         <ul>
             <li><code>Gravity</code> &mdash; <code>Vector</code> applied as
-                acceleration to every non-anchored object (units/secÃ‚Â²).
+                acceleration to every non-anchored object (units/sec²).
                 Defaults to <code>Vector(0, -50, 0)</code>, roughly
                 Earth-gravity at game scale.</li>
             <li><code>Threads</code> &mdash; integer 1+. When &gt; 1 the
@@ -85,13 +85,13 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
                 <code>F = -Drag * |v| * v</code> applied as an extra
                 force on top of the normal integration. Unlike
                 <code>LinearDamping</code> (which scales with v),
-                quadratic drag scales with vÃ‚Â² so at low speed it barely
+                quadratic drag scales with v² so at low speed it barely
                 matters but at high speed it dominates. Perfect for the
                 "feels like underwater" pitch: small impulses barely
                 move, big shoves still travel a long way, things never
                 quite stop the way they do in air. Default <code>0.0</code>.
                 Reasonable underwater values are around
-                <code>1.0</code>â€“<code>4.0</code>.</li>
+                <code>1.0</code>–<code>4.0</code>.</li>
             <li><code>Buoyancy</code> &mdash; constant upward
                 acceleration applied per non-anchored body each tick.
                 Positive values counteract gravity (set to about
@@ -120,7 +120,7 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
                 reflect (rare, useful for billiard-ball-style
                 simulations where you really want every contact to
                 bounce).</li>
-            <li><code>SolverIterations</code> &mdash; integer 1â€“64,
+            <li><code>SolverIterations</code> &mdash; integer 1–64,
                 default <code>4</code>. Number of constraint-solver
                 iterations rapier runs each tick. Higher = better
                 convergence on dense piles, more CPU. Ignored when
@@ -171,7 +171,7 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
                     have to be physically perfect.</li>
                 </ul>
                 Requires the wgpu device to be initialised (a Window
-                has been opened). Collision in the shader is O(NÃ‚Â²); a
+                has been opened). Collision in the shader is O(N²); a
                 GPU spatial-hash broadphase isn't built yet.</li>
         </ul>
     </div>
@@ -244,7 +244,7 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
             Quadratic drag coefficient applied as an extra per-body
             force <code>F = -Drag * |v| * v</code> each tick. Stacks on
             top of <code>LinearDamping</code>. Default <code>0.0</code>.
-            Bump to <code>1.0</code>â€“<code>4.0</code> for underwater
+            Bump to <code>1.0</code>–<code>4.0</code> for underwater
             feel.
         </p>
     </div>
@@ -339,7 +339,7 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
         </p>
         <p class="member-desc">
             <em>Why not actually unbounded?</em> Rapier's solver is
-            fixed-iteration Projected Gauss-Seidel â€” it doesn't
+            fixed-iteration Projected Gauss-Seidel — it doesn't
             expose a residual-based termination hook, so "loop until
             converged" isn't a thing it natively supports. But its
             per-iteration correction decays toward zero once
@@ -529,14 +529,14 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
             <span class="tag tag-new">new in 1.1</span>
         </div>
         <p class="member-desc">
-            Material density in <code>kg / unitÃ‚Â³</code>. When set
+            Material density in <code>kg / unit³</code>. When set
             non-zero, rapier rebuilds the collider's mass and inertia
-            tensor as <code>density Ã— volume</code> on the next tick &mdash;
+            tensor as <code>density × volume</code> on the next tick &mdash;
             density wins over <code>Weight</code>. Setting it back to
             <code>0</code> reverts to the Weight-driven path. Reading
             always returns the effective density rapier is using right
             now (either the explicit value, or
-            <code>Weight Ã· current volume</code>). This lets you build
+            <code>Weight ÷ current volume</code>). This lets you build
             "iron part next to balsa-wood part" scenes without computing
             volumes by hand.
         </p>
@@ -567,10 +567,10 @@ foam.Density = <span class="hl-num">30</span>        <span class="hl-com">-- sty
         <p class="member-desc">
             Coulomb friction coefficient, <code>[0, 1]</code>. The pair
             coefficient used when two objects touch is
-            <code>sqrt(Friction<sub>a</sub> Â· Friction<sub>b</sub>)</code>,
+            <code>sqrt(Friction<sub>a</sub> · Friction<sub>b</sub>)</code>,
             and the resulting tangential impulse is clamped to
-            <code>ÃŽÂ¼ Â· |j<sub>n</sub>|</code> (the Coulomb cone).
-            Default <code>0.5</code> â€” wood-on-wood. Lower toward 0 for
+            <code>μ · |j<sub>n</sub>|</code> (the Coulomb cone).
+            Default <code>0.5</code> — wood-on-wood. Lower toward 0 for
             slick / icy surfaces; raise toward 1 for grippy rubbery
             surfaces. <strong>This is the knob that stops parts from
             sliding around when they should be at rest.</strong>
@@ -623,13 +623,13 @@ foam.Density = <span class="hl-num">30</span>        <span class="hl-com">-- sty
                 inspects <code>max(HitBoxQuality)</code> across its
                 objects and scales <em>solver iterations, friction
                 passes, internal PGS passes, and stabilization
-                passes</em> proportionally â€” up to ~2.5Ã— more solver
+                passes</em> proportionally — up to ~2.5× more solver
                 work at quality 32 versus quality 1. Stacks settle
                 faster and slide less when they shouldn't.</li>
             <li><strong>Tighter penetration tolerance.</strong>
                 <code>allowed_linear_error</code> and
                 <code>prediction_distance</code> shrink with quality,
-                and <code>contact_damping_ratio</code> rises â€” contacts
+                and <code>contact_damping_ratio</code> rises — contacts
                 are stiffer and resolve closer to true geometry.</li>
             <li><strong>CCD (continuous collision detection).</strong>
                 Enabled automatically at <code>HitBoxQuality &gt; 1</code>,
@@ -638,7 +638,7 @@ foam.Density = <span class="hl-num">30</span>        <span class="hl-com">-- sty
             <li><strong>Rotation lock for low-quality cubes.</strong>
                 A non-sphere with <code>HitBoxQuality &lt; 2</code> and
                 no <code>CenterOfMass</code> offset has its rotation
-                axes locked at body creation â€” it translates but does
+                axes locked at body creation — it translates but does
                 not spin from contacts. Bump quality to <code>2+</code>
                 or set a <code>CenterOfMass</code> to let it tip.</li>
         </ul>
@@ -888,7 +888,7 @@ crate:<span class="hl-fn">SetPin</span>(<span class="hl-kw">nil</span>)</code></
         flags. Single-threaded under the plane lock.</li>
     <li><strong>Integration + collision</strong> &mdash; sub-stepped at
         <code>max(HitBoxQuality)</code>. Integration parallelizes
-        across objects via the rayon pool when there are â‰¥ 64 objects;
+        across objects via the rayon pool when there are ≥ 64 objects;
         collision resolution stays single-threaded (cheap pairwise
         AABB sweep).</li>
     <li><strong>Commit</strong> &mdash; every override cell is updated

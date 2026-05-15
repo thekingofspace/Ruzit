@@ -36,7 +36,7 @@
     around is cheap.
 </div>
 
-<!-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ────────────────────────────────────────────────────────────────── -->
 <h2 id="vector">Vector</h2>
 
 <p>
@@ -59,7 +59,7 @@ part:<span class="hl-fn">LookAt</span>(<span class="hl-fn">vector</span>(<span c
     component getters (<code>.X</code>, <code>.Magnitude</code>); reach
     for native <code>vector</code> when you're hot-path reading
     components in a tight loop, since native vector reads happen
-    entirely inside the VM (~5-10Ã— faster than crossing the FFI
+    entirely inside the VM (~5-10× faster than crossing the FFI
     boundary every time).
 </div>
 
@@ -148,7 +148,7 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
             <span class="tag tag-readonly">read-only</span>
         </div>
         <p class="member-desc">
-            Cached Euclidean length, <code>sqrt(XÃ‚Â² + YÃ‚Â² + ZÃ‚Â²)</code>.
+            Cached Euclidean length, <code>sqrt(X² + Y² + Z²)</code>.
             Computed once at construction; reads are free.
         </p>
     </div>
@@ -223,7 +223,7 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
             <a href="https://luau.org/library/#vector-library" target="_blank" rel="noopener">native <code>vector</code></a>.
             Use this in hot paths where you're reading components
             repeatedly &mdash; native vector reads happen inside the VM
-            without crossing into Rust, which is roughly 5-10Ã— faster
+            without crossing into Rust, which is roughly 5-10× faster
             than reading <code>v.X</code> / <code>v.Y</code> /
             <code>v.Z</code> on a userdata per access.
         </p>
@@ -292,7 +292,7 @@ Vector.new()              <span class="hl-com">-- (0, 0, 0)</span></code></pre>
 <span class="hl-kw">local</span> distance = delta.Magnitude
 <span class="hl-kw">local</span> dir      = delta / distance     <span class="hl-com">-- normalised</span></code></pre>
 
-<!-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ────────────────────────────────────────────────────────────────── -->
 <h2 id="color3">Color3</h2>
 
 <p>
@@ -425,7 +425,7 @@ Process.Heartbeat:Connect(<span class="hl-kw">function</span>(_dt)
     <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>).SetAmbient(sky)
 <span class="hl-kw">end</span>)</code></pre>
 
-<!-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ────────────────────────────────────────────────────────────────── -->
 <h2 id="cframe">CFrame</h2>
 
 <p>
@@ -467,7 +467,7 @@ CFrame.new(Vector.new(), Vector.new(<span class="hl-num">0</span>, math.pi, <spa
             Vector.new(rx, ry, rz))</code> but reads more clearly at the
             call site.
         </p>
-        <pre><code>CFrame.Angles(<span class="hl-num">0</span>, math.pi / <span class="hl-num">4</span>, <span class="hl-num">0</span>)   <span class="hl-com">-- 45Â° yaw</span></code></pre>
+        <pre><code>CFrame.Angles(<span class="hl-num">0</span>, math.pi / <span class="hl-num">4</span>, <span class="hl-num">0</span>)   <span class="hl-com">-- 45° yaw</span></code></pre>
     </div>
     <div class="member">
         <div class="member-header">
@@ -576,7 +576,7 @@ camera.CFrame = CFrame.<span class="hl-fn">LookAt</span>(
         <p class="member-desc">
             <strong>Caveat:</strong> rotation is compared as raw Euler
             radians, not angular distance, so two visually identical
-            rotations differing by a multiple of 2Ãâ‚¬ will not
+            rotations differing by a multiple of 2π will not
             <code>FuzzyEq</code>. Wrap your bounds yourself if that
             matters.
         </p>
@@ -598,7 +598,7 @@ part.Size   = Vector.new(<span class="hl-num">1</span>, <span class="hl-num">1</
 part.CFrame = CFrame.new(Vector.new(<span class="hl-num">0</span>, <span class="hl-num">2</span>, <span class="hl-num">-5</span>))
               * CFrame.Angles(<span class="hl-num">0</span>, math.pi / <span class="hl-num">4</span>, <span class="hl-num">0</span>)</code></pre>
 
-<!-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ────────────────────────────────────────────────────────────────── -->
 <h2 id="dim">Dim</h2>
 
 <p>
@@ -775,7 +775,7 @@ hp.Position = centre - hp.Size / <span class="hl-num">2</span></code></pre>
             for sizing a button or tile to a fraction of a container
             without first constructing a <code>UDim</code> value.
         </p>
-        <pre><code><span class="hl-com">-- 20% Ã— 20% of the parent.</span>
+        <pre><code><span class="hl-com">-- 20% × 20% of the parent.</span>
 btn.Size = UDim.<span class="hl-fn">FromDim</span>(<span class="hl-num">0.2</span>, <span class="hl-num">0.2</span>, parentSize)</code></pre>
     </div>
 </div>
