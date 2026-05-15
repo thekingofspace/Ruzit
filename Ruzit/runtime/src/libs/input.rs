@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use mlua::{Lua, MultiValue, Table, Value};
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
-use winit::keyboard::{Key, NamedKey, PhysicalKey};
+use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 use winit::window::{CursorIcon, Window as WinitWindow};
 
 use crate::libs::primitives::Dim;
@@ -486,9 +486,14 @@ pub fn pump(lua: &Lua) {
 }
 
 fn key_name(logical: &Key, physical: PhysicalKey) -> String {
+    if let PhysicalKey::Code(code) = physical {
+        if let Some(name) = physical_key_name(code) {
+            return name.to_string();
+        }
+    }
     match logical {
         Key::Named(named) => named_key_name(*named).to_string(),
-        Key::Character(s) => s.to_string(),
+        Key::Character(s) => s.to_uppercase(),
         Key::Unidentified(_) | Key::Dead(_) => match physical {
             PhysicalKey::Code(code) => format!("{code:?}"),
             PhysicalKey::Unidentified(_) => "Unknown".into(),
@@ -496,9 +501,143 @@ fn key_name(logical: &Key, physical: PhysicalKey) -> String {
     }
 }
 
+fn physical_key_name(code: KeyCode) -> Option<&'static str> {
+    Some(match code {
+        KeyCode::ShiftLeft => "LeftShift",
+        KeyCode::ShiftRight => "RightShift",
+        KeyCode::ControlLeft => "LeftControl",
+        KeyCode::ControlRight => "RightControl",
+        KeyCode::AltLeft => "LeftAlt",
+        KeyCode::AltRight => "RightAlt",
+        KeyCode::SuperLeft => "LeftSuper",
+        KeyCode::SuperRight => "RightSuper",
+
+        KeyCode::Enter => "Return",
+        KeyCode::NumpadEnter => "KeypadEnter",
+        KeyCode::Tab => "Tab",
+        KeyCode::Space => "Space",
+        KeyCode::Backspace => "Backspace",
+        KeyCode::Escape => "Escape",
+        KeyCode::CapsLock => "CapsLock",
+        KeyCode::ContextMenu => "Menu",
+
+        KeyCode::ArrowUp => "Up",
+        KeyCode::ArrowDown => "Down",
+        KeyCode::ArrowLeft => "Left",
+        KeyCode::ArrowRight => "Right",
+
+        KeyCode::Home => "Home",
+        KeyCode::End => "End",
+        KeyCode::PageUp => "PageUp",
+        KeyCode::PageDown => "PageDown",
+        KeyCode::Insert => "Insert",
+        KeyCode::Delete => "Delete",
+
+        KeyCode::F1 => "F1",
+        KeyCode::F2 => "F2",
+        KeyCode::F3 => "F3",
+        KeyCode::F4 => "F4",
+        KeyCode::F5 => "F5",
+        KeyCode::F6 => "F6",
+        KeyCode::F7 => "F7",
+        KeyCode::F8 => "F8",
+        KeyCode::F9 => "F9",
+        KeyCode::F10 => "F10",
+        KeyCode::F11 => "F11",
+        KeyCode::F12 => "F12",
+        KeyCode::F13 => "F13",
+        KeyCode::F14 => "F14",
+        KeyCode::F15 => "F15",
+        KeyCode::F16 => "F16",
+        KeyCode::F17 => "F17",
+        KeyCode::F18 => "F18",
+        KeyCode::F19 => "F19",
+        KeyCode::F20 => "F20",
+        KeyCode::F21 => "F21",
+        KeyCode::F22 => "F22",
+        KeyCode::F23 => "F23",
+        KeyCode::F24 => "F24",
+
+        KeyCode::PrintScreen => "PrintScreen",
+        KeyCode::ScrollLock => "ScrollLock",
+        KeyCode::Pause => "Pause",
+        KeyCode::NumLock => "NumLock",
+
+        KeyCode::Digit0 => "Zero",
+        KeyCode::Digit1 => "One",
+        KeyCode::Digit2 => "Two",
+        KeyCode::Digit3 => "Three",
+        KeyCode::Digit4 => "Four",
+        KeyCode::Digit5 => "Five",
+        KeyCode::Digit6 => "Six",
+        KeyCode::Digit7 => "Seven",
+        KeyCode::Digit8 => "Eight",
+        KeyCode::Digit9 => "Nine",
+
+        KeyCode::KeyA => "A",
+        KeyCode::KeyB => "B",
+        KeyCode::KeyC => "C",
+        KeyCode::KeyD => "D",
+        KeyCode::KeyE => "E",
+        KeyCode::KeyF => "F",
+        KeyCode::KeyG => "G",
+        KeyCode::KeyH => "H",
+        KeyCode::KeyI => "I",
+        KeyCode::KeyJ => "J",
+        KeyCode::KeyK => "K",
+        KeyCode::KeyL => "L",
+        KeyCode::KeyM => "M",
+        KeyCode::KeyN => "N",
+        KeyCode::KeyO => "O",
+        KeyCode::KeyP => "P",
+        KeyCode::KeyQ => "Q",
+        KeyCode::KeyR => "R",
+        KeyCode::KeyS => "S",
+        KeyCode::KeyT => "T",
+        KeyCode::KeyU => "U",
+        KeyCode::KeyV => "V",
+        KeyCode::KeyW => "W",
+        KeyCode::KeyX => "X",
+        KeyCode::KeyY => "Y",
+        KeyCode::KeyZ => "Z",
+
+        KeyCode::Backquote => "Backquote",
+        KeyCode::Minus => "Minus",
+        KeyCode::Equal => "Equals",
+        KeyCode::BracketLeft => "LeftBracket",
+        KeyCode::BracketRight => "RightBracket",
+        KeyCode::Backslash => "Backslash",
+        KeyCode::Semicolon => "Semicolon",
+        KeyCode::Quote => "Quote",
+        KeyCode::Comma => "Comma",
+        KeyCode::Period => "Period",
+        KeyCode::Slash => "Slash",
+        KeyCode::IntlBackslash => "IntlBackslash",
+
+        KeyCode::Numpad0 => "KeypadZero",
+        KeyCode::Numpad1 => "KeypadOne",
+        KeyCode::Numpad2 => "KeypadTwo",
+        KeyCode::Numpad3 => "KeypadThree",
+        KeyCode::Numpad4 => "KeypadFour",
+        KeyCode::Numpad5 => "KeypadFive",
+        KeyCode::Numpad6 => "KeypadSix",
+        KeyCode::Numpad7 => "KeypadSeven",
+        KeyCode::Numpad8 => "KeypadEight",
+        KeyCode::Numpad9 => "KeypadNine",
+        KeyCode::NumpadAdd => "KeypadPlus",
+        KeyCode::NumpadSubtract => "KeypadMinus",
+        KeyCode::NumpadMultiply => "KeypadMultiply",
+        KeyCode::NumpadDivide => "KeypadDivide",
+        KeyCode::NumpadDecimal => "KeypadPeriod",
+        KeyCode::NumpadEqual => "KeypadEquals",
+
+        _ => return None,
+    })
+}
+
 fn named_key_name(named: NamedKey) -> &'static str {
     match named {
-        NamedKey::Enter => "Enter",
+        NamedKey::Enter => "Return",
         NamedKey::Tab => "Tab",
         NamedKey::Space => "Space",
         NamedKey::Backspace => "Backspace",
