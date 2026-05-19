@@ -210,10 +210,6 @@ declare class WindowHandle
 	function Title(self): string
 	function IsFullscreen(self): boolean
 	function IsOpen(self): boolean
-	-- Return this window's 3D viewport / camera. The same singleton is
-	-- returned every call -- writes to .CFrame, .FOV, .Near, .Far,
-	-- :LinkTo, etc. all share state. See the Camera class for the full
-	-- API including target following and per-frame callbacks.
 	function GetViewport(self): Camera
 end
 export type Window_API = {
@@ -570,35 +566,15 @@ declare class Camera
 	FOV: number
 	Near: number
 	Far: number
-	-- True while a LinkTo (or :Follow) target is active.
 	IsLinked: boolean
-	-- Shortcut for `LinkTo(target)` with no offset and no callback --
-	-- the camera's CFrame is set to the target's CFrame each frame.
-	-- Replaces any existing link. Accepts BasePart, PhysicsObject, or
-	-- Controller.
 	function Follow(self, target: BasePart | PhysicsObject | Controller): ()
-	-- Follow a BasePart, PhysicsObject, or Controller. Each frame after
-	-- physics has stepped, the camera's CFrame is set to the target's
-	-- CFrame composed with `opts.Offset` (a CFrame in target-local
-	-- space). If `opts.Callback` is provided, it's invoked with
-	-- `(dt, baseCFrame)`; the optional CFrame it returns overrides
-	-- the camera CFrame for that frame -- use this for head-bob,
-	-- breathing, recoil, or any per-frame tweak that needs to layer
-	-- on top of the followed target. Returning nil keeps `baseCFrame`.
-	-- A second LinkTo call replaces the previous link.
 	function LinkTo(
 		self,
 		target: BasePart | PhysicsObject | Controller,
 		opts: ({ Offset: CFrame?, Callback: ((dt: number, baseCFrame: CFrame) -> CFrame?)? } | CFrame | ((dt: number, baseCFrame: CFrame) -> CFrame?))?
 	): ()
-	-- Detach the camera from its current target. The camera's CFrame
-	-- stops updating until you set it manually or call LinkTo again.
 	function Unlink(self): ()
-	-- Replace the active link's offset CFrame without re-targeting.
-	-- No-op if no link is active.
 	function SetOffset(self, offset: CFrame): ()
-	-- Replace the per-frame callback on the active link. Pass nil to
-	-- clear. Errors when no link is active.
 	function SetLinkCallback(self, fn: ((dt: number, baseCFrame: CFrame) -> CFrame?)?): ()
 end
 export type Renderable_API = {
@@ -1230,7 +1206,7 @@ export type Gamepad_API = {
 	Vibrate: (pad: number, intensity: number, duration: number) -> boolean,
 	StopVibration: (pad: number?) -> (),
 	GetBatteryLevel: (pad: number) -> number?,
-	Connected: Signal<number>, 
+	Connected: Signal<number>,
 	Disconnected: Signal<number>,
 	InputChanged: Signal<GamepadInputEvent>,
 }
@@ -1241,9 +1217,9 @@ export type VRController = {
 	AngularVelocity: Vector,
 	IsConnected: boolean,
 	BatteryLevel: number?,
-	Trigger: number, 
-	Grip: number, 
-	Thumbstick: Vector, 
+	Trigger: number,
+	Grip: number,
+	Thumbstick: Vector,
 	Moved: Signal<CFrame>,
 	OnInput: Signal<string, number, "Begin" | "End">,
 	Vibrate: (
@@ -1452,6 +1428,37 @@ end
 export type DynMesh_API = {
 	new: (base: BasePart) -> DynMesh,
 }
+export type FFIArg =
+	nil
+	| boolean
+	| number
+	| string
+	| Vector
+	| Color3
+	| CFrame
+	| { FFIArg }
+	| { [string]: FFIArg }
+declare class FFILibrary
+	Alive: boolean
+	Source: string
+	function Call(self, name: string, args: FFIArg?): any
+	function Unload(self): ()
+end
+export type FFI_API = {
+	Load: (name: string) -> FFILibrary,
+	BinDirectory: () -> string?,
+	List: () -> { string },
+	CallAsync: (library: FFILibrary, name: string, args: FFIArg?) -> any,
+	_BeginAsyncCall: (library: FFILibrary, name: string, args: FFIArg?) -> (),
+
+	RegisterSignal: (name: string, signal: Signal<...any>) -> (),
+	UnregisterSignal: (name: string) -> boolean,
+
+	SetData: (key: string, value: FFIArg) -> (),
+	GetData: (key: string) -> any,
+	HasData: (key: string) -> boolean,
+	DeleteData: (key: string) -> boolean,
+}
 declare class Video
 	Looped: boolean
 	CurrentFrame: number
@@ -1553,148 +1560,57 @@ declare class PhysicsPlane
 	Alive: boolean
 	ObjectCount: number
 	function Add(self, part: BasePart): PhysicsObject
-	-- Create a kinematic character Controller anchored to `part`. The
-	-- BasePart's CFrame is driven by the controller each tick; physics
-	-- objects collide with it via the plane's rapier query pipeline.
-	-- Many controllers per plane are supported -- enemies, NPCs, and
-	-- the player can all share a plane.
 	function NewController(self, part: BasePart, opts: ControllerOptions?): Controller
-	-- Same as NewController but with motion-intent inputs enabled and
-	-- LookWhereMoving defaulting to false (Rotation drives the facing
-	-- so external code -- typically mouse / right-stick -- can aim the
-	-- character independent of movement).
 	function NewControlledController(self, part: BasePart, opts: ControllerOptions?): Controller
 	function SetEnabled(self, on: boolean): ()
 	function Step(self, dt: number): ()
 	function Destroy(self): ()
 end
-
 export type ControllerOptions = {
-	-- Top horizontal speed in studs/sec. Default 16.
 	WalkSpeed: number?,
-	-- How fast the body yaws toward its facing target when
-	-- LookWhereMoving is on (radians/sec). Default 12.
 	TurnSpeed: number?,
-	-- Initial vertical velocity applied on Jump (studs/sec). Default 28.
 	JumpPower: number?,
-	-- Gravity magnitude in studs/sec^2 when UsePlaneGravity = false.
-	-- Default 50.
 	Gravity: number?,
-	-- True (default) to use the plane's Gravity.Y. False uses .Gravity
-	-- on the controller itself, decoupling it from the plane.
 	UsePlaneGravity: boolean?,
-	-- Maximum slope angle in degrees the controller can stand on.
-	-- Currently used by the ground probe geometry. Default 50.
 	MaxSlope: number?,
-	-- Max step height in studs the ground probe will snap up. Default 0.5.
 	MaxStepHeight: number?,
-	-- Floor Y used when UseGroundYFallback = true and the plane has no
-	-- rapier colliders below the controller. Default 0.
 	GroundY: number?,
-	-- Default true. When the rapier ground probe misses, fall back to
-	-- the GroundY plane so the controller still stands on something.
-	-- Set false for pits and bottomless worlds.
 	UseGroundYFallback: boolean?,
-	-- Distance under the foot to consider "on a waypoint". Default 0.5.
 	WaypointThreshold: number?,
-	-- Extra distance the ground ray probes below the foot. Default 2.
 	ProbeDistance: number?,
-	-- Capsule radius (lateral) used by the foot probe. Default 0.5.
 	CapsuleRadius: number?,
-	-- Capsule half-height (vertical) used by the foot probe. Default 1.
 	CapsuleHalfHeight: number?,
-	-- Default true for NewController, false for NewControlledController.
 	LookWhereMoving: boolean?,
 }
-
 declare class Controller
 	Alive: boolean
-	-- World-space position of the controller body (matches the linked
-	-- BasePart's CFrame.position).
 	Position: Vector
-	-- Velocity (studs/sec) in world space.
 	Velocity: Vector
-	-- Rotation as Euler XYZ in radians. The Y component is the facing
-	-- yaw; setting it directly aims the character (use for mouse-look
-	-- on a controlled controller). LookWhereMoving overrides Y each
-	-- frame when on.
 	Rotation: Vector
-	-- Top horizontal speed.
 	WalkSpeed: number
-	-- Yaw blending rate (radians/sec) when LookWhereMoving is on.
 	TurnSpeed: number
-	-- Initial Y velocity applied on Jump.
 	JumpPower: number
-	-- Custom gravity (only used when UsePlaneGravity = false).
 	Gravity: number
-	-- Toggle: read gravity from the plane (true) or use .Gravity (false).
-	-- Setting .Gravity flips this to false automatically.
 	UsePlaneGravity: boolean
-	-- True while the foot is touching ground (rapier hit or fallback).
-	-- Set by the engine each tick; writes are ignored.
 	OnGround: boolean
-	-- True to auto-yaw toward movement direction. False to honor
-	-- .Rotation.Y directly.
 	LookWhereMoving: boolean
-	-- True for ControlledController (motion-intent methods are
-	-- meaningful), false for plain NewController. Read-only.
 	Controlled: boolean
-	-- Floor Y used by the fallback ground plane (see options).
 	GroundY: number
-	-- Length of the currently active path, 0 if no path.
 	PathLength: number
-	-- Current waypoint index (0-based for the engine, fires
-	-- WaypointReached with this value when each is consumed).
 	PathIndex: number
-	-- Fires `()` the frame a Jump() actually launches the body
-	-- (i.e. only when OnGround was true).
 	Jumped: Signal<>
-	-- Fires `()` the frame OnGround flips false -> true.
 	Landed: Signal<>
-	-- Fires `(vx, vy, vz)` every frame the controller has non-zero
-	-- velocity, useful for foot-step / camera-shake driving.
 	Moved: Signal<number, number, number>
-	-- Fires `(index)` each time a path waypoint is reached.
 	WaypointReached: Signal<number>
-	-- Fires `()` after the final waypoint of a path is reached.
 	PathFinished: Signal<>
-	-- Generic property-change signal.
 	Changed: Signal<string>
-
-	-- Return the BasePart this controller drives. Pass it to
-	-- `DynMesh.new(...)` to weld decorative geometry to the body --
-	-- arms, hats, weapons, anything that should ride along with the
-	-- controller's CFrame. The base is also the part you weld to,
-	-- attach particles to, or assign as a UIBillboard parent.
 	function BasePart(self): BasePart
-	-- Single-waypoint shortcut. Replaces any active path with one
-	-- target Vector. Accepts a CFrame too (only the position is used).
 	function WalkTo(self, target: Vector | CFrame): ()
-	-- Replace the current path with a list of waypoints. The controller
-	-- walks each in order, firing WaypointReached(index) on arrival
-	-- and PathFinished() after the final one. Returns the number of
-	-- waypoints stored. Pass a single-element list for one-shot moves.
 	function ComputePath(self, waypoints: { Vector | CFrame }): number
-	-- Append a waypoint to the back of the existing path (or start a
-	-- new path if there is none).
 	function AppendWaypoint(self, target: Vector | CFrame): ()
-	-- Clear the active path and reset motion intent to zero. The
-	-- controller's horizontal velocity drags to a stop next frame.
 	function StopWalking(self): ()
-	-- Apply JumpPower to the vertical velocity. No-op (returns false)
-	-- when OnGround is false. Compatible with path following -- the
-	-- controller resumes walking on landing. Returns true on launch.
 	function Jump(self): boolean
-	-- Pure teleport. Sets Position + Rotation from the given target,
-	-- clears velocity and any active path.
 	function Teleport(self, target: Vector | CFrame): ()
-	-- ControlledController inputs. SetMoveVector(x, z) takes a
-	-- local-space pair where +z is forward and +x is right. Each
-	-- MoveForward/Backward/Left/Right method sets one axis to the
-	-- given intensity (-1..1, default 1). ClearMoveIntent zeroes both
-	-- axes. Combine multiple in one frame: typically wire WASD to
-	-- MoveForward / MoveLeft etc. each frame and the controller blends
-	-- the result with its facing.
 	function SetMoveVector(self, x: number, z: number): ()
 	function MoveForward(self, intensity: number?): ()
 	function MoveBackward(self, intensity: number?): ()
@@ -1760,6 +1676,7 @@ export type Imports = {
 	Debug: Debug_API,
 	DynImg: DynImg_API,
 	DynMesh: DynMesh_API,
+	FFI: FFI_API,
 	Gamepad: Gamepad_API,
 	GPU: GPU_API,
 	GUI: GUI_API,

@@ -1,0 +1,11 @@
+[package]
+name = "ruzit_ffi_counter"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+name = "ruzit_ffi_counter"
+
+[dependencies]
+serde_json = "1"

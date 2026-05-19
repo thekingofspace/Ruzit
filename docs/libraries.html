@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building libraries - Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css?v=26.5.17">
+    <script src="theme.js?v=26.5.17"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=26.5.17" defer></script>
+
+<main>
+
+<h1>Building libraries</h1>
+<p class="lede">
+    A Ruzit <strong>library</strong> is a Rust (or C/C++) native
+    library &mdash; <code>cdylib</code> &mdash; that the engine can
+    load at runtime via <code>FFI.Load</code> and call into from
+    Luau. Use one when you need code your game can't reasonably
+    express in Luau: hand-tuned simd / SAT solvers, FFI to a
+    proprietary middleware SDK, real-time DSP, ML inference, or
+    anything else where you'd otherwise lower into C.
+</p>
+
+<p>
+    This page walks you through writing one end-to-end. The runtime
+    reference for the API surface lives in <a href="ffi.html">FFI</a>
+    &mdash; if you only want to know what host RPCs the engine
+    exposes, jump there. If you want to know what to put in your
+    DLL and how to ship it, you're in the right spot.
+</p>
+
+<h2 id="prereqs">Prerequisites</h2>
+
+<ul>
+    <li>A <a href="https://rustup.rs/">Rust toolchain</a> &mdash;
+        stable, current edition.</li>
+    <li>The Ruzit CLI on your PATH (<code>ruzit --version</code>).</li>
+    <li>Optional: read the <a href="ffi.html">FFI</a> reference once
+        for the host RPC catalog.</li>
+</ul>
+
+<h2 id="layout">Project layout</h2>
+
+<p>
+    Keep the library project beside (not inside) your game project so
+    its build artifacts stay separate. The convention used by the
+    sample at <code>Examples/rust-ffi-counter/</code> is:
+</p>
+
+<pre><code>my-game/
+    build.toml
+    Main.luau
+    bin/                         <span class="hl-com">-- compiled DLLs land here</span>
+    bin/ruzit_ffi_audio.dll
+my-libraries/
+    audio/
+        Cargo.toml
+        src/lib.rs               <span class="hl-com">-- the cdylib</span>
+        README.md
+    pathfinder/
+        Cargo.toml
+        src/lib.rs</code></pre>
+
+<p>
+    Per-library, the <code>Cargo.toml</code> only needs three things
+    to set up correctly:
+</p>
+
+<pre><code>[package]
+name    = <span class="hl-str">"ruzit_ffi_audio"</span>
+version = <span class="hl-str">"0.1.0"</span>
+edition = <span class="hl-str">"2021"</span>
+
+[lib]
+crate-type = [<span class="hl-str">"cdylib"</span>]            <span class="hl-com">-- produce a loadable .dll/.so/.dylib</span>
+name       = <span class="hl-str">"ruzit_ffi_audio"</span>     <span class="hl-com">-- match the FFI.Load name</span>
+
+[dependencies]
+serde_json = <span class="hl-str">"1"</span>                  <span class="hl-com">-- the wire format on both sides</span></code></pre>
+
+<h2 id="abi">The ABI in one screen</h2>
+
+<p>
+    A Ruzit-loadable library exports two mandatory C-linkage
+    functions and one optional one. That's the entire interface:
+</p>
+
+<pre><code><span class="hl-com">// 1. mandatory: dispatch a named export.</span>
+<span class="hl-kw">extern</span> <span class="hl-str">"C"</span> <span class="hl-kw">fn</span> ruzit_ffi_call(name: *<span class="hl-kw">const</span> c_char, args: *<span class="hl-kw">const</span> c_char) -&gt; *<span class="hl-kw">mut</span> c_char;
+
+<span class="hl-com">// 2. mandatory: free the result string the engine got back.</span>
+<span class="hl-kw">extern</span> <span class="hl-str">"C"</span> <span class="hl-kw">fn</span> ruzit_ffi_free(ptr: *<span class="hl-kw">mut</span> c_char);
+
+<span class="hl-com">// 3. optional: receive a RuzitHost vtable so the library can call</span>
+<span class="hl-com">//    back into the engine (mutate primitives, fire signals, read</span>
+<span class="hl-com">//    Camera state, paint into a DrawableImg, etc.).</span>
+<span class="hl-kw">extern</span> <span class="hl-str">"C"</span> <span class="hl-kw">fn</span> ruzit_ffi_init(host: RuzitHost);</code></pre>
+
+<ul>
+    <li>
+        <strong>Names are dispatch keys, not separate exports.</strong>
+        You write one <code>ruzit_ffi_call</code> with a
+        <code>match name.as_str()</code> inside; the Luau side picks
+        which arm runs by passing the matching string to
+        <code>library:Call("name", ...)</code>. No need for
+        per-function symbols.
+    </li>
+    <li>
+        <strong>JSON in, JSON out.</strong> Both args and result are
+        NUL-terminated UTF-8 JSON. <code>null</code> /
+        <code>std::ptr::null_mut()</code> means "no result", which
+        Luau sees as <code>nil</code>.
+    </li>
+    <li>
+        <strong>The DLL owns its allocator.</strong> Allocate the
+        return string with <code>CString::into_raw</code>; the engine
+        hands the pointer back to your <code>ruzit_ffi_free</code>
+        when it's done reading. Don't try to free what the engine
+        passed you &mdash; only what you produced.
+    </li>
+</ul>
+
+<h2 id="minimal">Minimum viable library</h2>
+
+<p>An <code>add</code> function that takes two numbers and returns the sum:</p>
+
+<pre><code><span class="hl-kw">use</span> std::ffi::{CStr, CString};
+<span class="hl-kw">use</span> std::os::raw::c_char;
+<span class="hl-kw">use</span> serde_json::{json, Value};
+
+#[unsafe(no_mangle)]
+<span class="hl-kw">pub extern</span> <span class="hl-str">"C"</span> <span class="hl-kw">fn</span> ruzit_ffi_call(name: *<span class="hl-kw">const</span> c_char, args: *<span class="hl-kw">const</span> c_char) -&gt; *<span class="hl-kw">mut</span> c_char {
+    <span class="hl-kw">if</span> name.is_null() { <span class="hl-kw">return</span> std::ptr::null_mut(); }
+    <span class="hl-kw">let</span> name = <span class="hl-kw">unsafe</span> { CStr::from_ptr(name) }.to_string_lossy().into_owned();
+    <span class="hl-kw">let</span> args = <span class="hl-kw">if</span> args.is_null() { <span class="hl-str">"null"</span>.into() }
+               <span class="hl-kw">else</span> { <span class="hl-kw">unsafe</span> { CStr::from_ptr(args) }.to_string_lossy().into_owned() };
+    <span class="hl-kw">let</span> parsed: Value = serde_json::from_str(&amp;args).unwrap_or(Value::Null);
+
+    <span class="hl-kw">let</span> result = <span class="hl-kw">match</span> name.as_str() {
+        <span class="hl-str">"add"</span> =&gt; {
+            <span class="hl-kw">let</span> a = parsed.get(<span class="hl-str">"a"</span>).and_then(|v| v.as_f64()).unwrap_or(<span class="hl-num">0.0</span>);
+            <span class="hl-kw">let</span> b = parsed.get(<span class="hl-str">"b"</span>).and_then(|v| v.as_f64()).unwrap_or(<span class="hl-num">0.0</span>);
+            json!(a + b)
+        }
+        other =&gt; json!({ <span class="hl-str">"error"</span>: <span class="hl-kw">format</span>!(<span class="hl-str">"unknown: {other}"</span>) }),
+    };
+
+    CString::new(result.to_string()).map(|c| c.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+#[unsafe(no_mangle)]
+<span class="hl-kw">pub extern</span> <span class="hl-str">"C"</span> <span class="hl-kw">fn</span> ruzit_ffi_free(ptr: *<span class="hl-kw">mut</span> c_char) {
+    <span class="hl-kw">if</span> !ptr.is_null() {
+        <span class="hl-kw">unsafe</span> { <span class="hl-kw">let</span> _ = CString::from_raw(ptr); }
+    }
+}</code></pre>
+
+<p>
+    <code>cargo build --release</code>, copy
+    <code>target/release/ruzit_ffi_audio.dll</code> (or the .so /
+    .dylib equivalent) into your game's <code>bin/</code>, and from
+    Luau:
+</p>
+
+<pre><code><span class="hl-kw">local</span> lib = FFI.<span class="hl-fn">Load</span>(<span class="hl-str">"ruzit_ffi_audio"</span>)
+<span class="hl-fn">print</span>(lib:<span class="hl-fn">Call</span>(<span class="hl-str">"add"</span>, { a = <span class="hl-num">3</span>, b = <span class="hl-num">4</span> }))     <span class="hl-com">-- 7</span></code></pre>
+
+<h2 id="state">Holding state across calls</h2>
+
+<p>
+    The DLL is a normal Rust crate; use <code>OnceLock</code>,
+    <code>Mutex</code>, or any other concurrency primitive to keep
+    state between <code>ruzit_ffi_call</code> invocations. The DLL is
+    loaded once and stays mapped until the engine unloads it (or the
+    process exits), so a <code>static</code> survives every call.
+</p>
+
+<pre><code><span class="hl-kw">use</span> std::sync::Mutex;
+
+<span class="hl-kw">static</span> COUNTER: Mutex&lt;i64&gt; = Mutex::new(<span class="hl-num">0</span>);
+
+<span class="hl-com">// inside ruzit_ffi_call:</span>
+<span class="hl-str">"increment"</span> =&gt; {
+    <span class="hl-kw">let</span> <span class="hl-kw">mut</span> c = COUNTER.lock().unwrap();
+    *c += <span class="hl-num">1</span>;
+    json!(*c)
+}</code></pre>
+
+<p>
+    Concurrent calls into the library are possible &mdash; the engine
+    may pump <code>library:Call</code> from the main thread and
+    <code>FFI.CallAsync</code> simultaneously from a worker. Guard
+    shared state with a mutex. Pure functions (no shared state) need
+    nothing.
+</p>
+
+<h2 id="host">Calling back into the engine</h2>
+
+<p>
+    Implement <code>ruzit_ffi_init</code> to receive a
+    <code>RuzitHost</code> vtable, then call into it whenever the
+    library wants to mutate engine state directly:
+</p>
+
+<pre><code><span class="hl-kw">use</span> std::sync::OnceLock;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+<span class="hl-kw">pub struct</span> RuzitHost {
+    <span class="hl-kw">pub</span> call: <span class="hl-kw">extern</span> <span class="hl-str">"C"</span> <span class="hl-kw">fn</span>(name: *<span class="hl-kw">const</span> c_char, args: *<span class="hl-kw">const</span> c_char) -&gt; *<span class="hl-kw">mut</span> c_char,
+    <span class="hl-kw">pub</span> free: <span class="hl-kw">extern</span> <span class="hl-str">"C"</span> <span class="hl-kw">fn</span>(ptr: *<span class="hl-kw">mut</span> c_char),
+}
+
+<span class="hl-kw">static</span> HOST: OnceLock&lt;RuzitHost&gt; = OnceLock::new();
+
+#[unsafe(no_mangle)]
+<span class="hl-kw">pub extern</span> <span class="hl-str">"C"</span> <span class="hl-kw">fn</span> ruzit_ffi_init(host: RuzitHost) {
+    <span class="hl-kw">let</span> _ = HOST.set(host);
+}
+
+<span class="hl-kw">fn</span> host_call(name: &amp;<span class="hl-kw">str</span>, args: &amp;Value) -&gt; Value {
+    <span class="hl-kw">let</span> host = HOST.get().expect(<span class="hl-str">"ffi_init wasn't called"</span>);
+    <span class="hl-kw">let</span> name_c = CString::new(name).unwrap();
+    <span class="hl-kw">let</span> args_c = CString::new(args.to_string()).unwrap();
+    <span class="hl-kw">let</span> ret = (host.call)(name_c.as_ptr(), args_c.as_ptr());
+    <span class="hl-kw">if</span> ret.is_null() { <span class="hl-kw">return</span> Value::Null; }
+    <span class="hl-kw">let</span> s = <span class="hl-kw">unsafe</span> { CStr::from_ptr(ret) }.to_string_lossy().into_owned();
+    (host.free)(ret);
+    serde_json::from_str(&amp;s).unwrap_or(Value::Null)
+}</code></pre>
+
+<p>
+    Use it to mutate any engine object the Luau side handed you a
+    handle for:
+</p>
+
+<pre><code><span class="hl-com">// inside ruzit_ffi_call("orbit_part", &amp;parsed):</span>
+<span class="hl-kw">let</span> handle = parsed.get(<span class="hl-str">"part"</span>).and_then(|p| p.get(<span class="hl-str">"_handle"</span>))
+    .and_then(|v| v.as_u64()).unwrap();
+host_call(<span class="hl-str">"BasePart.SetCFrame"</span>, &amp;json!({
+    <span class="hl-str">"handle"</span>:   handle,
+    <span class="hl-str">"position"</span>: { <span class="hl-str">"x"</span>: <span class="hl-num">10.0</span>, <span class="hl-str">"y"</span>: <span class="hl-num">0.0</span>, <span class="hl-str">"z"</span>: <span class="hl-num">0.0</span> },
+    <span class="hl-str">"rotation"</span>: { <span class="hl-str">"x"</span>: <span class="hl-num">0.0</span>,  <span class="hl-str">"y"</span>: <span class="hl-num">0.0</span>, <span class="hl-str">"z"</span>: <span class="hl-num">0.0</span> },
+}));</code></pre>
+
+<p>
+    See the <a href="ffi.html#host-rpcs">Host RPC catalog</a> for the
+    full list of RPC names and their JSON shapes (Primitive,
+    BasePart, DrawableImg, Camera, Signal, World).
+</p>
+
+<h2 id="workers">Long-running and async work</h2>
+
+<p>
+    A <code>ruzit_ffi_call</code> that takes more than a few ms
+    should not block the engine. Two patterns:
+</p>
+
+<h3>From the Luau side: <code>FFI.CallAsync</code></h3>
+<p>
+    Wrap the call in a coroutine; <code>FFI.CallAsync</code> yields
+    the calling coroutine and resumes it when the worker returns:
+</p>
+<pre><code>Task.<span class="hl-fn">Spawn</span>(<span class="hl-kw">function</span>()
+    <span class="hl-kw">local</span> result = FFI.<span class="hl-fn">CallAsync</span>(lib, <span class="hl-str">"build_navmesh"</span>, mesh_data)
+    <span class="hl-kw">print</span>(<span class="hl-str">"navmesh ready"</span>, result)
+<span class="hl-kw">end</span>)</code></pre>
+<p>
+    The DLL function still runs synchronously inside
+    <code>ruzit_ffi_call</code> &mdash; just on a worker thread the
+    engine spawned. Use this when the Luau side wants to wait on the
+    result.
+</p>
+
+<h3>From the DLL side: spawn your own thread</h3>
+<p>
+    Sometimes the DLL wants to do work over time (animate a part,
+    poll a network socket, stream audio). Return immediately from
+    <code>ruzit_ffi_call</code> with a "started" reply, then drive
+    progress from a thread the DLL spawned itself, calling
+    <code>host.call</code> as needed:
+</p>
+<pre><code><span class="hl-str">"start_simulation"</span> =&gt; {
+    <span class="hl-kw">let</span> handle = parsed.get(<span class="hl-str">"part"</span>).and_then(...);
+    std::thread::spawn(<span class="hl-kw">move</span> || {
+        <span class="hl-kw">for</span> tick <span class="hl-kw">in</span> <span class="hl-num">0</span>..<span class="hl-num">1000</span> {
+            host_call(<span class="hl-str">"BasePart.SetCFrame"</span>, &amp;json!({ ... }));
+            std::thread::sleep(std::time::Duration::from_millis(<span class="hl-num">16</span>));
+        }
+        host_call(<span class="hl-str">"Signal.Fire"</span>, &amp;json!({
+            <span class="hl-str">"name"</span>: <span class="hl-str">"sim.done"</span>,
+            <span class="hl-str">"args"</span>: [{ <span class="hl-str">"handle"</span>: handle }],
+        }));
+    });
+    json!({ <span class="hl-str">"started"</span>: <span class="hl-kw">true</span> })
+}</code></pre>
+<p>
+    The Luau side can <code>FFI.RegisterSignal("sim.done", sig)</code>
+    once, then connect to <code>sig</code> as it would any other
+    Signal &mdash; the engine pumps the fire on the main thread next
+    frame.
+</p>
+
+<h2 id="custom-objects">Custom object state</h2>
+
+<p>
+    The <code>World</code> RPC family is a shared JSON k/v store both
+    sides read and write. Use it when the DLL wants to keep
+    structured per-entity state Luau can introspect (loot tables,
+    AI memory, profiler counters, save snapshots):
+</p>
+
+<pre><code><span class="hl-com">// inside the DLL</span>
+host_call(<span class="hl-str">"World.Set"</span>, &amp;json!({
+    <span class="hl-str">"key"</span>: <span class="hl-kw">format</span>!(<span class="hl-str">"npc.{}"</span>, id),
+    <span class="hl-str">"value"</span>: { <span class="hl-str">"hp"</span>: <span class="hl-num">42</span>, <span class="hl-str">"target"</span>: <span class="hl-str">"player"</span>, <span class="hl-str">"alerted"</span>: <span class="hl-kw">true</span> },
+}));
+
+<span class="hl-com">-- from Luau</span>
+<span class="hl-kw">local</span> npc = FFI.<span class="hl-fn">GetData</span>(<span class="hl-str">"npc.7"</span>)
+<span class="hl-kw">if</span> npc.alerted <span class="hl-kw">then</span> playAlertSound() <span class="hl-kw">end</span></code></pre>
+
+<h2 id="cross-platform">Cross-platform builds</h2>
+
+<p>
+    A <code>cdylib</code> produces the platform-native shared
+    library by default. The engine's loader looks for:
+</p>
+<ul>
+    <li>Windows: <code>&lt;name&gt;.dll</code></li>
+    <li>Linux: <code>lib&lt;name&gt;.so</code> then <code>&lt;name&gt;.so</code></li>
+    <li>macOS: <code>lib&lt;name&gt;.dylib</code> then <code>&lt;name&gt;.dylib</code></li>
+</ul>
+<p>
+    Build separately per target (<code>cargo build --release
+    --target x86_64-pc-windows-msvc</code>, etc.). Drop each
+    artifact into the matching platform's <code>bin/</code>. The
+    Luau code &mdash; <code>FFI.Load("name")</code> &mdash; stays the
+    same.
+</p>
+
+<h2 id="shipping">Shipping with a package</h2>
+
+<p>
+    A package (a folder with <code>ManagedInfo.toml</code> or a
+    pre-built <code>.managed</code> bundle) can include its own
+    <code>bin/</code> directory. <code>ruzit build</code> merges
+    every package's <code>bin/</code> into <code>Generated/bin/</code>
+    so end users get a single tree with every native dependency in
+    place. See <a href="packages.html#native">Packages &rarr; Native
+    side files</a>.
+</p>
+
+<h2 id="safety">Safety rules</h2>
+
+<ul>
+    <li>
+        <strong>Don't dereference the engine's pointers after
+        returning.</strong> <code>name</code> and <code>args</code>
+        are only valid for the duration of one
+        <code>ruzit_ffi_call</code> &mdash; copy what you need before
+        the function returns.
+    </li>
+    <li>
+        <strong>Catch panics at the FFI boundary.</strong> A
+        Rust panic that propagates across a <code>extern "C"</code>
+        boundary is UB. Wrap risky bodies in
+        <code>std::panic::catch_unwind</code> if your library is
+        doing anything that could panic on bad input.
+    </li>
+    <li>
+        <strong>Free your own allocations.</strong> The engine calls
+        your <code>ruzit_ffi_free</code> with whatever you returned
+        from <code>ruzit_ffi_call</code>. Don't free pointers you
+        didn't allocate.
+    </li>
+    <li>
+        <strong>The DLL has full process privileges.</strong> Treat
+        <code>FFI.Load</code> as you would <code>dlopen</code>:
+        only load libraries you built or trust. Player mods should
+        go through the <a href="packages.html">Packages</a> system
+        (Luau bytecode, sandboxed), not arbitrary native code.
+    </li>
+</ul>
+
+<h2 id="example">A complete worked example</h2>
+
+<p>
+    The <code>Examples/</code> folder ships a full counter-and-world
+    demo that exercises every flavor of the FFI surface:
+</p>
+<ul>
+    <li>
+        <a href="https://github.com/thekingofspace/Ruzit/tree/main/Examples/rust-ffi-counter"><code>Examples/rust-ffi-counter/</code></a>
+        &mdash; a <code>cdylib</code> that holds an internal counter,
+        a particle world, drives a <code>BasePart</code> in a
+        circle, paints a <code>DrawableImg</code> from a worker
+        thread, and fires named signals back into Luau when it's
+        done.
+    </li>
+    <li>
+        <a href="https://github.com/thekingofspace/Ruzit/tree/main/Examples/luau-ffi-counter"><code>Examples/luau-ffi-counter/</code></a>
+        &mdash; the runnable Ruzit project that loads it.
+    </li>
+</ul>
+
+<p>
+    Build the rust side with <code>cargo build --release</code>,
+    drop the resulting library into
+    <code>Examples/luau-ffi-counter/bin/</code>, and
+    <code>ruzit test</code> from there.
+</p>
+
+</main>
+
+</body>
+</html>

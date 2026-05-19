@@ -5,6 +5,7 @@ pub mod debug;
 pub mod drawable;
 pub mod dynimg;
 pub mod dynmesh;
+pub mod ffi;
 pub mod gamepad;
 pub mod gpu;
 pub mod gui;

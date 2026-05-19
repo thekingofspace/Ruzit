@@ -45,6 +45,7 @@ pub struct BuildConfig {
     pub compress_assets: bool,
     pub shard_assets: bool,
     pub compile_bytecode: bool,
+    pub include: Vec<String>,
 }
 
 impl Default for BuildConfig {
@@ -62,8 +63,31 @@ impl Default for BuildConfig {
             compress_assets: false,
             shard_assets: false,
             compile_bytecode: false,
+            include: Vec::new(),
         }
     }
+}
+
+fn parse_include(v: &toml::Value) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(arr) = v.get("include").and_then(|x| x.as_array()) {
+        for item in arr {
+            if let Some(s) = item.as_str() {
+                out.push(s.to_string());
+            }
+        }
+        return out;
+    }
+    if let Some(t) = v.get("include").and_then(|x| x.as_table()) {
+        if let Some(arr) = t.get("paths").and_then(|x| x.as_array()) {
+            for item in arr {
+                if let Some(s) = item.as_str() {
+                    out.push(s.to_string());
+                }
+            }
+        }
+    }
+    out
 }
 
 impl BuildConfig {
@@ -126,6 +150,7 @@ impl BuildConfig {
                 }
             }
         }
+        cfg.include = parse_include(&v);
         Ok(cfg)
     }
 
@@ -168,6 +193,7 @@ pub struct ManagedInfo {
     pub creator: String,
     pub entry: String,
     pub file_type: FileType,
+    pub include: Vec<String>,
 }
 
 impl ManagedInfo {
@@ -206,6 +232,7 @@ impl ManagedInfo {
                 })?;
             }
         }
+        info.include = parse_include(&v);
         Ok(info)
     }
 

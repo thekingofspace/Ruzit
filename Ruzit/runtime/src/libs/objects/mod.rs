@@ -167,10 +167,6 @@ fn propagate_pos_2d(child: &ChildRef, dx: f32, dy: f32) {
     }
 }
 
-/// Rigid 2D rotation: every descendant's position rotates around the same
-/// `(pivot_x, pivot_y)` and every rotatable descendant's own rotation field
-/// gains `delta_deg`. `cos_t`/`sin_t` are the cosine/sine of `delta_deg` in
-/// radians, precomputed once by the caller.
 fn rotate_point_2d(p: Dim, pivot_x: f32, pivot_y: f32, cos_t: f32, sin_t: f32) -> Dim {
     let dx = p.x - pivot_x;
     let dy = p.y - pivot_y;
@@ -189,7 +185,7 @@ fn propagate_rotation_2d(
     delta_deg: f32,
 ) {
     match child {
-        // 3D parts don't participate in 2D container rotation.
+
         ChildRef::Part(_) => {}
         ChildRef::Gui(s) => {
             let mut g = s.lock().unwrap();
@@ -206,8 +202,7 @@ fn propagate_rotation_2d(
             let kids: Vec<ChildRef> =
                 inner.children.iter().map(|c| c.inner.clone()).collect();
             drop(inner);
-            // Recurse with the OUTER pivot so the whole subtree rotates as a
-            // single rigid body around the originally-rotated container.
+
             for c in &kids {
                 propagate_rotation_2d(c, pivot_x, pivot_y, cos_t, sin_t, delta_deg);
             }
@@ -810,8 +805,7 @@ pub(crate) struct MovableInner {
     pub(crate) mode: MovableMode,
     pub(crate) cframe: CFrame,
     pub(crate) position: Dim,
-    /// 2D rotation of the container in degrees. When set via the userdata, the
-    /// delta is propagated to children as a rigid rotation around `position`.
+
     pub(crate) rotation: f32,
 }
 
@@ -908,8 +902,7 @@ impl UserData for Movable {
         });
         f.add_field_method_get("Rotation", |_, this| Ok(this.inner.lock().unwrap().rotation));
         f.add_field_method_set("Rotation", |_, this, deg: f32| {
-            // Rigid 2D rotation of the whole child subtree around the
-            // container's own .Position. 3D mode uses CFrame for orientation.
+
             let mut inner = this.inner.lock().unwrap();
             if inner.mode == MovableMode::ThreeD {
                 return Err(mlua::Error::RuntimeError(

@@ -49,6 +49,7 @@ rodio = { version = "0.20", default-features = false, features = [
 ] }
 rapier3d = { version = "0.22", features = ["parallel"] }
 nalgebra = "0.33"
+libloading = "0.8"
 opus = { version = "0.3", optional = true }
 steamworks = { version = "0.11", optional = true }
 steamworks-sys = { version = "0.11", optional = true }

@@ -41,6 +41,7 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         #[cfg(feature = "voice")]
         crate::libs::voice::pump(lua);
         crate::libs::asset::pump(lua);
+        crate::libs::ffi::pump(lua);
         crate::libs::debug::pump(lua);
         crate::libs::gpu::record_frame();
 

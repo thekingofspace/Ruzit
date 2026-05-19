@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FFI - Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css?v=26.5.17">
+    <script src="theme.js?v=26.5.17"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=26.5.17" defer></script>
+
+<main>
+
+<h1>FFI</h1>
+<p class="lede">
+    Load native libraries from disk and call into them from Luau.
+    A Ruzit-loadable DLL is a Rust (or C/C++, or anything with C
+    linkage) <code>cdylib</code> that exports two functions following
+    the <strong>Ruzit FFI ABI</strong>. Used for hand-tuned hot loops,
+    proprietary middleware, OS-specific tricks, and any time you need
+    to step outside the Luau sandbox into native code your team
+    controls.
+</p>
+
+<div class="callout note">
+    <strong>Trust boundary.</strong>
+    A loaded DLL has the full process privileges of the engine.
+    Treat <code>FFI.Load</code> as you would
+    <code>dlopen</code> &mdash; only load libraries you built or
+    trust. Player mods should be handled through the
+    <a href="packages.html">Packages</a> system, which loads Luau
+    bytecode (sandboxed), not arbitrary native code.
+</div>
+
+<pre><code><span class="hl-kw">local</span> FFI = <span class="hl-fn">import</span>(<span class="hl-str">"FFI"</span>)
+
+<span class="hl-kw">local</span> lib = FFI.<span class="hl-fn">Load</span>(<span class="hl-str">"ruzit_ffi_counter"</span>)
+
+<span class="hl-fn">print</span>(lib:<span class="hl-fn">Call</span>(<span class="hl-str">"get"</span>))                            <span class="hl-com">-- 0</span>
+<span class="hl-fn">print</span>(lib:<span class="hl-fn">Call</span>(<span class="hl-str">"increment"</span>, { step = <span class="hl-num">5</span> }))       <span class="hl-com">-- 5</span>
+<span class="hl-fn">print</span>(lib:<span class="hl-fn">Call</span>(<span class="hl-str">"echo"</span>, { hello = <span class="hl-str">"world"</span> }).hello) <span class="hl-com">-- world</span>
+lib:<span class="hl-fn">Unload</span>()</code></pre>
+
+<h2 id="resolution">Library resolution</h2>
+
+<p>
+    <code>FFI.Load(name)</code> looks for the native library in two
+    places, in order:
+</p>
+
+<ol>
+    <li>
+        <code>&lt;project-root&gt;/bin/</code> when running under
+        <code>ruzit test</code> (the project root is the folder that
+        owns <code>build.toml</code>).
+    </li>
+    <li>
+        <code>&lt;exe&gt;/bin/</code> in a built game (next to the
+        launcher executable).
+    </li>
+    <li>
+        <code>&lt;exe&gt;/</code> directly, as a last-ditch fallback.
+    </li>
+</ol>
+
+<p>
+    The filename is platform-specific:
+</p>
+
+<table>
+    <tbody>
+        <tr><td>Windows</td><td><code>&lt;name&gt;.dll</code></td></tr>
+        <tr><td>Linux</td><td><code>lib&lt;name&gt;.so</code> then <code>&lt;name&gt;.so</code></td></tr>
+        <tr><td>macOS</td><td><code>lib&lt;name&gt;.dylib</code> then <code>&lt;name&gt;.dylib</code></td></tr>
+    </tbody>
+</table>
+
+<p>
+    If <code>name</code> already has an extension, or is an absolute
+    path, it's used verbatim. The dev / shipped layout is identical:
+</p>
+
+<pre><code><span class="hl-com">-- during `ruzit test`</span>
+my-game/
+    Main.luau
+    build.toml
+    bin/
+        ruzit_ffi_counter.dll       <span class="hl-com">-- found here</span>
+
+<span class="hl-com">-- after `ruzit build`</span>
+Generated/
+    MyGame.exe                      <span class="hl-com">-- launcher</span>
+    Managed/...
+    bin/
+        ruzit_ffi_counter.dll       <span class="hl-com">-- copied automatically from project bin/</span></code></pre>
+
+<h2 id="api">FFI</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">FFI.Load(name)</span>
+            <span class="member-type">-> FFILibrary</span>
+        </div>
+        <p class="member-desc">
+            Open a native library by name. Errors if the file can't
+            be located, can't be loaded by the OS dynamic linker, or
+            doesn't export both <code>ruzit_ffi_call</code> and
+            <code>ruzit_ffi_free</code>. The returned handle stays
+            alive until you call <code>:Unload()</code> on it or it
+            falls out of scope (Luau GC drops the last reference and
+            the OS unmaps the library).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">FFI.BinDirectory()</span>
+            <span class="member-type">-> string?</span>
+        </div>
+        <p class="member-desc">
+            Returns the resolved <code>bin/</code> path, or
+            <code>nil</code> when none exists. Useful for debug logs
+            and for tooling that wants to surface the loader path.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">FFI.List()</span>
+            <span class="member-type">-> { string }</span>
+        </div>
+        <p class="member-desc">
+            Filenames inside the resolved <code>bin/</code> that look
+            like loadable native libraries (<code>.dll</code> /
+            <code>.so</code> / <code>.dylib</code>). Order is
+            filesystem-defined. Empty when no <code>bin/</code>
+            exists.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">FFI.CallAsync(library, name, args?)</span>
+            <span class="member-type">-> any</span>
+        </div>
+        <p class="member-desc">
+            Async sibling of <code>library:Call</code>. Spawns the DLL
+            invocation on a worker thread and yields the calling
+            coroutine via <code>coroutine.yield()</code>; the engine
+            resumes it on a later frame once the worker has produced
+            a JSON-parsed result. Must be called from inside a
+            <code>Task.Spawn</code> / <code>Task.Defer</code> /
+            <code>Task.Delay</code> coroutine &mdash; yielding from
+            the top-level script errors with <em>attempt to yield from
+            outside a coroutine</em>. The heart loop and every other
+            coroutine keep running while the DLL is busy.
+        </p>
+        <pre><code>Task.<span class="hl-fn">Spawn</span>(<span class="hl-kw">function</span>()
+    <span class="hl-kw">local</span> result = FFI.<span class="hl-fn">CallAsync</span>(lib, <span class="hl-str">"slow_compute"</span>, { ms = <span class="hl-num">800</span> })
+    <span class="hl-fn">print</span>(<span class="hl-str">"DLL done"</span>, result.elapsed_ms)
+<span class="hl-kw">end</span>)</code></pre>
+    </div>
+</div>
+
+<h3 id="ffi-signals">Named signals (DLL &rarr; Luau callbacks)</h3>
+
+<p>
+    The DLL can fire a named signal back into Luau via the
+    <code>Signal.Fire</code> host RPC. Register the signal under a
+    string name on the Luau side first; the FFI pump looks up the
+    matching <code>Signal</code> instance on the main thread and
+    fires it with the JSON args expanded into a MultiValue
+    (arrays become positional arguments; a scalar or object becomes
+    a single argument).
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">FFI.RegisterSignal(name, signal)</span>
+        </div>
+        <p class="member-desc">
+            Bind a Lua <code>Signal</code> (from <code>import("Signal").new()</code>)
+            to a string name. The DLL fires it with
+            <code>host_call("Signal.Fire", { name, args })</code>.
+            Re-registering the same name replaces the previous
+            binding and drops the old Signal's registry slot.
+            Connections persist across re-registration of a fresh
+            Signal because they're attached to the Signal instance,
+            not the name.
+        </p>
+        <pre><code><span class="hl-kw">local</span> Signal = <span class="hl-fn">import</span>(<span class="hl-str">"Signal"</span>)
+<span class="hl-kw">local</span> on_done = Signal.<span class="hl-fn">new</span>()
+
+FFI.<span class="hl-fn">RegisterSignal</span>(<span class="hl-str">"ai.path_finished"</span>, on_done)
+on_done:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(info)
+    <span class="hl-fn">print</span>(<span class="hl-str">"DLL says unit"</span>, info.unit_id, <span class="hl-str">"reached the goal"</span>)
+<span class="hl-kw">end</span>)
+
+<span class="hl-com">-- on the rust side:</span>
+<span class="hl-com">-- host_call("Signal.Fire", &amp;json!({</span>
+<span class="hl-com">--   "name": "ai.path_finished",</span>
+<span class="hl-com">--   "args": [{ "unit_id": 42, "waypoints": 5 }],</span>
+<span class="hl-com">-- }));</span></code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">FFI.UnregisterSignal(name)</span>
+            <span class="member-type">-> boolean</span>
+        </div>
+        <p class="member-desc">
+            Drop a previously-registered named signal. Returns
+            <code>true</code> if a binding existed. Subsequent DLL
+            <code>Signal.Fire</code> calls for that name log a
+            warning to stderr but don't error.
+        </p>
+    </div>
+</div>
+
+<div class="callout note">
+    <strong>Threading.</strong>
+    Even when the DLL fires from a worker thread, the connected
+    Luau handlers run on the main thread &mdash; the fire is queued
+    in <code>MAIN_TASK_QUEUE</code> and applied in the next
+    <code>ffi::pump</code>. Worst-case latency is one frame.
+</div>
+
+<h3 id="ffi-world">Shared k/v store</h3>
+
+<p>
+    The engine maintains a <code>HashMap&lt;String, serde_json::Value&gt;</code>
+    that both sides &mdash; Luau code and any loaded DLL &mdash; read
+    and write. Use it as the "blackboard" for state owned by the
+    DLL but readable by Luau, or vice versa: AI scratchpads,
+    custom-object descriptors, save snapshots, profiler counters,
+    quest flags exposed to native scripts, etc.
+</p>
+
+<p>
+    The DLL side calls <code>World.Set</code> /
+    <code>World.Get</code> / <code>World.Has</code> /
+    <code>World.Delete</code> / <code>World.Keys</code> through the
+    RuzitHost vtable; the Luau side uses these helpers:
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">FFI.SetData(key, value)</span>
+        </div>
+        <p class="member-desc">
+            Write a value under <code>key</code>. <code>value</code>
+            can be any JSON-serialisable Luau type: <code>nil</code>,
+            booleans, numbers, strings, arrays, tables, plus the
+            engine's primitive userdata
+            (<code>Vector</code>, <code>Color3</code>,
+            <code>CFrame</code>) which are auto-tagged with
+            <code>_type</code> so the DLL can dispatch on them.
+            Mixed-key tables aren't supported &mdash; pick array or
+            object.
+        </p>
+        <pre><code>FFI.<span class="hl-fn">SetData</span>(<span class="hl-str">"npc.7"</span>, {
+    name      = <span class="hl-str">"Borg"</span>,
+    hp        = <span class="hl-num">42</span>,
+    home      = Vector.<span class="hl-fn">new</span>(<span class="hl-num">10</span>, <span class="hl-num">0</span>, <span class="hl-num">5</span>),
+    inventory = { <span class="hl-str">"sword"</span>, <span class="hl-str">"map"</span>, <span class="hl-str">"potion"</span> },
+})</code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">FFI.GetData(key)</span>
+            <span class="member-type">-> any</span>
+        </div>
+        <p class="member-desc">
+            Read the value under <code>key</code>, or
+            <code>nil</code> if absent. The result is decoded from
+            JSON: objects come back as tables keyed by string,
+            arrays as 1-indexed Luau tables. The <code>_type</code>-tagged
+            <code>Vector</code> / <code>Color3</code> / <code>CFrame</code>
+            shapes come back as plain tables &mdash; reconstruct
+            userdata yourself if you need it
+            (<code>Vector.new(t.x, t.y, t.z)</code>).
+        </p>
+        <pre><code><span class="hl-kw">local</span> npc = FFI.<span class="hl-fn">GetData</span>(<span class="hl-str">"npc.7"</span>)
+<span class="hl-kw">if</span> npc <span class="hl-kw">and</span> npc.hp &lt; <span class="hl-num">10</span> <span class="hl-kw">then</span>
+    npc.alerted = <span class="hl-kw">true</span>
+    FFI.<span class="hl-fn">SetData</span>(<span class="hl-str">"npc.7"</span>, npc)         <span class="hl-com">-- write back; the DLL sees it next tick</span>
+<span class="hl-kw">end</span></code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">FFI.HasData(key)</span>
+            <span class="member-type">-> boolean</span>
+        </div>
+        <p class="member-desc">
+            Cheap existence probe &mdash; doesn't return / decode the
+            value. Use to gate work behind keys the DLL hasn't
+            populated yet.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">FFI.DeleteData(key)</span>
+            <span class="member-type">-> boolean</span>
+        </div>
+        <p class="member-desc">
+            Remove a key. Returns <code>true</code> if it was
+            present. Both the Luau side and any loaded DLL see the
+            key disappear immediately.
+        </p>
+    </div>
+</div>
+
+<div class="callout note">
+    <strong>Concurrency.</strong>
+    The world store sits behind a single <code>Mutex</code>; any
+    Luau write blocks DLL workers reading the same key for the
+    duration of the JSON serialisation (microseconds, normally).
+    Don't park huge blobs in a single key &mdash; split per-entity
+    state across multiple keys (<code>"npc.7.hp"</code>,
+    <code>"npc.7.target"</code>, etc.) if a value gets large.
+</div>
+
+<h2 id="library">FFILibrary</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Alive</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">True while loaded; false after <code>:Unload()</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Source</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Filesystem path the library was opened from.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">library:Call(name, args?)</span>
+            <span class="member-type">-> any</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Dispatch a named export on the loaded library.
+            <code>name</code> is the string the Rust side dispatches
+            on inside its <code>ruzit_ffi_call</code> (it doesn't have
+            to be an actual exported symbol &mdash; just a key the
+            single entry point recognises).
+            <code>args</code> is any JSON-serialisable value: nil,
+            boolean, number, string, an array table, or an object
+            table. The engine encodes it as a JSON string, hands it
+            to the DLL, parses the JSON string the DLL returns, and
+            yields the matching Lua value. <code>nil</code> /
+            <code>null</code> / an empty return string all become
+            Lua <code>nil</code>.
+        </p>
+        <p class="member-desc">
+            Errors when the library has been unloaded, the args can't
+            be serialised (mixed string+integer keys aren't supported
+            &mdash; pick one), or the DLL returns malformed JSON.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">library:Unload()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Drop the handle. The OS dlclose'es the library;
+            subsequent <code>:Call()</code> attempts error. Idempotent.
+        </p>
+    </div>
+</div>
+
+<h2 id="abi">The Ruzit FFI ABI</h2>
+
+<p>
+    A Ruzit-loadable library exports exactly two C-linkage functions:
+</p>
+
+<pre><code><span class="hl-kw">extern</span> <span class="hl-str">"C"</span> <span class="hl-kw">fn</span> ruzit_ffi_call(name: *<span class="hl-kw">const</span> c_char, args: *<span class="hl-kw">const</span> c_char) -&gt; *<span class="hl-kw">mut</span> c_char;
+<span class="hl-kw">extern</span> <span class="hl-str">"C"</span> <span class="hl-kw">fn</span> ruzit_ffi_free(ptr: *<span class="hl-kw">mut</span> c_char);</code></pre>
+
+<ul>
+    <li>
+        <code>ruzit_ffi_call</code> receives a NUL-terminated export
+        name and a NUL-terminated JSON args string. It returns a
+        NUL-terminated JSON result string allocated with
+        <code>CString::into_raw</code> (or any allocator the
+        <em>same DLL</em> can free).
+    </li>
+    <li>
+        <code>ruzit_ffi_free</code> reclaims the pointer the engine
+        got from <code>ruzit_ffi_call</code>. Always the DLL's own
+        allocator &mdash; do not free with Rust's
+        <code>Box::from_raw</code> if you allocated with
+        <code>CString::into_raw</code> on the engine side; ownership
+        always stays inside the DLL.
+    </li>
+    <li>
+        Return <code>std::ptr::null_mut()</code> to indicate "no
+        result" (Lua sees <code>nil</code>). The free function should
+        treat null as a no-op.
+    </li>
+</ul>
+
+<h3>Minimum viable Rust crate</h3>
+
+<p>
+    <code>Cargo.toml</code>:
+</p>
+
+<pre><code>[package]
+name    = <span class="hl-str">"myffi"</span>
+version = <span class="hl-str">"0.1.0"</span>
+edition = <span class="hl-str">"2021"</span>
+
+[lib]
+crate-type = [<span class="hl-str">"cdylib"</span>]
+
+[dependencies]
+serde_json = <span class="hl-str">"1"</span></code></pre>
+
+<p>
+    <code>src/lib.rs</code>:
+</p>
+
+<pre><code><span class="hl-kw">use</span> std::ffi::{CStr, CString};
+<span class="hl-kw">use</span> std::os::raw::c_char;
+<span class="hl-kw">use</span> serde_json::{json, Value};
+
+<span class="hl-com">#[unsafe(no_mangle)]</span>
+<span class="hl-kw">pub extern</span> <span class="hl-str">"C"</span> <span class="hl-kw">fn</span> ruzit_ffi_call(
+    name: *<span class="hl-kw">const</span> c_char,
+    args: *<span class="hl-kw">const</span> c_char,
+) -&gt; *<span class="hl-kw">mut</span> c_char {
+    <span class="hl-kw">if</span> name.is_null() { <span class="hl-kw">return</span> std::ptr::null_mut(); }
+    <span class="hl-kw">let</span> name    = <span class="hl-kw">unsafe</span> { CStr::from_ptr(name) }.to_string_lossy().into_owned();
+    <span class="hl-kw">let</span> args_s  = <span class="hl-kw">if</span> args.is_null() { <span class="hl-str">"null"</span>.into() }
+                  <span class="hl-kw">else</span> { <span class="hl-kw">unsafe</span> { CStr::from_ptr(args) }.to_string_lossy().into_owned() };
+    <span class="hl-kw">let</span> parsed: Value = serde_json::from_str(&amp;args_s).unwrap_or(Value::Null);
+
+    <span class="hl-kw">let</span> result = <span class="hl-kw">match</span> name.as_str() {
+        <span class="hl-str">"add"</span> =&gt; {
+            <span class="hl-kw">let</span> a = parsed.get(<span class="hl-str">"a"</span>).and_then(|v| v.as_f64()).unwrap_or(<span class="hl-num">0.0</span>);
+            <span class="hl-kw">let</span> b = parsed.get(<span class="hl-str">"b"</span>).and_then(|v| v.as_f64()).unwrap_or(<span class="hl-num">0.0</span>);
+            json!(a + b)
+        }
+        other =&gt; json!({ <span class="hl-str">"error"</span>: <span class="hl-kw">format</span>!(<span class="hl-str">"unknown export: {other}"</span>) }),
+    };
+
+    CString::new(result.to_string()).map(|c| c.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+<span class="hl-com">#[unsafe(no_mangle)]</span>
+<span class="hl-kw">pub extern</span> <span class="hl-str">"C"</span> <span class="hl-kw">fn</span> ruzit_ffi_free(ptr: *<span class="hl-kw">mut</span> c_char) {
+    <span class="hl-kw">if</span> !ptr.is_null() {
+        <span class="hl-kw">unsafe</span> { <span class="hl-kw">let</span> _ = CString::from_raw(ptr); }
+    }
+}</code></pre>
+
+<p>
+    <code>cargo build --release</code>, drop the produced library
+    into your project's <code>bin/</code>, and call it from Luau:
+</p>
+
+<pre><code><span class="hl-kw">local</span> lib = FFI.<span class="hl-fn">Load</span>(<span class="hl-str">"myffi"</span>)
+<span class="hl-fn">print</span>(lib:<span class="hl-fn">Call</span>(<span class="hl-str">"add"</span>, { a = <span class="hl-num">3</span>, b = <span class="hl-num">4</span> }))  <span class="hl-com">-- 7</span></code></pre>
+
+<p>
+    A working version of exactly this pattern is in
+    <a href="https://github.com/thekingofspace/Ruzit/tree/main/Examples"><code>Examples/</code></a>
+    (<code>rust-ffi-counter/</code> + <code>luau-ffi-counter/</code>).
+</p>
+
+<h2 id="host-rpcs">Host RPC catalog</h2>
+
+<p>
+    A loaded DLL can call back into the engine through the
+    <code>RuzitHost.call</code> function pointer it received in
+    <code>ruzit_ffi_init</code>. Each RPC takes a JSON args string and
+    returns a JSON string the DLL must free via
+    <code>host.free</code>. The full set:
+</p>
+
+<h3>Logging</h3>
+<table>
+    <tbody>
+        <tr><td><code>Logging.Print</code></td>
+            <td><code>{ "prefix"?, "message" }</code></td>
+            <td>Writes <code>[prefix] message</code> to stdout. Defaults prefix to <code>FFI</code>.</td></tr>
+    </tbody>
+</table>
+
+<h3>Primitive (2D GUI handles)</h3>
+<table>
+    <tbody>
+        <tr><td><code>Primitive.GetPosition</code> / <code>SetPosition</code></td>
+            <td><code>{ handle, x, y }</code></td><td>Pixel-space top-left.</td></tr>
+        <tr><td><code>Primitive.GetSize</code> / <code>SetSize</code></td>
+            <td><code>{ handle, x, y }</code></td><td>Pixel-space width/height.</td></tr>
+        <tr><td><code>Primitive.GetColor</code> / <code>SetColor</code></td>
+            <td><code>{ handle, r, g, b }</code></td><td>Linear 0..1.</td></tr>
+        <tr><td><code>Primitive.SetVisible</code></td>
+            <td><code>{ handle, visible }</code></td><td></td></tr>
+        <tr><td><code>Primitive.SetTransparency</code></td>
+            <td><code>{ handle, value }</code></td><td>0..1.</td></tr>
+        <tr><td><code>Primitive.SetRotation</code></td>
+            <td><code>{ handle, degrees }</code></td><td>Clockwise screen-space degrees.</td></tr>
+    </tbody>
+</table>
+
+<h3>BasePart (3D scene handles)</h3>
+<p>
+    The marshaller auto-registers a handle when the Luau side passes a
+    <code>BasePart</code> to <code>library:Call</code>; the DLL
+    receives <code>{ _type: "PartHandle", _handle: &lt;id&gt; }</code> and
+    keeps the id for follow-up RPCs.
+</p>
+<table>
+    <tbody>
+        <tr><td><code>BasePart.GetCFrame</code> / <code>SetCFrame</code></td>
+            <td><code>{ handle, position: { x, y, z }, rotation: { x, y, z } }</code></td>
+            <td>Honors any active physics override cell so the simulation isn't fighting writes.</td></tr>
+        <tr><td><code>BasePart.GetSize</code> / <code>SetSize</code></td>
+            <td><code>{ handle, x, y, z }</code></td><td></td></tr>
+        <tr><td><code>BasePart.GetColor</code> / <code>SetColor</code></td>
+            <td><code>{ handle, r, g, b }</code></td><td></td></tr>
+        <tr><td><code>BasePart.SetRender</code></td>
+            <td><code>{ handle, value }</code></td><td>Visibility flag.</td></tr>
+        <tr><td><code>BasePart.SetCastShadow</code> / <code>SetReceiveShadow</code></td>
+            <td><code>{ handle, value }</code></td><td></td></tr>
+        <tr><td><code>BasePart.SetIgnoreRaycast</code></td>
+            <td><code>{ handle, value }</code></td><td></td></tr>
+        <tr><td><code>BasePart.SetLit</code></td>
+            <td><code>{ handle, value }</code></td><td></td></tr>
+    </tbody>
+</table>
+
+<h3>DrawableImg (CPU-side pixel buffer, GPU-uploaded next frame)</h3>
+<p>
+    Pass a <code>DrawableImg</code> userdata in and the DLL gets a
+    handle it can draw into directly. Bytes are written to the same
+    buffer the engine's renderer reads from; the per-buffer
+    <code>version</code> counter is bumped so the next frame
+    re-uploads to GPU.
+</p>
+<table>
+    <tbody>
+        <tr><td><code>DrawableImg.GetSize</code></td>
+            <td><code>{ handle }</code></td>
+            <td>Returns <code>{ width, height }</code>.</td></tr>
+        <tr><td><code>DrawableImg.WritePixel</code></td>
+            <td><code>{ handle, x, y, r, g, b, a }</code></td>
+            <td>RGBA in 0..1. Out-of-bounds writes are clipped, not errored.</td></tr>
+        <tr><td><code>DrawableImg.Fill</code> / <code>Clear</code></td>
+            <td><code>{ handle, r, g, b, a }</code> / <code>{ handle }</code></td>
+            <td>Whole-buffer fill or zero.</td></tr>
+        <tr><td><code>DrawableImg.DrawRect</code></td>
+            <td><code>{ handle, x, y, w, h, r, g, b, a }</code></td>
+            <td>Solid rectangle.</td></tr>
+        <tr><td><code>DrawableImg.DrawLine</code></td>
+            <td><code>{ handle, x1, y1, x2, y2, r, g, b, a }</code></td>
+            <td>Bresenham 1-pixel line.</td></tr>
+    </tbody>
+</table>
+
+<h3>Camera (queued, applied on main thread)</h3>
+<table>
+    <tbody>
+        <tr><td><code>Camera.Get</code></td><td><code>null</code></td>
+            <td>Returns <code>{ cframe, fov, near, far }</code>.</td></tr>
+        <tr><td><code>Camera.Set</code></td>
+            <td><code>{ cframe?, fov?, near?, far? }</code></td>
+            <td>Any subset. Queued to the next FFI pump so the camera link / VR overlay don't race the write.</td></tr>
+    </tbody>
+</table>
+
+<h3>Signal (DLL fires named signals back into Luau)</h3>
+<p>
+    Luau side registers a Signal under a string name:
+</p>
+<pre><code><span class="hl-kw">local</span> Signal = <span class="hl-fn">import</span>(<span class="hl-str">"Signal"</span>)
+<span class="hl-kw">local</span> sig    = Signal.<span class="hl-fn">new</span>()
+FFI.<span class="hl-fn">RegisterSignal</span>(<span class="hl-str">"ai.path_finished"</span>, sig)
+sig:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(info) <span class="hl-fn">print</span>(<span class="hl-str">"DLL says:"</span>, info.unit_id) <span class="hl-kw">end</span>)</code></pre>
+<p>
+    DLL calls <code>Signal.Fire</code>. The pump fires the signal on
+    the main thread with the JSON args expanded into MultiValue
+    (arrays become positional arguments; scalars / objects become a
+    single argument).
+</p>
+<table>
+    <tbody>
+        <tr><td><code>Signal.Fire</code></td>
+            <td><code>{ name, args }</code></td>
+            <td>
+                <code>args</code> is null, a single value, or an array.
+                Queued -- the call returns immediately on the DLL side
+                with <code>null</code>; the actual fire happens on the
+                next FFI pump.
+            </td></tr>
+    </tbody>
+</table>
+
+<h3>World (cross-thread JSON k/v)</h3>
+<p>
+    A shared <code>HashMap&lt;String, serde_json::Value&gt;</code> both
+    sides read and write. Use for "custom object" state the DLL
+    owns but Luau needs to introspect (or the reverse).
+</p>
+<table>
+    <tbody>
+        <tr><td><code>World.Set</code></td><td><code>{ key, value }</code></td><td></td></tr>
+        <tr><td><code>World.Get</code></td><td><code>{ key }</code></td><td>Returns the stored value, or <code>null</code>.</td></tr>
+        <tr><td><code>World.Has</code></td><td><code>{ key }</code></td><td>Boolean.</td></tr>
+        <tr><td><code>World.Delete</code></td><td><code>{ key }</code></td><td>Boolean (was present).</td></tr>
+        <tr><td><code>World.Keys</code></td><td><code>null</code></td><td>Array of strings.</td></tr>
+    </tbody>
+</table>
+<p>
+    Luau-side helpers: <code>FFI.SetData(key, value)</code>,
+    <code>FFI.GetData(key)</code>, <code>FFI.HasData(key)</code>,
+    <code>FFI.DeleteData(key)</code>.
+</p>
+
+<h3>What auto-marshals as a handle</h3>
+<p>
+    When passing one of these userdata to <code>library:Call</code>,
+    the engine registers it in <code>FFI_HANDLES</code> (Arc-deduped)
+    and the DLL receives a stable id it can use across calls:
+</p>
+<table>
+    <tbody>
+        <tr><td>GUI Primitive</td><td><code>{ _type: "PrimitiveHandle", _handle }</code></td></tr>
+        <tr><td>BasePart</td><td><code>{ _type: "PartHandle", _handle }</code></td></tr>
+        <tr><td>DrawableImg</td><td><code>{ _type: "DrawableImgHandle", _handle }</code></td></tr>
+        <tr><td>Vector / Color3 / CFrame</td><td>tagged value JSON, no handle (pure value type)</td></tr>
+    </tbody>
+</table>
+
+<div class="callout note">
+    <strong>Threading.</strong> Sync RPCs (Primitive/BasePart/DrawableImg
+    mutators) lock the underlying <code>Arc&lt;Mutex&lt;State&gt;&gt;</code>
+    on whatever thread calls them &mdash; safe because the engine
+    only ever reads those POD fields. Anything that needs Lua
+    (Signal.Fire, Camera.Set) is queued through
+    <code>MAIN_TASK_QUEUE</code> and drained on the main thread by
+    <code>ffi::pump</code>, so connected handlers and the
+    thread-local camera state are touched exactly once per frame on
+    the main thread.
+</div>
+
+<h2 id="shipping">Shipping a package that owns an FFI DLL</h2>
+
+<p>
+    When a <a href="packages.html">Package or DLC</a> needs its own
+    Rust DLL:
+</p>
+
+<ol>
+    <li>Put a <code>bin/</code> folder at the root of the package's
+        folder. Anything in there is automatically copied to
+        <code>Generated/bin/</code> at build time, merged with the
+        host project's <code>bin/</code>.</li>
+    <li>Namespace your DLL filename
+        (<code>ruzit_ffi_yourpackage_thing.dll</code>) so multiple
+        installed packages don't collide on a generic name like
+        <code>core.dll</code>.</li>
+    <li>The package's Luau side calls <code>FFI.Load</code> using
+        whatever stem you chose &mdash; same in dev and in shipped
+        games.</li>
+</ol>
+
+</main>
+
+</body>
+</html>

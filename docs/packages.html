@@ -112,11 +112,64 @@ name    = <span class="hl-str">"Physics DLC"</span>
 version = <span class="hl-str">"1.1.0"</span>
 creator = <span class="hl-str">"Studio Name"</span>
 entry   = <span class="hl-str">"init.luau"</span>
-<span class="hl-str">"File Type"</span> = <span class="hl-str">"Relative"</span></code></pre>
+<span class="hl-str">"File Type"</span> = <span class="hl-str">"Relative"</span>
+
+include = [
+    <span class="hl-str">"PhysicsLicense.txt"</span>,
+    <span class="hl-str">"reference-data/"</span>,
+]</code></pre>
 
 <p>
     Scaffold a fresh DLC folder with <code>ruzit initpackage Physics</code>.
 </p>
+
+<h3>Native side files: <code>bin/</code> and <code>include</code></h3>
+
+<p>
+    A DLC folder can ship native libraries and other non-Luau side
+    files just like the host project. Two mechanisms, both
+    convention-driven and merged into the final build:
+</p>
+
+<ul>
+    <li>
+        <strong><code>bin/</code> auto-copy.</strong> Anything in
+        <code>&lt;dlc&gt;/bin/</code> is copied recursively into
+        <code>Generated/bin/</code> alongside the host project's own
+        <code>bin/</code>. This is where Rust FFI DLLs live; the
+        runtime's <code>FFI.Load</code> probes
+        <code>&lt;exe&gt;/bin/</code> (or
+        <code>&lt;project&gt;/bin/</code> during <code>ruzit test</code>),
+        so the same Luau code works in dev and in the built game.
+    </li>
+    <li>
+        <strong><code>include</code> in <code>ManagedInfo.toml</code>.</strong>
+        A list of paths (files or folders) relative to the DLC root
+        that are copied <em>verbatim</em> into the exe folder, NOT
+        into a <code>.managed</code> bundle. Use this for third-party
+        SDK DLLs that don't follow the FFI ABI (Steam, EOS, Discord
+        etc.), licenses, or data folders that external tooling reads.
+        Folders replicate recursively with structure preserved.
+    </li>
+</ul>
+
+<pre><code>Physics/                          <span class="hl-com"># ← DLC folder</span>
+    ManagedInfo.toml              <span class="hl-com"># declares include = ["PhysicsLicense.txt", ...]</span>
+    init.luau
+    bin/
+        ruzit_physics_solver.dll  <span class="hl-com"># → Generated/bin/ruzit_physics_solver.dll</span>
+    PhysicsLicense.txt            <span class="hl-com"># → Generated/PhysicsLicense.txt (via include)</span>
+    reference-data/
+        materials.json            <span class="hl-com"># → Generated/reference-data/materials.json</span></code></pre>
+
+<div class="callout note">
+    <strong>Merge order.</strong>
+    When two packages drop libraries with the same filename into
+    <code>bin/</code>, last-write-wins (DLCs first, external folder
+    packages after). Don't rely on which is which &mdash; rename your
+    DLL to something namespaced (<code>ruzit_ffi_studio_physics.dll</code>)
+    rather than a generic <code>solver.dll</code>.
+</div>
 
 <h2 id="external">External packages: Workshop / mods</h2>
 
@@ -132,14 +185,39 @@ entry   = <span class="hl-str">"init.luau"</span>
     build.toml
     Main.luau
     Packages/
-        community-mod.scripts.managed
-        community-mod.assets.managed</code></pre>
+        community-mod.scripts.managed     <span class="hl-com"># pre-built bundle</span>
+        community-mod.assets.managed
+        ffi-physics-pack/                 <span class="hl-com"># loose folder package</span>
+            ManagedInfo.toml
+            init.luau
+            bin/
+                physics_native.dll</code></pre>
 
 <p>
-    Producers ship their package by running <code>ruzit package</code>
-    against a folder with a <code>ManagedInfo.toml</code>, same shape
-    as a DLC folder, just packaged independently of any project.
+    Producers ship their package one of two ways:
 </p>
+
+<ul>
+    <li>
+        <strong>Pre-built bundle.</strong> Run <code>ruzit package</code>
+        against a folder with a <code>ManagedInfo.toml</code> to
+        produce a pair of <code>.scripts.managed</code> /
+        <code>.assets.managed</code> files. Drop those into the
+        project's <code>Packages/</code> directory. Source stays
+        sealed; no <code>bin/</code> support since the format is a
+        single sealed bundle.
+    </li>
+    <li>
+        <strong>Loose folder.</strong> Drop the package's whole
+        folder (with its <code>ManagedInfo.toml</code>,
+        <code>bin/</code>, and <code>include</code> entries) into
+        <code>Packages/</code>. <code>ruzit build</code> recompiles
+        it like a DLC and merges its <code>bin/</code> /
+        <code>include</code> into the final game. Required when the
+        package needs to ship Rust FFI DLLs or other native side
+        files alongside its scripts.
+    </li>
+</ul>
 
 <div class="callout note">
     <strong>Conflict resolution.</strong>

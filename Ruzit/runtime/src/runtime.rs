@@ -182,6 +182,7 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             "Debug" => libs::debug::create(lua)?,
             "DynImg" => libs::dynimg::create(lua)?,
             "DynMesh" => libs::dynmesh::create(lua)?,
+            "FFI" => libs::ffi::create(lua)?,
             "Gamepad" => libs::gamepad::create(lua)?,
             "GPU" => libs::gpu::create(lua)?,
             "GUI" => libs::gui::create(lua)?,

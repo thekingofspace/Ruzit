@@ -1,0 +1,10 @@
+Drop the compiled ruzit_ffi_counter library here after `cargo build --release`
+in ../rust-ffi-counter:
+
+  Windows: ruzit_ffi_counter.dll
+  Linux:   libruzit_ffi_counter.so
+  macOS:   libruzit_ffi_counter.dylib
+
+The runner finds it via FFI.Load("ruzit_ffi_counter") whether you launch
+through `ruzit test` (project-root bin/) or run a built game (bin/ next
+to the launcher exe).

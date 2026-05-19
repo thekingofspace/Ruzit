@@ -3234,6 +3234,7 @@ dependencies = [
  "image",
  "indite",
  "interprocess",
+ "libloading 0.8.9",
  "md-5",
  "mlua",
  "nalgebra",

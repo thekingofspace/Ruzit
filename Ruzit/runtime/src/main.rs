@@ -49,6 +49,7 @@ fn run_disk_project(root: PathBuf, entry: Option<String>) -> Result<(), String> 
     let entry_rel = entry.unwrap_or_else(|| "Main.luau".to_string());
     let config = BuildConfig::load(&root)?;
     apply_steam_app_id(&config);
+    ruzit::libs::ffi::set_project_root(root.clone());
 
     println!("[Ruzit] Test → {}/{}", root.display(), entry_rel);
     config.print_banner();

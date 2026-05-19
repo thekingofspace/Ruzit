@@ -36,7 +36,13 @@ compress-scripts = <span class="hl-kw">true</span>
 compress-assets  = <span class="hl-kw">true</span>
 shard-assets     = <span class="hl-kw">false</span>
 
-steam-app-id = <span class="hl-num">480</span></code></pre>
+steam-app-id = <span class="hl-num">480</span>
+
+include = [
+    <span class="hl-str">"steam_appid.txt"</span>,
+    <span class="hl-str">"third-party/openvr_api.dll"</span>,
+    <span class="hl-str">"localization/"</span>,
+]</code></pre>
 
 <h2>Fields</h2>
 
@@ -199,6 +205,41 @@ steam-app-id = <span class="hl-num">480</span></code></pre>
             (<code>480</code>) for testing.
         </p>
     </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">include</span>
+            <span class="member-type">{ string }</span>
+        </div>
+        <p class="member-desc">
+            Non-Luau files (or whole folders) to copy <strong>verbatim
+            into the exe folder</strong> next to the built launcher.
+            Unlike <code>assets/</code>, the contents are NOT packed
+            into a <code>.managed</code> bundle; they sit on disk
+            beside the game where third-party SDKs and OS loaders
+            expect them. Use for:
+        </p>
+        <ul>
+            <li>Steamworks side files like <code>steam_appid.txt</code>.</li>
+            <li>Third-party DLLs that aren't FFI-loaded (e.g.
+                <code>openvr_api.dll</code>, EOS / Discord SDK).</li>
+            <li>License / readme / changelog text the player should see.</li>
+            <li>Data folders read by external tools you ship.</li>
+        </ul>
+        <p class="member-desc">
+            Each entry is a path <strong>relative to the project root</strong>.
+            Files go to <code>Generated/&lt;same path&gt;</code>; folders
+            are copied <em>recursively</em> with structure preserved
+            (so <code>"localization/"</code> becomes
+            <code>Generated/localization/...</code>). Absolute paths
+            and <code>..</code> traversals are rejected with a warning.
+        </p>
+        <p class="member-desc">
+            For Rust FFI DLLs, prefer the dedicated <code>bin/</code>
+            folder (auto-detected, see
+            <a href="ffi.html">FFI</a>) over <code>include</code> &mdash;
+            <code>bin/</code> is what <code>FFI.Load</code> probes.
+        </p>
+    </div>
 </div>
 
 <h2>Default values</h2>
@@ -222,8 +263,34 @@ steam-app-id = <span class="hl-num">480</span></code></pre>
         <tr><td>shard-assets</td><td><code>false</code></td></tr>
         <tr><td>bytecode</td><td><code>false</code></td></tr>
         <tr><td>steam-app-id</td><td>none (Steam features error if accessed)</td></tr>
+        <tr><td>include</td><td>empty list</td></tr>
     </tbody>
 </table>
+
+<h2 id="bin-folder">The implicit <code>bin/</code> folder</h2>
+
+<p>
+    Separately from <code>include</code>, the builder always copies a
+    <code>bin/</code> directory at the project root (and inside any
+    package / DLC folder) recursively into <code>Generated/bin/</code>.
+    This is the home for FFI Rust DLLs and any other native libraries
+    the engine should pick up via
+    <a href="ffi.html"><code>FFI.Load</code></a>. Nothing in
+    <code>build.toml</code> needs to mention it &mdash; it's
+    convention-over-configuration.
+</p>
+
+<pre><code>my-game/
+  bin/
+    ruzit_ffi_audio_dsp.dll     <span class="hl-com">-- auto-copied to Generated/bin/</span>
+    ruzit_ffi_pathfinder.dll
+  Packages/
+    rendering-utils/
+      ManagedInfo.toml
+      bin/
+        renderkit.dll           <span class="hl-com">-- also auto-copied (merged in)</span>
+  build.toml
+  Main.luau</code></pre>
 
 </main>
 

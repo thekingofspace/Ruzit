@@ -613,6 +613,16 @@ pub fn set_camera_cframe(cf: CFrame) {
     bump_camera_dirty();
 }
 
+pub fn set_camera_fov_near_far(fov_deg: f32, near: f32, far: f32) {
+    CAMERA.with(|c| {
+        let mut s = c.borrow_mut();
+        s.fov_deg = fov_deg.clamp(1.0, 179.0);
+        s.near = near.max(0.001);
+        s.far = far.max(0.01);
+    });
+    bump_camera_dirty();
+}
+
 pub struct PartRender {
     pub shape: PartShape,
     pub cframe: CFrame,

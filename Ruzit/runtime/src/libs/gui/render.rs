@@ -1654,7 +1654,6 @@ impl GpuState {
             self.bind_group_3d_cache.insert(key, bg);
         }
 
-
         for v in &effect_3d {
             if let Some(sh) = &v.active_shader {
                 self.particles.ensure_pipeline_3d(&self.device, sh.id, &sh.wgsl);
@@ -1751,7 +1750,6 @@ impl GpuState {
             0,
             bytemuck::bytes_of(&particle_frame_2d),
         );
-
 
         for v in &effect_3d {
             if v.particles.is_empty() {
@@ -1917,7 +1915,6 @@ impl GpuState {
                 rpass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint32);
                 rpass.draw_indexed(0..idx_count, 0, 0..1);
             }
-
 
             if !spans_3d.is_empty() {
                 for (tex_key, base, count, shader_id) in &spans_3d {

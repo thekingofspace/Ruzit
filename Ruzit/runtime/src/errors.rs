@@ -7,6 +7,7 @@ pub const IMPORT_LIBS: &[&str] = &[
     "Asset",
     "Debug",
     "DynMesh",
+    "FFI",
     "Gamepad",
     "GPU",
     "GUI",

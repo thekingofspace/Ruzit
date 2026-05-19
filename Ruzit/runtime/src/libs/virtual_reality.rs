@@ -506,8 +506,6 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     Ok(api)
 }
 
-/// Backend hook (called by the indite-backed pump when the `vr` feature is on).
-/// No-op when the feature is off so the public API surface always exists.
 #[allow(dead_code)]
 pub fn push_head_pose(lua: &Lua, head: CFrame) {
     let signal_table = with_state_mut(|s| {

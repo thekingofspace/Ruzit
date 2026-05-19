@@ -1,0 +1,19 @@
+Name    = "FFI Counter Demo"
+Version = "0.1.0"
+Creator = "Ruzit"
+
+[configs]
+"File Type" = "Relative"
+
+[exe]
+name     = "FFICounterDemo"
+windowed = false
+
+include = [
+    # If you ship the rust DLL through the project's bin/ folder, the
+    # builder picks it up automatically -- no need to list it here. Use
+    # `include` when you want non-luau files copied directly next to
+    # the exe (Steam DLLs, data folders, license files, etc).
+    # "LICENSE.txt",
+    # "data/",
+]

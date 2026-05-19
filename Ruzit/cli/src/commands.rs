@@ -90,6 +90,93 @@ fn locate_ruzitrun() -> Result<PathBuf, String> {
     ))
 }
 
+fn copy_bin_folder(src_root: &Path, generated_dir: &Path, label: &str) {
+    let src = src_root.join("bin");
+    if !src.is_dir() {
+        return;
+    }
+    let dst = generated_dir.join("bin");
+    match copy_dir_recursive(&src, &dst) {
+        Ok(n) => {
+            if n > 0 {
+                println!("        bin/  ({} files{})", n, label_suffix(label));
+            }
+        }
+        Err(e) => eprintln!("[Ruzit] warn: copy bin/ from {}: {e}", src.display()),
+    }
+}
+
+fn copy_include_paths(src_root: &Path, generated_dir: &Path, paths: &[String], label: &str) {
+    for raw in paths {
+        let trimmed = raw.trim().trim_start_matches("./").trim_start_matches(".\\");
+        if trimmed.is_empty()
+            || trimmed.contains("..")
+            || trimmed.starts_with('/')
+            || trimmed.starts_with('\\')
+        {
+            eprintln!("[Ruzit] warn: skipping unsafe include path '{raw}'");
+            continue;
+        }
+        let src = src_root.join(trimmed);
+        if !src.exists() {
+            eprintln!(
+                "[Ruzit] warn: include '{raw}' not found at {}",
+                src.display()
+            );
+            continue;
+        }
+        let rel = trimmed.trim_end_matches('/').trim_end_matches('\\');
+        let dst = generated_dir.join(rel);
+        if src.is_dir() {
+            if let Some(parent) = dst.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            match copy_dir_recursive(&src, &dst) {
+                Ok(n) => println!("        {}/  ({} files{})", rel, n, label_suffix(label)),
+                Err(e) => eprintln!("[Ruzit] warn: copy {}: {e}", src.display()),
+            }
+        } else {
+            if let Some(parent) = dst.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            match fs::copy(&src, &dst) {
+                Ok(_) => println!("        {}{}", rel, label_suffix(label)),
+                Err(e) => eprintln!("[Ruzit] warn: copy {}: {e}", src.display()),
+            }
+        }
+    }
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<usize, String> {
+    fs::create_dir_all(dst).map_err(|e| format!("mkdir {}: {e}", dst.display()))?;
+    let mut count = 0;
+    for entry in fs::read_dir(src).map_err(|e| format!("read_dir {}: {e}", src.display()))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let name = match path.file_name() {
+            Some(n) => n.to_os_string(),
+            None => continue,
+        };
+        let target = dst.join(&name);
+        if path.is_dir() {
+            count += copy_dir_recursive(&path, &target)?;
+        } else if path.is_file() {
+            fs::copy(&path, &target)
+                .map_err(|e| format!("copy {} -> {}: {e}", path.display(), target.display()))?;
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+fn label_suffix(label: &str) -> String {
+    if label.is_empty() {
+        String::new()
+    } else {
+        format!("  ({label})")
+    }
+}
+
 fn copy_steam_redist(generated_dir: &Path) {
     let Ok(self_exe) = env::current_exe() else {
         return;
@@ -195,6 +282,8 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
     }
 
     copy_steam_redist(&generated_dir);
+    copy_bin_folder(root, &generated_dir, "");
+    copy_include_paths(root, &generated_dir, &config.include, "");
 
     let scripts_path = managed_dir.join(format!("{pkg_id}.scripts.managed"));
     let script_bytes = prepare_script_bytes(&files, config.compile_bytecode)?;
@@ -265,6 +354,7 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
     for dlc in &dlc_folders {
         match build_dlc(
             &managed_dir,
+            &generated_dir,
             dlc,
             config.compress_scripts,
             config.compress_assets,
@@ -286,12 +376,17 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         }
     }
 
-    copy_external_packages(root, &managed_dir)?;
+    copy_external_packages(root, &managed_dir, &generated_dir, &config)?;
 
     Ok(())
 }
 
-fn copy_external_packages(root: &Path, managed_dir: &Path) -> Result<(), String> {
+fn copy_external_packages(
+    root: &Path,
+    managed_dir: &Path,
+    generated_dir: &Path,
+    config: &BuildConfig,
+) -> Result<(), String> {
     let src_dir = root.join(package::PACKAGES_DIR_NAME);
     if !src_dir.is_dir() {
         return Ok(());
@@ -301,6 +396,37 @@ fn copy_external_packages(root: &Path, managed_dir: &Path) -> Result<(), String>
     {
         let entry = entry.map_err(|e| e.to_string())?;
         let src = entry.path();
+        if src.is_dir() {
+            if !src.join("ManagedInfo.toml").is_file() {
+                continue;
+            }
+            match build_dlc(
+                managed_dir,
+                generated_dir,
+                &src,
+                config.compress_scripts,
+                config.compress_assets,
+                config.shard_assets,
+            ) {
+                Ok((id, n_files, n_assets)) => {
+                    println!(
+                        "        Managed/{}.scripts.managed  (package, {} files{})",
+                        id,
+                        n_files,
+                        if n_assets > 0 {
+                            format!(" + {n_assets} assets")
+                        } else {
+                            String::new()
+                        }
+                    );
+                }
+                Err(e) => eprintln!(
+                    "[Ruzit] failed to build folder package at {}: {e}",
+                    src.display()
+                ),
+            }
+            continue;
+        }
         if !src.is_file() {
             continue;
         }
@@ -331,6 +457,7 @@ fn copy_external_packages(root: &Path, managed_dir: &Path) -> Result<(), String>
 
 fn build_dlc(
     managed_dir: &Path,
+    generated_dir: &Path,
     folder: &Path,
     compress_scripts: bool,
     compress_assets: bool,
@@ -344,6 +471,9 @@ fn build_dlc(
             info.id, info.entry
         ));
     }
+    let label = format!("from {}", info.id);
+    copy_bin_folder(folder, generated_dir, &label);
+    copy_include_paths(folder, generated_dir, &info.include, &label);
     let scripts_path = managed_dir.join(format!("{}.scripts.managed", info.id));
     let script_bytes = prepare_script_bytes(&files, false)?;
     package::write_scripts_managed(
