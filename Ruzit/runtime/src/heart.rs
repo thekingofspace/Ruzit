@@ -70,6 +70,7 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         crate::libs::task::pump(lua, dt);
         crate::libs::runservice::fire_render_stepped(lua, dt);
         crate::libs::physics::tick(lua, dt);
+        crate::libs::renderable::tick_camera_link(lua, dt);
         crate::libs::tween::tick(lua, dt as f32);
         crate::libs::renderable::tick_animations(lua, dt as f32);
         crate::libs::renderable::tick_audio_links();

@@ -514,6 +514,22 @@ pub struct CameraState {
     pub far: f32,
 }
 
+pub enum CameraLinkTarget {
+    Part(Arc<Mutex<PartState>>),
+    Controller(Arc<Mutex<crate::libs::physics::PlaneState>>, u64),
+    Object(Arc<Mutex<crate::libs::physics::PlaneState>>, u64),
+}
+
+pub struct CameraLink {
+    pub target: CameraLinkTarget,
+    pub offset: CFrame,
+    pub callback: Option<mlua::RegistryKey>,
+}
+
+thread_local! {
+    static CAMERA_LINK: RefCell<Option<CameraLink>> = const { RefCell::new(None) };
+}
+
 impl Default for CameraState {
     fn default() -> Self {
         Self {
@@ -1844,6 +1860,9 @@ pub struct CameraHandle;
 
 impl UserData for CameraHandle {
     fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
+        f.add_field_method_get("IsLinked", |_, _| {
+            Ok(CAMERA_LINK.with(|c| c.borrow().is_some()))
+        });
         f.add_field_method_get("CFrame", |_, _| Ok(CAMERA.with(|c| c.borrow().cframe)));
         f.add_field_method_set("CFrame", |_, _, value: AnyUserData| {
             let cf = *value
@@ -1872,6 +1891,258 @@ impl UserData for CameraHandle {
             Ok(())
         });
     }
+
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method(
+            "Follow",
+            |_, _, target: AnyUserData| -> mlua::Result<()> {
+                let resolved = resolve_link_target(&target).ok_or_else(|| {
+                    mlua::Error::RuntimeError(
+                        "Camera:Follow expects a BasePart, Controller, or PhysicsObject".into(),
+                    )
+                })?;
+                CAMERA_LINK.with(|c| {
+                    *c.borrow_mut() = Some(CameraLink {
+                        target: resolved,
+                        offset: CFrame::new(
+                            Vector::new(0.0, 0.0, 0.0),
+                            Vector::new(0.0, 0.0, 0.0),
+                        ),
+                        callback: None,
+                    });
+                });
+                Ok(())
+            },
+        );
+
+        m.add_method(
+            "LinkTo",
+            |lua, _, args: MultiValue| -> mlua::Result<()> {
+                let mut iter = args.into_iter();
+                let target_val = iter.next().ok_or_else(|| {
+                    mlua::Error::RuntimeError(
+                        "Camera:LinkTo expects a BasePart, Controller, or PhysicsObject as the first argument".into(),
+                    )
+                })?;
+                let target_ud = match target_val {
+                    Value::UserData(ud) => ud,
+                    _ => {
+                        return Err(mlua::Error::RuntimeError(
+                            "Camera:LinkTo: first argument must be userdata".into(),
+                        ));
+                    }
+                };
+                let target = resolve_link_target(&target_ud).ok_or_else(|| {
+                    mlua::Error::RuntimeError(
+                        "Camera:LinkTo: target must be a BasePart, Controller, or PhysicsObject".into(),
+                    )
+                })?;
+
+                let mut offset = CFrame::new(
+                    Vector::new(0.0, 0.0, 0.0),
+                    Vector::new(0.0, 0.0, 0.0),
+                );
+                let mut callback: Option<mlua::RegistryKey> = None;
+
+                for v in iter {
+                    match v {
+                        Value::Table(t) => {
+                            if let Ok(off_ud) = t.get::<AnyUserData>("Offset") {
+                                if let Ok(off) = off_ud.borrow::<CFrame>() {
+                                    offset = *off;
+                                }
+                            }
+                            if let Ok(f) = t.get::<mlua::Function>("Callback") {
+                                callback = Some(lua.create_registry_value(f)?);
+                            }
+                        }
+                        Value::UserData(ud) => {
+                            if let Ok(off) = ud.borrow::<CFrame>() {
+                                offset = *off;
+                            }
+                        }
+                        Value::Function(f) => {
+                            callback = Some(lua.create_registry_value(f)?);
+                        }
+                        Value::Nil => {}
+                        _ => {}
+                    }
+                }
+
+                CAMERA_LINK.with(|c| {
+                    *c.borrow_mut() = Some(CameraLink {
+                        target,
+                        offset,
+                        callback,
+                    });
+                });
+                Ok(())
+            },
+        );
+
+        m.add_method("Unlink", |_, _, _: ()| -> mlua::Result<()> {
+            CAMERA_LINK.with(|c| {
+                *c.borrow_mut() = None;
+            });
+            Ok(())
+        });
+
+        m.add_method(
+            "SetOffset",
+            |_, _, off: AnyUserData| -> mlua::Result<()> {
+                let cf = *off
+                    .borrow::<CFrame>()
+                    .map_err(|_| mlua::Error::RuntimeError("Camera:SetOffset expects a CFrame".into()))?;
+                CAMERA_LINK.with(|c| {
+                    if let Some(link) = c.borrow_mut().as_mut() {
+                        link.offset = cf;
+                    }
+                });
+                Ok(())
+            },
+        );
+
+        m.add_method(
+            "SetLinkCallback",
+            |lua, _, func: Value| -> mlua::Result<()> {
+                CAMERA_LINK.with(|c| -> mlua::Result<()> {
+                    let mut slot = c.borrow_mut();
+                    let Some(link) = slot.as_mut() else {
+                        return Err(mlua::Error::RuntimeError(
+                            "Camera:SetLinkCallback: no active link. Call LinkTo first.".into(),
+                        ));
+                    };
+                    match func {
+                        Value::Function(f) => {
+                            link.callback = Some(lua.create_registry_value(f)?);
+                        }
+                        Value::Nil => {
+                            link.callback = None;
+                        }
+                        _ => {
+                            return Err(mlua::Error::RuntimeError(
+                                "Camera:SetLinkCallback expects a function or nil".into(),
+                            ));
+                        }
+                    }
+                    Ok(())
+                })
+            },
+        );
+    }
+}
+
+fn resolve_link_target(ud: &AnyUserData) -> Option<CameraLinkTarget> {
+    if let Ok(h) = ud.borrow::<PartHandle>() {
+        return Some(CameraLinkTarget::Part(h.state.clone()));
+    }
+    if let Ok(h) = ud.borrow::<crate::libs::physics::controller::ControllerHandle>() {
+        return Some(CameraLinkTarget::Controller(h.plane.clone(), h.id));
+    }
+    if let Ok(h) = ud.borrow::<crate::libs::physics::ObjectHandle>() {
+        return Some(CameraLinkTarget::Object(h.plane.clone(), h.id));
+    }
+    None
+}
+
+pub fn tick_camera_link(lua: &Lua, dt: f64) {
+    let (target_cf, callback_key) = CAMERA_LINK.with(|c| {
+        let slot = c.borrow();
+        let Some(link) = slot.as_ref() else {
+            return (None, None);
+        };
+        let base = match &link.target {
+            CameraLinkTarget::Part(p) => p.lock().ok().map(|s| s.cframe),
+            CameraLinkTarget::Controller(plane, id) => plane.lock().ok().and_then(|p| {
+                p.controllers.get(id).map(|c| CFrame {
+                    position: c.position,
+                    rotation: c.rotation,
+                })
+            }),
+            CameraLinkTarget::Object(plane, id) => plane.lock().ok().and_then(|p| {
+                p.objects.get(id).map(|o| CFrame {
+                    position: o.position,
+                    rotation: o.rotation,
+                })
+            }),
+        };
+        let final_cf = base.map(|b| compose_offset(b, link.offset));
+        let cb = link.callback.as_ref().map(|k| {
+            lua.registry_value::<mlua::Function>(k).ok()
+        }).and_then(|x| x);
+        (final_cf, cb)
+    });
+
+    let Some(base_cf) = target_cf else { return };
+
+    let final_cf = if let Some(cb) = callback_key {
+        let mut args = MultiValue::new();
+        args.push_back(Value::Number(dt));
+        if let Ok(ud) = lua.create_userdata(base_cf) {
+            args.push_back(Value::UserData(ud));
+        }
+        match cb.call::<MultiValue>(args) {
+            Ok(mut ret) => {
+                if let Some(v) = ret.pop_front() {
+                    if let Value::UserData(ud) = v {
+                        ud.borrow::<CFrame>().map(|c| *c).unwrap_or(base_cf)
+                    } else {
+                        base_cf
+                    }
+                } else {
+                    base_cf
+                }
+            }
+            Err(e) => {
+                eprintln!("[Camera] LinkTo callback error: {e}");
+                base_cf
+            }
+        }
+    } else {
+        base_cf
+    };
+
+    CAMERA.with(|c| c.borrow_mut().cframe = final_cf);
+    bump_camera_dirty();
+}
+
+fn compose_offset(base: CFrame, offset: CFrame) -> CFrame {
+    let rot_m = euler_to_mat3(base.rotation);
+    let off_world = mat3_mul_vec3(rot_m, offset.position);
+    CFrame {
+        position: Vector::new(
+            base.position.x + off_world.x,
+            base.position.y + off_world.y,
+            base.position.z + off_world.z,
+        ),
+        rotation: Vector::new(
+            base.rotation.x + offset.rotation.x,
+            base.rotation.y + offset.rotation.y,
+            base.rotation.z + offset.rotation.z,
+        ),
+    }
+}
+
+fn euler_to_mat3(r: Vector) -> [[f32; 3]; 3] {
+    let cx = r.x.cos();
+    let sx = r.x.sin();
+    let cy = r.y.cos();
+    let sy = r.y.sin();
+    let cz = r.z.cos();
+    let sz = r.z.sin();
+    [
+        [cy * cz, -cy * sz, sy],
+        [sx * sy * cz + cx * sz, -sx * sy * sz + cx * cz, -sx * cy],
+        [-cx * sy * cz + sx * sz, cx * sy * sz + sx * cz, cx * cy],
+    ]
+}
+
+fn mat3_mul_vec3(m: [[f32; 3]; 3], v: Vector) -> Vector {
+    Vector::new(
+        m[0][0] * v.x + m[0][1] * v.y + m[0][2] * v.z,
+        m[1][0] * v.x + m[1][1] * v.y + m[1][2] * v.z,
+        m[2][0] * v.x + m[2][1] * v.y + m[2][2] * v.z,
+    )
 }
 
 pub fn create(lua: &Lua) -> mlua::Result<Table> {
@@ -1912,8 +2183,6 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
             PartHandle::new_shape_with(lua, PartShape::Model, Some(model))
         })?,
     )?;
-
-    t.set("Camera", lua.create_userdata(CameraHandle)?)?;
 
     t.set(
         "EffectVolume",

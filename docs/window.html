@@ -1,16 +1,16 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Window - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.8">
-    <script src="theme.js?v=1.2.8"></script>
+    <link rel="stylesheet" href="style.css?v=26.5.17">
+    <script src="theme.js?v=26.5.17"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.8" defer></script>
+<script src="sidebar.js?v=26.5.17" defer></script>
 
 <main>
 
@@ -267,11 +267,188 @@ win:BindToClose(<span class="hl-kw">function</span>() <span class="hl-fn">print<
     <div class="member">
         <div class="member-header"><span class="member-name">win:GetViewport()</span><span class="member-type">-> Camera</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
-            Same Camera object <code>Renderable.Camera</code> returns,
-            exposed so a module that only has a WindowHandle can still drive
-            the view.
+            The 3D camera for this window. The same singleton is returned
+            on every call &mdash; writes to <code>.CFrame</code>,
+            <code>.FOV</code>, etc., as well as
+            <code>:LinkTo</code> / <code>:Follow</code>, all share state.
+            See <a href="#camera">Camera</a> below for the full API.
         </p>
     </div>
+</div>
+
+<h2 id="camera">Camera</h2>
+
+<p>
+    There is one <code>Camera</code> per window, accessed via
+    <code>win:GetViewport()</code>. It carries the projection
+    (FOV / near / far) and the world-space CFrame the renderer
+    reads each frame.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Window = <span class="hl-fn">import</span>(<span class="hl-str">"Window"</span>)
+<span class="hl-kw">local</span> win    = Window.<span class="hl-fn">Open</span>({ title = <span class="hl-str">"Game"</span>, width = <span class="hl-num">1280</span>, height = <span class="hl-num">720</span> })
+<span class="hl-kw">local</span> cam    = win:<span class="hl-fn">GetViewport</span>()
+cam.CFrame = CFrame.<span class="hl-fn">new</span>(Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">5</span>, <span class="hl-num">10</span>), Vector.<span class="hl-fn">new</span>(-<span class="hl-num">0.2</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>))
+cam.FOV  = <span class="hl-num">75</span>
+cam.Near = <span class="hl-num">0.1</span>
+cam.Far  = <span class="hl-num">2000</span></code></pre>
+
+<h3>Properties</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.CFrame</span><span class="member-type">CFrame</span></div>
+        <p class="member-desc">World pose. <code>.Position</code> is the eye, <code>.Rotation</code> aims the look vector. Writes from script work normally until you call <code>:Follow</code>/<code>:LinkTo</code>, after which the engine overwrites this every frame.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.FOV</span><span class="member-type">number</span></div>
+        <p class="member-desc">Vertical field of view in degrees. Clamped to <code>1..179</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Near / .Far</span><span class="member-type">number</span></div>
+        <p class="member-desc">Clipping plane distances in studs.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.IsLinked</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">True while <code>:Follow</code> / <code>:LinkTo</code> is active.</p>
+    </div>
+</div>
+
+<h3>Following a target</h3>
+
+<p>
+    Rather than writing <code>cam.CFrame</code> from a per-frame loop,
+    let the engine drive it. After physics + controllers tick each
+    frame, the engine pulls the target's CFrame, composes the offset
+    (in target-local space), runs the optional callback, and writes
+    the result back to <code>cam.CFrame</code>. Three valid targets:
+</p>
+
+<ul>
+    <li><strong>BasePart</strong> &mdash; for anchored set pieces or pre-physics rigs.</li>
+    <li><strong>PhysicsObject</strong> &mdash; tracks the simulated body's pose.</li>
+    <li><strong>Controller</strong> &mdash; the typical first-/third-person target.</li>
+</ul>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">cam:Follow(target)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Shortcut for <code>:LinkTo(target)</code> with no offset and
+            no callback &mdash; the camera CFrame is set to the
+            target's CFrame each frame. Replaces any existing link.
+            Accepts <code>BasePart</code>, <code>PhysicsObject</code>,
+            or <code>Controller</code>.
+        </p>
+        <pre><code>cam:<span class="hl-fn">Follow</span>(player)</code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">cam:LinkTo(target, opts?)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Same idea as <code>:Follow</code>, plus a target-local
+            offset and an optional per-frame callback.
+            <code>opts</code> can be either:
+        </p>
+        <ul>
+            <li>A table <code>{ Offset = CFrame?, Callback = function? }</code>.</li>
+            <li>A bare <code>CFrame</code> (treated as <code>Offset</code>).</li>
+            <li>A bare function (treated as <code>Callback</code>).</li>
+        </ul>
+        <p class="member-desc">
+            A second <code>:LinkTo</code> call replaces the previous
+            link entirely.
+        </p>
+        <p class="member-desc">
+            <strong>Callback signature.</strong>
+            <code>function(dt: number, baseCFrame: CFrame) -> CFrame?</code>.
+            <code>dt</code> is the same delta-time threaded through
+            physics. <code>baseCFrame</code> is the target's CFrame
+            already composed with the offset &mdash; you can return it
+            unmodified, return <code>nil</code> to accept it as the
+            final pose, or return a new CFrame to layer per-frame
+            effects (head-bob, breathing, recoil, lean, screen-shake).
+        </p>
+        <pre><code><span class="hl-com">-- third-person follow with a 1-stud-up eye offset and breathing</span>
+cam:<span class="hl-fn">LinkTo</span>(player, {
+    Offset = CFrame.<span class="hl-fn">new</span>(Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">1.5</span>, -<span class="hl-num">6</span>)),
+    Callback = <span class="hl-kw">function</span>(dt, base)
+        <span class="hl-kw">local</span> t   = os.<span class="hl-fn">clock</span>()
+        <span class="hl-kw">local</span> bob = math.<span class="hl-fn">sin</span>(t * <span class="hl-num">2.1</span>) * <span class="hl-num">0.04</span>
+        <span class="hl-kw">return</span> CFrame.<span class="hl-fn">new</span>(
+            base.Position + Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, bob, <span class="hl-num">0</span>),
+            base.Rotation
+        )
+    <span class="hl-kw">end</span>,
+})
+
+<span class="hl-com">-- first-person with mouse-driven look passed through the controller</span>
+cam:<span class="hl-fn">LinkTo</span>(player, CFrame.<span class="hl-fn">new</span>(Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">1.7</span>, <span class="hl-num">0</span>)))
+
+<span class="hl-com">-- bare-function form: no offset, just a tween/shake layer</span>
+cam:<span class="hl-fn">LinkTo</span>(target, <span class="hl-kw">function</span>(dt, base)
+    <span class="hl-kw">return</span> shake:<span class="hl-fn">Apply</span>(base, dt)
+<span class="hl-kw">end</span>)</code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">cam:Unlink()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Detach. The camera CFrame stops updating until script
+            writes to it or calls <code>:Follow</code>/<code>:LinkTo</code>
+            again. <code>.IsLinked</code> flips to false.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">cam:SetOffset(offset)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Swap the offset CFrame on the active link without
+            re-targeting. No-op when not linked.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">cam:SetLinkCallback(fn?)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Replace the per-frame callback on the active link. Pass
+            <code>nil</code> to clear it (the link itself stays
+            active &mdash; the camera just stops post-processing).
+            Errors when no link is active.
+        </p>
+    </div>
+</div>
+
+<h3>When the link runs</h3>
+
+<p>
+    The link is evaluated inside <code>heart::run_loop</code>,
+    immediately after <code>physics::tick</code> and before
+    animation / drawable / GUI ticks. The order is intentional:
+    Controllers and PhysicsObjects finish their integration step,
+    write their final CFrames to their BaseParts, and only then does
+    the camera read them &mdash; so a third-person camera never lags
+    one frame behind the body it follows.
+</p>
+
+<div class="callout note">
+    <strong>VR takeover.</strong>
+    When <code>VR.LinkVRView()</code> is active, the engine overwrites
+    <code>cam.CFrame</code> each frame with the composed
+    <code>BodyCFrame + HeadCFrame</code> from the headset. The
+    <code>:LinkTo</code> path is bypassed entirely while VR is bound;
+    unlink VR first if you want to drive the camera yourself.
 </div>
 
 <h2 id="deprecated">Deprecated</h2>

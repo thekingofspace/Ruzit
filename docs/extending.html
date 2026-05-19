@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extending the engine - Ruzit Docs</title>
+    <link rel="stylesheet" href="style.css?v=26.5.17">
+    <script src="theme.js?v=26.5.17"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=26.5.17" defer></script>
+
+<main>
+
+<h1>Extending the engine</h1>
+<p class="lede">
+    Most of Ruzit's API surface is a fairly thin Lua-facing wrapper
+    around Rust subsystems that already live in the runtime. Adding
+    your own <code>import("...")</code> means writing a Rust module,
+    registering it in three places, and exposing types from Luau. This
+    page walks through the recipe and the perf rules the existing
+    modules follow so a new one fits in cleanly instead of becoming
+    the bottleneck.
+</p>
+
+<div class="callout note">
+    <strong>Audience.</strong> This is for engine contributors,
+    not game scripters. If you only want to call existing imports
+    from Lua you don't need anything here &mdash; read the per-module
+    pages in the API Reference instead.
+</div>
+
+<h2 id="layout">Source layout</h2>
+
+<p>Everything that ships in a Ruzit binary lives under one workspace:</p>
+
+<pre><code>Ruzit/
+  core/                  <span class="hl-com">-- shared types: vfs, config, package format</span>
+  runtime/               <span class="hl-com">-- the actual engine</span>
+    src/
+      main.rs            <span class="hl-com">-- entrypoint (ruzitrun)</span>
+      lib.rs             <span class="hl-com">-- library entry (ruzit)</span>
+      runtime.rs         <span class="hl-com">-- import() dispatch + module loader</span>
+      heart.rs           <span class="hl-com">-- per-frame loop (heartbeat)</span>
+      errors.rs          <span class="hl-com">-- pretty error formatting + IMPORT_LIBS list</span>
+      libs.rs            <span class="hl-com">-- pub mod for every Lua-facing import</span>
+      libs/
+        renderable/      <span class="hl-com">-- e.g. import("Renderable")</span>
+        physics/         <span class="hl-com">-- e.g. import("PhysicsService")</span>
+        keyboard/        <span class="hl-com">-- ...etc</span>
+  cli/                   <span class="hl-com">-- ruzit (scaffold, run, build, self-update)</span>
+</code></pre>
+
+<p>
+    Two binaries are produced from the same workspace:
+    <code>ruzit</code> (the CLI front-end) and <code>ruzitrun</code>
+    (the engine). The engine library is also re-exported from
+    <code>lib.rs</code> so a published game's exe can statically link
+    it &mdash; that's how the launcher boots without a separate
+    runtime install.
+</p>
+
+<h2 id="adding-an-import">Adding a new import (the eight-step recipe)</h2>
+
+<p>
+    We'll walk through adding <code>import("Clock")</code> exposing a
+    single function <code>Clock.Now()</code> that returns wall-clock
+    seconds. Real modules do more, but the wiring is identical.
+</p>
+
+<h3>1. Write the module</h3>
+
+<p>Create <code>runtime/src/libs/clock.rs</code>:</p>
+
+<pre><code>use mlua::{Lua, Table};
+
+pub fn create(lua: &amp;Lua) -&gt; mlua::Result&lt;Table&gt; {
+    let t = lua.create_table()?;
+    t.set(
+        "Now",
+        lua.create_function(|_, _: ()| -&gt; mlua::Result&lt;f64&gt; {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0);
+            Ok(now)
+        })?,
+    )?;
+    Ok(t)
+}</code></pre>
+
+<p>
+    The pattern every module follows: a <code>pub fn create(lua) -&gt;
+    Result&lt;Table&gt;</code> that builds and returns the Lua table
+    users will see. The returned table is what
+    <code>import("Clock")</code> resolves to, so set every entry you
+    want exposed on it.
+</p>
+
+<h3>2. Declare the module in <code>libs.rs</code></h3>
+
+<pre><code><span class="hl-com">// runtime/src/libs.rs</span>
+pub mod clock;</code></pre>
+
+<p>Alphabetical-ish order, nothing magical.</p>
+
+<h3>3. Wire dispatch in <code>runtime.rs</code></h3>
+
+<p>
+    The <code>install_import</code> function is one big
+    <code>match</code> over the <code>name: String</code> the user
+    passed to <code>import(...)</code>. Add a branch:
+</p>
+
+<pre><code><span class="hl-com">// runtime/src/runtime.rs, inside install_import's match</span>
+"Clock" =&gt; libs::clock::create(lua)?,</code></pre>
+
+<p>
+    The result is cached per script-environment via a
+    <code>RegistryKey</code> map so the second
+    <code>import("Clock")</code> in the same module returns the same
+    table without rebuilding it.
+</p>
+
+<h3>4. Register in <code>errors.rs</code> (IMPORT_LIBS)</h3>
+
+<p>
+    The error formatter shows a "did you mean...?" suggestion when a
+    script imports an unknown name. Add yours to the list so a typo
+    like <code>import("Cloak")</code> surfaces a hint:
+</p>
+
+<pre><code><span class="hl-com">// runtime/src/errors.rs</span>
+pub const IMPORT_LIBS: &amp;[&amp;str] = &amp;[
+    "Actor", "Asset", "Clock", "Debug", <span class="hl-com">/* ... */</span>
+];</code></pre>
+
+<h3>5. Hook the heart loop (optional)</h3>
+
+<p>
+    If your module has state that needs to advance every frame &mdash;
+    queues to drain, signals to fire, timers to tick &mdash; expose a
+    <code>pub fn pump(lua: &amp;Lua)</code> or
+    <code>pub fn tick(lua: &amp;Lua, dt: f64)</code>, and call it from
+    <code>heart::run_loop</code> in <code>heart.rs</code>. Order
+    matters: pumps run before the heart handlers fire so user code
+    sees fresh state. <code>Clock.Now()</code> is stateless, so
+    no hook needed.
+</p>
+
+<h3>6. Add the Luau type in <code>types.d.luau</code></h3>
+
+<p>
+    The shipped LSP definition file. Adding your module here is what
+    makes the editor offer completion, hover docs, and type-check
+    calls. Place it in the same area as siblings &mdash; one
+    <code>export type</code> for the module's public API plus a line
+    in the master <code>_RuzitImports</code> map:
+</p>
+
+<pre><code>export type Clock_API = {
+    -- Wall-clock seconds since the Unix epoch.
+    Now: () -&gt; number,
+}
+
+<span class="hl-com">-- in the import dispatch type</span>
+Clock: Clock_API,</code></pre>
+
+<h3>7. Optional: write a docs page</h3>
+
+<p>
+    Anything user-facing belongs in <code>docs/</code>. Copy one of
+    the smaller modules (<code>debug.html</code>,
+    <code>keyboard.html</code>) as a template, replace the
+    member-list entries, and add a line to
+    <code>_sidebar.html</code> so it shows up in the API Reference
+    column. The sidebar is rendered by <code>sidebar.js</code> &mdash;
+    no per-page edits beyond that.
+</p>
+
+<h3>8. Build &amp; test</h3>
+
+<pre><code>cargo build --release
+target/release/ruzitrun path/to/your/project.luaurc</code></pre>
+
+<p>
+    From Luau:
+</p>
+
+<pre><code><span class="hl-kw">local</span> Clock = <span class="hl-fn">import</span>(<span class="hl-str">"Clock"</span>)
+<span class="hl-fn">print</span>(Clock.<span class="hl-fn">Now</span>())</code></pre>
+
+<hr>
+
+<h2 id="patterns">Patterns to mirror</h2>
+
+<p>
+    The existing modules share a small handful of conventions. New
+    modules that ignore them tend to leak, deadlock, or burn frame
+    budget in ways that don't show up until shipping.
+</p>
+
+<h3>State lives in <code>thread_local!</code></h3>
+
+<p>
+    Ruzit is single-threaded at the Lua level. Module state is
+    typically a <code>thread_local! { static FOO: RefCell&lt;...&gt; = ... }</code>
+    rather than a global <code>Mutex</code>. This keeps everything
+    cheap (no atomics on the hot path), and the main loop owns the
+    only thread that touches it. See
+    <code>libs/window/mod.rs</code>, <code>libs/signal/mod.rs</code>,
+    or <code>libs/runservice/mod.rs</code> for the pattern.
+</p>
+
+<p>
+    Work that must happen on another thread (audio capture, the
+    rayon physics pool, the network thread) communicates with the
+    main thread through an <code>Arc&lt;Mutex&lt;T&gt;&gt;</code>
+    that the main loop drains each frame &mdash; never the other
+    way around. The
+    <a href="soundbyte.html">SoundByte</a> voice channel and the
+    <a href="net.html">Net</a> queue are good worked examples.
+</p>
+
+<h3>Userdata wraps a small handle, not the whole state</h3>
+
+<p>
+    For things with identity (a part, a physics object, a
+    controller), the pattern is:
+</p>
+
+<pre><code>pub struct PartState { <span class="hl-com">/* all the heavy state */</span> }
+
+pub struct PartHandle {
+    pub state: Arc&lt;Mutex&lt;PartState&gt;&gt;,
+}</code></pre>
+
+<p>
+    The userdata <code>PartHandle</code> is a tiny clone-cheap thing
+    Lua hands around. Methods lock the <code>Arc&lt;Mutex&lt;...&gt;&gt;</code>,
+    do their work, release. This makes Lua-side cloning free, scoped
+    locks short, and lifetime simple &mdash; if every userdata
+    referencing a state drops, the <code>Arc</code> count hits zero
+    and the state cleans up on its own.
+</p>
+
+<h3>Signals are <code>Table</code>s, not <code>Function</code>s</h3>
+
+<p>
+    Every event you want script to <code>:Connect</code> to is a
+    Signal instance from <code>libs::signal::new_instance(lua)</code>.
+    Don't invent your own callback list; you'd reinvent threading,
+    error isolation, and disconnect bookkeeping. Hand the Signal
+    table back out through the userdata's
+    <code>add_field_method_get</code>.
+</p>
+
+<h3>Per-tick "pump" pattern</h3>
+
+<p>
+    Rather than firing signals from inside locks or from worker
+    threads, modules push events into a queue and the main loop
+    drains the queue once per frame. Look at
+    <code>libs/window/mod.rs</code>: <code>WindowApp::window_event</code>
+    pushes <code>WindowChange</code> values into
+    <code>app.pending</code>; <code>pump()</code> drains the vec
+    after <code>pump_app_events</code> returns and only then fires
+    Lua signals. Same shape for soundbyte byte routes,
+    keyboard input, gamepad input, etc.
+</p>
+
+<h3>Cache snapshots, not direct reads</h3>
+
+<p>
+    The GUI snapshot, the renderable parts snapshot, and the physics
+    GPU buffer pack all follow the same idea: a global version
+    counter is bumped any time something visible changes, and the
+    next snapshot read rebuilds only if the counter moved. Look at
+    <code>libs/gui/mod.rs</code> &mdash;
+    <code>GUI_VERSION</code> / <code>bump_dirty</code> /
+    <code>SNAPSHOT_CACHE</code>. A new module that draws something
+    every frame should follow the same shape so frames where nothing
+    changed are free.
+</p>
+
+<h3>GPU resources keyed by id <em>and</em> version</h3>
+
+<p>
+    A subtle one. When the same logical asset (a Model, a deformed
+    Part) can change underneath you, the GPU cache must key on both
+    the stable id <em>and</em> a version counter you bump every time
+    the underlying data is rewritten. The pre-version cache used to
+    early-return on id match alone, which silently broke
+    DistortionBox and animation deformation &mdash; we'd hand back
+    the stale vertex buffer for an unchanged id. The fix lives in
+    <code>libs/renderable/mod.rs</code> (<code>ModelRef.version</code>)
+    and <code>libs/gui/render.rs</code>
+    (<code>ensure_model_buffers</code>).
+</p>
+
+<hr>
+
+<h2 id="perf">Performance techniques used in the engine</h2>
+
+<h3>Single Lua thread, JIT enabled</h3>
+
+<p>
+    <code>Compiler::new().set_optimization_level(2).set_debug_level(1)</code>
+    plus <code>enable_jit(true)</code> at startup
+    (<code>runtime::run_entry</code>). Luau's JIT is fast, and the
+    compiler's higher optimization level produces tighter bytecode
+    for hot loops. The slight increase in compile time is paid once
+    per module load, before the heart loop starts.
+</p>
+
+<h3>Bytecode bundling for shipped games</h3>
+
+<p>
+    <code>ruzit build</code> compiles every <code>.luau</code> in the
+    project to bytecode and packs it (plus assets) into a single
+    encrypted, zstd-compressed <code>.managed</code> bundle. At
+    runtime the engine mmap'd-equivalent reads modules from the
+    bundle, skipping disk I/O and source compilation entirely. See
+    <code>core/src/package</code>.
+</p>
+
+<h3>Asset cache + reference counting</h3>
+
+<p>
+    <code>Asset.GetAsset</code> returns the <em>same</em> userdata
+    for the same key &mdash; the byte buffers (and decoded image /
+    model data) live behind <code>Arc</code>s that are reused across
+    callers. <code>:Free()</code> drops the strong ref the cache
+    holds; the <code>Arc</code> survives as long as something else
+    points at it, so an in-flight Sound keeps playing even after the
+    SoundData has been freed. See <code>libs/asset/mod.rs</code>.
+</p>
+
+<h3>Override cells for physics &harr; renderable</h3>
+
+<p>
+    Physics writes hundreds of CFrames per tick; locking each
+    BasePart's main <code>Mutex&lt;PartState&gt;</code> per write
+    would serialize against script accessors. The fix:
+    <code>physics_override: Option&lt;Arc&lt;Mutex&lt;CFrame&gt;&gt;&gt;</code>
+    on each PartState. Physics writes to that small cell; reading
+    <code>part.CFrame</code> from Luau transparently returns the
+    simulated value. The heavy state mutex never gets touched on
+    the hot path. See <code>libs/physics/mod.rs</code> and the
+    <code>CFrame</code> getter on <code>PartHandle</code>.
+</p>
+
+<h3>Live signal fire from inside winit callbacks</h3>
+
+<p>
+    The window resize path stashes a <code>*const Lua</code> in a
+    thread-local while <code>pump_app_events</code> is running so
+    <code>WindowEvent::Resized</code> can fire
+    <code>SizeChanged</code> live &mdash; including from inside
+    Win32's modal drag loop. Without that, resize events would queue
+    behind the modal loop and not fire until the user released the
+    mouse. See <code>libs/window/mod.rs</code>
+    (<code>ACTIVE_LUA</code>, <code>try_fire_live</code>).
+</p>
+
+<h3>Camera link runs after physics, before render</h3>
+
+<p>
+    Order in <code>heart::run_loop</code> matters. Physics writes
+    its final CFrames to its bodies; <em>then</em>
+    <code>renderable::tick_camera_link</code> reads them; then
+    animations, drawables, GUI. So a third-person camera following
+    a Controller never lags a frame behind. The same ordering rule
+    applies to anything that reads physics output &mdash; tween
+    targets, particle emitters anchored to bodies, audio
+    Follow-targets.
+</p>
+
+<h3>Parallel physics step via rayon</h3>
+
+<p>
+    Each <code>PhysicsPlane</code> can own a <code>ThreadPool</code>
+    sized at construction (<code>opts.Threads</code>). Rapier's
+    solver runs against that pool, so heavy planes parallelize
+    without leaking threads into smaller ones. The pool is
+    <code>Arc</code>'d so a plane teardown only drops the pool when
+    no in-flight solve still references it.
+</p>
+
+<h3>GPU physics for small simulation pockets</h3>
+
+<p>
+    Planes with <code>DeferGpu = true</code> route their step
+    through a compute shader (<code>libs/physics/mod.rs</code>'s
+    <code>step_plane_gpu</code>). Useful for clouds of light,
+    non-collidable bodies. The CPU path stays in charge for
+    interactive collision, contact constraints, and pinned
+    objects.
+</p>
+
+<h3>Per-glyph palette baking for styled text</h3>
+
+<p>
+    GUI text supports <code>{#RRGGBB}</code> inline color escapes
+    without re-rasterising glyphs per run. The bake walks color
+    runs once, lays them out with fontdue's <code>user_data</code>
+    field carrying the palette index, and writes the final RGBA
+    bitmap using a palette lookup on the alpha mask. See
+    <code>libs/gui/mod.rs</code> (<code>parse_color_runs</code>,
+    <code>bake_text</code>).
+</p>
+
+<h3>Mutex split: keep CFrame reads off the hot mutex</h3>
+
+<p>
+    A recurring theme. If a tight loop reads one field, that field
+    gets its own <code>Mutex</code> (or an
+    <code>Arc&lt;Mutex&lt;...&gt;&gt;</code> on a sub-state) so the
+    big-state mutex isn't fought for. The
+    <code>physics_override</code> cell is one example. The voice
+    channel's threshold + level meters living in their own
+    <code>Mutex&lt;f32&gt;</code> while the rest of the channel is
+    locked separately is another.
+</p>
+
+<h3>Cheap signal delivery</h3>
+
+<p>
+    Signal connections are <code>Arc&lt;Function&gt;</code> stored
+    in a <code>Vec</code> on the Signal table. Firing walks the vec
+    and resumes each callback as its own Lua thread, isolated &mdash;
+    one connection erroring doesn't break the rest. Each connection
+    is identified by a generation id so disconnect is O(n) but
+    cheap; no rehashing. The pump pattern (drain into a temp vec,
+    fire outside locks) keeps re-entrant <code>:Connect</code>
+    / <code>:Disconnect</code> calls from invalidating iterators.
+</p>
+
+<hr>
+
+<h2 id="anti-patterns">What not to do</h2>
+
+<ul>
+    <li>
+        <strong>Don't fire signals from inside a held lock.</strong>
+        Connections run user Lua. User Lua can lock anything. You
+        will deadlock. Drain into a temp vec, drop the lock, then
+        fire.
+    </li>
+    <li>
+        <strong>Don't hold an <code>APP.borrow_mut()</code> across a
+        user callback.</strong> Every window helper that reads
+        <code>APP.borrow()</code> will panic. Use a side cell (see
+        <code>CURRENT_WINDOW</code> in window/mod.rs) when you need
+        read access during pumping.
+    </li>
+    <li>
+        <strong>Don't store a <code>RegistryKey</code> for a
+        callback without dropping it on teardown.</strong> mlua
+        registry keys are reference-counted on the Lua side; leaking
+        them means the function (and its upvalues) lives forever.
+    </li>
+    <li>
+        <strong>Don't lock the same <code>Arc&lt;Mutex&lt;...&gt;&gt;</code>
+        twice on the same thread.</strong> Easy to do accidentally
+        when a helper takes <code>&amp;Arc&lt;Mutex&lt;T&gt;&gt;</code>
+        and the caller already holds the guard. Pass <code>&amp;T</code>
+        or <code>&amp;mut T</code> through.
+    </li>
+    <li>
+        <strong>Don't rebuild GPU buffers every frame.</strong> Use
+        the id+version pattern. Treat re-uploads as the exception,
+        not the rule.
+    </li>
+    <li>
+        <strong>Don't allocate inside the heart loop's tight paths.</strong>
+        Reuse <code>Vec</code>s with <code>clear()</code> + push.
+        Avoid <code>format!()</code> on the hot path; use it for
+        error messages only.
+    </li>
+    <li>
+        <strong>Don't introduce a new <code>Cargo.toml</code>
+        dependency without considering the build-time and binary-
+        size cost.</strong> The engine ships as a single
+        statically-linked binary; every dep widens both. Optional
+        features (<code>#[cfg(feature = "voice")]</code>) are the
+        right tool for heavyweight optional deps.
+    </li>
+</ul>
+
+<hr>
+
+<h2 id="reading-list">Reading list</h2>
+
+<p>
+    Best examples to read before adding a non-trivial module:
+</p>
+
+<ul>
+    <li>
+        <code>libs/window/mod.rs</code> &mdash; thread-local state,
+        live signal fire from inside winit callbacks, the side-cell
+        trick that lets script query window state during a pump.
+    </li>
+    <li>
+        <code>libs/signal/mod.rs</code> &mdash; how Signals are
+        implemented; the connect-disconnect-fire dance.
+    </li>
+    <li>
+        <code>libs/physics/mod.rs</code> + <code>libs/physics/controller.rs</code>
+        &mdash; many small sub-locks, override cells, the
+        per-plane ThreadPool, the rapier query-pipeline ground
+        probe used by the controller.
+    </li>
+    <li>
+        <code>libs/soundbyte/mod.rs</code> &mdash; complex multi-source
+        / multi-sink graph routing, per-device cpal stream rebuild,
+        and the link-handle pattern that supports many concurrent
+        chains.
+    </li>
+    <li>
+        <code>libs/asset/mod.rs</code> &mdash; reference-counted
+        loader with typed loaders per kind and the
+        <code>keyof&lt;&gt;</code> / <code>index&lt;&gt;</code>
+        generic pattern that types it on the Luau side.
+    </li>
+    <li>
+        <code>libs/gui/mod.rs</code> &mdash; snapshot caching keyed
+        on a version counter; the styled-text bake pipeline.
+    </li>
+</ul>
+
+</main>
+
+</body>
+</html>

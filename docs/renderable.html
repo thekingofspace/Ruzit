@@ -1,16 +1,16 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Renderable - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.8">
-    <script src="theme.js?v=1.2.8"></script>
+    <link rel="stylesheet" href="style.css?v=26.5.17">
+    <script src="theme.js?v=26.5.17"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.8" defer></script>
+<script src="sidebar.js?v=26.5.17" defer></script>
 <main>
 
 <h1>Renderable</h1>
@@ -52,18 +52,6 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
     </div>
     <div class="member">
         <div class="member-header">
-            <span class="member-name">Renderable.Camera</span>
-            <span class="member-type">Camera</span>
-        </div>
-        <p class="member-desc">
-            The active 3D camera. Writable
-            (<code>Renderable.Camera.CFrame = ...</code>); same instance
-            the window references via
-            <code>WindowHandle:GetViewport()</code>.
-        </p>
-    </div>
-    <div class="member">
-        <div class="member-header">
             <span class="member-name">Renderable.SimplifyMesh(asset, ratio?)</span>
             <span class="member-type">-> ModelAsset</span>
         </div>
@@ -98,8 +86,8 @@ cube.Size = Vector.new(<span class="hl-num">2</span>, <span class="hl-num">2</sp
     <code>CFrame</code> + <code>Size</code> to describe the spawn region,
     give it an image, tune the property knobs, and let it run. The
     volume itself doesn't draw, only the particles do, billboarded
-    toward the active <code>Renderable.Camera</code> (toggle off with
-    <code>FaceCamera = false</code>).
+    toward the active window's camera (<code>win:GetViewport()</code>;
+    toggle off with <code>FaceCamera = false</code>).
 </p>
 
 <p>
@@ -1025,30 +1013,6 @@ shoot:<span class="hl-fn">Play</span>()    <span class="hl-com">-- you see the s
             Mirrors <code>Sound:LinkToUpdate</code>.
         </p>
     </div>
-</div>
-
-<h2 id="camera">Camera</h2>
-
-<p>
-    Single instance, accessed via <code>Renderable.Camera</code>. All
-    fields are writable.
-</p>
-
-<table>
-    <tbody>
-        <tr><td><code>.CFrame</code></td><td>World pose. Position is the eye; Rotation aims the look vector.</td></tr>
-        <tr><td><code>.FOV</code></td><td>Vertical field of view, degrees.</td></tr>
-        <tr><td><code>.Near</code></td><td>Near clipping plane.</td></tr>
-        <tr><td><code>.Far</code></td><td>Far clipping plane.</td></tr>
-    </tbody>
-</table>
-
-<div class="callout note">
-    <strong>VR takeover.</strong>
-    When <code>VR.LinkVRView()</code> is active, the engine overwrites
-    <code>Camera.CFrame</code> each frame with the composed
-    <code>BodyCframe + HeadCframe</code>. Writes from user code still
-    apply briefly but are corrected on the next tick.
 </div>
 
 </main>

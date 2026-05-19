@@ -1,16 +1,16 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PhysicsService - Ruzit Docs</title>
-    <link rel="stylesheet" href="style.css?v=1.2.8">
-    <script src="theme.js?v=1.2.8"></script>
+    <link rel="stylesheet" href="style.css?v=26.5.17">
+    <script src="theme.js?v=26.5.17"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=1.2.8" defer></script>
+<script src="sidebar.js?v=26.5.17" defer></script>
 
 <main>
 
@@ -431,6 +431,49 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
     </div>
     <div class="member">
         <div class="member-header">
+            <span class="member-name">plane:NewController(part, opts?)</span>
+            <span class="member-type">-> Controller</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Spawn a kinematic character controller on this plane. The
+            controller drives the BasePart's CFrame each frame -- physics
+            objects collide with it via the plane's rapier query
+            pipeline. <code>opts</code> is an optional table of
+            <code>WalkSpeed</code>, <code>JumpPower</code>,
+            <code>Gravity</code>, <code>TurnSpeed</code>,
+            <code>MaxSlope</code>, <code>GroundY</code>,
+            <code>CapsuleRadius</code>, <code>CapsuleHalfHeight</code>,
+            <code>WaypointThreshold</code>,
+            <code>LookWhereMoving</code> overrides. Many controllers
+            can coexist on a single plane &mdash; enemy hordes plus
+            the player share the same Plane gravity and tick.
+        </p>
+        <p class="member-desc">
+            Defaults: <code>WalkSpeed = 16</code>,
+            <code>JumpPower = 28</code>, <code>TurnSpeed = 12</code>,
+            <code>LookWhereMoving = true</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane:NewControlledController(part, opts?)</span>
+            <span class="member-type">-> Controller</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Same kinematic Controller, but defaults
+            <code>LookWhereMoving = false</code> and treats the motion-
+            intent methods (<code>MoveForward</code>, etc.) as the
+            primary input. Use for the local player: each frame, wire
+            WASD / left-stick to the move methods, drive the facing
+            from <code>controller.Rotation.Y</code> (mouse / right-
+            stick), and the controller's velocity blends along the
+            facing without overriding it.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
             <span class="member-name">plane:Destroy()</span>
             <span class="tag tag-method">method</span>
         </div>
@@ -441,6 +484,178 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
             destroyed.</strong> Use this to dispose of a physics
             subsystem without killing the parts themselves.
         </p>
+    </div>
+</div>
+
+<h2 id="controller">Controller</h2>
+
+<p>
+    Kinematic character controller created by
+    <code>plane:NewController</code> or
+    <code>plane:NewControlledController</code>. The controller is not
+    a rigid body &mdash; it doesn't accept impulses from collisions.
+    Instead it integrates its own velocity, applies gravity, and uses
+    the plane's rapier query pipeline to probe ground and snap to it.
+    Many controllers can coexist on a single plane; the engine ticks
+    them all every frame.
+</p>
+
+<h3>Properties &amp; signals</h3>
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Position / .Velocity / .Rotation</span><span class="member-type">Vector</span></div>
+        <p class="member-desc">
+            World-space pose. Reading is cheap; writing
+            <code>.Position</code> zeroes velocity, <code>.Velocity</code>
+            adds free motion, <code>.Rotation</code> aims the body (use
+            the Y component for yaw on a ControlledController so mouse-
+            look aims independent of the walk path).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.WalkSpeed / .JumpPower / .TurnSpeed</span><span class="member-type">number</span></div>
+        <p class="member-desc">
+            Top horizontal speed (studs/sec), jump launch velocity
+            (studs/sec), and yaw blending rate (radians/sec) when
+            LookWhereMoving is on.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Gravity / .UsePlaneGravity</span><span class="member-type">number / boolean</span></div>
+        <p class="member-desc">
+            <code>UsePlaneGravity = true</code> (the default) reads
+            gravity from <code>plane.Gravity.Y</code> each tick. Setting
+            <code>.Gravity</code> flips this to <code>false</code> and
+            uses the controller's own magnitude &mdash; useful for
+            zero-g pockets or per-character feel.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.OnGround</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Set by the engine each tick. Tracks whether the foot
+            capsule probe hit anything below it (rapier hit or
+            GroundY fallback).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.LookWhereMoving</span><span class="member-type">boolean</span></div>
+        <p class="member-desc">
+            True: the controller auto-yaws toward its current velocity
+            vector (smoothed via <code>TurnSpeed</code>). False:
+            <code>Rotation.Y</code> is honored directly -- use this
+            for mouse-aimed players. Default true for
+            <code>NewController</code>, false for
+            <code>NewControlledController</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Controlled</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">True for ControlledController, false otherwise.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.PathLength / .PathIndex</span><span class="member-type">number</span><span class="tag tag-readonly">read-only</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Jumped / .Landed / .Moved / .WaypointReached / .PathFinished</span><span class="member-type">Signal</span></div>
+        <p class="member-desc">
+            <code>Jumped()</code> fires the frame a successful jump
+            launches. <code>Landed()</code> fires when OnGround flips
+            to true. <code>Moved(vx, vy, vz)</code> fires every frame
+            the body has non-zero velocity. <code>WaypointReached(idx)</code>
+            fires when each path waypoint is consumed.
+            <code>PathFinished()</code> fires once after the final
+            waypoint.
+        </p>
+    </div>
+</div>
+
+<h3>Methods</h3>
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">controller:BasePart()</span><span class="member-type">-> BasePart</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Returns the BasePart this controller drives. Pass it to
+            <code>DynMesh.new(...)</code> to weld decorative geometry
+            (arms, hats, weapons) so it rides along with the
+            controller's CFrame. Particles, billboards, and other
+            attachments work the same way.
+        </p>
+        <pre><code><span class="hl-kw">local</span> mesh = DynMesh.<span class="hl-fn">new</span>(player:<span class="hl-fn">BasePart</span>())
+mesh:<span class="hl-fn">Weld</span>(hat, { Offset = CFrame.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">2</span>, <span class="hl-num">0</span>) })</code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">controller:WalkTo(target)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Single-waypoint shortcut. <code>target</code> is a Vector
+            or CFrame. Replaces any active path; the controller drags
+            in toward the point and stops when its horizontal distance
+            falls below <code>WaypointThreshold</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">controller:ComputePath(waypoints)</span><span class="member-type">-> number</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Replace the path with a list of waypoints (Vectors or
+            CFrames). The controller walks them in order, firing
+            <code>WaypointReached(index)</code> on each arrival and
+            <code>PathFinished()</code> after the final one. Returns
+            the stored waypoint count. <strong>Note:</strong> this is
+            a deterministic sequencer, not a nav-mesh solver -- supply
+            already-clear waypoints (or use a separate pathfinder).
+        </p>
+        <pre><code>enemy:<span class="hl-fn">ComputePath</span>({
+    Vector.<span class="hl-fn">new</span>(<span class="hl-num">10</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>),
+    Vector.<span class="hl-fn">new</span>(<span class="hl-num">10</span>, <span class="hl-num">0</span>, <span class="hl-num">20</span>),
+    Vector.<span class="hl-fn">new</span>(<span class="hl-num">-5</span>, <span class="hl-num">0</span>, <span class="hl-num">20</span>),
+})
+enemy.WaypointReached:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(i) <span class="hl-fn">print</span>(<span class="hl-str">"step"</span>, i) <span class="hl-kw">end</span>)</code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">controller:AppendWaypoint(target)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Push another waypoint onto the back of the path.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">controller:StopWalking()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Clear path + motion intent. Horizontal velocity drags to a stop next frame.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">controller:Jump()</span><span class="member-type">-> boolean</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Applies <code>JumpPower</code> to vertical velocity. No-op
+            (returns false) when <code>OnGround</code> is false.
+            Compatible with path-following: the controller jumps mid-
+            stride and resumes walking on landing. Returns true if the
+            jump launched.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">controller:Teleport(target)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Hard-set Position + Rotation, clear velocity and path.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">controller:SetMoveVector(x, z) / MoveForward / MoveBackward / MoveLeft / MoveRight / ClearMoveIntent</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Motion-intent inputs in local space (+z forward, +x right).
+            Each axis is a unit intensity in <code>-1..1</code>; the
+            controller blends magnitude through its facing.
+            <code>MoveForward(0.5)</code> sets z to <code>0.5</code> for
+            the next tick. Combine with a Rotation Y driven from mouse
+            for full first-/third-person control. Re-call each frame
+            from your input pump &mdash; the intent persists between
+            ticks until you change or clear it.
+        </p>
+        <pre><code>Keyboard.InputChanged:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>()
+    <span class="hl-kw">local</span> fz = (Keyboard:<span class="hl-fn">IsKeyDown</span>(<span class="hl-str">"W"</span>) <span class="hl-kw">and</span> <span class="hl-num">1</span> <span class="hl-kw">or</span> <span class="hl-num">0</span>)
+            - (Keyboard:<span class="hl-fn">IsKeyDown</span>(<span class="hl-str">"S"</span>) <span class="hl-kw">and</span> <span class="hl-num">1</span> <span class="hl-kw">or</span> <span class="hl-num">0</span>)
+    <span class="hl-kw">local</span> fx = (Keyboard:<span class="hl-fn">IsKeyDown</span>(<span class="hl-str">"D"</span>) <span class="hl-kw">and</span> <span class="hl-num">1</span> <span class="hl-kw">or</span> <span class="hl-num">0</span>)
+            - (Keyboard:<span class="hl-fn">IsKeyDown</span>(<span class="hl-str">"A"</span>) <span class="hl-kw">and</span> <span class="hl-num">1</span> <span class="hl-kw">or</span> <span class="hl-num">0</span>)
+    player:<span class="hl-fn">SetMoveVector</span>(fx, fz)
+<span class="hl-kw">end</span>)</code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">controller:Destroy()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Remove from the plane. The BasePart is left at its last CFrame; it is not destroyed.</p>
     </div>
 </div>
 

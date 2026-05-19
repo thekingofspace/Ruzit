@@ -1,4 +1,6 @@
 
+pub mod controller;
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -29,6 +31,7 @@ pub struct PlaneState {
     pub enabled: bool,
     pub gravity: Vector,
     pub objects: HashMap<u64, ObjectState>,
+    pub controllers: HashMap<u64, controller::ControllerState>,
     pub threads: usize,
     pub pool: Option<Arc<ThreadPool>>,
     pub linear_damping: f32,
@@ -186,6 +189,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                 enabled: true,
                 gravity,
                 objects: HashMap::new(),
+                controllers: HashMap::new(),
                 threads,
                 pool,
                 linear_damping,
@@ -226,8 +230,42 @@ pub fn tick(lua: &Lua, dt: f64) {
         if !used_gpu {
             step_plane(plane_arc, dt);
         }
+        controller::tick_controllers(lua, plane_arc, dt);
         fire_prop_signals(lua, plane_arc);
     }
+}
+
+fn make_controller_method(
+    lua: &Lua,
+    plane: Arc<Mutex<PlaneState>>,
+    args: MultiValue,
+    controlled: bool,
+) -> mlua::Result<controller::ControllerHandle> {
+    let mut iter = args.into_iter();
+    let part_val = iter.next().ok_or_else(|| {
+        mlua::Error::RuntimeError(
+            "NewController: expected a Renderable.BasePart as the first argument".into(),
+        )
+    })?;
+    let part_ud = match part_val {
+        Value::UserData(ud) => ud,
+        _ => {
+            return Err(mlua::Error::RuntimeError(
+                "NewController: first argument must be a Renderable.BasePart".into(),
+            ));
+        }
+    };
+    let part_state = controller::extract_part_ud(part_ud)?;
+
+    let opts_table = match iter.next() {
+        Some(Value::Table(t)) => Some(t),
+        _ => None,
+    };
+    let opts = controller::ControllerOpts::from_table(opts_table)?;
+    let state = controller::make_controller(lua, part_state, controlled, opts)?;
+    let id = state.id;
+    plane.lock().unwrap().controllers.insert(id, state);
+    Ok(controller::ControllerHandle { plane, id })
 }
 
 fn fire_prop_signals(lua: &Lua, plane_arc: &Arc<Mutex<PlaneState>>) {
@@ -888,6 +926,22 @@ impl UserData for PlaneHandle {
                 id,
             })
         });
+
+        m.add_method(
+            "NewController",
+            |lua, this, args: MultiValue| -> mlua::Result<controller::ControllerHandle> {
+                this.ensure_alive("NewController")?;
+                make_controller_method(lua, this.state.clone(), args, false)
+            },
+        );
+
+        m.add_method(
+            "NewControlledController",
+            |lua, this, args: MultiValue| -> mlua::Result<controller::ControllerHandle> {
+                this.ensure_alive("NewControlledController")?;
+                make_controller_method(lua, this.state.clone(), args, true)
+            },
+        );
 
         m.add_method("SetEnabled", |_, this, v: bool| {
             this.state.lock().unwrap().enabled = v;
