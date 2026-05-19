@@ -642,3 +642,172 @@ td > pre { margin: 0; }
     }
     main { margin-left: 0; padding: 32px 20px 64px 20px; }
 }
+
+/* ─── Right rail "On this page" ─────────────────────────────────────── */
+
+:root {
+    --right-toc-w: 260px;
+    --kind-property: #4dabf7;
+    --kind-method:   #d563a6;
+    --kind-event:    #f4c969;
+    --kind-section:  var(--accent);
+}
+
+aside.right-toc {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: var(--right-toc-w);
+    height: 100vh;
+    padding: 28px 20px 40px 20px;
+    overflow-y: auto;
+    border-left: 1px solid var(--border);
+    background: var(--bg);
+    font-size: 13px;
+    z-index: 5;
+}
+
+.right-toc-heading {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-muted);
+    margin: 0 0 12px 0;
+    font-weight: 600;
+}
+
+.right-toc nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.right-toc-section {
+    display: block;
+    margin: 14px 0 4px 0;
+    padding: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg);
+    border-bottom: none;
+    line-height: 1.4;
+}
+.right-toc-section:first-child { margin-top: 0; }
+.right-toc-section:hover { color: var(--accent); }
+
+.right-toc-member {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    margin-left: -8px;
+    border-radius: 4px;
+    color: var(--fg-soft);
+    font-family: "JetBrains Mono", "SF Mono", "Consolas", monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    border-bottom: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.right-toc-member:hover {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+.right-toc-member.active {
+    background: var(--accent-tint);
+    color: var(--accent);
+}
+.right-toc-member[data-deprecated="true"] {
+    opacity: 0.55;
+}
+.right-toc-member[data-deprecated="true"] .right-toc-member-name {
+    text-decoration: line-through;
+}
+
+.right-toc-member-icon {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    background: var(--kind-section);
+}
+.right-toc-member[data-kind="property"] .right-toc-member-icon { background: var(--kind-property); border-radius: 3px; }
+.right-toc-member[data-kind="method"]   .right-toc-member-icon { background: var(--kind-method);   border-radius: 50%; }
+.right-toc-member[data-kind="event"]    .right-toc-member-icon { background: var(--kind-event);    border-radius: 50%; }
+
+.right-toc-member-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+}
+
+/* Inline kind chip on each member-list entry, for the Roblox-style look. */
+.member { position: relative; }
+.member-header::before {
+    content: "";
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    margin-right: 8px;
+    flex-shrink: 0;
+    background: var(--kind-property);
+    transform: translateY(2px);
+}
+.member[data-kind="method"] .member-header::before {
+    background: var(--kind-method);
+    border-radius: 50%;
+}
+.member[data-kind="event"] .member-header::before {
+    background: var(--kind-event);
+    border-radius: 50%;
+}
+.member[data-kind="section"] .member-header::before {
+    display: none;
+}
+
+/* Make room for the right rail on wide screens. */
+@media (min-width: 1280px) {
+    main {
+        margin-right: var(--right-toc-w);
+        max-width: none;
+        padding-right: 64px;
+    }
+    main > * { max-width: 920px; }
+}
+
+@media (max-width: 1279px) {
+    aside.right-toc { display: none; }
+}
+
+/* Floating "On this page" toggle for medium screens (and the icon next to
+   the heading in the Roblox screenshot). */
+.right-toc-toggle {
+    display: none;
+}
+
+@media (min-width: 901px) and (max-width: 1279px) {
+    .right-toc-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        background: var(--bg-alt);
+        border: 1px solid var(--border);
+        color: var(--fg);
+        cursor: pointer;
+        z-index: 6;
+        box-shadow: var(--shadow);
+    }
+    aside.right-toc.is-open {
+        display: block;
+        box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
+    }
+}
