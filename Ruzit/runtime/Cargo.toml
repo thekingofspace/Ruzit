@@ -1,6 +1,6 @@
 [package]
 name = "ruzit"
-version = "26.5.17+2"
+version = "26.5.19"
 edition = "2024"
 
 [lib]
