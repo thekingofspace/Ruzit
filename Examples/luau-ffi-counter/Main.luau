@@ -184,6 +184,27 @@ Task.Spawn(function()
     print(string.format("[demo] World shared store: player.name=%s, boss.hp=%s",
         tostring(FFI.GetData("player.name")), tostring(boss_hp)))
 
+    --------------------------------------------------------------
+    -- 8. Native mlua bridge — `lib:GetNative()`.
+    --    Bypasses the JSON path entirely. The DLL populated this
+    --    table during load via ruzit_ffi_init_native and the entries
+    --    are real Lua functions / userdata, not JSON shims.
+    --------------------------------------------------------------
+    local native: any = counter:GetNative()
+    if native then
+        local p = native.Point(3, 4)
+        print(string.format("[demo] native Point(3,4): X=%d Y=%d len=%.3f",
+            p.X, p.Y, p:Length()))
+        p:Translate(10, 0)
+        print(string.format("[demo] after p:Translate(10, 0): X=%d Y=%d", p.X, p.Y))
+        native.Translate(p, 0, 5)
+        print(string.format("[demo] after Translate(p, 0, 5): X=%d Y=%d", p.X, p.Y))
+        local r, theta = native.ToPolar(p)
+        print(string.format("[demo] ToPolar -> r=%.3f theta=%.3f", r, theta))
+    else
+        print("[demo] DLL did not expose a native section")
+    end
+
     Task.Wait(0.05)
     counter:Call("clear_world")
     counter:Unload()

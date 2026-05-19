@@ -146,7 +146,10 @@ fn run_disk_project(root: PathBuf, entry: Option<String>) -> Result<(), String> 
                 );
                 continue;
             }
-            registry.insert_pending(id, paths);
+            registry.insert_pending(
+                id,
+                paths.into_iter().map(package::ManagedSource::Disk).collect(),
+            );
         }
     }
 
@@ -195,7 +198,12 @@ fn run_launcher(info: LauncherInfo) -> Result<(), String> {
             groups.keys().cloned().collect::<Vec<_>>().join(", ")
         )
     })?;
-    let default_pkg = package::load_single_managed_package(&info.default_id, default_paths)?;
+    let default_sources: Vec<package::ManagedSource> = default_paths
+        .iter()
+        .cloned()
+        .map(package::ManagedSource::Disk)
+        .collect();
+    let default_pkg = package::load_single_managed_package(&info.default_id, &default_sources)?;
     let default_entry = default_pkg.entry.clone();
     let default_file_type = default_pkg.file_type;
 
@@ -229,7 +237,10 @@ fn run_launcher(info: LauncherInfo) -> Result<(), String> {
         if id == info.default_id {
             continue;
         }
-        registry.insert_pending(id, paths);
+        registry.insert_pending(
+            id,
+            paths.into_iter().map(package::ManagedSource::Disk).collect(),
+        );
     }
 
     let registry = Arc::new(registry);

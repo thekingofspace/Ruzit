@@ -338,9 +338,33 @@ pub fn discover_managed_files(dir: &Path) -> Result<HashMap<String, Vec<PathBuf>
     Ok(groups)
 }
 
+pub enum ManagedSource {
+    Disk(PathBuf),
+    Memory { label: String, bytes: Vec<u8> },
+}
+
+impl ManagedSource {
+    /// Return `(label_for_errors, encrypted_bytes)`.
+    pub fn read(&self) -> Result<(String, Vec<u8>), String> {
+        match self {
+            ManagedSource::Disk(p) => {
+                let bytes = fs::read(p).map_err(|e| format!("read {}: {e}", p.display()))?;
+                Ok((p.display().to_string(), bytes))
+            }
+            ManagedSource::Memory { label, bytes } => Ok((label.clone(), bytes.clone())),
+        }
+    }
+}
+
+impl From<PathBuf> for ManagedSource {
+    fn from(p: PathBuf) -> Self {
+        ManagedSource::Disk(p)
+    }
+}
+
 pub fn load_single_managed_package(
     id: &str,
-    paths: &[PathBuf],
+    sources: &[ManagedSource],
 ) -> Result<LoadedPackage, String> {
     let mut pkg = LoadedPackage {
         id: id.to_string(),
@@ -356,18 +380,22 @@ pub fn load_single_managed_package(
         assets_compressed: false,
         scripts_bytecode: false,
     };
-    for path in paths {
-        merge_managed_file_into(&mut pkg, path)?;
+    for source in sources {
+        let (label, encrypted) = source.read()?;
+        merge_managed_bytes_into(&mut pkg, &label, &encrypted)?;
     }
     Ok(pkg)
 }
 
-fn merge_managed_file_into(pkg: &mut LoadedPackage, path: &Path) -> Result<(), String> {
-    let encrypted = fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let plain = crate::managed::decrypt_payload(&encrypted)
-        .map_err(|e| format!("decrypt {}: {e}", path.display()))?;
+pub fn merge_managed_bytes_into(
+    pkg: &mut LoadedPackage,
+    label: &str,
+    encrypted: &[u8],
+) -> Result<(), String> {
+    let plain = crate::managed::decrypt_payload(encrypted)
+        .map_err(|e| format!("decrypt {label}: {e}"))?;
     let parsed: JsonValue =
-        serde_json::from_slice(&plain).map_err(|e| format!("parse {}: {e}", path.display()))?;
+        serde_json::from_slice(&plain).map_err(|e| format!("parse {label}: {e}"))?;
     let kind = parsed.get("kind").and_then(|v| v.as_str()).unwrap_or("");
     let header_compressed = parsed
         .get("compressed")
@@ -428,105 +456,6 @@ fn merge_managed_file_into(pkg: &mut LoadedPackage, path: &Path) -> Result<(), S
         _ => {}
     }
     Ok(())
-}
-
-pub fn load_managed_dir(dir: &Path) -> Result<HashMap<String, LoadedPackage>, String> {
-    let mut packages: HashMap<String, LoadedPackage> = HashMap::new();
-    if !dir.is_dir() {
-        return Ok(packages);
-    }
-    for entry in fs::read_dir(dir).map_err(|e| format!("read_dir {}: {e}", dir.display()))? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("managed") {
-            continue;
-        }
-        let encrypted = fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-        let plain = crate::managed::decrypt_payload(&encrypted)
-            .map_err(|e| format!("decrypt {}: {e}", path.display()))?;
-        let parsed: JsonValue =
-            serde_json::from_slice(&plain).map_err(|e| format!("parse {}: {e}", path.display()))?;
-        let kind = parsed.get("kind").and_then(|v| v.as_str()).unwrap_or("");
-        let id = parsed
-            .get("id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| format!("{} missing 'id'", path.display()))?
-            .to_string();
-
-        let pkg = packages.entry(id.clone()).or_insert_with(|| LoadedPackage {
-            id: id.clone(),
-            name: id.clone(),
-            version: String::new(),
-            creator: String::new(),
-            entry: "Main.luau".to_string(),
-            file_type: FileType::Relative,
-            physical_root: None,
-            files: HashMap::new(),
-            assets: HashMap::new(),
-            scripts_compressed: false,
-            assets_compressed: false,
-            scripts_bytecode: false,
-        });
-        let header_compressed = parsed
-            .get("compressed")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let header_bytecode = parsed
-            .get("bytecode")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        if let Some(s) = parsed.get("name").and_then(|v| v.as_str()) {
-            pkg.name = s.to_string();
-        }
-        if let Some(s) = parsed.get("version").and_then(|v| v.as_str()) {
-            pkg.version = s.to_string();
-        }
-        if let Some(s) = parsed.get("creator").and_then(|v| v.as_str()) {
-            pkg.creator = s.to_string();
-        }
-
-        match kind {
-            "scripts" => {
-                pkg.scripts_compressed = header_compressed;
-                pkg.scripts_bytecode = header_bytecode;
-                if let Some(s) = parsed.get("entry").and_then(|v| v.as_str()) {
-                    pkg.entry = s.to_string();
-                }
-                if let Some(s) = parsed.get("file_type").and_then(|v| v.as_str()) {
-                    if let Some(ft) = FileType::parse(s) {
-                        pkg.file_type = ft;
-                    }
-                }
-                if let Some(obj) = parsed.get("files").and_then(|v| v.as_object()) {
-                    for (k, v) in obj {
-                        if let Some(s) = v.as_str() {
-                            let stored = if header_compressed || header_bytecode {
-                                s.to_string()
-                            } else {
-                                strip_bom(s.to_string())
-                            };
-                            pkg.files.insert(k.clone(), stored);
-                        }
-                    }
-                }
-            }
-            "assets" | "assets_manifest" => {
-                pkg.assets_compressed = header_compressed;
-                if let Some(obj) = parsed.get("assets").and_then(|v| v.as_object()) {
-                    for (k, v) in obj {
-                        if let Some(b64) = v.as_str() {
-                            let normalized =
-                                k.strip_prefix("assets/").unwrap_or(k.as_str()).to_string();
-                            pkg.assets.insert(normalized, b64.to_string());
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    Ok(packages)
 }
 
 pub fn locate_runtime_template() -> Result<PathBuf, String> {

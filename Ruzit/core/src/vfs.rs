@@ -1,12 +1,11 @@
 use std::collections::{HashMap, VecDeque};
-use std::env;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
 use crate::config::FileType;
-use crate::package::{load_single_managed_package, LoadedPackage};
+use crate::package::{load_single_managed_package, LoadedPackage, ManagedSource};
 
 pub struct Package {
     pub id: String,
@@ -46,7 +45,7 @@ impl Package {
 }
 
 enum EntryState {
-    Pending { paths: Vec<PathBuf> },
+    Pending { sources: Vec<ManagedSource> },
     Loading,
     Ready(Arc<Package>),
     #[allow(dead_code)]
@@ -81,10 +80,10 @@ impl LazyPackageRegistry {
         self.entries.insert(id, entry);
     }
 
-    pub fn insert_pending(&mut self, id: String, paths: Vec<PathBuf>) {
+    pub fn insert_pending(&mut self, id: String, sources: Vec<ManagedSource>) {
         let entry = Arc::new(PackageEntry {
             id: id.clone(),
-            state: Mutex::new(EntryState::Pending { paths }),
+            state: Mutex::new(EntryState::Pending { sources }),
             cv: Condvar::new(),
         });
         self.entries.insert(id.clone(), entry);
@@ -171,18 +170,18 @@ fn loader_worker(registry: Arc<LazyPackageRegistry>) {
             Some(e) => e.clone(),
             None => continue,
         };
-        let paths = {
+        let sources = {
             let mut s = entry.state.lock().unwrap();
-            match &*s {
-                EntryState::Pending { paths } => {
-                    let paths = paths.clone();
+            match &mut *s {
+                EntryState::Pending { sources } => {
+                    let sources = std::mem::take(sources);
                     *s = EntryState::Loading;
-                    paths
+                    sources
                 }
                 _ => continue,
             }
         };
-        let result = load_single_managed_package(&entry.id, &paths);
+        let result = load_single_managed_package(&entry.id, &sources);
         {
             let mut s = entry.state.lock().unwrap();
             *s = match result {
@@ -409,14 +408,6 @@ pub fn physical_path(fs: &Fs, owner: &str, path: &str) -> PathBuf {
         FileType::Global => fs_root(fs).join(strip_anchors(path)),
     };
     normalize(&resolved)
-}
-
-#[allow(dead_code)]
-fn exe_dir() -> PathBuf {
-    env::current_exe()
-        .ok()
-        .and_then(|e| e.parent().map(Path::to_path_buf))
-        .unwrap_or_default()
 }
 
 fn disk_resolve(

@@ -53,6 +53,12 @@ pub struct RuzitHost {
 }
 
 type RuzitFfiInitFn = unsafe extern "C" fn(RuzitHost);
+type RuzitFfiInitNativeFn = unsafe extern "C" fn(
+    state: *mut mlua::lua_State,
+    table_name: *const c_char,
+) -> bool;
+
+static NEXT_NATIVE_ID: AtomicU64 = AtomicU64::new(1);
 
 pub enum FfiHandle {
     Primitive(Arc<Mutex<crate::libs::gui::PrimitiveState>>),
@@ -671,6 +677,7 @@ pub struct LoadedLib {
 
 pub struct FFILibrary {
     pub state: Arc<Mutex<Option<LoadedLib>>>,
+    pub native: Arc<Mutex<Option<RegistryKey>>>,
 }
 
 unsafe impl Send for FFILibrary {}
@@ -681,7 +688,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
 
     t.set(
         "Load",
-        lua.create_function(|_, name: String| -> mlua::Result<FFILibrary> {
+        lua.create_function(|lua, name: String| -> mlua::Result<FFILibrary> {
             let resolved = resolve_lib_path(&name)?;
             let lib = unsafe { Library::new(&resolved) }.map_err(|e| {
                 mlua::Error::RuntimeError(format!(
@@ -689,6 +696,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                     resolved.display()
                 ))
             })?;
+            let mut native_key: Option<RegistryKey> = None;
             unsafe {
                 let _: Symbol<FfiCallFn> = lib.get(b"ruzit_ffi_call\0").map_err(|e| {
                     mlua::Error::RuntimeError(format!(
@@ -708,12 +716,36 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                         free: host_free_impl,
                     });
                 }
+                if let Ok(init_native) =
+                    lib.get::<RuzitFfiInitNativeFn>(b"ruzit_ffi_init_native\0")
+                {
+                    let native_table = lua.create_table()?;
+                    let key_name = format!(
+                        "__ruzit_ffi_native_{}",
+                        NEXT_NATIVE_ID.fetch_add(1, Ordering::Relaxed)
+                    );
+                    lua.set_named_registry_value(&key_name, native_table.clone())?;
+                    let name_cstr = CString::new(key_name.as_bytes()).map_err(|_| {
+                        mlua::Error::RuntimeError(
+                            "FFI.Load: internal: NUL in native key name".into(),
+                        )
+                    })?;
+                    let mut ok = false;
+                    let _: mlua::Result<()> = lua.exec_raw((), |state| {
+                        ok = init_native(state, name_cstr.as_ptr());
+                    });
+                    if ok {
+                        native_key = Some(lua.create_registry_value(native_table)?);
+                    }
+                    lua.unset_named_registry_value(&key_name).ok();
+                }
             }
             Ok(FFILibrary {
                 state: Arc::new(Mutex::new(Some(LoadedLib {
                     lib,
                     source: resolved.to_string_lossy().into_owned(),
                 }))),
+                native: Arc::new(Mutex::new(native_key)),
             })
         })?,
     )?;
@@ -1174,9 +1206,21 @@ impl UserData for FFILibrary {
             json_to_lua_value(lua, &parsed)
         });
 
+        m.add_method("GetNative", |lua, this, _: ()| -> mlua::Result<Value> {
+            let guard = this.native.lock().unwrap();
+            match guard.as_ref() {
+                Some(key) => {
+                    let t: Table = lua.registry_value(key)?;
+                    Ok(Value::Table(t))
+                }
+                None => Ok(Value::Nil),
+            }
+        });
+
         m.add_method("Unload", |_, this, _: ()| -> mlua::Result<()> {
             let mut slot = this.state.lock().unwrap();
             slot.take();
+            this.native.lock().unwrap().take();
             Ok(())
         });
     }
@@ -1328,5 +1372,6 @@ fn json_to_lua_value(lua: &Lua, v: &serde_json::Value) -> mlua::Result<Value> {
 pub fn ud_borrow_lib(ud: &AnyUserData) -> Option<FFILibrary> {
     ud.borrow::<FFILibrary>().ok().map(|h| FFILibrary {
         state: h.state.clone(),
+        native: h.native.clone(),
     })
 }

@@ -374,10 +374,34 @@ on_done:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(i
         </p>
     </div>
     <div class="member">
+        <div class="member-header">
+            <span class="member-name">library:GetNative()</span>
+            <span class="member-type">-> { [string]: any }?</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Return the native-mlua table the DLL populated during load,
+            or <code>nil</code> if the DLL didn't export the optional
+            <code>ruzit_ffi_init_native</code>. Values in this table are
+            real <code>mlua::Function</code> / <code>AnyUserData</code>
+            objects &mdash; not JSON shims &mdash; so the DLL can hand
+            you userdata types it defined itself, and you can pass
+            engine userdata (Vector, Color3, CFrame, etc.) straight in
+            without marshalling. See
+            <a href="#native">the native bridge section</a> for the
+            full ABI and a worked example.
+        </p>
+    </div>
+    <div class="member">
         <div class="member-header"><span class="member-name">library:Unload()</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Drop the handle. The OS dlclose'es the library;
             subsequent <code>:Call()</code> attempts error. Idempotent.
+            <strong>Caution:</strong> if you used the
+            <a href="#native">native bridge</a>, any Lua function still
+            reachable from <code>GetNative()</code>'s table becomes a
+            dangling C function pointer after unload &mdash; clear or
+            replace those entries first.
         </p>
     </div>
 </div>
@@ -482,6 +506,301 @@ serde_json = <span class="hl-str">"1"</span></code></pre>
     A working version of exactly this pattern is in
     <a href="https://github.com/thekingofspace/Ruzit/tree/main/Examples"><code>Examples/</code></a>
     (<code>rust-ffi-counter/</code> + <code>luau-ffi-counter/</code>).
+</p>
+
+<h2 id="native">Native mlua bridge</h2>
+
+<p class="lede">
+    Optional second ABI. When the JSON path feels too restrictive
+    &mdash; you want to <strong>receive engine userdata and mutate it
+    in place</strong>, <strong>define your own UserData types in
+    Rust</strong>, or <strong>return real Lua functions</strong>
+    &mdash; export <code>ruzit_ffi_init_native</code> alongside the
+    JSON pair. The host hands the DLL a raw <code>lua_State</code> and
+    a Lua table to populate; everything you put in the table is
+    reachable from Luau via <code>library:GetNative()</code>.
+</p>
+
+<div class="callout note">
+    <strong>This ABI sacrifices isolation for ergonomics.</strong>
+    The DLL links its own copy of <code>mlua</code> + Luau, but at
+    runtime both binaries operate on the <em>same</em>
+    <code>lua_State</code>. That requires the two mlua versions to be
+    bit-compatible. Pin the version exactly (<code>mlua = "=0.11.6"</code>),
+    don't ship a DLL built against a newer mlua than the host you're
+    targeting, and treat the rules below as non-negotiable.
+</div>
+
+<h3>The extra export</h3>
+
+<pre><code><span class="hl-kw">extern</span> <span class="hl-str">"C"</span> <span class="hl-kw">fn</span> ruzit_ffi_init_native(
+    state: *<span class="hl-kw">mut</span> mlua::lua_State,
+    table_name: *<span class="hl-kw">const</span> c_char,
+) -&gt; <span class="hl-kw">bool</span>;</code></pre>
+
+<p>
+    Called once by the host immediately after <code>ruzit_ffi_init</code>
+    (if it exists), inside the same <code>FFI.Load</code> call. The
+    DLL gets back two things:
+</p>
+
+<ul>
+    <li>
+        <code>state</code> &mdash; the host's
+        <code>*mut lua_State</code>. Pass it to
+        <code>mlua::Lua::get_or_init_from_ptr(state)</code> to get a
+        <code>&amp;Lua</code> handle on the existing state. The call
+        is idempotent: mlua stores its bookkeeping
+        (<code>ExtraData</code>) inside the <code>lua_State</code>
+        itself, so the function just finds the host's existing
+        binding and returns a reference to the same logical Lua
+        instance.
+    </li>
+    <li>
+        <code>table_name</code> &mdash; a NUL-terminated key the host
+        used to park a fresh empty <code>Table</code> in the named
+        registry. Fetch it with
+        <code>lua.named_registry_value(&amp;name)</code> and
+        populate it however you like. Everything you set here is
+        reachable from Luau as <code>library:GetNative().&lt;name&gt;</code>.
+    </li>
+</ul>
+
+<p>
+    Return <code>true</code> on success. Return <code>false</code> if
+    something goes wrong &mdash; the host discards the table and
+    <code>library:GetNative()</code> resolves to <code>nil</code>.
+</p>
+
+<h3>Worked example</h3>
+
+<p>
+    Add mlua to your DLL's <code>Cargo.toml</code> with an exact-match
+    pin:
+</p>
+
+<pre><code>[dependencies]
+serde_json = <span class="hl-str">"1"</span>
+<span class="hl-com"># Must match the host's mlua version exactly. ExtraData layout</span>
+<span class="hl-com"># changes between mlua minor versions and a mismatch is UB.</span>
+mlua = { version = <span class="hl-str">"=0.11.6"</span>, features = [<span class="hl-str">"luau"</span>, <span class="hl-str">"luau-jit"</span>] }</code></pre>
+
+<p>
+    Then implement <code>ruzit_ffi_init_native</code>. The example
+    below defines a <code>Point</code> userdata with mutable
+    <code>X</code>/<code>Y</code> fields, exposes a constructor, a
+    free function that mutates an existing point, and a function that
+    returns multiple values:
+</p>
+
+<pre><code><span class="hl-kw">use</span> std::ffi::CStr;
+<span class="hl-kw">use</span> std::os::raw::c_char;
+
+<span class="hl-com">#[derive(Clone, Copy)]</span>
+<span class="hl-kw">pub struct</span> Point { <span class="hl-kw">pub</span> x: <span class="hl-kw">f32</span>, <span class="hl-kw">pub</span> y: <span class="hl-kw">f32</span> }
+
+<span class="hl-kw">impl</span> mlua::UserData <span class="hl-kw">for</span> Point {
+    <span class="hl-kw">fn</span> add_fields&lt;F: mlua::UserDataFields&lt;Self&gt;&gt;(f: &amp;<span class="hl-kw">mut</span> F) {
+        f.add_field_method_get(<span class="hl-str">"X"</span>, |_, p| Ok(p.x <span class="hl-kw">as</span> <span class="hl-kw">f64</span>));
+        f.add_field_method_set(<span class="hl-str">"X"</span>, |_, p, v: <span class="hl-kw">f64</span>| { p.x = v <span class="hl-kw">as</span> <span class="hl-kw">f32</span>; Ok(()) });
+        f.add_field_method_get(<span class="hl-str">"Y"</span>, |_, p| Ok(p.y <span class="hl-kw">as</span> <span class="hl-kw">f64</span>));
+        f.add_field_method_set(<span class="hl-str">"Y"</span>, |_, p, v: <span class="hl-kw">f64</span>| { p.y = v <span class="hl-kw">as</span> <span class="hl-kw">f32</span>; Ok(()) });
+    }
+    <span class="hl-kw">fn</span> add_methods&lt;M: mlua::UserDataMethods&lt;Self&gt;&gt;(m: &amp;<span class="hl-kw">mut</span> M) {
+        m.add_method(<span class="hl-str">"Length"</span>, |_, p, _: ()| {
+            Ok(((p.x * p.x + p.y * p.y) <span class="hl-kw">as</span> <span class="hl-kw">f64</span>).sqrt())
+        });
+        m.add_method_mut(<span class="hl-str">"Translate"</span>, |_, p, (dx, dy): (<span class="hl-kw">f64</span>, <span class="hl-kw">f64</span>)| {
+            p.x += dx <span class="hl-kw">as</span> <span class="hl-kw">f32</span>;
+            p.y += dy <span class="hl-kw">as</span> <span class="hl-kw">f32</span>;
+            Ok(())
+        });
+    }
+}
+
+<span class="hl-com">#[unsafe(no_mangle)]</span>
+<span class="hl-kw">pub unsafe extern</span> <span class="hl-str">"C"</span> <span class="hl-kw">fn</span> ruzit_ffi_init_native(
+    state: *<span class="hl-kw">mut</span> mlua::lua_State,
+    table_name: *<span class="hl-kw">const</span> c_char,
+) -&gt; <span class="hl-kw">bool</span> {
+    <span class="hl-kw">let</span> name = <span class="hl-kw">unsafe</span> { CStr::from_ptr(table_name) }
+        .to_str().unwrap_or_default().to_string();
+    <span class="hl-kw">let</span> lua = <span class="hl-kw">unsafe</span> { mlua::Lua::get_or_init_from_ptr(state) };
+    <span class="hl-kw">let</span> table: mlua::Table = <span class="hl-kw">match</span> lua.named_registry_value(&amp;name) {
+        Ok(t) =&gt; t,
+        Err(_) =&gt; <span class="hl-kw">return</span> <span class="hl-kw">false</span>,
+    };
+
+    <span class="hl-com">// Constructor — returns a userdata defined by the DLL.</span>
+    table.set(<span class="hl-str">"Point"</span>, lua.create_function(|_, (x, y): (<span class="hl-kw">f64</span>, <span class="hl-kw">f64</span>)| {
+        Ok(Point { x: x <span class="hl-kw">as</span> <span class="hl-kw">f32</span>, y: y <span class="hl-kw">as</span> <span class="hl-kw">f32</span> })
+    }).unwrap()).unwrap();
+
+    <span class="hl-com">// Receives a userdata, mutates it in place.</span>
+    table.set(<span class="hl-str">"Translate"</span>, lua.create_function(
+        |_, (point, dx, dy): (mlua::AnyUserData, <span class="hl-kw">f64</span>, <span class="hl-kw">f64</span>)| {
+            <span class="hl-kw">let</span> <span class="hl-kw">mut</span> p = point.borrow_mut::&lt;Point&gt;()?;
+            p.x += dx <span class="hl-kw">as</span> <span class="hl-kw">f32</span>;
+            p.y += dy <span class="hl-kw">as</span> <span class="hl-kw">f32</span>;
+            Ok(())
+        }
+    ).unwrap()).unwrap();
+
+    <span class="hl-com">// Returns multiple Lua values.</span>
+    table.set(<span class="hl-str">"ToPolar"</span>, lua.create_function(|_, point: mlua::AnyUserData| {
+        <span class="hl-kw">let</span> p = point.borrow::&lt;Point&gt;()?;
+        <span class="hl-kw">let</span> r = ((p.x * p.x + p.y * p.y) <span class="hl-kw">as</span> <span class="hl-kw">f64</span>).sqrt();
+        <span class="hl-kw">let</span> theta = (p.y <span class="hl-kw">as</span> <span class="hl-kw">f64</span>).atan2(p.x <span class="hl-kw">as</span> <span class="hl-kw">f64</span>);
+        Ok((r, theta))
+    }).unwrap()).unwrap();
+
+    <span class="hl-kw">true</span>
+}</code></pre>
+
+<p>
+    Call it from Luau:
+</p>
+
+<pre><code><span class="hl-kw">local</span> lib = FFI.<span class="hl-fn">Load</span>(<span class="hl-str">"myffi"</span>)
+<span class="hl-kw">local</span> native: any = lib:<span class="hl-fn">GetNative</span>()
+
+<span class="hl-kw">local</span> p = native.<span class="hl-fn">Point</span>(<span class="hl-num">3</span>, <span class="hl-num">4</span>)
+<span class="hl-fn">print</span>(p.X, p.Y, p:<span class="hl-fn">Length</span>())   <span class="hl-com">-- 3, 4, 5</span>
+
+p:<span class="hl-fn">Translate</span>(<span class="hl-num">10</span>, <span class="hl-num">0</span>)             <span class="hl-com">-- DLL-defined method, mutates p</span>
+native.<span class="hl-fn">Translate</span>(p, <span class="hl-num">0</span>, <span class="hl-num">5</span>)        <span class="hl-com">-- DLL-defined free function, also mutates p</span>
+
+<span class="hl-kw">local</span> r, theta = native.<span class="hl-fn">ToPolar</span>(p)
+<span class="hl-fn">print</span>(r, theta)                  <span class="hl-com">-- multi-return works</span></code></pre>
+
+<h3>Accepting engine userdata</h3>
+
+<p>
+    Because the DLL is talking to the host's <code>lua_State</code>
+    directly, any userdata Luau hands you arrives as a real
+    <code>mlua::AnyUserData</code>. You can
+    <code>:borrow_mut::&lt;T&gt;()</code> the engine's types directly
+    &mdash; <code>Vector</code>, <code>Color3</code>,
+    <code>CFrame</code>, etc. &mdash; <em>if</em> your DLL can name
+    the type (i.e. depends on a shared types crate, or you re-declare
+    the same struct layout). For loose interop you can also use
+    <code>AnyUserData::user_value::&lt;T&gt;()</code> /
+    <code>:has_metatable_field()</code> to inspect without committing
+    to a concrete type.
+</p>
+
+<p>
+    Engine-defined types you can borrow from a DLL without redeclaring:
+</p>
+
+<ul>
+    <li><code>crate::libs::primitives::Vector</code></li>
+    <li><code>crate::libs::primitives::Color3</code></li>
+    <li><code>crate::libs::primitives::CFrame</code></li>
+    <li><code>crate::libs::primitives::Dim</code></li>
+</ul>
+
+<p>
+    To borrow them by name your DLL would need a Cargo dependency on
+    the runtime crate, which couples your build to the host. For most
+    cases you'll either define your own userdata types or pull the
+    fields out via <code>AnyUserData::get(&amp;str)</code> and rebuild
+    a Vector on the way back.
+</p>
+
+<h3>Rules — non-negotiable</h3>
+
+<ol>
+    <li>
+        <strong>mlua version must match exactly.</strong> Pin with
+        <code>=</code> in <code>Cargo.toml</code>. A mismatch shifts
+        the <code>ExtraData</code> layout inside the shared
+        <code>lua_State</code> and causes undefined behaviour the
+        moment either side accesses internal mlua state. There is no
+        runtime check; the only protection is the pin.
+    </li>
+    <li>
+        <strong>Never store an <code>mlua::RegistryKey</code> across
+        binaries.</strong> Each binary has its own registry-ID
+        counter and drop tracking. If the DLL creates a key the
+        host can't safely drop it, and vice-versa. Pass values by
+        reference through the populated table only.
+    </li>
+    <li>
+        <strong>Treat <code>:Unload()</code> as terminal.</strong>
+        Lua functions registered by the DLL are backed by C function
+        pointers <em>in</em> the DLL. After <code>:Unload()</code>
+        those pointers are dangling &mdash; calling one is a crash.
+        Either don't unload, or first overwrite each entry on the
+        native table with <code>nil</code> from Luau before
+        unloading.
+    </li>
+    <li>
+        <strong>One thread only.</strong> All mlua calls (host and
+        DLL) must happen on the main Lua thread. If you do background
+        work in the DLL, marshal results back via
+        <code>Signal.Fire</code> on the host RPC path (which is
+        thread-safe) rather than touching the Lua state directly.
+    </li>
+    <li>
+        <strong>Errors are caught.</strong> Returning an
+        <code>Err</code> from a registered function turns into a
+        Lua-side <code>error()</code>, so normal
+        <code>pcall</code>/<code>xpcall</code> works around DLL
+        calls just like any other Lua function.
+    </li>
+</ol>
+
+<h3>When to use which ABI</h3>
+
+<table>
+    <thead>
+        <tr><th>If you want&hellip;</th><th>Use</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Pure-data calls. Simple in/out, no shared state, the
+                DLL can be rebuilt independently of the host.</td>
+            <td>JSON ABI (<code>ruzit_ffi_call</code> +
+                <code>library:Call</code>)</td>
+        </tr>
+        <tr>
+            <td>To mutate engine userdata (a Vector, a Primitive, a
+                CFrame) in place without copying through JSON.</td>
+            <td>Native bridge (<code>library:GetNative()</code>)</td>
+        </tr>
+        <tr>
+            <td>To define your own UserData type with custom fields
+                and methods that feel native in Luau
+                (<code>p:Translate(dx, dy)</code> etc.).</td>
+            <td>Native bridge</td>
+        </tr>
+        <tr>
+            <td>To return multiple values, real functions, or
+                tables-of-functions from a DLL call.</td>
+            <td>Native bridge</td>
+        </tr>
+        <tr>
+            <td>To call back into the engine
+                (<code>Primitive.SetPosition</code>, etc.) from a
+                worker thread.</td>
+            <td>Host RPC catalog (host vtable received in
+                <code>ruzit_ffi_init</code>) &mdash; both ABIs
+                support it; the JSON ABI doesn't preclude using the
+                host vtable.</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>
+    The two ABIs coexist freely: a DLL can export
+    <code>ruzit_ffi_call</code> + <code>ruzit_ffi_free</code> for the
+    JSON path <em>and</em> <code>ruzit_ffi_init_native</code> for the
+    native table, and Luau can mix
+    <code>lib:Call("fast_path", args)</code> with
+    <code>lib:GetNative().rich_path(userdata)</code> on the same
+    library. The <a href="https://github.com/thekingofspace/Ruzit/tree/main/Examples"><code>rust-ffi-counter</code></a>
+    example does exactly that.
 </p>
 
 <h2 id="host-rpcs">Host RPC catalog</h2>

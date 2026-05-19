@@ -455,3 +455,127 @@ pub extern "C" fn ruzit_ffi_free(ptr: *mut c_char) {
         }
     }
 }
+
+// ─── Native mlua section ──────────────────────────────────────────────
+//
+// Optional ABI. When the host loads the DLL it calls
+// `ruzit_ffi_init_native(lua_state, table_name)` if the symbol exists.
+// We construct a Lua wrapper from the raw state and populate the table
+// the host pre-created for us. Anything we put on that table becomes
+// reachable in Luau as `lib:GetNative().<name>`.
+//
+// Use it when:
+//   * you want to receive real userdata (Vector, Color3, CFrame, etc.) and
+//     mutate them without JSON marshalling, OR
+//   * you want to define your own UserData types in Rust and hand them
+//     back to Luau as first-class objects.
+//
+// SAFETY:
+//   * host + DLL must link the same mlua version (this Cargo.toml pins
+//     mlua = "=0.11.6"). A version drift is undefined behaviour.
+//   * never store an `mlua::RegistryKey` across sides — each binary has
+//     its own ID counter / drop tracking.
+//   * if you unload the DLL (`lib:Unload()` or process exit), every
+//     callback you registered becomes dangling. Either don't unload, or
+//     clear `GetNative()` entries first from Luau.
+
+#[derive(Clone, Copy, Debug)]
+pub struct PointHandle {
+    pub x: f32,
+    pub y: f32,
+}
+
+impl mlua::UserData for PointHandle {
+    fn add_fields<F: mlua::UserDataFields<Self>>(f: &mut F) {
+        f.add_field_method_get("X", |_, this| Ok(this.x as f64));
+        f.add_field_method_set("X", |_, this, v: f64| {
+            this.x = v as f32;
+            Ok(())
+        });
+        f.add_field_method_get("Y", |_, this| Ok(this.y as f64));
+        f.add_field_method_set("Y", |_, this, v: f64| {
+            this.y = v as f32;
+            Ok(())
+        });
+    }
+
+    fn add_methods<M: mlua::UserDataMethods<Self>>(m: &mut M) {
+        m.add_method("Length", |_, this, _: ()| {
+            Ok(((this.x * this.x + this.y * this.y) as f64).sqrt())
+        });
+        m.add_method_mut("Translate", |_, this, (dx, dy): (f64, f64)| {
+            this.x += dx as f32;
+            this.y += dy as f32;
+            Ok(())
+        });
+        m.add_meta_method("__tostring", |_, this, _: ()| {
+            Ok(format!("Point({}, {})", this.x, this.y))
+        });
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ruzit_ffi_init_native(
+    state: *mut mlua::lua_State,
+    table_name: *const c_char,
+) -> bool {
+    if state.is_null() || table_name.is_null() {
+        return false;
+    }
+    let name = match unsafe { CStr::from_ptr(table_name) }.to_str() {
+        Ok(s) => s.to_string(),
+        Err(_) => return false,
+    };
+    let lua: &mlua::Lua = unsafe { mlua::Lua::get_or_init_from_ptr(state) };
+
+    let table: mlua::Table = match lua.named_registry_value(&name) {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+
+    // Constructor for our DLL-defined userdata.
+    let new_point = match lua.create_function(|_, (x, y): (f64, f64)| {
+        Ok(PointHandle {
+            x: x as f32,
+            y: y as f32,
+        })
+    }) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    if table.set("Point", new_point).is_err() {
+        return false;
+    }
+
+    // Function that receives a userdata, edits it in place.
+    let translate = match lua.create_function(
+        |_, (point, dx, dy): (mlua::AnyUserData, f64, f64)| {
+            let mut p = point.borrow_mut::<PointHandle>()?;
+            p.x += dx as f32;
+            p.y += dy as f32;
+            Ok(())
+        },
+    ) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    if table.set("Translate", translate).is_err() {
+        return false;
+    }
+
+    // Function that takes one userdata and returns another (different type).
+    let to_polar = match lua.create_function(|_, point: mlua::AnyUserData| {
+        let p = point.borrow::<PointHandle>()?;
+        let r = ((p.x * p.x + p.y * p.y) as f64).sqrt();
+        let theta = (p.y as f64).atan2(p.x as f64);
+        Ok((r, theta))
+    }) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    if table.set("ToPolar", to_polar).is_err() {
+        return false;
+    }
+
+    true
+}

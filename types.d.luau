@@ -1474,8 +1474,10 @@ declare class FFILibrary
 	Alive: boolean
 	Source: string
 	function Call(self, name: string, args: FFIArg?): any
+	function GetNative(self): { [string]: any }?
 	function Unload(self): ()
 end
+
 export type FFI_API = {
 	Load: (name: string) -> FFILibrary,
 	BinDirectory: () -> string?,
