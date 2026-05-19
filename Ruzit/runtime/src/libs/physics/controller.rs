@@ -269,7 +269,7 @@ pub fn tick_controllers(lua: &Lua, plane_arc: &Arc<Mutex<PlaneState>>, dt: f32) 
         }
         if let Some(idx) = f.waypoint_reached {
             let mut args = MultiValue::new();
-            args.push_back(Value::Integer(idx as i32));
+            args.push_back(Value::Integer(idx as i64));
             let _ = signal::fire(lua, &f.waypoint_reached_signal, args);
         }
         if f.path_finished {

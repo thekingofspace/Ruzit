@@ -413,14 +413,7 @@ fn deserialize_value(lua: &Lua, buf: &[u8], pos: &mut usize) -> mlua::Result<Val
         0 => Ok(Value::Nil),
         1 => Ok(Value::Boolean(false)),
         2 => Ok(Value::Boolean(true)),
-        3 => {
-            let n = read_i64(buf, pos)?;
-            if let Ok(small) = i32::try_from(n) {
-                Ok(Value::Integer(small))
-            } else {
-                Ok(Value::Number(n as f64))
-            }
-        }
+        3 => Ok(Value::Integer(read_i64(buf, pos)?)),
         4 => Ok(Value::Number(read_f64(buf, pos)?)),
         5 => {
             let len = read_u32(buf, pos)? as usize;

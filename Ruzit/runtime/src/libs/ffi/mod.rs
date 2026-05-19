@@ -1296,7 +1296,7 @@ fn json_to_lua_value(lua: &Lua, v: &serde_json::Value) -> mlua::Result<Value> {
         J::Number(n) => {
             if let Some(i) = n.as_i64() {
                 if i >= i32::MIN as i64 && i <= i32::MAX as i64 {
-                    Value::Integer(i as i32)
+                    Value::Integer(i)
                 } else {
                     Value::Number(i as f64)
                 }

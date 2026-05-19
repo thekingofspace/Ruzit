@@ -420,7 +420,7 @@ impl UserData for Sound {
 
         f.add_field_method_get("LowPass", |_, this| -> mlua::Result<mlua::Value> {
             Ok(match find_shader(this, |s| matches!(s, Shader::LowPass(_))) {
-                Some(Shader::LowPass(v)) => mlua::Value::Integer(v as i32),
+                Some(Shader::LowPass(v)) => mlua::Value::Integer(v as i64),
                 _ => mlua::Value::Nil,
             })
         });
@@ -440,7 +440,7 @@ impl UserData for Sound {
 
         f.add_field_method_get("HighPass", |_, this| -> mlua::Result<mlua::Value> {
             Ok(match find_shader(this, |s| matches!(s, Shader::HighPass(_))) {
-                Some(Shader::HighPass(v)) => mlua::Value::Integer(v as i32),
+                Some(Shader::HighPass(v)) => mlua::Value::Integer(v as i64),
                 _ => mlua::Value::Nil,
             })
         });

@@ -189,6 +189,25 @@ obj:<span class="hl-fn">ApplyImpulse</span>(Primitives.Vector.<span class="hl-fn
                 GPU spatial-hash broadphase isn't built yet.</li>
         </ul>
     </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">PhysicsService.NewGUI(opts)</span>
+            <span class="member-type">-> GuiPhysicsPlane</span>
+        </div>
+        <p class="member-desc">
+            2D sibling of <code>New</code>. Spins up a pixel-space physics
+            world for GUI primitives — same idea (anchored / unanchored
+            bodies, gravity, damping, controllers, raycast), but every
+            position is a <code>Dim</code>, shapes come from the bound
+            primitive's <code>Shape</code>, and the simulation writes
+            results back to each primitive's <code>Position</code> /
+            <code>Rotation</code> each tick.
+        </p>
+        <p class="member-desc">
+            <code>opts</code> is an optional table — see
+            <a href="#gui-plane">GuiPhysicsPlane</a> below.
+        </p>
+    </div>
 </div>
 
 <h2 id="plane">PhysicsPlane</h2>
@@ -1085,6 +1104,727 @@ crate:<span class="hl-fn">SetPin</span>(<span class="hl-kw">nil</span>)</code></
         </p>
     </div>
 </div>
+
+<hr>
+
+<h2 id="gui-plane">GuiPhysicsPlane</h2>
+
+<p class="lede">
+    A 2D physics world for <a href="gui.html">GUI</a> primitives.
+    Same shape as <code>PhysicsPlane</code> but in pixel-space:
+    positions are <code>Dim</code>, gravity is <code>Dim</code>,
+    bodies wrap GUI primitives (<code>Square</code>,
+    <code>Circle</code>, <code>Triangle</code>, <code>Image</code>,
+    <code>Text</code>) instead of <code>BasePart</code>s. Run
+    alongside the 3D world — they don't interact.
+</p>
+
+<pre><code><span class="hl-kw">local</span> GUI = <span class="hl-fn">import</span>(<span class="hl-str">"GUI"</span>)
+<span class="hl-kw">local</span> Physics = <span class="hl-fn">import</span>(<span class="hl-str">"PhysicsService"</span>)
+<span class="hl-kw">local</span> Dim = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Dim
+
+<span class="hl-kw">local</span> plane = Physics.<span class="hl-fn">NewGUI</span>{
+    Gravity   = Dim.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">1200</span>),
+    BoundsMin = Dim.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>),
+    BoundsMax = Dim.<span class="hl-fn">new</span>(<span class="hl-num">1280</span>, <span class="hl-num">720</span>),
+}
+
+<span class="hl-kw">local</span> ground = GUI.Basic.<span class="hl-fn">Square</span>()
+ground.Size = Dim.<span class="hl-fn">new</span>(<span class="hl-num">1280</span>, <span class="hl-num">40</span>)
+ground.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">640</span>, <span class="hl-num">700</span>)
+plane:<span class="hl-fn">Add</span>(ground).Anchored = <span class="hl-kw">true</span>
+
+<span class="hl-kw">for</span> i = <span class="hl-num">1</span>, <span class="hl-num">20</span> <span class="hl-kw">do</span>
+    <span class="hl-kw">local</span> ball = GUI.Basic.<span class="hl-fn">Circle</span>()
+    ball.Size = Dim.<span class="hl-fn">new</span>(<span class="hl-num">32</span>, <span class="hl-num">32</span>)
+    ball.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">100</span> + i * <span class="hl-num">50</span>, <span class="hl-num">100</span>)
+    plane:<span class="hl-fn">Add</span>(ball).Bounciness = <span class="hl-num">0.6</span>
+<span class="hl-kw">end</span></code></pre>
+
+<div class="callout note">
+    <strong>Z-index is the collision layer.</strong>
+    Two bodies collide <em>only</em> if their bound primitive's
+    <code>ZIndex</code> matches. Gravity, damping, drag and
+    constant force always apply regardless of layer. So a HUD on
+    <code>ZIndex = 100</code> can sit physically inert above a
+    gameplay layer on <code>ZIndex = 0</code> even though they
+    share the screen — exactly like 2D z-sorted UI where higher
+    layers never overlap lower ones.
+</div>
+
+<h3>Plane options</h3>
+
+<p>
+    All fields are optional. PascalCase keys match the existing
+    <code>New</code> API; semantics mirror their 3D counterparts.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.Gravity</span>
+            <span class="member-type">Dim</span>
+        </div>
+        <p class="member-desc">
+            Pixels-per-second² applied to every non-anchored body each
+            tick. Default <code>Dim(0, 980)</code> (down-positive,
+            matching the GUI Y axis where +Y is down). Set to
+            <code>Dim(0, 0)</code> for a zero-gravity puzzle.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.Enabled</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">
+            Pause / resume integration without destroying anything.
+            Default <code>true</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.LinearDamping</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Per-second linear velocity decay. <code>velocity *= max(0, 1
+            - LinearDamping * dt)</code>. Default <code>0.05</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.AngularDamping</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Same idea for angular velocity. Default <code>0.10</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.Drag</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Quadratic drag coefficient. <code>F = -Drag * |v| * v</code>.
+            Zero by default. Useful for "underwater" UIs where light
+            taps drift but big throws fly far.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.ConstantForce</span>
+            <span class="member-type">Dim</span>
+        </div>
+        <p class="member-desc">
+            Force (not acceleration) added to every non-anchored body
+            each tick on top of gravity. A heavy body accelerates
+            less from it. Good for wind, conveyor pushes, magnetic
+            sweep effects.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.RestThreshold</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Speed below which a body's sleep timer starts ticking
+            (after 0.5s of low speed, the body sleeps and stops
+            integrating until something wakes it). Default
+            <code>0.25</code>. Higher values let piles settle
+            faster; <code>0</code> disables sleeping (combined with
+            <code>NeverSleep</code> for true persistent motion).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.SolverIterations</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            How many resolution passes per tick. Default
+            <code>4</code> (clamped 1..32). More iterations =
+            stiffer stacks at the cost of CPU.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.NeverSleep</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">
+            Disable sleeping entirely. Useful when you're polling
+            <code>Velocity</code> from Lua and need it to keep
+            integrating even at rest.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">opts.BoundsMin / opts.BoundsMax</span>
+            <span class="member-type">Dim</span>
+        </div>
+        <p class="member-desc">
+            Construction-only. If both are passed, bodies are clamped
+            inside the rectangle and the contact reflects via
+            <code>Bounciness</code> on each side. Omit for an
+            unbounded playfield.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.ObjectCount</span>
+            <span class="member-type">number</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">Live count.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane.Alive</span>
+            <span class="member-type">boolean</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            False after <code>:Destroy()</code>. Operations on a dead
+            plane no-op.
+        </p>
+    </div>
+</div>
+
+<h3>Plane methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane:Add(primitive)</span>
+            <span class="member-type">-> PhysicsGuiObject</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Wrap any <a href="gui.html">GUI</a> primitive
+            (<code>Square</code>, <code>Circle</code>,
+            <code>Triangle</code>, <code>Image</code>,
+            <code>Text</code>) as a physics body. The body inherits
+            the primitive's <code>Size</code>, <code>Position</code>,
+            <code>Rotation</code>, and <code>ZIndex</code> at the
+            moment of the call. Subsequent ticks <em>write back</em>
+            to the primitive, so anything that watches
+            <code>:GetPropertyChangedSignal("Position")</code> on the
+            primitive sees physics updates without further wiring.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane:NewController(primitive, opts?)</span>
+            <span class="member-type">-> GUIController</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Bind a primitive as a player-driven kinematic body. The
+            controller responds to <code>:Move(direction)</code> /
+            <code>:Jump()</code> calls. Internally it adds the body
+            to the plane (you don't need to <code>:Add</code> it
+            first) with <code>LockedRotation = true</code> so the
+            sprite doesn't tumble while running.
+        </p>
+        <p class="member-desc">
+            <code>opts</code> is an optional table:
+        </p>
+        <ul>
+            <li><code>MoveSpeed</code> &mdash; max horizontal speed in
+                px/s. Default <code>240</code>.</li>
+            <li><code>Acceleration</code> &mdash; how quickly velocity
+                snaps to target. Default <code>1800</code>.</li>
+            <li><code>JumpStrength</code> &mdash; upward impulse on
+                <code>:Jump()</code>. Default <code>700</code>.</li>
+            <li><code>WaypointRadius</code> &mdash; "arrived"
+                tolerance for waypoint-mode pathing. Default
+                <code>8</code>.</li>
+        </ul>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane:NewUncontrolled(primitive, opts?)</span>
+            <span class="member-type">-> GUIController</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Same controller, but configured for NPC / AI use:
+            <code>:Move</code> still works, but you'd typically
+            drive it via <code>:SetWaypoints</code> /
+            <code>:MoveTo</code> and let the controller seek along
+            them on its own.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane:Raycast(from, dir, maxDistance?)</span>
+            <span class="member-type">-> hit?</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Cast a ray through the plane. Returns
+            <code>nil</code> if nothing was hit; otherwise a table
+            with <code>Distance</code> (number),
+            <code>Position</code> (Dim), <code>Normal</code> (Dim),
+            <code>Object</code> (the <code>PhysicsGuiObject</code>).
+            Z-index <em>does not</em> filter raycasts — they hit any
+            collidable body in their path, so use it for cursor
+            hover / click probes across layers.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane:Step(dt)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Manually advance the simulation by <code>dt</code>
+            seconds. The engine already calls this each frame from
+            the heart loop — you only need it for paused-game
+            scrubbing, fixed-step replay systems, or unit tests.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">plane:Destroy()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Drop every body and controller, free the plane. Bound
+            primitives freeze at their last simulated position and
+            are otherwise untouched.
+        </p>
+    </div>
+</div>
+
+<h2 id="gui-object">PhysicsGuiObject</h2>
+
+<p>
+    The 2D sibling of <a href="#object">PhysicsObject</a>. Returned
+    by <code>plane:Add(primitive)</code>. Mutating its fields
+    affects the simulation on the next tick.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.Position / obj.Velocity</span>
+            <span class="member-type">Dim</span>
+        </div>
+        <p class="member-desc">
+            Live pixel-space position and velocity. Writing
+            <code>Position</code> wakes the body; the next
+            write-back propagates the value to the bound primitive.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.Rotation / obj.AngularVelocity</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Degrees / degrees-per-second. Set
+            <code>LockedRotation = true</code> to freeze rotation
+            (default for controllers).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.ImpulseDirection</span>
+            <span class="member-type">Dim</span>
+        </div>
+        <p class="member-desc">
+            One-shot impulse applied on the next tick, then cleared.
+            Equivalent to <code>:ApplyImpulse(d)</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.ConstantForce</span>
+            <span class="member-type">Dim</span>
+        </div>
+        <p class="member-desc">
+            Per-body force re-applied each tick (in addition to the
+            plane's <code>ConstantForce</code> + gravity). Good for
+            jetpacks, hovering platforms, magnetism toward a moving
+            anchor (set per frame).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.Mass</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Default <code>1</code>. Used by impulse application and
+            collision response. Min 0.0001.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.Bounciness</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            0..1. Coefficient of restitution applied on collision.
+            <code>0</code> = inelastic, <code>1</code> = perfect
+            bounce. Walls inherit each body's own
+            <code>Bounciness</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.Friction</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            0..4. Tangential friction applied during collision
+            resolution. Pairs take the geometric mean of both
+            bodies' values.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.Anchored</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">
+            Anchored bodies don't integrate, but other bodies still
+            collide with them. Use for floors, walls, platforms.
+            Setting <code>true</code> zeros velocity.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.CanCollide</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">
+            Skip pair resolution entirely. The body still
+            integrates (so gravity / wind still apply) but passes
+            through others. Useful for visual-only debris.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.GravityScale</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Multiplier on the plane's <code>Gravity</code> for this
+            body. <code>0</code> = body floats, <code>2</code> =
+            falls twice as fast as the rest. Per-body, so heavy
+            obstacles + floaty pickups in the same plane is fine.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.LockedX / obj.LockedY / obj.LockedRotation</span>
+            <span class="member-type">boolean</span>
+        </div>
+        <p class="member-desc">
+            Zero the respective component of velocity each tick.
+            Used by controllers, side-scrollers, slot-machine
+            reels.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.ZIndex / obj.Size / obj.Shape</span>
+            <span class="member-type"></span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            Mirrored from the bound primitive each tick. Change the
+            primitive's <code>Size</code> or <code>ZIndex</code> and
+            the body picks it up next frame — collision-layer
+            membership and AABB extents update automatically.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj.Sleeping</span>
+            <span class="member-type">boolean</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            True after the body has been at rest long enough to skip
+            integration. Wakes automatically on any contact / write
+            to <code>Position</code> / <code>Velocity</code> /
+            <code>ImpulseDirection</code>, or manually via
+            <code>:Wake()</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj:ApplyImpulse(impulse)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Add <code>impulse / Mass</code> to <code>Velocity</code>
+            immediately. Wakes the body.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj:ApplyForce(force)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Shorthand for assigning to
+            <code>ConstantForce</code>. Re-call each frame to
+            achieve a varying force; clear with
+            <code>obj:ApplyForce(Dim.new(0, 0))</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj:Wake()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">Force the body out of sleep so the next tick integrates it.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">obj:Destroy()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Drop the body from the plane. The bound primitive is
+            left alive at its last simulated position.
+        </p>
+    </div>
+</div>
+
+<h2 id="gui-controller">GUIController</h2>
+
+<p>
+    The 2D character controller. Returned by
+    <code>plane:NewController</code> /
+    <code>plane:NewUncontrolled</code>. Mirrors the
+    <a href="#controller">3D Controller</a>'s shape: a wrapped body
+    plus convenience signals and waypoint pathing.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ctrl.Object</span>
+            <span class="member-type">PhysicsGuiObject</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            The underlying body. Use it to read
+            <code>Velocity</code> for animation, set
+            <code>Anchored</code> to freeze, etc.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ctrl.MoveDirection</span>
+            <span class="member-type">Dim</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            Last value passed to <code>:Move()</code>. Each
+            component is clamped to <code>-1..1</code> at
+            integration time; magnitude doesn't matter, direction
+            does.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ctrl.MoveSpeed / ctrl.Acceleration / ctrl.JumpStrength</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Tune at runtime — slow-mo, sprint, jump-buff modifiers
+            are all just field writes.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ctrl.OnGround</span>
+            <span class="member-type">boolean</span>
+            <span class="tag tag-readonly">read-only</span>
+        </div>
+        <p class="member-desc">
+            True if the controller's foot AABB overlaps any
+            collidable body on the same ZIndex. Updated each tick;
+            gates jumping (you can only jump while
+            <code>OnGround</code>).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ctrl.WaypointReached</span>
+            <span class="member-type">Signal&lt;number&gt;</span>
+            <span class="tag tag-event">event</span>
+        </div>
+        <p class="member-desc">
+            Fires with the 1-based waypoint index every time the
+            controller arrives at one.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ctrl.PathFinished</span>
+            <span class="member-type">Signal&lt;&gt;</span>
+            <span class="tag tag-event">event</span>
+        </div>
+        <p class="member-desc">
+            Fires once after the last waypoint is reached. Calling
+            <code>SetWaypoints</code> again resets the path.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ctrl.Moved</span>
+            <span class="member-type">Signal&lt;number, number&gt;</span>
+            <span class="tag tag-event">event</span>
+        </div>
+        <p class="member-desc">
+            Fires each tick the controller moved, with
+            <code>(dx, dy)</code> in pixels. Good driver for
+            footstep audio, run animations.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ctrl.GroundChanged</span>
+            <span class="member-type">Signal&lt;boolean&gt;</span>
+            <span class="tag tag-event">event</span>
+        </div>
+        <p class="member-desc">
+            Fires whenever <code>OnGround</code> flips. Perfect for
+            landing thuds / jump-anticipation poses.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ctrl:Move(direction)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Set the desired direction. Typically called every frame
+            from input handling: <code>ctrl:Move(Dim.new(input.x,
+            0))</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ctrl:Jump()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Queue a jump for the next tick. Only consumed if the
+            controller is on the ground — the request is cleared
+            either way.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ctrl:SetWaypoints(points)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Replace the path. Array of <code>Dim</code>s. The
+            controller seeks toward each one in order, fires
+            <code>WaypointReached</code> on arrival, and
+            <code>PathFinished</code> after the last.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ctrl:MoveTo(target)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Shorthand for <code>:SetWaypoints({target})</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ctrl:ClearWaypoints()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">Drop the current path. The body keeps its current velocity.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ctrl:Destroy()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">Remove the controller and its body from the plane.</p>
+    </div>
+</div>
+
+<h3 id="gui-patterns">Patterns</h3>
+
+<h4>Per-layer playfields stacked on one screen</h4>
+
+<pre><code><span class="hl-com">-- Gameplay on layer 0, HUD on layer 100. Same plane, same gravity,</span>
+<span class="hl-com">-- but the HUD never collides with falling debris.</span>
+<span class="hl-kw">local</span> world = Physics.<span class="hl-fn">NewGUI</span>{ Gravity = Dim.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">800</span>) }
+
+<span class="hl-kw">for</span> _, sprite <span class="hl-kw">in</span> debris <span class="hl-kw">do</span>
+    sprite.ZIndex = <span class="hl-num">0</span>
+    world:<span class="hl-fn">Add</span>(sprite)
+<span class="hl-kw">end</span>
+
+<span class="hl-kw">for</span> _, sprite <span class="hl-kw">in</span> hud_pieces <span class="hl-kw">do</span>
+    sprite.ZIndex = <span class="hl-num">100</span>
+    world:<span class="hl-fn">Add</span>(sprite).GravityScale = <span class="hl-num">0</span>      <span class="hl-com">-- and float</span>
+<span class="hl-kw">end</span></code></pre>
+
+<h4>Cursor-drag a UI element</h4>
+
+<pre><code><span class="hl-kw">local</span> Mouse = <span class="hl-fn">import</span>(<span class="hl-str">"Mouse"</span>)
+<span class="hl-kw">local</span> obj = world:<span class="hl-fn">Add</span>(card)
+
+Heart:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>()
+    <span class="hl-kw">if</span> Mouse.<span class="hl-fn">GetButtonState</span>(<span class="hl-str">"Left"</span>) <span class="hl-kw">then</span>
+        obj.Anchored = <span class="hl-kw">true</span>
+        obj.Position = Dim.<span class="hl-fn">new</span>(Mouse.X, Mouse.Y)
+    <span class="hl-kw">else</span>
+        <span class="hl-kw">if</span> obj.Anchored <span class="hl-kw">then</span>
+            obj.Anchored = <span class="hl-kw">false</span>
+            obj:<span class="hl-fn">ApplyImpulse</span>(Dim.<span class="hl-fn">new</span>(Mouse.DeltaX * <span class="hl-num">60</span>, Mouse.DeltaY * <span class="hl-num">60</span>))
+        <span class="hl-kw">end</span>
+    <span class="hl-kw">end</span>
+<span class="hl-kw">end</span>)</code></pre>
+
+<h4>NPC chasing waypoints around a HUD</h4>
+
+<pre><code><span class="hl-kw">local</span> enemy = GUI.Basic.<span class="hl-fn">Square</span>()
+enemy.Size = Dim.<span class="hl-fn">new</span>(<span class="hl-num">32</span>, <span class="hl-num">32</span>)
+<span class="hl-kw">local</span> npc = plane:<span class="hl-fn">NewUncontrolled</span>(enemy, { MoveSpeed = <span class="hl-num">160</span> })
+
+npc:<span class="hl-fn">SetWaypoints</span>{
+    Dim.<span class="hl-fn">new</span>(<span class="hl-num">100</span>, <span class="hl-num">300</span>),
+    Dim.<span class="hl-fn">new</span>(<span class="hl-num">800</span>, <span class="hl-num">300</span>),
+    Dim.<span class="hl-fn">new</span>(<span class="hl-num">800</span>, <span class="hl-num">500</span>),
+    Dim.<span class="hl-fn">new</span>(<span class="hl-num">100</span>, <span class="hl-num">500</span>),
+}
+npc.PathFinished:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>()
+    npc:<span class="hl-fn">SetWaypoints</span>(npc:<span class="hl-fn">GetWaypoints</span>())      <span class="hl-com">-- loop</span>
+<span class="hl-kw">end</span>)</code></pre>
+
+<div class="callout note">
+    <strong>Differences from 3D physics worth knowing.</strong>
+    No rapier dependency — the 2D path is a self-contained AABB +
+    circle solver with impulse-based resolution and a single
+    rayon-free integration loop. That keeps startup cheap and
+    keeps the GUI thread the only one touching primitive state.
+    No GPU deferral, no per-plane thread pool, no buoyancy field
+    (use <code>GravityScale = 0</code> + <code>ConstantForce</code>
+    if you want floaty behaviour).
+</div>
+
+<hr>
 
 <h2 id="lifecycle">Lifecycle &amp; teardown</h2>
 

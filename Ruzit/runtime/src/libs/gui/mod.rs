@@ -1078,7 +1078,7 @@ impl UserData for GuiPrimitive {
                 )
             };
             fire_changed(lua, signal_table, "ZIndex")?;
-            fire_prop_changed(lua, prop_sig, Value::Integer(clamped));
+            fire_prop_changed(lua, prop_sig, Value::Integer(clamped as i64));
             Ok(())
         });
         f.add_field_method_get("Visible", |_, this| Ok(this.state.lock().unwrap().visible));

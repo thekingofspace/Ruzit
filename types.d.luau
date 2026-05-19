@@ -510,6 +510,38 @@ export type Primitives_API = {
 	CFrame: CFrame_API,
 	UDim: UDim_API,
 }
+export type NoiseLayerParams = {
+	Type: ("value" | "perlin" | "gradient" | "fbm" | "ridged" | "white")?,
+	Mode: ("add" | "set" | "replace" | "mul" | "multiply" | "max" | "min")?,
+	Scale: number?,
+	Amplitude: number?,
+	Octaves: number?,
+	Lacunarity: number?,
+	Persistence: number?,
+	Seed: number?,
+	OffsetX: number?,
+	OffsetY: number?,
+}
+declare class NoiseField
+	function Width(self): number
+	function Height(self): number
+	function Clear(self, fill: number?): ()
+	function Fill(self, value: number): ()
+	function GetValueAt(self, x: number, y: number): number
+	function SetValueAt(self, x: number, y: number, value: number): ()
+	function GetColorAt(self, x: number, y: number): Color3
+	function Normalize(self): ()
+	function ToBytes(self): string
+	function GenerateLayer(self, params: NoiseLayerParams): ()
+end
+export type Image_API = {
+	GetColorAt: (image: ImageAsset, x: number, y: number) -> Color3,
+	GetAlphaAt: (image: ImageAsset, x: number, y: number) -> number,
+	GetPredominantColor: (image: ImageAsset) -> Color3,
+	AverageColor: (image: ImageAsset) -> Color3,
+	ToSeed: (image: ImageAsset) -> number,
+	Noise: (width: number, height: number, fill: number?) -> NoiseField,
+}
 declare class BasePart
 	Shape: "Cube" | "Sphere" | "Model"
 	CFrame: CFrame
@@ -1667,8 +1699,91 @@ export type Objects_API = {
 	Sizable: () -> Sizable,
 	Billboard: () -> Billboard,
 }
+export type GuiPhysicsPlaneOptions = {
+	Gravity: Dim?,
+	LinearDamping: number?,
+	AngularDamping: number?,
+	Drag: number?,
+	ConstantForce: Dim?,
+	RestThreshold: number?,
+	SolverIterations: number?,
+	NeverSleep: boolean?,
+	BoundsMin: Dim?,
+	BoundsMax: Dim?,
+}
+export type GuiControllerOptions = {
+	MoveSpeed: number?,
+	Acceleration: number?,
+	JumpStrength: number?,
+	WaypointRadius: number?,
+}
+declare class PhysicsGuiObject
+	Position: Dim
+	Velocity: Dim
+	Rotation: number
+	AngularVelocity: number
+	ImpulseDirection: Dim
+	ConstantForce: Dim
+	Mass: number
+	Bounciness: number
+	Friction: number
+	Anchored: boolean
+	CanCollide: boolean
+	GravityScale: number
+	LockedX: boolean
+	LockedY: boolean
+	LockedRotation: boolean
+	ZIndex: number
+	Size: Dim
+	Shape: "Square" | "Circle" | "Triangle" | "Image" | "Text" | "Clippable"
+	Sleeping: boolean
+	Alive: boolean
+	function ApplyImpulse(self, impulse: Dim): ()
+	function ApplyForce(self, force: Dim): ()
+	function Wake(self): ()
+	function Destroy(self): ()
+end
+declare class GUIController
+	MoveDirection: Dim
+	MoveSpeed: number
+	Acceleration: number
+	JumpStrength: number
+	OnGround: boolean
+	Object: PhysicsGuiObject
+	Alive: boolean
+	WaypointReached: Signal<number>
+	PathFinished: Signal<>
+	Moved: Signal<number, number>
+	GroundChanged: Signal<boolean>
+	function Move(self, direction: Dim): ()
+	function Jump(self): ()
+	function SetWaypoints(self, points: { Dim }): ()
+	function ClearWaypoints(self): ()
+	function MoveTo(self, target: Dim): ()
+	function Destroy(self): ()
+end
+declare class GuiPhysicsPlane
+	Gravity: Dim
+	Enabled: boolean
+	LinearDamping: number
+	AngularDamping: number
+	Drag: number
+	ConstantForce: Dim
+	RestThreshold: number
+	SolverIterations: number
+	NeverSleep: boolean
+	Alive: boolean
+	ObjectCount: number
+	function Add(self, primitive: Primitive): PhysicsGuiObject
+	function NewController(self, primitive: Primitive, opts: GuiControllerOptions?): GUIController
+	function NewUncontrolled(self, primitive: Primitive, opts: GuiControllerOptions?): GUIController
+	function Step(self, dt: number): ()
+	function Raycast(self, from: Dim, dir: Dim, maxDistance: number?): { Distance: number, Position: Dim, Normal: Dim, Object: PhysicsGuiObject }?
+	function Destroy(self): ()
+end
 export type PhysicsService_API = {
 	New: (opts: PhysicsPlaneOptions?) -> PhysicsPlane,
+	NewGUI: (opts: GuiPhysicsPlaneOptions?) -> GuiPhysicsPlane,
 }
 export type Imports = {
 	Actor: Actor_API,
@@ -1680,6 +1795,7 @@ export type Imports = {
 	Gamepad: Gamepad_API,
 	GPU: GPU_API,
 	GUI: GUI_API,
+	Image: Image_API,
 	IO: IO_API,
 	Keyboard: Keyboard_API,
 	LightingService: LightingService_API,

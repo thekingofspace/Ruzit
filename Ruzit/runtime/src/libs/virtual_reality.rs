@@ -424,7 +424,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         }
     })?)?;
 
-    api.set_metatable(Some(m));
+    api.set_metatable(Some(m))?;
 
     api.set(
         "LinkCamera",

@@ -91,6 +91,6 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
             },
         )?,
     )?;
-    t.set_metatable(Some(meta));
+    t.set_metatable(Some(meta))?;
     Ok(t)
 }

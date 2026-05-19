@@ -85,7 +85,7 @@ fn ensure_asset_cache(lua: &Lua) -> mlua::Result<Table> {
     let t = lua.create_table()?;
     let meta = lua.create_table()?;
     meta.set("__mode", "v")?;
-    t.set_metatable(Some(meta));
+    t.set_metatable(Some(meta))?;
     lua.set_named_registry_value(ASSET_CACHE_KEY, t.clone())?;
     Ok(t)
 }

@@ -1,5 +1,6 @@
 
 pub mod controller;
+pub mod gui;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -210,6 +211,8 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         })?,
     )?;
 
+    t.set("NewGUI", gui::create_new_gui(lua)?)?;
+
     Ok(t)
 }
 
@@ -233,6 +236,7 @@ pub fn tick(lua: &Lua, dt: f64) {
         controller::tick_controllers(lua, plane_arc, dt);
         fire_prop_signals(lua, plane_arc);
     }
+    gui::tick(lua, dt as f64);
 }
 
 fn make_controller_method(

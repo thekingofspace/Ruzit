@@ -279,6 +279,19 @@ impl FromLua for Vector {
     }
 }
 
+impl FromLua for Dim {
+    fn from_lua(value: Value, _: &Lua) -> mlua::Result<Self> {
+        match value {
+            Value::UserData(ud) => Ok(*ud.borrow::<Dim>()?),
+            other => Err(mlua::Error::FromLuaConversionError {
+                from: other.type_name(),
+                to: "Dim".to_string(),
+                message: Some("expected a Primitives.Dim".into()),
+            }),
+        }
+    }
+}
+
 pub fn value_to_vector_opt(v: &Value) -> Option<Vector> {
     match v {
         Value::UserData(ud) => ud.borrow::<Vector>().ok().map(|r| *r),

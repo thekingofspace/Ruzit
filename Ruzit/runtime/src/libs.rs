@@ -9,6 +9,7 @@ pub mod ffi;
 pub mod gamepad;
 pub mod gpu;
 pub mod gui;
+pub mod image;
 pub mod input;
 pub mod io;
 pub mod keyboard;

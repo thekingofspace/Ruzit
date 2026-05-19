@@ -86,7 +86,7 @@ fn build_env(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
     let env = lua.create_table()?;
     let meta = lua.create_table()?;
     meta.set("__index", lua.globals())?;
-    env.set_metatable(Some(meta));
+    env.set_metatable(Some(meta))?;
 
     install_require(lua, &env, &fs, &owner)?;
     install_dirname(&env, &fs, &owner)?;
@@ -186,6 +186,7 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             "Gamepad" => libs::gamepad::create(lua)?,
             "GPU" => libs::gpu::create(lua)?,
             "GUI" => libs::gui::create(lua)?,
+            "Image" => libs::image::create(lua)?,
             "IO" => libs::io::create(lua, fs.clone(), owner.clone())?,
             "Keyboard" => libs::keyboard::create(lua)?,
             "LightingService" => libs::lighting::create(lua)?,

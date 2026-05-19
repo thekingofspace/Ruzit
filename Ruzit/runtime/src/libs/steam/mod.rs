@@ -2119,12 +2119,12 @@ fn build_user(lua: &Lua) -> mlua::Result<Table> {
                     lua.create_string(&c.user().steam_id().raw().to_string())?,
                 )),
                 "Name" => Ok(Value::String(lua.create_string(&c.friends().name())?)),
-                "Level" => Ok(Value::Integer(c.user().level() as i64 as i32)),
+                "Level" => Ok(Value::Integer(c.user().level() as i64)),
                 _ => Ok(Value::Nil),
             }
         })?,
     )?;
-    t.set_metatable(Some(meta));
+    t.set_metatable(Some(meta))?;
     t.set(
         "GetAvatar",
         lua.create_function(|lua, size: Option<String>| -> mlua::Result<Value> {

@@ -11,6 +11,7 @@ pub const IMPORT_LIBS: &[&str] = &[
     "Gamepad",
     "GPU",
     "GUI",
+    "Image",
     "IO",
     "Keyboard",
     "Managed",

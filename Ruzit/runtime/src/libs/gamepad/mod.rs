@@ -136,7 +136,7 @@ pub fn pump(lua: &Lua) {
                 drop(pads);
                 if let Ok(sig) = signals.get::<Table>("Connected") {
                     let mut args = MultiValue::new();
-                    args.push_back(Value::Integer(idx as i32));
+                    args.push_back(Value::Integer(idx as i64));
                     let _ = signal::fire(lua, &sig, args);
                 }
             }
@@ -145,7 +145,7 @@ pub fn pump(lua: &Lua) {
                 drop(pads);
                 if let Ok(sig) = signals.get::<Table>("Disconnected") {
                     let mut args = MultiValue::new();
-                    args.push_back(Value::Integer(idx as i32));
+                    args.push_back(Value::Integer(idx as i64));
                     let _ = signal::fire(lua, &sig, args);
                 }
             }

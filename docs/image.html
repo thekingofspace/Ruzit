@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image - Ruzit Docs</title>
+    <!-- og-meta:begin -->
+    <meta name="description" content="Pixel inspection and procedural noise for ImageAssets. Read color and alpha at a coordinate, summarize an image as a single representative color, derive a deterministic seed from pixel data, and build layered 2D noise fields that you can paint onto a DynImg.">
+    <meta name="theme-color" content="#7289da">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Ruzit Docs">
+    <meta property="og:title" content="Image">
+    <meta property="og:description" content="Pixel inspection and procedural noise for ImageAssets. Read color and alpha at a coordinate, summarize an image as a single representative color, derive a deterministic seed from pixel data, and build layered 2D noise fields that you can paint onto a DynImg.">
+    <meta property="og:image" content="IconThing.png">
+    <meta property="og:image:alt" content="Ruzit logo">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Image">
+    <meta name="twitter:description" content="Pixel inspection and procedural noise for ImageAssets. Read color and alpha at a coordinate, summarize an image as a single representative color, derive a deterministic seed from pixel data, and build layered 2D noise fields that you can paint onto a DynImg.">
+    <meta name="twitter:image" content="IconThing.png">
+    <!-- og-meta:end -->
+    <link rel="stylesheet" href="style.css?v=26.5.17.2">
+    <script src="theme.js?v=26.5.17.2"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=26.5.17.2" defer></script>
+
+<main>
+
+<h1>Image</h1>
+<p class="lede">
+    Pixel inspection and procedural noise for
+    <a href="asset.html"><code>ImageAsset</code></a>s. Read color and
+    alpha at a coordinate, summarize a sprite as a single representative
+    color, derive a deterministic seed from pixel data, and build
+    layered 2D noise fields that you can paint onto a
+    <a href="dynimg.html"><code>DynImg</code></a>.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Asset = <span class="hl-fn">import</span>(<span class="hl-str">"Asset"</span>)
+<span class="hl-kw">local</span> Image = <span class="hl-fn">import</span>(<span class="hl-str">"Image"</span>)
+
+<span class="hl-kw">local</span> sprite = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"Image:icons.logo"</span>)
+<span class="hl-fn">print</span>(Image.<span class="hl-fn">GetPredominantColor</span>(sprite))   <span class="hl-com">-- Color3 of the most common quantized bucket</span>
+<span class="hl-fn">print</span>(Image.<span class="hl-fn">GetColorAt</span>(sprite, <span class="hl-num">8</span>, <span class="hl-num">8</span>))      <span class="hl-com">-- pixel at (8, 8)</span>
+<span class="hl-fn">print</span>(Image.<span class="hl-fn">ToSeed</span>(sprite))                <span class="hl-com">-- deterministic integer seed</span></code></pre>
+
+<div class="callout note">
+    <strong>Coordinate system.</strong> 0-based, origin top-left, +Y
+    down — same convention as the rest of the engine's pixel APIs
+    (<code>DynImg</code>, <code>GUI.Image</code>). Out-of-bounds
+    reads error rather than wrap or clamp.
+</div>
+
+<h2 id="api">Image API</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Image.GetColorAt(image, x, y)</span>
+            <span class="member-type">-> Color3</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Sample the pixel at <code>(x, y)</code> and return its
+            R/G/B as a <code>Color3</code> in 0..1. Errors if the
+            coordinate is out of bounds. The alpha channel is
+            discarded — use <code>GetAlphaAt</code> when you need
+            it.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Image.GetAlphaAt(image, x, y)</span>
+            <span class="member-type">-> number</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Alpha at <code>(x, y)</code> in 0..1. Errors if out of
+            bounds. Useful for hit-testing transparent edges of an
+            icon or for using a sprite as an opacity mask.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Image.GetPredominantColor(image)</span>
+            <span class="member-type">-> Color3</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Most-common color, quantized to a 4-bit-per-channel
+            histogram (4096 bins) so the result is stable against
+            antialiasing and dithering. Pixels with alpha &lt; 8/255
+            are ignored, so transparent sprite backgrounds don't
+            skew the count. Returns black if the image is fully
+            transparent.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Image.AverageColor(image)</span>
+            <span class="member-type">-> Color3</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Alpha-weighted mean color. Good for picking a tint /
+            ambient color that matches a sprite. Fully-transparent
+            pixels contribute nothing; pixels with partial alpha
+            count proportionally. Returns black if the image is
+            fully transparent.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Image.ToSeed(image)</span>
+            <span class="member-type">-> number</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            FNV-1a 64-bit hash of the pixel buffer XOR'd with
+            width/height, returned as a signed integer. Same image
+            always produces the same seed; two visually-identical
+            images with different dimensions produce different
+            seeds. Pair with <code>NoiseField:GenerateLayer</code>
+            to make procedurally-generated content that's keyed off
+            a sprite (icon → matching terrain, portrait → matching
+            cloth pattern, etc.).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Image.Noise(width, height, fill?)</span>
+            <span class="member-type">-> NoiseField</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Allocate a <code>width × height</code> grayscale field,
+            initialized to <code>fill</code> (default
+            <code>0</code>). Max dimension is 8192 per side. The
+            field is just floats; call
+            <code>:GenerateLayer{...}</code> to fill it with noise,
+            then <code>:ToBytes()</code> to hand it to
+            <code>DynImg.FromPixels</code>.
+        </p>
+    </div>
+</div>
+
+<h2 id="noisefield">NoiseField</h2>
+
+<p>
+    A mutable 2D grid of floats. Multiple noise types stack via
+    <code>:GenerateLayer{...}</code> with a per-layer
+    <code>Mode</code> so you can add detail, multiply a mask, take
+    the max of two patterns, etc. Internally the buffer is just
+    <code>width × height</code> floats; nothing is rendered until
+    you read it back out with <code>:ToBytes()</code>,
+    <code>:GetValueAt</code>, or <code>:GetColorAt</code>.
+</p>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">field:Width()</span>
+            <span class="member-type">-> number</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">Pixel width of the field.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">field:Height()</span>
+            <span class="member-type">-> number</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">Pixel height of the field.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">field:Clear(fill?)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Reset every cell to <code>fill</code> (default
+            <code>0</code>). Cheap, just memsets — no realloc.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">field:Fill(value)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Same as <code>:Clear(value)</code> but the argument is
+            required. Reads more naturally for non-zero fills.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">field:GetValueAt(x, y)</span>
+            <span class="member-type">-> number</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Raw float at <code>(x, y)</code>. Errors out of bounds.
+            Range depends on what you've put in — fbm/value/perlin
+            layers produce roughly 0..1; you can drive the field
+            outside that range with <code>Amplitude</code> or
+            <code>Mode = "add"</code> across many layers.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">field:SetValueAt(x, y, value)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Write a single cell. Useful for stamping in features by
+            hand (e.g. carving rivers) after the noise layers
+            generate the base.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">field:GetColorAt(x, y)</span>
+            <span class="member-type">-> Color3</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Clamp the cell to 0..1 and return it as a grayscale
+            <code>Color3</code>. Convenience over
+            <code>GetValueAt</code> when you want a color to pass
+            into a tween / GUI / shader uniform without the manual
+            wrap.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">field:Normalize()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Rescale the entire field so the min becomes 0 and the
+            max becomes 1. Run this after stacking layers if you
+            want the output to fit cleanly in a single
+            <code>DynImg</code> byte. Flat fields (min == max) are
+            zeroed.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">field:ToBytes()</span>
+            <span class="member-type">-> string</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Pack the field into an RGBA byte string,
+            <code>width * height * 4</code> bytes. Each cell is
+            clamped to 0..1, scaled to 0..255, written into R, G,
+            and B (so the output is grayscale), with alpha forced
+            to 255. Drop straight into
+            <code>DynImg.FromPixels(field:Width(), field:Height(),
+            bytes)</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">field:GenerateLayer(params)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Run a noise function over the whole field and combine
+            it with what's already there. <code>params</code> is a
+            table — see below for every option. Call it multiple
+            times with different <code>Type</code> /
+            <code>Mode</code> / <code>Scale</code> values to layer
+            patterns.
+        </p>
+    </div>
+</div>
+
+<h2 id="layer-params">GenerateLayer parameters</h2>
+
+<p>
+    All fields are optional. <code>Type</code> and
+    <code>Mode</code> are PascalCase by convention but the lower-
+    case forms (<code>type</code>, <code>scale</code>, …) are also
+    accepted for ergonomic config tables.
+</p>
+
+<table>
+    <thead>
+        <tr>
+            <th>Field</th>
+            <th>Values</th>
+            <th>Default</th>
+            <th>Effect</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code>Type</code></td>
+            <td>
+                <code>"fbm"</code>, <code>"perlin"</code>
+                (alias <code>"gradient"</code>), <code>"value"</code>,
+                <code>"ridged"</code>, <code>"white"</code>
+            </td>
+            <td><code>"fbm"</code></td>
+            <td>
+                Which noise function to evaluate.
+                <strong>fbm</strong> is layered Perlin — the good
+                default for terrain, clouds, marble, anything
+                organic-looking. <strong>perlin</strong> /
+                <strong>gradient</strong> is a single octave of
+                classic Perlin. <strong>value</strong> is grid
+                value noise — cheaper, blockier.
+                <strong>ridged</strong> is fbm with
+                <code>1 - |n|</code> applied per octave, gives
+                sharp ridges (good for mountains, lightning).
+                <strong>white</strong> is uncorrelated noise per
+                pixel — for static / film grain.
+            </td>
+        </tr>
+        <tr>
+            <td><code>Mode</code></td>
+            <td>
+                <code>"add"</code>, <code>"set"</code> (alias
+                <code>"replace"</code>), <code>"mul"</code> (alias
+                <code>"multiply"</code>), <code>"max"</code>,
+                <code>"min"</code>
+            </td>
+            <td><code>"add"</code></td>
+            <td>
+                How this layer combines with the current field
+                value. The first layer typically uses
+                <code>"set"</code> to overwrite the zero-fill; later
+                layers usually <code>"add"</code> detail or
+                <code>"mul"</code> a mask onto the result.
+            </td>
+        </tr>
+        <tr>
+            <td><code>Scale</code></td>
+            <td>number &gt; 0</td>
+            <td><code>16</code></td>
+            <td>
+                Feature size in pixels. <code>Scale = 64</code>
+                gives big slow blobs; <code>Scale = 4</code> gives
+                fine grain.
+            </td>
+        </tr>
+        <tr>
+            <td><code>Amplitude</code></td>
+            <td>number</td>
+            <td><code>1.0</code></td>
+            <td>
+                Layer strength. Negative values invert the pattern.
+                For <code>"add"</code> mode this is how much the
+                layer contributes; for <code>"set"</code> /
+                <code>"mul"</code> it scales the raw output.
+            </td>
+        </tr>
+        <tr>
+            <td><code>Octaves</code></td>
+            <td>1..12</td>
+            <td><code>4</code></td>
+            <td>
+                fbm/ridged only. Additional detail passes; each
+                pass doubles the frequency (by
+                <code>Lacunarity</code>) and halves the amplitude
+                (by <code>Persistence</code>).
+            </td>
+        </tr>
+        <tr>
+            <td><code>Lacunarity</code></td>
+            <td>number &gt; 1</td>
+            <td><code>2.0</code></td>
+            <td>
+                fbm/ridged only. How much the frequency grows per
+                octave. Higher = more chaotic, more high-frequency
+                detail.
+            </td>
+        </tr>
+        <tr>
+            <td><code>Persistence</code></td>
+            <td>0..1</td>
+            <td><code>0.5</code></td>
+            <td>
+                fbm/ridged only. How much amplitude survives per
+                octave. <code>0.5</code> is the canonical fbm
+                taper; <code>0.7</code>+ produces noisier output;
+                <code>0.3</code> produces smoother output.
+            </td>
+        </tr>
+        <tr>
+            <td><code>Seed</code></td>
+            <td>integer</td>
+            <td><code>0</code></td>
+            <td>
+                Deterministic — same seed always gives the same
+                pattern. Use <code>Image.ToSeed(asset)</code> to
+                derive one from a sprite.
+            </td>
+        </tr>
+        <tr>
+            <td><code>OffsetX</code> / <code>OffsetY</code></td>
+            <td>number</td>
+            <td><code>0</code></td>
+            <td>
+                Pan the noise without changing the seed. Useful for
+                infinite scrolling worlds (advance offsets per
+                frame) or chunked terrain (offset = chunk *
+                chunk_size).
+            </td>
+        </tr>
+    </tbody>
+</table>
+
+<h2 id="patterns">Patterns</h2>
+
+<h3>Pick a UI tint from a sprite</h3>
+
+<pre><code><span class="hl-kw">local</span> Asset = <span class="hl-fn">import</span>(<span class="hl-str">"Asset"</span>)
+<span class="hl-kw">local</span> Image = <span class="hl-fn">import</span>(<span class="hl-str">"Image"</span>)
+<span class="hl-kw">local</span> GUI = <span class="hl-fn">import</span>(<span class="hl-str">"GUI"</span>)
+
+<span class="hl-kw">local</span> icon = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"Image:icons.health"</span>)
+<span class="hl-kw">local</span> tint = Image.<span class="hl-fn">AverageColor</span>(icon)
+
+<span class="hl-kw">local</span> bar = GUI.Basic.<span class="hl-fn">Square</span>()
+bar.Color = tint                       <span class="hl-com">-- background color matches the icon</span></code></pre>
+
+<h3>Sprite-seeded heightmap</h3>
+
+<pre><code><span class="hl-kw">local</span> Asset = <span class="hl-fn">import</span>(<span class="hl-str">"Asset"</span>)
+<span class="hl-kw">local</span> Image = <span class="hl-fn">import</span>(<span class="hl-str">"Image"</span>)
+<span class="hl-kw">local</span> DynImg = <span class="hl-fn">import</span>(<span class="hl-str">"DynImg"</span>)
+
+<span class="hl-kw">local</span> sprite = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"Image:flags.region_north"</span>)
+<span class="hl-kw">local</span> seed = Image.<span class="hl-fn">ToSeed</span>(sprite)
+
+<span class="hl-kw">local</span> noise = Image.<span class="hl-fn">Noise</span>(<span class="hl-num">512</span>, <span class="hl-num">512</span>)
+noise:<span class="hl-fn">GenerateLayer</span>{ Type = <span class="hl-str">"fbm"</span>,    Scale = <span class="hl-num">96</span>, Octaves = <span class="hl-num">6</span>, Seed = seed }
+noise:<span class="hl-fn">GenerateLayer</span>{ Type = <span class="hl-str">"ridged"</span>, Scale = <span class="hl-num">32</span>, Amplitude = <span class="hl-num">0.4</span>, Seed = seed + <span class="hl-num">1</span> }
+noise:<span class="hl-fn">Normalize</span>()
+
+<span class="hl-kw">local</span> map = DynImg.<span class="hl-fn">FromPixels</span>(noise:<span class="hl-fn">Width</span>(), noise:<span class="hl-fn">Height</span>(), noise:<span class="hl-fn">ToBytes</span>())</code></pre>
+
+<h3>Scrolling clouds</h3>
+
+<pre><code><span class="hl-kw">local</span> Heart = <span class="hl-fn">import</span>(<span class="hl-str">"Process"</span>).Heartbeat
+<span class="hl-kw">local</span> noise = Image.<span class="hl-fn">Noise</span>(<span class="hl-num">256</span>, <span class="hl-num">256</span>)
+<span class="hl-kw">local</span> tex = DynImg.<span class="hl-fn">FromPixels</span>(<span class="hl-num">256</span>, <span class="hl-num">256</span>, noise:<span class="hl-fn">ToBytes</span>())
+<span class="hl-kw">local</span> t = <span class="hl-num">0</span>
+
+Heart:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(dt)
+    t = t + dt * <span class="hl-num">12</span>
+    noise:<span class="hl-fn">Clear</span>()
+    noise:<span class="hl-fn">GenerateLayer</span>{ Type = <span class="hl-str">"fbm"</span>, Scale = <span class="hl-num">48</span>, Octaves = <span class="hl-num">5</span>, OffsetX = t }
+    tex:<span class="hl-fn">SetPixels</span>(noise:<span class="hl-fn">ToBytes</span>())   <span class="hl-com">-- DynImg writes the new frame</span>
+<span class="hl-kw">end</span>)</code></pre>
+
+<h3>Mask one layer with another</h3>
+
+<pre><code><span class="hl-kw">local</span> n = Image.<span class="hl-fn">Noise</span>(<span class="hl-num">256</span>, <span class="hl-num">256</span>)
+
+<span class="hl-com">-- Base terrain.</span>
+n:<span class="hl-fn">GenerateLayer</span>{ Type = <span class="hl-str">"fbm"</span>, Mode = <span class="hl-str">"set"</span>, Scale = <span class="hl-num">64</span>, Seed = <span class="hl-num">1</span> }
+
+<span class="hl-com">-- Multiply by a soft circular mask so the edges fade out.</span>
+n:<span class="hl-fn">GenerateLayer</span>{ Type = <span class="hl-str">"perlin"</span>, Mode = <span class="hl-str">"mul"</span>, Scale = <span class="hl-num">256</span>, Seed = <span class="hl-num">2</span> }
+
+<span class="hl-com">-- Add sharp ridges only where there's already height (max-blend).</span>
+n:<span class="hl-fn">GenerateLayer</span>{ Type = <span class="hl-str">"ridged"</span>, Mode = <span class="hl-str">"max"</span>, Scale = <span class="hl-num">16</span>, Amplitude = <span class="hl-num">0.3</span>, Seed = <span class="hl-num">3</span> }
+
+n:<span class="hl-fn">Normalize</span>()</code></pre>
+
+<div class="callout note">
+    <strong>Performance.</strong> Every
+    <code>:GenerateLayer{...}</code> call evaluates the noise
+    function once per pixel — a 512×512 fbm with 6 octaves is
+    ~1.5M noise evaluations, ~5–15 ms on a modern CPU. Generating
+    a tiny field (≤256²) every frame is fine; doing the same on a
+    4096² field is not. For animation, generate at low resolution
+    and let the GPU's bilinear filter blow it up via a
+    <code>DynImg</code>.
+</div>
+
+</main>
+
+<!-- right-toc:begin -->
+<aside class="right-toc"></aside>
+<script src="right-toc.js?v=26.5.17.2" defer></script>
+<!-- right-toc:end -->
+
+
+</body>
+</html>
