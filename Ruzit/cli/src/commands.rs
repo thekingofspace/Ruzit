@@ -704,8 +704,8 @@ pub fn cmd_init(arg: Option<&String>) -> Result<(), String> {
     ];
 
     let assets_dir = target.join("assets");
-
     let packages_dir = target.join(package::PACKAGES_DIR_NAME);
+    let bin_dir = target.join("bin");
 
     println!(
         "[Ruzit] init → {} (name: {})",
@@ -715,7 +715,7 @@ pub fn cmd_init(arg: Option<&String>) -> Result<(), String> {
 
     let mut created = 0;
     let mut skipped = 0;
-    for dir in [&assets_dir, &packages_dir] {
+    for dir in [&assets_dir, &packages_dir, &bin_dir] {
         if dir.exists() {
             skipped += 1;
         } else {
@@ -816,6 +816,9 @@ pub fn cmd_init_package(arg: Option<&String>) -> Result<(), String> {
         ("init.luau", templates::MANAGED_INIT_LUAU),
     ];
 
+    let assets_dir = target.join("assets");
+    let bin_dir = target.join("bin");
+
     println!(
         "[Ruzit] init package → {} (id: {}, name: {})",
         target.display(),
@@ -825,6 +828,15 @@ pub fn cmd_init_package(arg: Option<&String>) -> Result<(), String> {
 
     let mut created = 0;
     let mut skipped = 0;
+    for dir in [&assets_dir, &bin_dir] {
+        if dir.exists() {
+            skipped += 1;
+        } else {
+            fs::create_dir_all(dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
+            println!("  create {}/", display_rel(&target, dir));
+            created += 1;
+        }
+    }
     for (rel, template) in entries {
         let path = target.join(rel);
         if path.exists() {
