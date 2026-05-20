@@ -687,6 +687,7 @@ declare class Primitive
 	function GetData(self, asset: ShaderAsset | FragmentAsset, name: string): number?
 	function AddClippable(self, child: Primitive): ()
 	function RemoveClippable(self, child: Primitive): ()
+	function SetShape(self, shape: "Square" | "Circle" | "Triangle"): ()
 end
 declare class SceneShader
 	function SetData(self, name: string, value: number): ()

@@ -33,6 +33,25 @@ fn store_viewport_size(w: u32, h: u32) {
     VIEWPORT_HEIGHT.store(h, Ordering::Relaxed);
 }
 
+fn clip_aabb(c: &crate::libs::gui::ClipInfo) -> (f32, f32, f32, f32) {
+    let half = (c.size.x * 0.5, c.size.y * 0.5);
+    let center = (c.pos.x + half.0, c.pos.y + half.1);
+    let rot = c.rotation.to_radians();
+    if rot.abs() < 1e-5 {
+        return (c.pos.x, c.pos.y, c.size.x, c.size.y);
+    }
+    let cs = rot.cos().abs();
+    let sn = rot.sin().abs();
+    let aabb_hw = half.0 * cs + half.1 * sn;
+    let aabb_hh = half.0 * sn + half.1 * cs;
+    (
+        center.0 - aabb_hw,
+        center.1 - aabb_hh,
+        aabb_hw * 2.0,
+        aabb_hh * 2.0,
+    )
+}
+
 fn clamp_scissor(
     x: f32,
     y: f32,
@@ -180,6 +199,7 @@ pub struct UniData {
     pub time: f32,
     pub shape: u32,
     pub rotation_pad: [f32; 4],
+    pub clip_rect: [f32; 4],
     pub params: [[f32; 4]; 4],
 }
 
@@ -197,6 +217,7 @@ struct RuzitUni {
     time: f32,
     shape: u32,
     rotation_pad: vec4<f32>,
+    clip_rect: vec4<f32>,
     params: array<vec4<f32>, 4>,
 };
 
@@ -232,6 +253,32 @@ fn ruzit_inside_shape(uv: vec2<f32>, shape: u32) -> bool {
 fn ruzit_apply_alpha(color: vec3<f32>) -> vec4<f32> {
     return vec4<f32>(color, U.color.a);
 }
+
+fn ruzit_clip_test(frag_pos: vec2<f32>) -> bool {
+    if (U.rotation_pad.w < 0.5) {
+        return true;
+    }
+    let clip_pos = U.clip_rect.xy;
+    let clip_size = U.clip_rect.zw;
+    let half = clip_size * 0.5;
+    let center = clip_pos + half;
+    var local = frag_pos - center;
+    let cr = U.rotation_pad.y;
+    if (abs(cr) > 1e-5) {
+        let cs = cos(-cr);
+        let sn = sin(-cr);
+        local = vec2<f32>(local.x * cs - local.y * sn, local.x * sn + local.y * cs);
+    }
+    if (abs(local.x) > half.x || abs(local.y) > half.y) {
+        return false;
+    }
+    let clip_shape = u32(U.rotation_pad.z);
+    if (clip_shape == 0u) {
+        return true;
+    }
+    let clip_uv = (local + half) / clip_size;
+    return ruzit_inside_shape(clip_uv, clip_shape);
+}
 "#;
 
 const VERTEX_WGSL: &str = r#"
@@ -248,6 +295,7 @@ struct RuzitUni {
     time: f32,
     shape: u32,
     rotation_pad: vec4<f32>,
+    clip_rect: vec4<f32>,
     params: array<vec4<f32>, 4>,
 };
 
@@ -294,6 +342,8 @@ struct RuzitUni {
     resolution: vec2<f32>,
     time: f32,
     shape: u32,
+    rotation_pad: vec4<f32>,
+    clip_rect: vec4<f32>,
     params: array<vec4<f32>, 4>,
 };
 
@@ -320,6 +370,9 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
 const DEFAULT_FRAGMENT_WGSL: &str = r#"
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    if (!ruzit_clip_test(in.clip.xy)) {
+        discard;
+    }
     if (!ruzit_inside_shape(in.uv, U.shape)) {
         discard;
     }
@@ -1005,6 +1058,7 @@ impl GpuState {
             time,
             shape: 0,
             rotation_pad: [0.0; 4],
+            clip_rect: [0.0; 4],
             params,
         };
         self.queue
@@ -1445,6 +1499,15 @@ impl GpuState {
             let color_out = [color[0], color[1], color[2], alpha_out];
 
             let rotation_rad = item.rotation.to_radians();
+            let (clip_rot_rad, clip_shape_id, has_clip, clip_rect_vec) = match item.clip {
+                Some(c) => (
+                    c.rotation.to_radians(),
+                    c.shape.shape_id() as f32,
+                    1.0_f32,
+                    [c.pos.x, c.pos.y, c.size.x, c.size.y],
+                ),
+                None => (0.0, 0.0, 0.0, [0.0; 4]),
+            };
             let data = UniData {
                 pos: pos_out,
                 size: size_out,
@@ -1452,7 +1515,8 @@ impl GpuState {
                 resolution: res,
                 time,
                 shape: item.shape.shape_id(),
-                rotation_pad: [rotation_rad, 0.0, 0.0, 0.0],
+                rotation_pad: [rotation_rad, clip_rot_rad, clip_shape_id, has_clip],
+                clip_rect: clip_rect_vec,
                 params,
             };
             self.queue
@@ -1976,8 +2040,11 @@ impl GpuState {
                 } else {
                     let i = *idx;
                     let item = &items[i];
-                    let want = match item.clip_rect {
-                        Some((x, y, w, h)) => clamp_scissor(x, y, w, h, win_w, win_h),
+                    let want = match &item.clip {
+                        Some(c) => {
+                            let (x, y, w, h) = clip_aabb(c);
+                            clamp_scissor(x, y, w, h, win_w, win_h)
+                        }
                         None => Some(full_scissor),
                     };
                     let scissor = match want {

@@ -122,30 +122,57 @@ label.Visible       = <span class="hl-kw">true</span></code></pre>
         </div>
         <p class="member-desc">
             Invisible clip container with a pixel-space
-            <code>.Position</code> and <code>.Size</code>. Doesn't
-            render anything itself &mdash; its job is to be a parent
-            for children added via
+            <code>.Position</code>, <code>.Size</code>, and
+            <code>.Rotation</code>. Doesn't render anything itself
+            &mdash; its job is to be a parent for children added via
             <code>:AddClippable(child)</code>. Anything inside those
-            children that falls outside the Clippable's rect is cut
-            at the GPU scissor stage. Resizing or moving the
-            Clippable retroactively re-clips every child the next
-            frame, so it works as a scrolling viewport, masked
-            overlay, or draggable panel without having to re-add
-            children. Works on every other primitive type &mdash;
-            including DynImg-backed Image primitives, since by the
-            time clipping runs they're a single textured rectangle.
+            children that falls outside the Clippable's shape is
+            discarded in the children's fragment shader. Resizing,
+            moving, or <strong>rotating</strong> the Clippable
+            retroactively re-clips every child the next frame, so it
+            works as a scrolling viewport, masked overlay, draggable
+            panel, or rotating reticle without having to re-add
+            children.
+        </p>
+        <p class="member-desc">
+            The clip area can be reshaped via
+            <code>:SetShape("Square" | "Circle" | "Triangle")</code>.
+            The default is <code>"Square"</code> (axis-aligned rect
+            in the Clippable's local space). Each child's fragment
+            shader transforms its pixel into the Clippable's local
+            UV space (accounting for rotation), tests it against the
+            chosen shape, and discards if outside &mdash; so a
+            rotated Circle clip really is a rotated ellipse, not an
+            AABB approximation.
         </p>
         <pre><code><span class="hl-kw">local</span> mask = GUI.Basic.<span class="hl-fn">Clippable</span>()
 mask.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">100</span>, <span class="hl-num">100</span>)
 mask.Size     = Dim.<span class="hl-fn">new</span>(<span class="hl-num">400</span>, <span class="hl-num">300</span>)
+mask.Rotation = <span class="hl-num">15</span>                       <span class="hl-com">-- degrees; children clip to the rotated rect</span>
+mask:<span class="hl-fn">SetShape</span>(<span class="hl-str">"Circle"</span>)               <span class="hl-com">-- or "Square" (default) / "Triangle"</span>
 
 <span class="hl-kw">local</span> img = GUI.Basic.<span class="hl-fn">Image</span>(asset)
-img.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">80</span>, <span class="hl-num">90</span>)     <span class="hl-com">-- partly outside the mask</span>
+img.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">80</span>, <span class="hl-num">90</span>)            <span class="hl-com">-- partly outside the mask</span>
 img.Size     = Dim.<span class="hl-fn">new</span>(<span class="hl-num">500</span>, <span class="hl-num">500</span>)
-mask:<span class="hl-fn">AddClippable</span>(img)              <span class="hl-com">-- pixels outside (100,100,400,300) are cut</span>
-
-<span class="hl-com">-- Move the mask -- the image gets re-clipped automatically.</span>
-mask.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</span>, <span class="hl-num">100</span>)</code></pre>
+mask:<span class="hl-fn">AddClippable</span>(img)                     <span class="hl-com">-- only pixels inside the rotated ellipse render</span></code></pre>
+        <div class="callout note">
+            <strong>Custom shape via shader.</strong> The
+            <code>ruzit_clip_test(frag_pos)</code> function in the
+            <a href="#shaders">fragment-shader prelude</a> performs
+            the inverse-rotation + shape test using the Clippable's
+            <code>rotation_pad.y</code> (clip rotation),
+            <code>rotation_pad.z</code> (clip shape ID), and
+            <code>clip_rect</code> (clip <code>xy</code> position +
+            <code>zw</code> size) uniforms. Custom child shaders
+            that need to do their own clipping can call it directly;
+            shaders that don't will skip clipping. To make a
+            Clippable apply a custom shape via shader, attach a
+            shader whose body discards pixels you want excluded
+            &mdash; children whose fragment shader also calls
+            <code>ruzit_clip_test</code> automatically pick up the
+            shape because the test uses the Clippable's
+            <em>shape ID</em>, not its sampled output.
+        </div>
     </div>
 </div>
 
@@ -309,11 +336,31 @@ mask.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</spa
         <p class="member-desc">
             <em>Only valid on <code>Shape == "Clippable"</code>
             primitives.</em> Register <code>child</code> to be
-            scissored to this primitive's current Position+Size every
-            frame. Pixels of <code>child</code> outside this rect are
-            cut. Reading the Clippable's Size or Position retroactively
-            re-clips every child on the next snapshot &mdash; no need
-            to re-add. Last-add-wins for re-parenting.
+            clipped to this primitive's current shape, position,
+            size, and <strong>rotation</strong> every frame. Pixels
+            of <code>child</code> outside the (possibly rotated)
+            shape are discarded in the child's fragment shader.
+            Reading the Clippable's Size / Position / Rotation /
+            Shape retroactively re-clips every child on the next
+            snapshot &mdash; no need to re-add. Last-add-wins for
+            re-parenting.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">prim:SetShape(name)</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            <em>Only valid on <code>Shape == "Clippable"</code>
+            primitives.</em> Choose the clip-area shape:
+            <code>"Square"</code> (default — axis-aligned rectangle
+            in the Clippable's local space), <code>"Circle"</code>
+            (ellipse inscribed in the Size box), or
+            <code>"Triangle"</code> (apex-up isosceles triangle).
+            Combined with <code>.Rotation</code> you get rotated
+            ellipses, rotated triangles, etc. Children re-clip on
+            the next frame without needing to be re-added.
         </p>
     </div>
     <div class="member">

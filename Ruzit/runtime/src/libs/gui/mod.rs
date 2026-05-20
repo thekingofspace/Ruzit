@@ -100,6 +100,7 @@ pub struct PrimitiveState {
     pub prop_signals: HashMap<String, Table>,
 
     pub clip_parent: Option<Arc<Mutex<PrimitiveState>>>,
+    pub clip_shape: Shape,
 
     pub billboard_parent: Option<Arc<Mutex<BillboardInner>>>,
 }
@@ -238,9 +239,17 @@ pub struct RenderItem {
     pub active_shader: Option<AttachedShader>,
     pub image: Option<Arc<ImageRef>>,
 
-    pub clip_rect: Option<(f32, f32, f32, f32)>,
+    pub clip: Option<ClipInfo>,
 
     pub billboard_anchor: Option<BillboardAnchor>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ClipInfo {
+    pub pos: Dim,
+    pub size: Dim,
+    pub rotation: f32,
+    pub shape: Shape,
 }
 
 pub fn list_primitive_states() -> Vec<Arc<Mutex<PrimitiveState>>> {
@@ -360,12 +369,17 @@ fn build_snapshot() -> Vec<RenderItem> {
                     (s.image.clone(), s.size)
                 };
 
-                let clip_rect = s.clip_parent.as_ref().and_then(|parent_arc| {
+                let clip = s.clip_parent.as_ref().and_then(|parent_arc| {
                     let parent = parent_arc.lock().ok()?;
                     if !parent.alive {
                         return None;
                     }
-                    Some((parent.position.x, parent.position.y, parent.size.x, parent.size.y))
+                    Some(ClipInfo {
+                        pos: parent.position,
+                        size: parent.size,
+                        rotation: parent.rotation,
+                        shape: parent.clip_shape,
+                    })
                 });
 
                 let billboard_anchor = s.billboard_parent.as_ref().and_then(|b_arc| {
@@ -389,7 +403,7 @@ fn build_snapshot() -> Vec<RenderItem> {
                     z_index: s.z_index,
                     active_shader: s.attached.last().cloned(),
                     image,
-                    clip_rect,
+                    clip,
                     billboard_anchor,
                 })
             })
@@ -852,6 +866,7 @@ impl GuiPrimitive {
             dyn_img_owner: None,
             prop_signals: HashMap::new(),
             clip_parent: None,
+            clip_shape: Shape::Square,
             billboard_parent: None,
         }));
         REGISTRY.with(|cell| cell.borrow_mut().push(state.clone()));
@@ -1279,6 +1294,34 @@ impl UserData for GuiPrimitive {
             }
             Ok(t)
         });
+
+        m.add_method(
+            "SetShape",
+            |_, this, name: String| -> mlua::Result<()> {
+                this.ensure_alive("SetShape")?;
+                {
+                    let s = this.state.lock().unwrap();
+                    if !matches!(s.shape, Shape::Clippable) {
+                        return Err(mlua::Error::RuntimeError(
+                            "SetShape: only valid on a GUI.Basic.Clippable container".into(),
+                        ));
+                    }
+                }
+                let new_shape = match name.as_str() {
+                    "Square" | "square" | "rect" | "Rectangle" => Shape::Square,
+                    "Circle" | "circle" | "Ellipse" | "ellipse" => Shape::Circle,
+                    "Triangle" | "triangle" => Shape::Triangle,
+                    other => {
+                        return Err(mlua::Error::RuntimeError(format!(
+                            "SetShape: '{other}' is not a valid clip shape (use 'Square', 'Circle', or 'Triangle')"
+                        )));
+                    }
+                };
+                this.state.lock().unwrap().clip_shape = new_shape;
+                bump_dirty();
+                Ok(())
+            },
+        );
 
         m.add_method(
             "AddClippable",
