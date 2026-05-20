@@ -1,0 +1,2276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Migrating from Roblox - Ruzit Docs</title>
+    <!-- og-meta:begin -->
+    <meta name="description" content="A hands-on guide for Roblox / Luau developers moving to Ruzit. Side-by-side code comparisons, an API mapping table, and the few mental-model shifts you actually have to make.">
+    <meta name="theme-color" content="#7289da">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Ruzit Docs">
+    <meta property="og:title" content="Migrating from Roblox">
+    <meta property="og:description" content="A hands-on guide for Roblox / Luau developers moving to Ruzit. Side-by-side code comparisons, an API mapping table, and the few mental-model shifts you actually have to make.">
+    <meta property="og:image" content="IconThing.png">
+    <meta property="og:image:alt" content="Ruzit logo">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Migrating from Roblox">
+    <meta name="twitter:description" content="A hands-on guide for Roblox / Luau developers moving to Ruzit. Side-by-side code comparisons, an API mapping table, and the few mental-model shifts you actually have to make.">
+    <meta name="twitter:image" content="IconThing.png">
+    <!-- og-meta:end -->
+    <link rel="stylesheet" href="style.css?v=26.5.19">
+    <script src="theme.js?v=26.5.19"></script>
+    <style>
+        /* Page-local styling: side-by-side Roblox vs Ruzit comparison cards.
+           Scoped to this page so the rest of the docs stay untouched. */
+
+        :root {
+            --roblox-accent: #e2231a;
+            --roblox-soft: rgba(226, 35, 26, 0.10);
+            --roblox-border: rgba(226, 35, 26, 0.30);
+        }
+
+        .compare-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin: 18px 0 28px 0;
+        }
+
+        @media (max-width: 760px) {
+            .compare-grid { grid-template-columns: 1fr; }
+        }
+
+        .compare-card {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-alt);
+        }
+
+        .compare-card .compare-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .compare-card .compare-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .compare-card.roblox .compare-label {
+            color: var(--roblox-accent);
+            background: var(--roblox-soft);
+            border-bottom-color: var(--roblox-border);
+        }
+        .compare-card.roblox .compare-dot { background: var(--roblox-accent); }
+
+        .compare-card.ruzit .compare-label {
+            color: var(--accent);
+            background: var(--accent-soft);
+            border-bottom-color: var(--accent);
+        }
+        .compare-card.ruzit .compare-dot { background: var(--accent); }
+
+        .compare-card pre {
+            margin: 0;
+            border-radius: 0;
+            flex: 1;
+        }
+
+        /* The bridge arrow that sits between the two cards on wide screens.
+           Sits in the gutter via negative margins so it doesn't bump the
+           grid columns. */
+        .compare-bridge {
+            position: relative;
+            text-align: center;
+            margin: -2px 0 -2px 0;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--fg-muted);
+        }
+        .compare-bridge::before,
+        .compare-bridge::after {
+            content: "";
+            display: inline-block;
+            width: 38%;
+            height: 1px;
+            background: var(--border);
+            vertical-align: middle;
+            margin: 0 10px;
+        }
+
+        /* Diff-style line markers used inside the Ruzit pane to highlight
+           the bits that differ from the Roblox version side. */
+        .diff-add {
+            display: inline-block;
+            padding: 0 4px;
+            margin: 0 -4px;
+            border-radius: 3px;
+            background: rgba(56, 178, 76, 0.18);
+            color: #6cd082;
+        }
+        .diff-rm {
+            display: inline-block;
+            padding: 0 4px;
+            margin: 0 -4px;
+            border-radius: 3px;
+            background: rgba(213, 76, 76, 0.18);
+            color: #ef8a8a;
+            text-decoration: line-through;
+            text-decoration-thickness: 1px;
+        }
+
+        /* Pill row at the top of the page showing the Roblox concept that
+           the section maps to. */
+        .concept-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 3px 9px;
+            border-radius: 999px;
+            background: var(--bg-inline);
+            color: var(--fg-soft);
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        .concept-pill::before {
+            content: "";
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--roblox-accent);
+        }
+
+        /* Big call-to-attention banner used for the "always init the
+           window first" note. */
+        .must-banner {
+            margin: 24px 0 28px 0;
+            padding: 18px 22px 18px 22px;
+            border-radius: 10px;
+            background: linear-gradient(135deg,
+                rgba(226, 35, 26, 0.10),
+                rgba(114, 137, 218, 0.10));
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--accent);
+            position: relative;
+        }
+        .must-banner .must-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--accent);
+            margin-bottom: 8px;
+        }
+        .must-banner .must-title::before {
+            content: "!";
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: var(--accent);
+            color: #fff;
+            font-family: "JetBrains Mono", monospace;
+            font-size: 14px;
+        }
+        .must-banner p { margin: 0; }
+        .must-banner p + p { margin-top: 10px; }
+        .must-banner pre {
+            margin: 12px 0 0 0;
+        }
+
+        /* Tighter table for the giant API mapping. */
+        .api-map {
+            font-size: 13.5px;
+        }
+        .api-map td, .api-map th {
+            padding: 8px 12px;
+        }
+        .api-map td:first-child {
+            font-family: "JetBrains Mono", "SF Mono", "Consolas", monospace;
+            color: var(--roblox-accent);
+            white-space: nowrap;
+        }
+        .api-map td:nth-child(2) {
+            font-family: "JetBrains Mono", "SF Mono", "Consolas", monospace;
+            color: var(--accent);
+            white-space: nowrap;
+        }
+        .api-map .api-row-removed td:nth-child(2) {
+            color: var(--fg-muted);
+            font-style: italic;
+        }
+
+        /* ─── File-tree component ──────────────────────────────────────
+           Replaces the broken U+2937 fallback glyphs in the project-layout
+           sections with real CSS-drawn branch lines (vertical pipe per
+           level, horizontal stub per row, auto-trimmed at last child).
+           Pure ASCII / box characters in the markup, so no font surprises. */
+
+        .tree {
+            background: var(--bg-code);
+            color: var(--code-fg);
+            padding: 20px 24px;
+            border-radius: 8px;
+            margin: 0 0 20px 0;
+            font-family: "JetBrains Mono", "SF Mono", "Consolas", "Menlo", monospace;
+            font-size: 13.5px;
+            line-height: 1.7;
+            overflow-x: auto;
+            list-style: none;
+        }
+        .tree ul {
+            list-style: none;
+            margin: 0;
+            padding-left: 22px;
+            position: relative;
+        }
+        .tree li {
+            position: relative;
+            padding: 2px 0 2px 22px;
+        }
+        /* Vertical pipe that runs through this row + down to the next
+           sibling. Trimmed to a stub on the last child to form an L. */
+        .tree li::before {
+            content: "";
+            position: absolute;
+            left: 4px;
+            top: 0;
+            bottom: 0;
+            width: 1.5px;
+            background: var(--accent);
+            opacity: 0.55;
+        }
+        .tree li:last-child::before {
+            height: 14px;
+        }
+        /* Horizontal branch into the row, with a soft rounded corner where
+           it meets the vertical. */
+        .tree li::after {
+            content: "";
+            position: absolute;
+            left: 4px;
+            top: 14px;
+            width: 14px;
+            height: 1.5px;
+            background: var(--accent);
+            opacity: 0.55;
+            border-bottom-left-radius: 6px;
+        }
+        /* Root row sits flush, no incoming branch. */
+        .tree > li {
+            padding-left: 0;
+        }
+        .tree > li::before,
+        .tree > li::after {
+            display: none;
+        }
+
+        /* Subtle node dot at each junction so the eye can lock onto the
+           hierarchy at a glance. */
+        .tree li > .tree-name::before {
+            content: "";
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            margin-right: 8px;
+            border-radius: 50%;
+            background: var(--accent);
+            opacity: 0.85;
+            transform: translateY(-1px);
+            vertical-align: middle;
+        }
+        /* Folder rows get an outline-only dot + accent name. */
+        .tree .tree-folder > .tree-name {
+            color: var(--accent);
+            font-weight: 600;
+        }
+        .tree .tree-folder > .tree-name::before {
+            background: transparent;
+            box-shadow: inset 0 0 0 1.5px var(--accent);
+            opacity: 1;
+        }
+        /* File rows: muted dot, default-color name. */
+        .tree .tree-file > .tree-name {
+            color: var(--code-fg);
+        }
+        .tree .tree-name {
+            font-family: inherit;
+        }
+        /* Inline comment trailing the name. */
+        .tree .tree-comment {
+            color: var(--code-comment);
+            font-style: italic;
+            margin-left: 14px;
+        }
+        .tree .tree-comment::before {
+            content: "—";
+            margin-right: 6px;
+            opacity: 0.7;
+        }
+
+        /* Inside a compare-card the tree drops its outer margin / radius
+           so it tiles flush with the labelled header above it. */
+        .compare-card .tree {
+            margin: 0;
+            border-radius: 0;
+            flex: 1;
+        }
+
+        /* ─── Dynamic width for wide elements ─────────────────────────
+           The global stylesheet caps every direct child of <main> at
+           920px above 1280px viewport width (for prose readability).
+           That cap is too aggressive for code blocks, side-by-side
+           comparison grids, trees, and the giant API mapping table —
+           they all benefit from horizontal room. This override lifts
+           the cap only for those wide elements, letting them stretch
+           to whatever space the layout actually has between the
+           sidebar and the right rail. Prose / paragraphs / lists /
+           callouts keep the readable cap untouched. */
+        @media (min-width: 1280px) {
+            main > .compare-grid,
+            main > pre,
+            main > ul.tree,
+            main > table,
+            main > .member-list,
+            main > .must-banner {
+                max-width: none;
+            }
+        }
+        @media (min-width: 1600px) {
+            /* On really wide displays, give the comparison grid a soft
+               cap so the line lengths inside each pane don't blow past
+               comfortable code-reading width. Code still flows wider
+               than at 1280px, just not unboundedly. */
+            main > .compare-grid {
+                max-width: 1500px;
+            }
+            main > pre,
+            main > ul.tree {
+                max-width: 1200px;
+            }
+        }
+
+        /* ─── Step-by-step component ──────────────────────────────────
+           Numbered rows for the "open a terminal" walkthrough.
+           Each step is a card-like row with a big circled number on
+           the left, text + an optional code block on the right. */
+        .steps {
+            list-style: none;
+            margin: 18px 0 26px 0;
+            padding: 0;
+            counter-reset: step;
+            display: grid;
+            gap: 12px;
+        }
+        .steps > li {
+            counter-increment: step;
+            position: relative;
+            padding: 16px 18px 16px 64px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-alt);
+            min-height: 56px;
+        }
+        .steps > li::before {
+            content: counter(step);
+            position: absolute;
+            left: 14px;
+            top: 14px;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: "JetBrains Mono", "SF Mono", "Consolas", monospace;
+            font-size: 15px;
+            font-weight: 700;
+            color: #fff;
+            background: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-soft);
+        }
+        .steps > li p {
+            margin: 0;
+            font-size: 14.5px;
+        }
+        .steps > li p + p { margin-top: 8px; }
+        .steps > li pre {
+            margin: 10px 0 0 0;
+            font-size: 13px;
+            padding: 12px 16px;
+        }
+        .steps kbd {
+            display: inline-block;
+            padding: 1px 7px;
+            margin: 0 1px;
+            background: var(--bg-code);
+            color: var(--code-fg);
+            border: 1px solid var(--border);
+            border-bottom-width: 2px;
+            border-radius: 4px;
+            font-family: "JetBrains Mono", "SF Mono", "Consolas", monospace;
+            font-size: 12.5px;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+
+        /* OS tab strip — small visual headers above each OS-specific
+           step list, color-coded so a Windows user immediately spots
+           their row. */
+        .os-header {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: var(--bg-inline);
+            color: var(--fg-soft);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin: 22px 0 4px 0;
+        }
+        .os-header::before {
+            content: "";
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 2px;
+            background: var(--accent);
+        }
+        .os-header.os-linux::before { background: #f4c969; transform: rotate(45deg); }
+
+        /* Mini "different / same / removed" status chip in the API map. */
+        .status-chip {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            padding: 2px 7px;
+            border-radius: 3px;
+        }
+        .status-same { background: rgba(56, 178, 76, 0.18); color: #237b39; }
+        .status-diff { background: var(--accent-soft); color: var(--accent); }
+        .status-gone { background: rgba(213, 76, 76, 0.18); color: #a13a3a; }
+        :root[data-theme="dark"] .status-same { color: #6cd082; }
+    </style>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=26.5.19" defer></script>
+
+<main>
+
+<h1>Migrating from Roblox</h1>
+<p class="lede">
+    Ruzit's Lua-facing API was modelled on Roblox &mdash; <code>BasePart</code>,
+    <code>CFrame</code>, <code>Color3</code>, <code>:Connect</code>,
+    <code>TweenService</code>, <code>PhysicsService</code>. If you've shipped
+    a Roblox game, most of your muscle memory works. This page is the short
+    list of <em>where it doesn't</em>, and how to translate the patterns
+    that change.
+</p>
+
+<div class="must-banner">
+    <div class="must-title">Always open a window first</div>
+    <p>
+        Roblox starts you inside a running DataModel with a camera, a
+        viewport, and a script context already wired up. Ruzit doesn't.
+        Your <code>Main.luau</code> is the entry point of a cold process,
+        so before <strong>any</strong> rendering, GUI, camera, or input
+        API will do anything, you have to open the window yourself:
+    </p>
+<pre><code><span class="hl-kw">local</span> Window = <span class="hl-fn">import</span>(<span class="hl-str">"Window"</span>)
+<span class="hl-kw">local</span> win = Window.<span class="hl-fn">Open</span>({ Title = <span class="hl-str">"My Game"</span>, Width = <span class="hl-num">1280</span>, Height = <span class="hl-num">720</span> })</code></pre>
+    <p>
+        Calling <code>Renderable.BasePart</code>, <code>GUI.Basic.Square</code>,
+        <code>win:GetViewport()</code>, or anything that touches input or
+        the swapchain <strong>before</strong> <code>Window.Open</code> will
+        either error or sit silently with no surface to render to. Open
+        the window in line 1-3 of <code>Main.luau</code> and you'll never
+        think about it again.
+    </p>
+    <p>
+        Only one window per process &mdash; calling <code>Window.Open</code>
+        twice throws. Hang onto the returned handle; it's how you get the
+        camera (<code>win:GetViewport()</code>), close the app
+        (<code>win:Close()</code>), and react to resize / focus signals.
+    </p>
+</div>
+
+<h2 id="mental-model">The mental-model shift</h2>
+
+<p>
+    Three things change. Internalise these and the rest is just spelling.
+</p>
+
+<table>
+    <thead>
+        <tr><th>Roblox</th><th>Ruzit</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>The engine starts; <code>Workspace</code>, <code>Players</code>,
+                <code>game</code>, and a camera already exist. Scripts attach to
+                instances and run when those instances enter the tree.</td>
+            <td>The engine starts an empty Luau VM and runs your
+                <code>Main.luau</code> top to bottom. There is no
+                <code>game</code>, no <code>Workspace</code>, no
+                <code>DataModel</code>. You import what you need and create
+                what you want. <strong>Including the window.</strong></td>
+        </tr>
+        <tr>
+            <td>Client / server split. <code>LocalScript</code>,
+                <code>Script</code>, <code>ModuleScript</code>;
+                FilteringEnabled; <code>RemoteEvent</code>.</td>
+            <td>One process. Every <code>.luau</code> file is a module;
+                there is no client/server boundary by default. Use
+                <a href="net.html"><code>Net</code></a> if you want
+                networking, and <a href="actor.html"><code>Actor</code></a>
+                for parallelism. Otherwise it's all the same VM.</td>
+        </tr>
+        <tr>
+            <td>You write Lua, Roblox owns the executable. Studio ships
+                the game.</td>
+            <td>You write Luau, you own the executable.
+                <code>ruzit build</code> produces a single
+                cross-platform launcher you hand directly to players or
+                to Steam. See <a href="cli.html">CLI</a>.</td>
+        </tr>
+    </tbody>
+</table>
+
+<h2 id="first-day">Your first day in Ruzit
+    <span class="concept-pill">Studio</span>
+</h2>
+
+<p>
+    If you've only ever shipped on Roblox, your tooling instinct is
+    "open Studio". Ruzit doesn't have a Studio. The day-one mapping:
+</p>
+
+<table>
+    <thead>
+        <tr><th>What you used in Roblox</th><th>What replaces it in Ruzit</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Roblox Studio (the IDE)</td>
+            <td>Your editor of choice. <code>ruzit init</code> drops
+                a <code>.vscode/settings.json</code> wired up for the
+                Luau LSP, so VS Code with the
+                <strong>Luau Language Server</strong> extension is the
+                path of least resistance &mdash; hover docs, autocomplete,
+                and type errors all just work. JetBrains / Sublime / nvim
+                also work; point them at <code>types.d.luau</code>.</td>
+        </tr>
+        <tr>
+            <td>The Explorer panel</td>
+            <td>Your file tree. Every <code>.luau</code> file is a module;
+                folders are folders. There is no separate "Explorer
+                hierarchy" living alongside your scripts.</td>
+        </tr>
+        <tr>
+            <td>The Properties panel</td>
+            <td>Code. You don't click a part and edit
+                <code>BrickColor</code>; you write
+                <code>part.Color = Color3.fromRGB(...)</code>. Every
+                property is reachable from script and visible via LSP
+                hover.</td>
+        </tr>
+        <tr>
+            <td>The Output window</td>
+            <td>The terminal you ran <code>ruzit test</code> in.
+                <code>print()</code> goes to stdout; errors and Lua
+                tracebacks go to stderr in red.</td>
+        </tr>
+        <tr>
+            <td>The Toolbox / Marketplace</td>
+            <td>Files on disk. Drop <code>.png</code> / <code>.fbx</code> /
+                <code>.ogg</code> into <code>assets/</code> and reference
+                them with <code>Asset.GetAsset</code>. No asset IDs, no
+                upload step.</td>
+        </tr>
+        <tr>
+            <td>The Play button</td>
+            <td><code>ruzit test</code> in your terminal. Same effect: it
+                spins up the engine pointing at your project folder. Edit
+                a script, stop the process, run <code>ruzit test</code>
+                again.</td>
+        </tr>
+        <tr>
+            <td>Publish to Roblox</td>
+            <td><code>ruzit build</code>. Produces a
+                <code>Generated/&lt;name&gt;.exe</code> + a
+                <code>Generated/Managed/</code> folder. Ship the whole
+                folder &mdash; that's the game.</td>
+        </tr>
+    </tbody>
+</table>
+
+<div class="callout note">
+    <strong>Edit-while-running.</strong>
+    Roblox Studio lets you tweak a script and see results without
+    restarting. Ruzit doesn't &mdash; the engine boots from
+    <code>Main.luau</code>, runs your code, and exits when the window
+    closes. The dev loop is <em>edit, stop, <code>ruzit test</code>
+    again</em>. Most projects boot to a usable state in under a second,
+    so this is faster in practice than it sounds.
+</div>
+
+<h2 id="project-structure">Project structure
+    <span class="concept-pill">.rbxl place file</span>
+</h2>
+
+<p>
+    Roblox stores everything &mdash; scripts, parts, assets, services,
+    settings &mdash; inside an opaque <code>.rbxl</code> place file. Ruzit
+    is the opposite: a Ruzit project is a folder of plain text and asset
+    files you can diff, commit, and zip up. <code>ruzit init MyGame</code>
+    scaffolds the skeleton:
+</p>
+
+<div class="compare-grid">
+    <div class="compare-card roblox">
+        <div class="compare-label"><span class="compare-dot"></span>Roblox &mdash; a place file</div>
+<ul class="tree">
+    <li class="tree-folder">
+        <span class="tree-name">MyGame.rbxl</span>
+        <span class="tree-comment">opaque binary blob</span>
+        <ul>
+            <li class="tree-folder">
+                <span class="tree-name">ServerScriptService</span>
+                <ul>
+                    <li class="tree-file">
+                        <span class="tree-name">Main</span>
+                        <span class="tree-comment">Script instance</span>
+                    </li>
+                    <li class="tree-file">
+                        <span class="tree-name">Combat</span>
+                        <span class="tree-comment">ModuleScript</span>
+                    </li>
+                </ul>
+            </li>
+            <li class="tree-folder">
+                <span class="tree-name">ReplicatedStorage</span>
+                <ul>
+                    <li class="tree-file">
+                        <span class="tree-name">Shared</span>
+                        <span class="tree-comment">ModuleScripts</span>
+                    </li>
+                </ul>
+            </li>
+            <li class="tree-folder">
+                <span class="tree-name">Workspace</span>
+                <ul>
+                    <li class="tree-file"><span class="tree-name">Baseplate</span></li>
+                    <li class="tree-file"><span class="tree-name">(your parts)</span></li>
+                </ul>
+            </li>
+            <li class="tree-folder">
+                <span class="tree-name">StarterGui</span>
+                <ul>
+                    <li class="tree-file">
+                        <span class="tree-name">HUD</span>
+                        <span class="tree-comment">ScreenGui</span>
+                    </li>
+                </ul>
+            </li>
+            <li class="tree-folder">
+                <span class="tree-name">Lighting / SoundService / etc.</span>
+            </li>
+        </ul>
+    </li>
+</ul>
+    </div>
+    <div class="compare-card ruzit">
+        <div class="compare-label"><span class="compare-dot"></span>Ruzit &mdash; a project folder</div>
+<ul class="tree">
+    <li class="tree-folder">
+        <span class="tree-name">MyGame/</span>
+        <ul>
+            <li class="tree-file">
+                <span class="tree-name">Main.luau</span>
+                <span class="tree-comment">entry point, runs top to bottom</span>
+            </li>
+            <li class="tree-file">
+                <span class="tree-name">build.toml</span>
+                <span class="tree-comment">name, version, build flags, icon</span>
+            </li>
+            <li class="tree-file">
+                <span class="tree-name">types.d.luau</span>
+                <span class="tree-comment">LSP / autocomplete definitions</span>
+            </li>
+            <li class="tree-file">
+                <span class="tree-name">.luaurc</span>
+                <span class="tree-comment">require() path aliases</span>
+            </li>
+            <li class="tree-file">
+                <span class="tree-name">.vscode/settings.json</span>
+                <span class="tree-comment">editor wiring</span>
+            </li>
+            <li class="tree-folder">
+                <span class="tree-name">assets/</span>
+                <ul>
+                    <li class="tree-file"><span class="tree-name">ui/logo.png</span></li>
+                    <li class="tree-file"><span class="tree-name">props/crate.fbx</span></li>
+                    <li class="tree-file"><span class="tree-name">sfx/hit.ogg</span></li>
+                </ul>
+            </li>
+            <li class="tree-folder">
+                <span class="tree-name">modules/</span>
+                <ul>
+                    <li class="tree-file">
+                        <span class="tree-name">combat.luau</span>
+                        <span class="tree-comment">require("./modules/combat")</span>
+                    </li>
+                    <li class="tree-file"><span class="tree-name">hud.luau</span></li>
+                </ul>
+            </li>
+        </ul>
+    </li>
+</ul>
+    </div>
+</div>
+
+<p>
+    <code>Main.luau</code> is the only entry point the engine cares
+    about &mdash; everything else is reached from it via <code>require</code>.
+    There is no <code>StarterPlayerScripts</code> or
+    <code>ServerScriptService</code> equivalent; if you want a script
+    to run, <code>require</code> it from <code>Main.luau</code> (directly
+    or transitively).
+</p>
+
+<p>
+    <code>build.toml</code> plays the role Roblox's Game Settings menu
+    plays: name, version, icon, build flags, Steam app id, etc. See
+    <a href="build-toml.html">build.toml</a>.
+</p>
+
+<h2 id="terminal">Running commands from your terminal
+    <span class="concept-pill">No Play button</span>
+</h2>
+
+<p>
+    Roblox hides the build / run step entirely &mdash; you click Play and
+    Studio takes it from there. Ruzit doesn't have a Play button.
+    Every command (<code>ruzit init</code>, <code>ruzit test</code>,
+    <code>ruzit build</code>, &hellip;) gets typed into a
+    <strong>terminal</strong> &mdash; a plain text window where you tell
+    the computer what to run. If you've never opened one before, this
+    is the one-time hurdle, and it's smaller than it looks.
+</p>
+
+<div class="callout note">
+    <strong>Get the <code>ruzit</code> binary on PATH first.</strong>
+    Drop <code>ruzit</code> and <code>ruzitrun</code> into a folder
+    that's on your system <code>PATH</code> (Windows:
+    <code>C:\Windows\System32</code> works in a pinch, or anywhere
+    you've added to PATH; Linux: <code>/usr/local/bin</code> or
+    <code>~/.local/bin</code>). Without this, typing
+    <code>ruzit</code> in a terminal will say "command not found".
+    Test it: open any terminal, type <code>ruzit</code>, hit
+    <kbd>Enter</kbd> &mdash; you should see the help text print.
+</div>
+
+<div class="os-header">Windows</div>
+
+<p>
+    The slickest way to open a terminal already pointed at your project
+    folder, the trick most Roblox devs haven't seen:
+</p>
+
+<ol class="steps">
+    <li>
+        <p>
+            Open <strong>File Explorer</strong> and browse to the folder
+            that contains your project (the one with
+            <code>Main.luau</code> and <code>build.toml</code> in it).
+        </p>
+    </li>
+    <li>
+        <p>
+            Click the <strong>address bar</strong> at the top of File
+            Explorer (the strip that shows the path,
+            e.g. <code>This PC &gt; Documents &gt; MyGame</code>). It
+            turns into an editable text field.
+        </p>
+    </li>
+    <li>
+        <p>
+            Type <kbd>c</kbd><kbd>m</kbd><kbd>d</kbd> (just the three
+            letters &mdash; you're replacing the path) and press
+            <kbd>Enter</kbd>.
+        </p>
+        <p>
+            A black <strong>Command Prompt</strong> window pops open,
+            <em>already</em> inside your project folder. You'll see
+            something like:
+        </p>
+<pre><code>C:\Users\you\Documents\MyGame&gt;_</code></pre>
+    </li>
+    <li>
+        <p>
+            Type the Ruzit command you want and press <kbd>Enter</kbd>:
+        </p>
+<pre><code>C:\Users\you\Documents\MyGame&gt; ruzit test</code></pre>
+        <p>
+            The engine boots, the window opens, your game runs. Close
+            the game window (or press <kbd>Ctrl</kbd> + <kbd>C</kbd> in
+            the Command Prompt) and you're back at the prompt, ready to
+            run it again after edits.
+        </p>
+    </li>
+</ol>
+
+<p>
+    Other ways to open a terminal in a folder on Windows, in case the
+    address-bar trick ever breaks:
+</p>
+<ul>
+    <li><strong>Right-click in the folder</strong> while holding
+        <kbd>Shift</kbd> &mdash; "Open PowerShell window here" appears
+        in the context menu.</li>
+    <li><strong>Windows Terminal</strong> (the modern, tabbed terminal
+        Microsoft ships) &mdash; right-click any folder and pick
+        "Open in Terminal" on Windows 11.</li>
+    <li>Press <kbd>Win</kbd> + <kbd>R</kbd>, type <code>cmd</code>,
+        hit <kbd>Enter</kbd>, then <code>cd</code> into your project
+        folder manually:
+<pre><code>cd C:\Users\you\Documents\MyGame
+ruzit test</code></pre>
+    </li>
+</ul>
+
+<div class="os-header os-linux">Linux</div>
+
+<p>
+    Same idea as Windows &mdash; open a terminal sitting inside your
+    project folder, then type the command. The exact menu wording
+    depends on your desktop environment.
+</p>
+
+<ol class="steps">
+    <li>
+        <p>
+            Open your file manager and browse to the folder containing
+            <code>Main.luau</code> and <code>build.toml</code>.
+        </p>
+    </li>
+    <li>
+        <p>
+            <strong>Right-click an empty area</strong> inside the folder
+            and look for one of:
+        </p>
+        <ul>
+            <li><strong>GNOME Files / Nautilus</strong> &mdash;
+                <em>"Open Terminal"</em> (built in on Ubuntu&nbsp;22.04+
+                and Fedora&nbsp;38+; older systems need
+                <code>nautilus-open-terminal</code> /
+                <code>nautilus-extension-gnome-terminal</code>).</li>
+            <li><strong>KDE Dolphin</strong> &mdash;
+                <em>"Open Terminal Here"</em>, or just press
+                <kbd>F4</kbd> in any folder to drop a terminal into the
+                bottom pane.</li>
+            <li><strong>XFCE Thunar</strong> &mdash;
+                <em>"Open Terminal Here"</em> via the
+                <code>thunar-extras</code> package.</li>
+            <li><strong>elementary Files / Cinnamon Nemo / MATE Caja</strong>
+                &mdash; <em>"Open in Terminal"</em>, present by default
+                on most distros.</li>
+        </ul>
+    </li>
+    <li>
+        <p>
+            A terminal window opens, already <code>cd</code>'d into the
+            project folder. The prompt looks like:
+        </p>
+<pre><code>you@host:~/projects/MyGame$ _</code></pre>
+    </li>
+    <li>
+        <p>
+            Type the Ruzit command and press <kbd>Enter</kbd>:
+        </p>
+<pre><code>$ ruzit test</code></pre>
+        <p>
+            Close the game window or press
+            <kbd>Ctrl</kbd> + <kbd>C</kbd> in the terminal to stop, then
+            run it again after edits.
+        </p>
+    </li>
+</ol>
+
+<p>
+    No "Open Terminal Here" entry? Three reliable fallbacks:
+</p>
+<ul>
+    <li>Press <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>T</kbd> to launch
+        a fresh terminal anywhere on GNOME / KDE / XFCE / Cinnamon, then
+        <code>cd</code> into your project:
+<pre><code>$ cd ~/projects/MyGame
+$ ruzit test</code></pre>
+    </li>
+    <li>Launch the terminal binary directly &mdash;
+        <code>gnome-terminal</code>, <code>konsole</code>,
+        <code>xfce4-terminal</code>, <code>alacritty</code>,
+        <code>kitty</code>, or whatever your distro ships.</li>
+    <li>On a server with no desktop at all, SSH in and
+        <code>cd</code> normally. <code>ruzit test</code> needs a
+        display server (X11 / Wayland) to open the window, but
+        <code>ruzit build</code> works headless &mdash; you can
+        package a release on a headless build box.</li>
+</ul>
+
+<div class="callout warn">
+    <strong>Make the binary executable.</strong>
+    Linux files don't get an "executable" bit by default when downloaded.
+    If <code>ruzit</code> errors with
+    <em>"Permission denied"</em> or <em>"bash: ruzit: command not
+    found"</em> after you've placed it on PATH, mark it executable
+    once:
+<pre><code>$ chmod +x ~/.local/bin/ruzit ~/.local/bin/ruzitrun</code></pre>
+    <code>~/.local/bin</code> is on most distros' default PATH and
+    doesn't need <code>sudo</code>. Use <code>/usr/local/bin</code>
+    (with <code>sudo</code>) if you want the binary available to every
+    user on the system.
+</div>
+
+<div class="callout warn">
+    <strong>If <code>ruzit</code> isn't recognised.</strong>
+    "command not found" / "'ruzit' is not recognized as an internal or
+    external command" means the binary isn't on your PATH. Either move
+    it onto PATH (recommended) or run it by full path, e.g.
+    <code>C:\Tools\ruzit.exe test</code> on Windows or
+    <code>./ruzit test</code> from the folder containing the binary on
+    Linux.
+</div>
+
+<h2 id="running-shipping">Running and shipping
+    <span class="concept-pill">F5 / File &rarr; Publish</span>
+</h2>
+
+<p>
+    The whole CLI workflow is eight verbs. The two you'll touch every
+    day are <code>ruzit test</code> (the Play button) and
+    <code>ruzit build</code> (the Publish button). They are both run
+    from your terminal at the project root.
+</p>
+
+<table>
+    <thead>
+        <tr><th>Roblox action</th><th>Ruzit command</th><th>What it does</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>File &rarr; New Place</td>
+            <td><code>ruzit init MyGame</code></td>
+            <td>Scaffold a new project folder with
+                <code>Main.luau</code>, <code>build.toml</code>,
+                <code>assets/</code>, and a fresh
+                <code>types.d.luau</code>.</td>
+        </tr>
+        <tr>
+            <td>Play button (F5)</td>
+            <td><code>ruzit test</code></td>
+            <td>Boot the engine pointed at your project. No packaging,
+                no encryption &mdash; edits hit the next run.</td>
+        </tr>
+        <tr>
+            <td>File &rarr; Publish to Roblox</td>
+            <td><code>ruzit build</code></td>
+            <td>Produces <code>Generated/&lt;name&gt;.exe</code> + a
+                <code>Managed/</code> folder. Ship the whole
+                <code>Generated/</code> directly to players or to Steam.</td>
+        </tr>
+        <tr>
+            <td>(no equivalent)</td>
+            <td><code>ruzit initpackage MyDLC</code></td>
+            <td>Scaffold a DLC / mod package that drops next to a project
+                and ships as a separate, encrypted
+                <code>.managed</code> bundle. See
+                <a href="packages.html">Packages &amp; DLC</a>.</td>
+        </tr>
+        <tr>
+            <td>(no equivalent)</td>
+            <td><code>ruzit refresh-types</code></td>
+            <td>Re-download <code>types.d.luau</code> so your autocomplete
+                tracks the engine version you're actually running.</td>
+        </tr>
+    </tbody>
+</table>
+
+<div class="callout note">
+    <strong>You own the executable.</strong>
+    The output of <code>ruzit build</code> is yours &mdash; no marketplace,
+    no platform gate, no revenue cut. Distribute it however you want:
+    direct download, itch.io, Steam, GOG. The engine binary is GPL-friendly
+    and the launcher is just a regular signed-able
+    Win32 / ELF executable.
+</div>
+
+<h2 id="hello-world">Hello, cube
+    <span class="concept-pill">Workspace + Camera</span>
+</h2>
+
+<p>
+    The minimum viable "show something" program in each engine. The
+    Roblox version assumes a baseplate; the Ruzit version is the
+    <em>whole</em> program, including the window.
+</p>
+
+<div class="compare-grid">
+    <div class="compare-card roblox">
+        <div class="compare-label"><span class="compare-dot"></span>Roblox &mdash; Script in ServerScriptService</div>
+<pre><code><span class="hl-kw">local</span> part = <span class="hl-fn">Instance.new</span>(<span class="hl-str">"Part"</span>)
+part.Size     = <span class="hl-fn">Vector3.new</span>(<span class="hl-num">2</span>, <span class="hl-num">2</span>, <span class="hl-num">2</span>)
+part.Position = <span class="hl-fn">Vector3.new</span>(<span class="hl-num">0</span>, <span class="hl-num">5</span>, <span class="hl-num">0</span>)
+part.Anchored = <span class="hl-kw">true</span>
+part.Parent   = workspace</code></pre>
+    </div>
+    <div class="compare-card ruzit">
+        <div class="compare-label"><span class="compare-dot"></span>Ruzit &mdash; Main.luau</div>
+<pre><code><span class="hl-kw">local</span> Window     = <span class="hl-fn">import</span>(<span class="hl-str">"Window"</span>)
+<span class="hl-kw">local</span> Renderable = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
+<span class="hl-kw">local</span> Vector     = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Vector
+
+<span class="hl-kw">local</span> win  = Window.<span class="hl-fn">Open</span>({ Title = <span class="hl-str">"Hello"</span>, Width = <span class="hl-num">1280</span>, Height = <span class="hl-num">720</span> })
+<span class="hl-kw">local</span> part = Renderable.<span class="hl-fn">BasePart</span>(<span class="hl-str">"Cube"</span>)
+part.Size  = Vector.<span class="hl-fn">new</span>(<span class="hl-num">2</span>, <span class="hl-num">2</span>, <span class="hl-num">2</span>)
+part.CFrame = Primitives.CFrame.<span class="hl-fn">new</span>(Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">5</span>, <span class="hl-num">0</span>))</code></pre>
+    </div>
+</div>
+
+<p>
+    Notice three things: <code>Instance.new("Part")</code> becomes
+    <code>Renderable.BasePart("Cube")</code> &mdash; there's no instance
+    tree, parts exist standalone the moment they're created. <code>Vector3</code>
+    is just <code>Vector</code>. And the <strong>position</strong> setter
+    is gone &mdash; parts have a <code>CFrame</code>, not a separate
+    <code>.Position</code> field (you read <code>part.CFrame.Position</code>).
+</p>
+
+<h2 id="primitives">Math primitives
+    <span class="concept-pill">Vector3, CFrame, Color3</span>
+</h2>
+
+<div class="compare-grid">
+    <div class="compare-card roblox">
+        <div class="compare-label"><span class="compare-dot"></span>Roblox</div>
+<pre><code><span class="hl-fn">Vector3.new</span>(<span class="hl-num">1</span>, <span class="hl-num">2</span>, <span class="hl-num">3</span>)
+<span class="hl-fn">CFrame.new</span>(<span class="hl-num">0</span>, <span class="hl-num">5</span>, <span class="hl-num">0</span>)
+<span class="hl-fn">Color3.fromRGB</span>(<span class="hl-num">255</span>, <span class="hl-num">80</span>, <span class="hl-num">80</span>)
+<span class="hl-fn">UDim2.new</span>(<span class="hl-num">0</span>, <span class="hl-num">200</span>, <span class="hl-num">0</span>, <span class="hl-num">12</span>)</code></pre>
+    </div>
+    <div class="compare-card ruzit">
+        <div class="compare-label"><span class="compare-dot"></span>Ruzit</div>
+<pre><code><span class="hl-kw">local</span> P = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>)
+
+P.Vector.<span class="hl-fn">new</span>(<span class="hl-num">1</span>, <span class="hl-num">2</span>, <span class="hl-num">3</span>)
+P.CFrame.<span class="hl-fn">new</span>(P.Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">5</span>, <span class="hl-num">0</span>))
+P.Color3.<span class="hl-fn">fromRGB</span>(<span class="hl-num">255</span>, <span class="hl-num">80</span>, <span class="hl-num">80</span>)
+P.Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</span>, <span class="hl-num">12</span>)  <span class="hl-com">-- pixels only, no scale axis</span></code></pre>
+    </div>
+</div>
+
+<p>
+    <code>Dim</code> replaces <code>UDim2</code> and is pixel-only by
+    default &mdash; Ruzit's GUI primitives don't have Roblox's scale /
+    offset duality. If you want a fraction-of-window layout, read
+    <code>win:Width()</code> / <code>win:Height()</code> and do the
+    math yourself; signals on the window handle make this trivial.
+</p>
+
+<p>
+    A non-obvious bonus: every Ruzit API that takes a <code>Vector</code>
+    also accepts a raw Luau <code>vector(x, y, z)</code> primitive. So
+    <code>part.Size = vector(1, 2, 3)</code> is valid, and faster in
+    hot loops because the read never crosses the FFI boundary. See
+    <a href="primitives.html">Primitives</a>.
+</p>
+
+<h2 id="parts">Parts and the scene graph
+    <span class="concept-pill">Instance / Parent / workspace</span>
+</h2>
+
+<div class="compare-grid">
+    <div class="compare-card roblox">
+        <div class="compare-label"><span class="compare-dot"></span>Roblox</div>
+<pre><code><span class="hl-kw">local</span> part = <span class="hl-fn">Instance.new</span>(<span class="hl-str">"Part"</span>)
+part.Shape    = Enum.PartType.Ball
+part.Size     = <span class="hl-fn">Vector3.new</span>(<span class="hl-num">2</span>, <span class="hl-num">2</span>, <span class="hl-num">2</span>)
+part.Color    = <span class="hl-fn">Color3.fromRGB</span>(<span class="hl-num">90</span>, <span class="hl-num">200</span>, <span class="hl-num">120</span>)
+part.Anchored = <span class="hl-kw">true</span>
+part.Parent   = workspace
+
+<span class="hl-com">-- ChildAdded fires on every Instance</span>
+workspace.ChildAdded:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(c) <span class="hl-fn">print</span>(c) <span class="hl-kw">end</span>)</code></pre>
+    </div>
+    <div class="compare-card ruzit">
+        <div class="compare-label"><span class="compare-dot"></span>Ruzit</div>
+<pre><code><span class="hl-kw">local</span> part  = Renderable.<span class="hl-fn">BasePart</span>(<span class="hl-str">"Sphere"</span>)
+part.Size  = Vector.<span class="hl-fn">new</span>(<span class="hl-num">2</span>, <span class="hl-num">2</span>, <span class="hl-num">2</span>)
+part.Color = Color3.<span class="hl-fn">fromRGB</span>(<span class="hl-num">90</span>, <span class="hl-num">200</span>, <span class="hl-num">120</span>)
+<span class="hl-com">-- no Parent. The part exists. The renderer sees it.</span>
+<span class="hl-com">-- no Anchored. Anchored is the default; opt into physics</span>
+<span class="hl-com">-- by passing the part to PhysicsService.</span>
+
+<span class="hl-com">-- need to group / move / clone parts together?</span>
+<span class="hl-kw">local</span> Objects = <span class="hl-fn">import</span>(<span class="hl-str">"Objects"</span>)
+<span class="hl-kw">local</span> rack    = Objects.<span class="hl-fn">Movable</span>()
+rack:<span class="hl-fn">AddChild</span>(part)</code></pre>
+    </div>
+</div>
+
+<div class="compare-bridge">Key difference</div>
+
+<p>
+    There is no instance tree. Parts are not children of anything;
+    creating one registers it with the renderer, and that's it. If you
+    need parenting semantics &mdash; move-the-parent-and-children-follow,
+    clone-a-whole-rig &mdash; use <a href="objects.html"><code>Objects</code></a>'
+    <code>Movable</code> / <code>Sizable</code> / <code>ClonableContainer</code>
+    composers. They give you Roblox's "model" behaviour without bringing
+    back the whole DataModel.
+</p>
+
+<h2 id="modules">Modules and require
+    <span class="concept-pill">ModuleScript / require()</span>
+</h2>
+
+<div class="callout note">
+    <strong>If you're familiar with using Rojo, this will feel very
+    similar.</strong> Ruzit projects are folders of <code>.luau</code>
+    files on disk, edited in an external editor (VS Code is the path
+    of least resistance), with <code>require</code> resolved by file
+    path. If you've ever set up a Rojo project mapping
+    <code>src/</code> into <code>ReplicatedStorage</code>, the mental
+    model here is the same one &mdash; just without the sync step,
+    because the files <em>are</em> the project. No <code>default.project.json</code>,
+    no rojo daemon, no Studio round-trip. You point
+    <code>ruzit test</code> at the folder and it runs.
+</div>
+
+<p>
+    A <strong>module</strong> in Ruzit is any <code>.luau</code> file
+    that ends in <code>return &lt;something&gt;</code>. Same convention
+    as Roblox's <code>ModuleScript</code>. The difference is that you
+    reach modules by <em>file path</em> instead of by walking the
+    instance tree.
+</p>
+
+<div class="compare-grid">
+    <div class="compare-card roblox">
+        <div class="compare-label"><span class="compare-dot"></span>Roblox &mdash; ModuleScript by instance path</div>
+<pre><code><span class="hl-com">-- ServerScriptService/Combat.lua (ModuleScript)</span>
+<span class="hl-kw">local</span> Combat = {}
+<span class="hl-kw">function</span> Combat.<span class="hl-fn">deal_damage</span>(t, n) ... <span class="hl-kw">end</span>
+<span class="hl-kw">return</span> Combat
+
+<span class="hl-com">-- elsewhere:</span>
+<span class="hl-kw">local</span> Combat = <span class="hl-fn">require</span>(
+    <span class="hl-fn">game:GetService</span>(<span class="hl-str">"ServerScriptService"</span>).Combat)
+<span class="hl-kw">local</span> Shared = <span class="hl-fn">require</span>(
+    <span class="hl-fn">game:GetService</span>(<span class="hl-str">"ReplicatedStorage"</span>).Shared)</code></pre>
+    </div>
+    <div class="compare-card ruzit">
+        <div class="compare-label"><span class="compare-dot"></span>Ruzit &mdash; ModuleScript by file path</div>
+<pre><code><span class="hl-com">-- modules/combat.luau</span>
+<span class="hl-kw">local</span> Combat = {}
+<span class="hl-kw">function</span> Combat.<span class="hl-fn">deal_damage</span>(t, n) ... <span class="hl-kw">end</span>
+<span class="hl-kw">return</span> Combat
+
+<span class="hl-com">-- elsewhere, e.g. Main.luau:</span>
+<span class="hl-kw">local</span> Combat = <span class="hl-fn">require</span>(<span class="hl-str">"./modules/combat"</span>)
+<span class="hl-kw">local</span> Shared = <span class="hl-fn">require</span>(<span class="hl-str">"./modules/shared"</span>)</code></pre>
+    </div>
+</div>
+
+<h3>The three forms of require</h3>
+
+<p>
+    Three path styles, in order from "everyday" to "rare":
+</p>
+
+<table>
+    <thead>
+        <tr><th>Form</th><th>Resolves to</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code>require("./foo/bar")</code></td>
+            <td>Relative to the directory of the <em>current</em>
+                <code>.luau</code> file (the same one
+                <code>__dirname</code> reports). Drop the
+                <code>.luau</code> extension &mdash; the loader adds it.
+                This is what you'll use 95% of the time.</td>
+        </tr>
+        <tr>
+            <td><code>require("@Game/modules/foo")</code></td>
+            <td>Project-root-anchored. The <code>@Game</code> alias is
+                installed automatically by <code>ruzit scaffold</code> /
+                <code>ruzit init</code> and points at <code>./</code>.
+                Use it when a deeply nested module needs to reach back
+                up to a sibling without counting <code>../../../</code>.</td>
+        </tr>
+        <tr>
+            <td><code>require("@PkgId")</code> /
+                <code>require("@PkgId/sub")</code></td>
+            <td>Cross-package &mdash; pulls from a sibling
+                <code>Managed/</code> package (a DLC, a mod, or just a
+                shared library you've packaged separately). Aliases are
+                regenerated by <code>ruzit scaffold</code> by walking the
+                project for <code>ManagedInfo.toml</code> files.</td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>The .luaurc file</h3>
+
+<p>
+    Ruzit's <code>.luaurc</code> is Luau's standard config file
+    (the same one Roblox / Rojo use), shaped here to power
+    <code>@</code> aliases. <code>ruzit init</code> generates a
+    starter for you; <code>ruzit scaffold</code> regenerates it any
+    time you add or remove a packaged sibling. Typical contents
+    after running <code>ruzit init MyGame</code>:
+</p>
+
+<pre><code>{
+    "languageMode": "strict",
+    "aliases": {
+        "Game": "./"
+    }
+}</code></pre>
+
+<p>
+    After dropping a DLC folder (with its own
+    <code>ManagedInfo.toml</code>) next to <code>Main.luau</code> and
+    running <code>ruzit scaffold</code>, the same file becomes:
+</p>
+
+<pre><code>{
+    "languageMode": "strict",
+    "aliases": {
+        "Game": "./",
+        "CoolDLC": "./CoolDLC"
+    }
+}</code></pre>
+
+<p>
+    From any script in the project you can now write
+    <code>require("@CoolDLC/init")</code> and the LSP will autocomplete
+    against it. The DLC's own <code>init.luau</code> is whatever it
+    chooses to expose; same module convention as everywhere else.
+</p>
+
+<h3>A typical project layout</h3>
+
+<p>
+    Nothing about this layout is enforced &mdash; it's just what a
+    medium-size project tends to look like once it's wired up.
+    <code>Main.luau</code> is the only fixed name; everything else is
+    yours to organise.
+</p>
+
+<ul class="tree">
+    <li class="tree-folder">
+        <span class="tree-name">MyGame/</span>
+        <ul>
+            <li class="tree-file">
+                <span class="tree-name">Main.luau</span>
+                <span class="tree-comment">engine entry, opens the window</span>
+            </li>
+            <li class="tree-file"><span class="tree-name">build.toml</span></li>
+            <li class="tree-file">
+                <span class="tree-name">.luaurc</span>
+                <span class="tree-comment">aliases: { Game = "./" }</span>
+            </li>
+            <li class="tree-file"><span class="tree-name">types.d.luau</span></li>
+            <li class="tree-file"><span class="tree-name">.vscode/settings.json</span></li>
+            <li class="tree-folder">
+                <span class="tree-name">modules/</span>
+                <ul>
+                    <li class="tree-file">
+                        <span class="tree-name">player.luau</span>
+                        <span class="tree-comment">require("./modules/player")</span>
+                    </li>
+                    <li class="tree-file">
+                        <span class="tree-name">combat.luau</span>
+                        <span class="tree-comment">require("./modules/combat")</span>
+                    </li>
+                    <li class="tree-file"><span class="tree-name">hud.luau</span></li>
+                </ul>
+            </li>
+            <li class="tree-folder">
+                <span class="tree-name">scenes/</span>
+                <ul>
+                    <li class="tree-file"><span class="tree-name">menu.luau</span></li>
+                    <li class="tree-file"><span class="tree-name">level_01.luau</span></li>
+                </ul>
+            </li>
+            <li class="tree-folder">
+                <span class="tree-name">shared/</span>
+                <ul>
+                    <li class="tree-file"><span class="tree-name">constants.luau</span></li>
+                    <li class="tree-file"><span class="tree-name">math.luau</span></li>
+                </ul>
+            </li>
+            <li class="tree-folder">
+                <span class="tree-name">assets/</span>
+                <ul>
+                    <li class="tree-file"><span class="tree-name">ui/logo.png</span></li>
+                    <li class="tree-file"><span class="tree-name">props/crate.fbx</span></li>
+                </ul>
+            </li>
+            <li class="tree-folder">
+                <span class="tree-name">CoolDLC/</span>
+                <span class="tree-comment">optional sibling package</span>
+                <ul>
+                    <li class="tree-file"><span class="tree-name">ManagedInfo.toml</span></li>
+                    <li class="tree-file">
+                        <span class="tree-name">init.luau</span>
+                        <span class="tree-comment">require("@CoolDLC")</span>
+                    </li>
+                    <li class="tree-file"><span class="tree-name">assets/...</span></li>
+                </ul>
+            </li>
+        </ul>
+    </li>
+</ul>
+
+<p>
+    And a representative <code>Main.luau</code> that wires it together:
+</p>
+
+<pre><code><span class="hl-com">-- Main.luau</span>
+<span class="hl-kw">local</span> Window  = <span class="hl-fn">import</span>(<span class="hl-str">"Window"</span>)
+<span class="hl-kw">local</span> Process = <span class="hl-fn">import</span>(<span class="hl-str">"Process"</span>)
+
+<span class="hl-kw">local</span> win = Window.<span class="hl-fn">Open</span>({ Title = <span class="hl-str">"My Game"</span>, Width = <span class="hl-num">1280</span>, Height = <span class="hl-num">720</span> })
+
+<span class="hl-kw">local</span> Player = <span class="hl-fn">require</span>(<span class="hl-str">"./modules/player"</span>)
+<span class="hl-kw">local</span> HUD    = <span class="hl-fn">require</span>(<span class="hl-str">"./modules/hud"</span>)
+<span class="hl-kw">local</span> Level  = <span class="hl-fn">require</span>(<span class="hl-str">"./scenes/level_01"</span>)
+
+<span class="hl-kw">local</span> player = Player.<span class="hl-fn">new</span>(win)
+Level.<span class="hl-fn">load</span>(player)
+HUD.<span class="hl-fn">attach</span>(player)
+
+Process.Heartbeat:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(dt)
+    player:<span class="hl-fn">Update</span>(dt)
+<span class="hl-kw">end</span>)</code></pre>
+
+<h3>VS Code is the path of least resistance</h3>
+
+<p>
+    Ruzit doesn't ship its own IDE. The recommended setup is
+    <a href="https://code.visualstudio.com/" target="_blank" rel="noopener">Visual Studio Code</a>
+    with the
+    <a href="https://marketplace.visualstudio.com/items?itemName=JohnnyMorganz.luau-lsp" target="_blank" rel="noopener">Luau Language Server</a>
+    extension. <code>ruzit init</code> writes a
+    <code>.vscode/settings.json</code> alongside your project so the
+    extension knows where to look the moment you open the folder &mdash;
+    you don't have to configure anything by hand. You get:
+</p>
+
+<ul>
+    <li><strong>Autocomplete</strong> for every <code>import("X")</code>
+        return value &mdash; the LSP follows the type through to
+        <code>types.d.luau</code> and surfaces every property, method,
+        and signal with the right type signature.</li>
+    <li><strong>Hover docs.</strong> Mouse over <code>:Connect</code> /
+        <code>Vector.new</code> / <code>part.CFrame</code> and see the
+        same prose that's on these doc pages.</li>
+    <li><strong>Inline type errors.</strong> Mistype a property name or
+        pass the wrong arg type and the editor red-squiggles it before
+        you ever hit <code>ruzit test</code>.</li>
+    <li><strong>Go-to-definition</strong> for your own modules. Cmd /
+        Ctrl + click a <code>require</code>'d symbol to jump straight
+        to its definition.</li>
+    <li><strong>Refactor-rename</strong> for locals and module exports.</li>
+</ul>
+
+<p>
+    Other editors work too &mdash; the Luau LSP is editor-agnostic
+    (JetBrains, nvim, Sublime, Helix all have integrations). If your
+    autocomplete ever falls out of date with the running engine, run
+    <code>ruzit refresh-types</code> to pull a fresh
+    <code>types.d.luau</code> and the LSP will pick it up on next save.
+</p>
+
+<h2 id="events">Events
+    <span class="concept-pill">RBXScriptSignal :Connect</span>
+</h2>
+
+<p>
+    Identical surface. <code>:Connect</code>, <code>:Once</code>, and
+    <code>:Wait</code> all exist. The only difference is that you can
+    build your own typed signals from script via <code>Signal.new()</code>
+    &mdash; in Roblox you'd reach for BindableEvent.
+</p>
+
+<div class="compare-grid">
+    <div class="compare-card roblox">
+        <div class="compare-label"><span class="compare-dot"></span>Roblox</div>
+<pre><code><span class="hl-kw">local</span> ev = <span class="hl-fn">Instance.new</span>(<span class="hl-str">"BindableEvent"</span>)
+ev.Event:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(dmg) <span class="hl-fn">print</span>(dmg) <span class="hl-kw">end</span>)
+ev:<span class="hl-fn">Fire</span>(<span class="hl-num">25</span>)</code></pre>
+    </div>
+    <div class="compare-card ruzit">
+        <div class="compare-label"><span class="compare-dot"></span>Ruzit</div>
+<pre><code><span class="hl-kw">local</span> Signal = <span class="hl-fn">import</span>(<span class="hl-str">"Signal"</span>)
+<span class="hl-kw">local</span> hit    = Signal.<span class="hl-fn">new</span>()
+hit:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(dmg) <span class="hl-fn">print</span>(dmg) <span class="hl-kw">end</span>)
+hit:<span class="hl-fn">Fire</span>(<span class="hl-num">25</span>)</code></pre>
+    </div>
+</div>
+
+<h2 id="heartbeat">Per-frame loops
+    <span class="concept-pill">RunService.Heartbeat</span>
+</h2>
+
+<p>
+    <code>RunService</code> is gone &mdash; its two useful signals
+    (<code>Heartbeat</code> and <code>RenderStepped</code>) live on
+    <a href="process.html"><code>Process</code></a> now. Same shape, same
+    dt-in-seconds payload.
+</p>
+
+<div class="compare-grid">
+    <div class="compare-card roblox">
+        <div class="compare-label"><span class="compare-dot"></span>Roblox</div>
+<pre><code><span class="hl-kw">local</span> RunService = <span class="hl-fn">game:GetService</span>(<span class="hl-str">"RunService"</span>)
+
+RunService.Heartbeat:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(dt)
+    player:<span class="hl-fn">Update</span>(dt)
+<span class="hl-kw">end</span>)
+
+RunService.RenderStepped:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(dt)
+    camera:<span class="hl-fn">Follow</span>(player, dt)
+<span class="hl-kw">end</span>)</code></pre>
+    </div>
+    <div class="compare-card ruzit">
+        <div class="compare-label"><span class="compare-dot"></span>Ruzit</div>
+<pre><code><span class="hl-kw">local</span> Process = <span class="hl-fn">import</span>(<span class="hl-str">"Process"</span>)
+
+Process.Heartbeat:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(dt)
+    player:<span class="hl-fn">Update</span>(dt)
+<span class="hl-kw">end</span>)
+
+Process.RenderStepped:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(dt)
+    camera:<span class="hl-fn">Follow</span>(player, dt)
+<span class="hl-kw">end</span>)</code></pre>
+    </div>
+</div>
+
+<h2 id="camera">Camera
+    <span class="concept-pill">Workspace.CurrentCamera</span>
+</h2>
+
+<p>
+    Roblox gives you <code>workspace.CurrentCamera</code> automatically;
+    in Ruzit the camera belongs to the window you opened, so you ask the
+    window for it. There's one camera per window and it's a true
+    singleton &mdash; every call returns the same object.
+</p>
+
+<div class="compare-grid">
+    <div class="compare-card roblox">
+        <div class="compare-label"><span class="compare-dot"></span>Roblox &mdash; LocalScript</div>
+<pre><code><span class="hl-kw">local</span> cam = workspace.CurrentCamera
+cam.CameraType    = Enum.CameraType.Scriptable
+cam.CFrame        = <span class="hl-fn">CFrame.new</span>(<span class="hl-num">0</span>, <span class="hl-num">5</span>, <span class="hl-num">10</span>)
+cam.FieldOfView   = <span class="hl-num">75</span></code></pre>
+    </div>
+    <div class="compare-card ruzit">
+        <div class="compare-label"><span class="compare-dot"></span>Ruzit</div>
+<pre><code><span class="hl-kw">local</span> cam = win:<span class="hl-fn">GetViewport</span>()
+cam.CFrame = CFrame.<span class="hl-fn">new</span>(Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">5</span>, <span class="hl-num">10</span>))
+cam.FOV    = <span class="hl-num">75</span>
+
+<span class="hl-com">-- third-person follow with offset, no Heartbeat loop needed:</span>
+cam:<span class="hl-fn">LinkTo</span>(player, CFrame.<span class="hl-fn">new</span>(Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">1.5</span>, -<span class="hl-num">6</span>)))</code></pre>
+    </div>
+</div>
+
+<p>
+    Ruzit's <code>cam:LinkTo(target, offset, callback)</code> replaces
+    the per-frame "set <code>cam.CFrame</code> from RenderStepped" dance
+    most Roblox third-person cameras do. The engine evaluates the link
+    after physics ticks each frame, so the camera never lags one frame
+    behind its target.
+</p>
+
+<h2 id="input">Input devices
+    <span class="concept-pill">UserInputService</span>
+</h2>
+
+<p>
+    Roblox funnels keyboard, mouse, gamepad, and touch through one
+    <code>UserInputService</code> with a tagged
+    <code>UserInputType</code>. Ruzit splits them into one library per
+    device kind &mdash; <a href="mouse.html">Mouse</a>,
+    <a href="keyboard.html">Keyboard</a>,
+    <a href="gamepad.html">Gamepad</a>. Each is a flat library with
+    its own signals and snapshot queries. There's no "input began /
+    changed / ended" enum to switch on &mdash; the device dictates
+    which library to import.
+</p>
+
+<div class="compare-grid">
+    <div class="compare-card roblox">
+        <div class="compare-label"><span class="compare-dot"></span>Roblox</div>
+<pre><code><span class="hl-kw">local</span> UIS = <span class="hl-fn">game:GetService</span>(<span class="hl-str">"UserInputService"</span>)
+
+UIS.InputBegan:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(input, processed)
+    <span class="hl-kw">if</span> processed <span class="hl-kw">then</span> <span class="hl-kw">return</span> <span class="hl-kw">end</span>
+    <span class="hl-kw">if</span> input.KeyCode == Enum.KeyCode.Space <span class="hl-kw">then</span>
+        player:<span class="hl-fn">Jump</span>()
+    <span class="hl-kw">end</span>
+<span class="hl-kw">end</span>)
+
+UIS.InputChanged:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(input)
+    <span class="hl-kw">if</span> input.UserInputType == Enum.UserInputType.MouseMovement <span class="hl-kw">then</span>
+        aim:<span class="hl-fn">RotateBy</span>(input.Delta.X, input.Delta.Y)
+    <span class="hl-kw">end</span>
+<span class="hl-kw">end</span>)</code></pre>
+    </div>
+    <div class="compare-card ruzit">
+        <div class="compare-label"><span class="compare-dot"></span>Ruzit</div>
+<pre><code><span class="hl-kw">local</span> Keyboard = <span class="hl-fn">import</span>(<span class="hl-str">"Keyboard"</span>)
+<span class="hl-kw">local</span> Mouse    = <span class="hl-fn">import</span>(<span class="hl-str">"Mouse"</span>)
+
+<span class="hl-kw">local</span> space = Keyboard:<span class="hl-fn">GetKeyId</span>(<span class="hl-str">"Space"</span>)
+
+Keyboard.InputChanged:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(id, name, state)
+    <span class="hl-kw">if</span> id == space <span class="hl-kw">and</span> state == <span class="hl-str">"Begin"</span> <span class="hl-kw">then</span>
+        player:<span class="hl-fn">Jump</span>()
+    <span class="hl-kw">end</span>
+<span class="hl-kw">end</span>)
+
+Mouse.Moved:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(pos, delta)
+    aim:<span class="hl-fn">RotateBy</span>(delta.X, delta.Y)
+<span class="hl-kw">end</span>)</code></pre>
+    </div>
+</div>
+
+<p>
+    A few pattern shifts to internalize:
+</p>
+
+<ul>
+    <li><strong>Polling is free.</strong>
+        <code>Keyboard:IsKeyDown("w")</code> and
+        <code>Mouse.Position</code> are cheap snapshot reads &mdash; do
+        them inside <code>Process.Heartbeat</code> instead of tracking
+        every key with begin/end events. (Roblox makes you do the same
+        with <code>UserInputService:IsKeyDown</code>, but in Ruzit it's
+        the recommended style.)</li>
+    <li><strong>Mouse lock is one line.</strong>
+        <code>Mouse.Locked = true; Mouse.Visible = false</code> &mdash;
+        no <code>MouseBehavior</code> enum, no Studio-only caveats.</li>
+    <li><strong>Mouse buttons fire through
+        <code>Mouse.InputReceived</code>.</strong> Payload is
+        <code>("MouseButton1" / "MouseButton2" / ..., "Begin" /
+        "End")</code> &mdash; the same shape as
+        <code>Keyboard.InputChanged</code>.</li>
+    <li><strong>No <code>gameProcessedEvent</code> flag.</strong> The
+        engine doesn't consume input on your behalf, so there's nothing
+        to gate against. If you want a "GUI eats the click" pattern,
+        write it yourself.</li>
+</ul>
+
+<h2 id="gui">GUI
+    <span class="concept-pill">ScreenGui / Frame / TextLabel</span>
+</h2>
+
+<p>
+    Roblox builds GUI by parenting Instances under a <code>ScreenGui</code>.
+    Ruzit gives you flat primitive factories: <code>GUI.Basic.Square</code>,
+    <code>Circle</code>, <code>Triangle</code>, <code>Image</code>,
+    <code>Font</code>. Each returns a free-standing primitive you position
+    in screen-space pixels.
+</p>
+
+<div class="compare-grid">
+    <div class="compare-card roblox">
+        <div class="compare-label"><span class="compare-dot"></span>Roblox</div>
+<pre><code><span class="hl-kw">local</span> gui  = <span class="hl-fn">Instance.new</span>(<span class="hl-str">"ScreenGui"</span>)
+gui.Parent = <span class="hl-fn">game:GetService</span>(<span class="hl-str">"Players"</span>).LocalPlayer.PlayerGui
+
+<span class="hl-kw">local</span> bar  = <span class="hl-fn">Instance.new</span>(<span class="hl-str">"Frame"</span>, gui)
+bar.Size            = <span class="hl-fn">UDim2.new</span>(<span class="hl-num">0</span>, <span class="hl-num">200</span>, <span class="hl-num">0</span>, <span class="hl-num">12</span>)
+bar.Position        = <span class="hl-fn">UDim2.new</span>(<span class="hl-num">0</span>, <span class="hl-num">24</span>, <span class="hl-num">0</span>, <span class="hl-num">24</span>)
+bar.BackgroundColor3 = <span class="hl-fn">Color3.fromRGB</span>(<span class="hl-num">155</span>, <span class="hl-num">209</span>, <span class="hl-num">59</span>)</code></pre>
+    </div>
+    <div class="compare-card ruzit">
+        <div class="compare-label"><span class="compare-dot"></span>Ruzit</div>
+<pre><code><span class="hl-kw">local</span> GUI = <span class="hl-fn">import</span>(<span class="hl-str">"GUI"</span>)
+<span class="hl-kw">local</span> Dim = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Dim
+
+<span class="hl-kw">local</span> bar = GUI.Basic.<span class="hl-fn">Square</span>()
+bar.Size     = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</span>, <span class="hl-num">12</span>)
+bar.Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">24</span>, <span class="hl-num">24</span>)
+bar.Color    = Color3.<span class="hl-fn">fromHex</span>(<span class="hl-str">"#9bd13b"</span>)</code></pre>
+    </div>
+</div>
+
+<p>
+    GUI primitives always render on top of the 3D scene; you do not
+    parent them anywhere. If you want a Frame-style group container,
+    drop the primitives into an <code>Objects.Movable()</code> and move
+    that &mdash; same idea, different name.
+</p>
+
+<h2 id="tweens">TweenService
+    <span class="concept-pill">TweenService:Create</span>
+</h2>
+
+<p>
+    The closest mapping in this whole guide. The constructor shape is
+    different (positional args instead of a <code>TweenInfo</code>
+    table) but every easing style / direction string is the same, and
+    the <code>:Play()</code> / <code>Completed</code> dance is identical.
+</p>
+
+<div class="compare-grid">
+    <div class="compare-card roblox">
+        <div class="compare-label"><span class="compare-dot"></span>Roblox</div>
+<pre><code><span class="hl-kw">local</span> TS = <span class="hl-fn">game:GetService</span>(<span class="hl-str">"TweenService"</span>)
+<span class="hl-kw">local</span> info = <span class="hl-fn">TweenInfo.new</span>(<span class="hl-num">1.5</span>,
+    Enum.EasingStyle.Bounce,
+    Enum.EasingDirection.Out)
+
+<span class="hl-kw">local</span> tw = TS:<span class="hl-fn">Create</span>(part, info, {
+    CFrame = <span class="hl-fn">CFrame.new</span>(<span class="hl-num">0</span>, <span class="hl-num">10</span>, <span class="hl-num">0</span>),
+    Color  = <span class="hl-fn">Color3.fromRGB</span>(<span class="hl-num">255</span>, <span class="hl-num">80</span>, <span class="hl-num">80</span>),
+})
+tw:<span class="hl-fn">Play</span>()
+tw.Completed:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>() <span class="hl-fn">print</span>(<span class="hl-str">"done"</span>) <span class="hl-kw">end</span>)</code></pre>
+    </div>
+    <div class="compare-card ruzit">
+        <div class="compare-label"><span class="compare-dot"></span>Ruzit</div>
+<pre><code><span class="hl-kw">local</span> TweenService = <span class="hl-fn">import</span>(<span class="hl-str">"TweenService"</span>)
+
+<span class="hl-kw">local</span> tw = TweenService.<span class="hl-fn">new</span>(part, <span class="hl-num">1.5</span>, <span class="hl-str">"Bounce"</span>, <span class="hl-str">"Out"</span>, {
+    CFrame = CFrame.<span class="hl-fn">new</span>(Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">10</span>, <span class="hl-num">0</span>)),
+    Color  = Color3.<span class="hl-fn">fromRGB</span>(<span class="hl-num">255</span>, <span class="hl-num">80</span>, <span class="hl-num">80</span>),
+})
+tw:<span class="hl-fn">Play</span>()
+tw.Completed:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>() <span class="hl-fn">print</span>(<span class="hl-str">"done"</span>) <span class="hl-kw">end</span>)</code></pre>
+    </div>
+</div>
+
+<h2 id="physics">Physics
+    <span class="concept-pill">Anchored = false</span>
+</h2>
+
+<p>
+    Roblox sims everything by default; you opt out per part with
+    <code>Anchored = true</code>. Ruzit is the opposite: parts are
+    static until you hand them to a <code>PhysicsService</code> plane,
+    which then owns the part's CFrame each frame. Multiple planes can
+    coexist (main world, debris, puzzle layer) and they don't interact.
+</p>
+
+<div class="compare-grid">
+    <div class="compare-card roblox">
+        <div class="compare-label"><span class="compare-dot"></span>Roblox</div>
+<pre><code><span class="hl-kw">local</span> ball = <span class="hl-fn">Instance.new</span>(<span class="hl-str">"Part"</span>, workspace)
+ball.Shape    = Enum.PartType.Ball
+ball.Anchored = <span class="hl-kw">false</span>      <span class="hl-com">-- opt in to physics</span>
+ball.Position = <span class="hl-fn">Vector3.new</span>(<span class="hl-num">0</span>, <span class="hl-num">10</span>, <span class="hl-num">0</span>)
+
+<span class="hl-com">-- impulses via :ApplyImpulse on the Part itself</span>
+ball:<span class="hl-fn">ApplyImpulse</span>(<span class="hl-fn">Vector3.new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">12</span>) * ball.AssemblyMass)</code></pre>
+    </div>
+    <div class="compare-card ruzit">
+        <div class="compare-label"><span class="compare-dot"></span>Ruzit</div>
+<pre><code><span class="hl-kw">local</span> PhysicsService = <span class="hl-fn">import</span>(<span class="hl-str">"PhysicsService"</span>)
+
+<span class="hl-kw">local</span> world = PhysicsService.<span class="hl-fn">New</span>({
+    Gravity = Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, -<span class="hl-num">50</span>, <span class="hl-num">0</span>),
+    Threads = <span class="hl-num">4</span>,
+})
+
+<span class="hl-kw">local</span> ball = Renderable.<span class="hl-fn">BasePart</span>(<span class="hl-str">"Sphere"</span>)
+ball.CFrame = CFrame.<span class="hl-fn">new</span>(Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">10</span>, <span class="hl-num">0</span>))
+
+<span class="hl-kw">local</span> body = world:<span class="hl-fn">Add</span>(ball)        <span class="hl-com">-- opt in</span>
+body.Bounciness = <span class="hl-num">0.7</span>
+body:<span class="hl-fn">ApplyImpulse</span>(Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">12</span>))</code></pre>
+    </div>
+</div>
+
+<p>
+    The body wrapper is where the physics-specific knobs live
+    (<code>Bounciness</code>, <code>HitBoxQuality</code>,
+    <code>Velocity</code>, <code>ApplyImpulse</code>). The underlying
+    BasePart's <code>.CFrame</code> still reads &mdash; you just don't
+    write to it while the body is owned by a plane (the plane will
+    overwrite next tick).
+</p>
+
+<h2 id="audio">Audio
+    <span class="concept-pill">Sound Instance</span>
+</h2>
+
+<p>
+    Roblox's <code>Sound</code> object is a Instance you parent and
+    <code>:Play()</code>. Ruzit's <a href="soundbyte.html">SoundByte</a>
+    is a flat library with the same playback verbs &mdash;
+    <code>:Play</code>, <code>:Stop</code>, <code>:Pause</code>,
+    <code>.Volume</code>, <code>.PlaybackSpeed</code> &mdash; but tracks
+    are loaded once from a <code>SoundAsset</code> and can be cheaply
+    re-triggered.
+</p>
+
+<div class="compare-grid">
+    <div class="compare-card roblox">
+        <div class="compare-label"><span class="compare-dot"></span>Roblox</div>
+<pre><code><span class="hl-kw">local</span> snd = <span class="hl-fn">Instance.new</span>(<span class="hl-str">"Sound"</span>)
+snd.SoundId = <span class="hl-str">"rbxassetid://12345"</span>
+snd.Volume  = <span class="hl-num">0.5</span>
+snd.Parent  = workspace
+snd:<span class="hl-fn">Play</span>()</code></pre>
+    </div>
+    <div class="compare-card ruzit">
+        <div class="compare-label"><span class="compare-dot"></span>Ruzit</div>
+<pre><code><span class="hl-kw">local</span> SoundByte = <span class="hl-fn">import</span>(<span class="hl-str">"SoundByte"</span>)
+<span class="hl-kw">local</span> Asset     = <span class="hl-fn">import</span>(<span class="hl-str">"Asset"</span>)
+
+<span class="hl-kw">local</span> clip = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"Sound"</span>, <span class="hl-str">"sfx.hit"</span>)
+<span class="hl-kw">local</span> snd  = SoundByte.<span class="hl-fn">new</span>(clip)
+snd.Volume = <span class="hl-num">0.5</span>
+snd:<span class="hl-fn">Play</span>()</code></pre>
+    </div>
+</div>
+
+<h2 id="assets">Loading assets
+    <span class="concept-pill">rbxassetid://</span>
+</h2>
+
+<p>
+    Roblox assets live on Roblox's CDN, identified by numeric IDs that
+    you upload via the website or Studio. Ruzit assets live in your
+    project's <code>assets/</code> folder &mdash; they're just files
+    on disk that ship inside the launcher.
+</p>
+
+<div class="compare-grid">
+    <div class="compare-card roblox">
+        <div class="compare-label"><span class="compare-dot"></span>Roblox</div>
+<pre><code><span class="hl-com">-- Upload the .png in Studio, copy the asset id, then:</span>
+<span class="hl-kw">local</span> img = <span class="hl-fn">Instance.new</span>(<span class="hl-str">"ImageLabel"</span>, gui)
+img.Image = <span class="hl-str">"rbxassetid://1234567890"</span>
+
+<span class="hl-kw">local</span> snd = <span class="hl-fn">Instance.new</span>(<span class="hl-str">"Sound"</span>, workspace)
+snd.SoundId = <span class="hl-str">"rbxassetid://9876543210"</span></code></pre>
+    </div>
+    <div class="compare-card ruzit">
+        <div class="compare-label"><span class="compare-dot"></span>Ruzit</div>
+<pre><code><span class="hl-com">-- Drop the file at assets/ui/logo.png, then:</span>
+<span class="hl-kw">local</span> Asset = <span class="hl-fn">import</span>(<span class="hl-str">"Asset"</span>)
+
+<span class="hl-kw">local</span> logo = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"Image"</span>, <span class="hl-str">"ui.logo"</span>)
+<span class="hl-kw">local</span> hit  = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"Sound"</span>, <span class="hl-str">"sfx.hit"</span>)
+<span class="hl-kw">local</span> crate = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"Model"</span>, <span class="hl-str">"props.crate"</span>)</code></pre>
+    </div>
+</div>
+
+<p>
+    The dotted path is folder-relative: <code>"ui.logo"</code> resolves
+    to <code>assets/ui/logo.&lt;ext&gt;</code>, with the loader probing
+    the extensions valid for the asset kind. The first argument
+    (<code>"Image"</code> / <code>"Sound"</code> / <code>"Model"</code> /
+    <code>"Font"</code> / <code>"Shader"</code> / <code>"File"</code>)
+    picks the loader.
+</p>
+
+<p>
+    A few practical upgrades over Roblox:
+</p>
+
+<ul>
+    <li><strong>No upload step.</strong> Edit the
+        <code>.png</code>, re-run <code>ruzit test</code>, the new
+        pixels are there. No moderation queue, no asset id update.</li>
+    <li><strong>Real file formats.</strong> Images are
+        <code>.png</code> / <code>.jpg</code> / <code>.webp</code>;
+        sounds are <code>.ogg</code> / <code>.mp3</code> /
+        <code>.wav</code>; models are <code>.fbx</code> or
+        <code>.obj</code>. No Roblox-specific intermediate format.</li>
+    <li><strong>Loading from outside the bundle.</strong> If you want
+        to load from the user's filesystem at runtime (mod support,
+        user content), use <code>Asset.ImportAsset</code> instead of
+        <code>GetAsset</code>. See <a href="asset.html">Asset</a>.</li>
+    <li><strong>Caching is automatic.</strong>
+        <code>Asset.GetAsset</code> caches by path, so a second call
+        with the same path returns the same handle &mdash; no
+        bookkeeping required.</li>
+</ul>
+
+<h2 id="cleanup">Cleanup and Destroy
+    <span class="concept-pill">Parent = nil / :Destroy()</span>
+</h2>
+
+<p>
+    Roblox's GC is "remove from the tree". Set
+    <code>part.Parent = nil</code> or call <code>:Destroy()</code> and
+    eventually the engine collects it. Ruzit has no tree, so removal is
+    explicit: every userdata with engine-owned resources
+    (BaseParts, EffectVolumes, SoundBytes, GUI primitives, physics
+    bodies, tweens, etc.) exposes a <code>:Destroy()</code> method that
+    releases its GPU / audio / physics resources and unhooks it from
+    the renderer. After <code>:Destroy()</code> the userdata still exists
+    as a Lua value &mdash; it just no longer does anything.
+</p>
+
+<div class="compare-grid">
+    <div class="compare-card roblox">
+        <div class="compare-label"><span class="compare-dot"></span>Roblox</div>
+<pre><code>part.Parent = <span class="hl-kw">nil</span>          <span class="hl-com">-- detach, GC eventually</span>
+part:<span class="hl-fn">Destroy</span>()              <span class="hl-com">-- detach + tag for cleanup</span></code></pre>
+    </div>
+    <div class="compare-card ruzit">
+        <div class="compare-label"><span class="compare-dot"></span>Ruzit</div>
+<pre><code>part:<span class="hl-fn">Destroy</span>()              <span class="hl-com">-- free GPU buffers + remove from scene</span>
+<span class="hl-com">-- the local 'part' var still references dead userdata.</span>
+<span class="hl-com">-- assign nil if you want it collected by the Lua GC.</span>
+part = <span class="hl-kw">nil</span></code></pre>
+    </div>
+</div>
+
+<div class="callout warn">
+    <strong>Don't rely on Lua GC to clean up engine resources.</strong>
+    Roblox parts get cleaned up by the engine even if you forget to call
+    <code>:Destroy()</code> (eventually). Ruzit doesn't &mdash; if you
+    drop the last reference to a BasePart without destroying it, the
+    GPU mesh and physics body leak for the rest of the process. Call
+    <code>:Destroy()</code> when you're done. Signals also have
+    <code>connection:Disconnect()</code> &mdash; remember to disconnect
+    if your handler holds references that should be freed.
+</div>
+
+<h2 id="api-map">The big API mapping table</h2>
+
+<p>
+    Everything you'd reach for in Roblox, and the closest Ruzit equivalent.
+    <span class="status-chip status-same">same</span> means almost identical
+    surface &mdash; you'll only need to fix the spelling.
+    <span class="status-chip status-diff">different</span> means the concept
+    survives but the shape changed (covered above).
+    <span class="status-chip status-gone">gone</span> means there is no
+    equivalent because the concept doesn't exist in Ruzit's model.
+</p>
+
+<table class="api-map">
+    <thead>
+        <tr><th>Roblox</th><th>Ruzit</th><th></th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Vector3</td><td>Primitives.Vector</td>
+            <td><span class="status-chip status-same">same</span></td>
+            <td>Or use Luau's native <code>vector</code> primitive.</td>
+        </tr>
+        <tr>
+            <td>CFrame</td><td>Primitives.CFrame</td>
+            <td><span class="status-chip status-same">same</span></td>
+            <td>Immutable; same constructors and operators.</td>
+        </tr>
+        <tr>
+            <td>Color3</td><td>Primitives.Color3</td>
+            <td><span class="status-chip status-same">same</span></td>
+            <td><code>.new</code> / <code>.fromRGB</code> / <code>.fromHex</code>.</td>
+        </tr>
+        <tr>
+            <td>UDim2</td><td>Primitives.Dim</td>
+            <td><span class="status-chip status-diff">different</span></td>
+            <td>Pixels only. No scale/offset duality.</td>
+        </tr>
+        <tr>
+            <td>Instance.new("Part")</td><td>Renderable.BasePart</td>
+            <td><span class="status-chip status-diff">different</span></td>
+            <td>Standalone; no parent. <code>"Cube"</code> / <code>"Sphere"</code>.</td>
+        </tr>
+        <tr>
+            <td>MeshPart / Model</td><td>Renderable.BaseModel(asset)</td>
+            <td><span class="status-chip status-diff">different</span></td>
+            <td>Backed by a <code>ModelAsset</code> (FBX / GLTF).</td>
+        </tr>
+        <tr>
+            <td>ParticleEmitter</td><td>Renderable.EffectVolume</td>
+            <td><span class="status-chip status-diff">different</span></td>
+            <td>3D volume + sprite, billboarded to the active camera.</td>
+        </tr>
+        <tr>
+            <td>BindableEvent / RBXScriptSignal</td><td>Signal.new()</td>
+            <td><span class="status-chip status-same">same</span></td>
+            <td><code>:Connect</code> / <code>:Once</code> / <code>:Wait</code> / <code>:Fire</code>.</td>
+        </tr>
+        <tr>
+            <td>RunService.Heartbeat</td><td>Process.Heartbeat</td>
+            <td><span class="status-chip status-same">same</span></td>
+            <td>Same dt-in-seconds payload.</td>
+        </tr>
+        <tr>
+            <td>RunService.RenderStepped</td><td>Process.RenderStepped</td>
+            <td><span class="status-chip status-same">same</span></td>
+            <td></td>
+        </tr>
+        <tr>
+            <td>workspace.CurrentCamera</td><td>win:GetViewport()</td>
+            <td><span class="status-chip status-diff">different</span></td>
+            <td>Camera lives on the window. Use <code>:LinkTo</code> instead of per-frame writes.</td>
+        </tr>
+        <tr>
+            <td>Lighting</td><td>LightingService (<code>import("LightingService")</code>)</td>
+            <td><span class="status-chip status-same">same</span></td>
+            <td>Sun + ambient. See <a href="lighting.html">LightingService</a>.</td>
+        </tr>
+        <tr>
+            <td>ScreenGui + Frame</td><td>GUI.Basic.Square / Image / Font</td>
+            <td><span class="status-chip status-diff">different</span></td>
+            <td>Flat primitives. Always above the 3D scene.</td>
+        </tr>
+        <tr>
+            <td>TweenService:Create</td><td>TweenService.new</td>
+            <td><span class="status-chip status-same">same</span></td>
+            <td>Same easing strings. Positional args, no <code>TweenInfo</code> wrapper.</td>
+        </tr>
+        <tr>
+            <td>Anchored = false</td><td>world:Add(part)</td>
+            <td><span class="status-chip status-diff">different</span></td>
+            <td>Default is anchored. Opt in to physics per-part.</td>
+        </tr>
+        <tr>
+            <td>Humanoid</td><td>(no direct equivalent)</td>
+            <td><span class="status-chip status-gone">gone</span></td>
+            <td>Build your own controller. See <code>Renderable</code> + Mouse/Keyboard/Gamepad.</td>
+        </tr>
+        <tr>
+            <td>Sound Instance</td><td>SoundByte.new(asset)</td>
+            <td><span class="status-chip status-diff">different</span></td>
+            <td>Same <code>:Play</code> / <code>:Stop</code> / <code>.Volume</code>.</td>
+        </tr>
+        <tr>
+            <td>UserInputService</td><td>Mouse + Keyboard + Gamepad</td>
+            <td><span class="status-chip status-diff">different</span></td>
+            <td>One library per device kind; signals on each.</td>
+        </tr>
+        <tr>
+            <td>ContextActionService</td><td>(no direct equivalent)</td>
+            <td><span class="status-chip status-gone">gone</span></td>
+            <td>Wire up Keyboard / Gamepad signals yourself.</td>
+        </tr>
+        <tr>
+            <td>RemoteEvent / RemoteFunction</td><td>Net</td>
+            <td><span class="status-chip status-diff">different</span></td>
+            <td>No client/server split by default; <code>Net</code> is for actual networking.</td>
+        </tr>
+        <tr>
+            <td>task.wait / task.spawn / task.defer</td><td>Task.wait / Task.spawn / Task.defer</td>
+            <td><span class="status-chip status-same">same</span></td>
+            <td>Same scheduler model. See <a href="task.html">Task</a>.</td>
+        </tr>
+        <tr>
+            <td>HttpService</td><td>Net (HTTP) + Serde (JSON)</td>
+            <td><span class="status-chip status-diff">different</span></td>
+            <td>JSON encode/decode lives on <a href="serde.html">Serde</a>.</td>
+        </tr>
+        <tr>
+            <td>DataStoreService</td><td>IO (file I/O)</td>
+            <td><span class="status-chip status-diff">different</span></td>
+            <td>Single-player only; write your own save file via <a href="io.html">IO</a>.</td>
+        </tr>
+        <tr>
+            <td>game:GetService("Players")</td><td>(no equivalent)</td>
+            <td><span class="status-chip status-gone">gone</span></td>
+            <td>Ruzit is a single-process engine. There is one user; that's you.</td>
+        </tr>
+        <tr>
+            <td>workspace / game / DataModel</td><td>(no equivalent)</td>
+            <td><span class="status-chip status-gone">gone</span></td>
+            <td>No global tree. Create what you need; hold references in regular Lua locals.</td>
+        </tr>
+    </tbody>
+</table>
+
+<h2 id="gotchas">Gotchas that bite Roblox devs</h2>
+
+<div class="callout warn">
+    <strong>Things that don't exist that you might reflexively type.</strong>
+    <ul>
+        <li><code>workspace</code>, <code>game</code>, <code>script.Parent</code> &mdash;
+            no global instance tree.</li>
+        <li><code>part.Parent = workspace</code> &mdash; creating a part already
+            registers it with the renderer.</li>
+        <li><code>part.Position</code> as a setter &mdash; position lives on
+            <code>part.CFrame.Position</code>; write the full
+            <code>CFrame</code> back to move a part.</li>
+        <li><code>Anchored = true</code> &mdash; anchored is the default;
+            you opt <em>in</em> to physics, not out of it.</li>
+        <li><code>Enum.*</code> &mdash; most enums are plain strings in Ruzit
+            (e.g. <code>"Bounce"</code>, <code>"Out"</code>, <code>"Sphere"</code>).</li>
+        <li><code>Instance:GetChildren()</code> &mdash; if you need
+            parenting, use <a href="objects.html">Objects</a> containers,
+            which expose <code>:GetChildren()</code> on the container itself.</li>
+    </ul>
+</div>
+
+<div class="callout note">
+    <strong>And one thing Ruzit gives you that Roblox doesn't.</strong>
+    You own the launcher. <code>ruzit build</code> spits out an
+    <code>.exe</code> (or ELF binary on Linux) that runs
+    your scripts unmodified, ready to ship straight to players or to
+    Steam. No marketplace, no studio, no DataModel boot &mdash; just
+    your <code>Main.luau</code>, opening a window.
+</div>
+
+<h2 id="cheatsheet">One-line idiom translations</h2>
+
+<p>
+    A grab bag of the most common one-liners. Read top to bottom when
+    you can't remember the new spelling.
+</p>
+
+<div class="compare-grid">
+    <div class="compare-card roblox">
+        <div class="compare-label"><span class="compare-dot"></span>Roblox</div>
+<pre><code><span class="hl-fn">wait</span>(<span class="hl-num">0.5</span>)
+<span class="hl-fn">delay</span>(<span class="hl-num">1</span>, fn)
+<span class="hl-fn">spawn</span>(fn)
+<span class="hl-fn">tick</span>()
+<span class="hl-fn">print</span>(<span class="hl-str">"hi"</span>)
+
+workspace.CurrentCamera
+workspace.Gravity = <span class="hl-num">196.2</span>
+<span class="hl-fn">game:GetService</span>(<span class="hl-str">"Lighting"</span>)
+<span class="hl-fn">game:GetService</span>(<span class="hl-str">"TweenService"</span>)
+
+part.Position = <span class="hl-fn">Vector3.new</span>(<span class="hl-num">0</span>, <span class="hl-num">5</span>, <span class="hl-num">0</span>)
+part:<span class="hl-fn">MoveTo</span>(target.Position)
+part.CFrame:<span class="hl-fn">ToWorldSpace</span>(local_cf)
+part:<span class="hl-fn">FindFirstChildOfClass</span>(<span class="hl-str">"BasePart"</span>)
+
+<span class="hl-fn">Color3.fromRGB</span>(<span class="hl-num">255</span>, <span class="hl-num">80</span>, <span class="hl-num">80</span>)
+<span class="hl-fn">Color3.fromHex</span>(<span class="hl-str">"#ff5050"</span>)
+<span class="hl-fn">CFrame.new</span>(p, lookAt)
+
+Enum.KeyCode.Space
+Enum.EasingStyle.Bounce
+Enum.PartType.Ball</code></pre>
+    </div>
+    <div class="compare-card ruzit">
+        <div class="compare-label"><span class="compare-dot"></span>Ruzit</div>
+<pre><code>Task.<span class="hl-fn">wait</span>(<span class="hl-num">0.5</span>)
+Task.<span class="hl-fn">delay</span>(<span class="hl-num">1</span>, fn)
+Task.<span class="hl-fn">spawn</span>(fn)
+os.<span class="hl-fn">clock</span>()
+<span class="hl-fn">print</span>(<span class="hl-str">"hi"</span>)
+
+win:<span class="hl-fn">GetViewport</span>()
+world.Gravity = Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, -<span class="hl-num">196.2</span>, <span class="hl-num">0</span>)   <span class="hl-com">-- on the PhysicsPlane</span>
+<span class="hl-fn">import</span>(<span class="hl-str">"LightingService"</span>)
+<span class="hl-fn">import</span>(<span class="hl-str">"TweenService"</span>)
+
+part.CFrame = CFrame.<span class="hl-fn">new</span>(Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">5</span>, <span class="hl-num">0</span>))
+part.CFrame = CFrame.<span class="hl-fn">new</span>(target.CFrame.Position)
+part.CFrame:<span class="hl-fn">ToWorldSpace</span>(local_cf)
+container:<span class="hl-fn">GetChildren</span>()                <span class="hl-com">-- Objects container</span>
+
+Color3.<span class="hl-fn">fromRGB</span>(<span class="hl-num">255</span>, <span class="hl-num">80</span>, <span class="hl-num">80</span>)
+Color3.<span class="hl-fn">fromHex</span>(<span class="hl-str">"#ff5050"</span>)
+CFrame.<span class="hl-fn">new</span>(p, lookAt)
+
+<span class="hl-str">"Space"</span>                                <span class="hl-com">-- plain string</span>
+<span class="hl-str">"Bounce"</span>, <span class="hl-str">"Out"</span>                         <span class="hl-com">-- TweenService args</span>
+<span class="hl-str">"Sphere"</span>                               <span class="hl-com">-- Renderable.BasePart</span></code></pre>
+    </div>
+</div>
+
+<h2 id="faq">FAQ &mdash; the things every Roblox dev asks on day one</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Nothing's rendering. What gives?</span>
+        </div>
+        <p class="member-desc">
+            You forgot <code>Window.Open</code>. The first three lines
+            of every project are <code>import("Window")</code>,
+            <code>Window.Open({...})</code>, and holding the returned
+            handle. Without it, parts and GUI primitives have nowhere
+            to draw, and inputs have no surface to come from. See the
+            banner at the top of this page.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Where does <code>print()</code> go?</span>
+        </div>
+        <p class="member-desc">
+            The terminal you ran <code>ruzit test</code> in. Errors and
+            Lua tracebacks go to stderr in red. If you're running a
+            packaged build, attach a console with the
+            <code>exe-windowed = false</code> setting in
+            <code>build.toml</code>, or pipe the launcher's output to
+            a file.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Where do I put my game code? Is there a "ServerScriptService" folder?</span>
+        </div>
+        <p class="member-desc">
+            <code>Main.luau</code> is the entry point. Anything else
+            you want to run, <code>require</code> it from
+            <code>Main.luau</code> directly or transitively. There is
+            no special folder &mdash; the engine doesn't auto-load anything
+            outside <code>Main.luau</code>. Organise modules however
+            you like; most projects end up with a <code>modules/</code>
+            or <code>src/</code> directory.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Can I open a .rbxm / .rbxl file?</span>
+        </div>
+        <p class="member-desc">
+            No. Roblox's place / model format is proprietary and
+            tightly coupled to the DataModel. Export geometry to
+            <code>.fbx</code> or <code>.obj</code> and load it with
+            <code>Asset.GetAsset("Model", ...)</code>. Blender can
+            re-export anything you've got in Studio.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Is there hot reload like Studio's "Edit Mode"?</span>
+        </div>
+        <p class="member-desc">
+            Not yet. The dev loop is edit, stop, <code>ruzit test</code>.
+            Most projects boot in under a second, so the round-trip is
+            fast in practice. If you want live tweak-and-see for a
+            specific value, expose it on a debug GUI and rebind a key
+            with <code>Keyboard.InputChanged</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Where's LocalPlayer / Players.LocalPlayer?</span>
+        </div>
+        <p class="member-desc">
+            There is no <code>Players</code> service because there's
+            no platform handling player identity. Ruzit is a
+            single-process engine, so "the player" is whichever piece
+            of code you wrote to represent them &mdash; usually a table
+            or class you hand a <code>BasePart</code> and a
+            <code>Controller</code>. If you want multiplayer, see
+            <a href="net.html">Net</a> and
+            <a href="steam.html">Steam</a> (lobbies, P2P).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Why does Luau autocomplete look slightly different?</span>
+        </div>
+        <p class="member-desc">
+            Because it's coming from your project's
+            <code>types.d.luau</code> rather than from Roblox's API
+            dumps. That file is the source of truth for every
+            <code>import("X")</code> return type, every property, every
+            signal payload. Run <code>ruzit refresh-types</code> if you
+            update the engine and want autocomplete to track the new
+            version.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">How do I see FPS, draw calls, memory usage?</span>
+        </div>
+        <p class="member-desc">
+            <code>import("Debug")</code>. It exposes frame timings,
+            renderer counters, GPU memory, and Lua memory in a single
+            snapshot object. Drop it onto a
+            <code>GUI.Basic.Font</code> readout or print it from
+            <code>Process.Heartbeat</code> &mdash; whichever you prefer.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Can I script in Lua instead of Luau?</span>
+        </div>
+        <p class="member-desc">
+            Files run through Luau, the same dialect Roblox uses. Plain
+            Lua 5.1 / 5.2 / 5.3 scripts will mostly work too &mdash; Luau
+            is a superset. Types, generalised iteration, and the
+            <code>continue</code> keyword are bonuses you can ignore.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Is there a Studio-like scene editor?</span>
+        </div>
+        <p class="member-desc">
+            No first-party one. Authoring is code-first by design &mdash;
+            scenes are built procedurally in Luau or imported from
+            <code>.fbx</code>. If you want a level-editor feel, build
+            one inside your game: <code>ruzit test</code> a tool mode
+            that lets you place parts with the mouse, dump the result
+            to a file via <a href="io.html">IO</a> +
+            <a href="serde.html">Serde</a>, then load it on game-mode
+            start. Plenty of projects ship this way.
+        </p>
+    </div>
+</div>
+
+<div class="callout note">
+    <strong>Where to next?</strong>
+    Start with <a href="window.html">Window</a> (the line of code you'll
+    write first in every project), then
+    <a href="primitives.html">Primitives</a>, then
+    <a href="renderable.html">Renderable</a>. After that, the sidebar is
+    your map.
+</div>
+
+</main>
+
+<!-- right-toc:begin -->
+<aside class="right-toc"></aside>
+<script src="right-toc.js?v=26.5.19" defer></script>
+<!-- right-toc:end -->
+
+
+</body>
+</html>
