@@ -1486,5 +1486,149 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         "Billboard",
         lua.create_function(|_, _: ()| Ok(Billboard::new()))?,
     )?;
+    t.set(
+        "UIEnvironment",
+        lua.create_function(|_, _: ()| Ok(UIEnvironment::new()))?,
+    )?;
     Ok(t)
+}
+
+pub struct UIEnvironmentInner {
+    pub alive: bool,
+    pub z_index: i32,
+    pub children: Vec<Arc<Mutex<PartState>>>,
+}
+
+pub struct UIEnvironment {
+    pub inner: Arc<Mutex<UIEnvironmentInner>>,
+}
+
+impl UIEnvironment {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(UIEnvironmentInner {
+                alive: true,
+                z_index: 0,
+                children: Vec::new(),
+            })),
+        }
+    }
+}
+
+fn extract_part_from_ud(ud: &AnyUserData) -> mlua::Result<Arc<Mutex<PartState>>> {
+    if let Ok(p) = ud.borrow::<PartHandle>() {
+        return Ok(p.state.clone());
+    }
+    Err(mlua::Error::RuntimeError(
+        "UIEnvironment: child must be a Renderable.BasePart".into(),
+    ))
+}
+
+impl UserData for UIEnvironment {
+    fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
+        f.add_field_method_get("Alive", |_, this| Ok(this.inner.lock().unwrap().alive));
+        f.add_field_method_get("ChildCount", |_, this| {
+            let inner = this.inner.lock().unwrap();
+            Ok(inner.children.len() as i64)
+        });
+        f.add_field_method_get("ZIndex", |_, this| {
+            Ok(this.inner.lock().unwrap().z_index as i64)
+        });
+        f.add_field_method_set("ZIndex", |_, this, v: i64| {
+            let clamped = v.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+            let mut inner = this.inner.lock().unwrap();
+            if !inner.alive {
+                return Err(mlua::Error::RuntimeError(
+                    "UIEnvironment: cannot set ZIndex on a destroyed environment".into(),
+                ));
+            }
+            inner.z_index = clamped;
+            let new_z = clamped;
+            for child in inner.children.iter() {
+                if let Ok(mut p) = child.lock() {
+                    if p.ui_overlay.is_some() {
+                        p.ui_overlay = Some(new_z);
+                    }
+                }
+            }
+            bump_parts_dirty();
+            Ok(())
+        });
+    }
+
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method("AddChild", |_, this, ud: AnyUserData| -> mlua::Result<()> {
+            let part = extract_part_from_ud(&ud)?;
+            let mut inner = this.inner.lock().unwrap();
+            if !inner.alive {
+                return Err(mlua::Error::RuntimeError(
+                    "UIEnvironment: AddChild called on a destroyed environment".into(),
+                ));
+            }
+            let z = inner.z_index;
+            let new_ptr = Arc::as_ptr(&part) as usize;
+            let already = inner
+                .children
+                .iter()
+                .any(|c| Arc::as_ptr(c) as usize == new_ptr);
+            if already {
+                return Ok(());
+            }
+            if let Ok(mut p) = part.lock() {
+                p.ui_overlay = Some(z);
+            }
+            inner.children.push(part);
+            bump_parts_dirty();
+            Ok(())
+        });
+
+        m.add_method(
+            "RemoveChild",
+            |_, this, ud: AnyUserData| -> mlua::Result<bool> {
+                let part = extract_part_from_ud(&ud)?;
+                let mut inner = this.inner.lock().unwrap();
+                let target_ptr = Arc::as_ptr(&part) as usize;
+                let before = inner.children.len();
+                inner
+                    .children
+                    .retain(|c| Arc::as_ptr(c) as usize != target_ptr);
+                let removed = inner.children.len() != before;
+                if removed {
+                    if let Ok(mut p) = part.lock() {
+                        p.ui_overlay = None;
+                    }
+                    bump_parts_dirty();
+                }
+                Ok(removed)
+            },
+        );
+
+        m.add_method("GetChildren", |lua, this, _: ()| -> mlua::Result<Table> {
+            let inner = this.inner.lock().unwrap();
+            let out = lua.create_table()?;
+            let mut i = 1;
+            for c in inner.children.iter() {
+                let alive = c.lock().map(|p| p.alive).unwrap_or(false);
+                if !alive {
+                    continue;
+                }
+                let ud = lua.create_userdata(PartHandle::from_state(c.clone()))?;
+                out.set(i, ud)?;
+                i += 1;
+            }
+            Ok(out)
+        });
+
+        m.add_method("Destroy", |_, this, _: ()| -> mlua::Result<()> {
+            let mut inner = this.inner.lock().unwrap();
+            for c in inner.children.drain(..) {
+                if let Ok(mut p) = c.lock() {
+                    p.ui_overlay = None;
+                }
+            }
+            inner.alive = false;
+            bump_parts_dirty();
+            Ok(())
+        });
+    }
 }

@@ -96,6 +96,8 @@ pub struct PartState {
     pub physics_override: Option<Arc<Mutex<CFrame>>>,
 
     pub prop_signals: HashMap<String, Table>,
+
+    pub ui_overlay: Option<i32>,
 }
 
 impl PartState {
@@ -634,6 +636,7 @@ pub struct PartRender {
     pub cast_shadow: bool,
     pub receive_shadow: bool,
     pub lit: bool,
+    pub ui_overlay: Option<i32>,
 }
 
 thread_local! {
@@ -684,6 +687,7 @@ fn build_parts_snapshot() -> Vec<PartRender> {
                     cast_shadow: s.cast_shadow,
                     receive_shadow: s.receive_shadow,
                     lit: s.lit,
+                    ui_overlay: s.ui_overlay,
                 })
             })
             .collect()
@@ -731,6 +735,7 @@ impl PartHandle {
             tracks: Vec::new(),
             physics_override: None,
             prop_signals: HashMap::new(),
+            ui_overlay: None,
         }));
         PARTS.with(|cell| cell.borrow_mut().push(state.clone()));
         bump_parts_dirty();

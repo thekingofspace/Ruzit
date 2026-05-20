@@ -1879,6 +1879,9 @@ impl GpuState {
             }
 
             for (i, part) in parts.iter().enumerate() {
+                if part.ui_overlay.is_some() {
+                    continue;
+                }
                 let pipeline = match &part.active_shader {
                     Some(sh) => self
                         .pipelines_3d
@@ -1993,6 +1996,74 @@ impl GpuState {
                     rpass.set_bind_group(0, &bind_groups_2d[i], &[]);
                     rpass.draw(0..6, 0..1);
                 }
+            }
+        }
+
+        let mut overlay_indices: Vec<(i32, usize)> = parts
+            .iter()
+            .enumerate()
+            .filter_map(|(i, p)| p.ui_overlay.map(|z| (z, i)))
+            .collect();
+        if !overlay_indices.is_empty() {
+            overlay_indices.sort_by_key(|(z, _)| *z);
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Ruzit UI-overlay 3D pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: main_target,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            for (_, i) in &overlay_indices {
+                let part = &parts[*i];
+                let pipeline = match &part.active_shader {
+                    Some(sh) => self
+                        .pipelines_3d
+                        .get(&sh.id)
+                        .unwrap_or(&self.default_pipeline_3d),
+                    None => &self.default_pipeline_3d,
+                };
+                rpass.set_pipeline(pipeline);
+                let key = part.texture.as_ref().map(|t| t.id).unwrap_or(0);
+                let Some(bind_group) = self.bind_group_3d_cache.get(&key) else {
+                    continue;
+                };
+                let dyn_offset = (*i as u64 * self.instance_stride) as u32;
+                rpass.set_bind_group(0, bind_group, &[dyn_offset]);
+
+                let (vbuf, ibuf, idx_count) = match part.shape {
+                    renderable::PartShape::Cube => {
+                        (&self.cube_vertex, &self.cube_index, self.cube_index_count)
+                    }
+                    renderable::PartShape::Sphere => (
+                        &self.sphere_vertex,
+                        &self.sphere_index,
+                        self.sphere_index_count,
+                    ),
+                    renderable::PartShape::Model => match &part.model {
+                        Some(m) => match self.model_buffers.get(&m.id) {
+                            Some(mb) => (&mb.vertex, &mb.index, mb.index_count),
+                            None => continue,
+                        },
+                        None => continue,
+                    },
+                };
+                rpass.set_vertex_buffer(0, vbuf.slice(..));
+                rpass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                rpass.draw_indexed(0..idx_count, 0, 0..1);
             }
         }
 

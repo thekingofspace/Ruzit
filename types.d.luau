@@ -1695,11 +1695,21 @@ export type Billboard = {
 	GetChildren: (self: Billboard) -> { any },
 	Destroy: (self: Billboard) -> (),
 }
+declare class UIEnvironment
+	Alive: boolean
+	ChildCount: number
+	ZIndex: number
+	function AddChild(self, part: BasePart): ()
+	function RemoveChild(self, part: BasePart): boolean
+	function GetChildren(self): { BasePart }
+	function Destroy(self): ()
+end
 export type Objects_API = {
 	ClonableContainer: () -> ClonableContainer,
 	Movable: () -> Movable,
 	Sizable: () -> Sizable,
 	Billboard: () -> Billboard,
+	UIEnvironment: () -> UIEnvironment,
 }
 export type GuiPhysicsPlaneOptions = {
 	Gravity: Dim?,

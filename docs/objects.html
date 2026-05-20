@@ -444,6 +444,133 @@ bb:<span class="hl-fn">AddChild</span>(name)</code></pre>
         the ratio each tick.</li>
 </ul>
 
+<h2 id="uienvironment">UIEnvironment</h2>
+
+<p>
+    Container for 3D parts that should render <em>on top of</em> the 2D
+    GUI instead of in the world. Drop a
+    <a href="renderable.html"><code>BasePart</code></a> in with
+    <code>:AddChild(part)</code> and the renderer pulls it out of the
+    normal world pass, then redraws it in a follow-up pass that
+    <strong>clears the depth buffer first</strong>. The effect: the
+    part always wins against world geometry (it appears in front of
+    everything), but still depth-tests against other parts in the
+    same UI overlay (so a closer cube can still occlude a farther one
+    inside the same UIEnvironment).
+</p>
+
+<p>
+    Use it for 3D-in-a-window UI: inventory previews, character
+    portraits, model turntables in menus, anything where the part is
+    "decoration on the HUD" rather than part of the world.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Objects    = <span class="hl-fn">import</span>(<span class="hl-str">"Objects"</span>)
+<span class="hl-kw">local</span> Renderable = <span class="hl-fn">import</span>(<span class="hl-str">"Renderable"</span>)
+<span class="hl-kw">local</span> Primitives = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>)
+<span class="hl-kw">local</span> Heart      = <span class="hl-fn">import</span>(<span class="hl-str">"RunService"</span>).Heartbeat
+
+<span class="hl-kw">local</span> ui3d = Objects.<span class="hl-fn">UIEnvironment</span>()
+ui3d.ZIndex = <span class="hl-num">10</span>
+
+<span class="hl-kw">local</span> trophy = Renderable.<span class="hl-fn">BasePart</span>(<span class="hl-str">"Cube"</span>)
+trophy.Size = Primitives.Vector.<span class="hl-fn">new</span>(<span class="hl-num">1</span>, <span class="hl-num">1</span>, <span class="hl-num">1</span>)
+trophy.CFrame = Primitives.CFrame.<span class="hl-fn">new</span>(Primitives.Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, -<span class="hl-num">3</span>))
+ui3d:<span class="hl-fn">AddChild</span>(trophy)
+
+Heart:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(dt)
+    trophy.CFrame = trophy.CFrame * Primitives.CFrame.<span class="hl-fn">Angles</span>(<span class="hl-num">0</span>, dt, <span class="hl-num">0</span>)
+<span class="hl-kw">end</span>)</code></pre>
+
+<div class="callout note">
+    <strong>Position is still world-space.</strong> The part's
+    <code>CFrame</code> is interpreted using the same camera the
+    rest of the 3D scene uses. The depth-buffer clear means it'll
+    always win against world geometry, but it still has to be in
+    front of the camera (positive look-direction) or it's culled.
+    For a "3D in a UI window" effect, position the part close to the
+    camera (e.g. <code>Z = -3</code>) so it fills a sensible chunk
+    of the screen.
+</div>
+
+<h3>Properties</h3>
+
+<table>
+    <thead><tr><th>Property</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead>
+    <tbody>
+        <tr><td><code>ZIndex</code></td><td>number</td><td>0</td><td>Layer order. Higher = renders later (on top of lower ZIndex environments). Affects every child immediately.</td></tr>
+        <tr><td><code>Alive</code></td><td>boolean</td><td>—</td><td>Read-only.</td></tr>
+        <tr><td><code>ChildCount</code></td><td>number</td><td>—</td><td>Read-only.</td></tr>
+    </tbody>
+</table>
+
+<h3>Methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">env:AddChild(part)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Adopt a <a href="renderable.html"><code>BasePart</code></a>
+            into the overlay. The part stops rendering in the world
+            pass on the next frame and starts rendering in the UI
+            overlay pass with the environment's current
+            <code>ZIndex</code>. Idempotent — adding the same part
+            twice has no effect.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">env:RemoveChild(part)</span><span class="member-type">-> boolean</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Unlink the part. It returns to rendering in the world
+            pass at its current <code>CFrame</code>. Returns
+            <code>true</code> if the part was actually in this
+            environment.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">env:GetChildren()</span><span class="member-type">-> { BasePart }</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Snapshot array of live children, in insertion order.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">env:Destroy()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Mark dead, unlink every child. Children survive at their
+            current world positions and resume rendering in the
+            world pass.
+        </p>
+    </div>
+</div>
+
+<h3>Render order</h3>
+
+<p>
+    Pipeline ordering each frame:
+</p>
+
+<ol>
+    <li>Skybox</li>
+    <li>World 3D parts (depth-tested, deepest first)</li>
+    <li>3D particles</li>
+    <li>2D GUI items (z-index sorted)</li>
+    <li>
+        <strong>UI overlay 3D parts</strong> — in a fresh render
+        pass that clears the depth buffer, sorted by each
+        environment's <code>ZIndex</code> ascending (higher
+        <code>ZIndex</code> draws later, so it appears on top of
+        lower ones).
+    </li>
+    <li>Optional post-effect pass</li>
+</ol>
+
+<div class="callout note">
+    <strong>One environment per part.</strong> A part can be a child
+    of at most one <code>UIEnvironment</code> at a time —
+    <code>:AddChild</code> on a second environment just moves it
+    (no error, but the first environment forgets about it next
+    frame). If you need true multi-targeting, clone the part with
+    <code>ClonableContainer</code> first.
+</div>
+
 </main>
 
 <!-- right-toc:begin -->
