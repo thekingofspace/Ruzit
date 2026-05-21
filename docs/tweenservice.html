@@ -18,13 +18,13 @@
     <meta name="twitter:description" content="Rust-side interpolation engine. Tweens are created once from Lua then stepped entirely on the Rust heart loop, so the per-frame interpolation never crosses the Lua VM. The VM only re-enters when a tween&#x27;s Completed signal fires (once per tween, not per frame).">
     <meta name="twitter:image" content="IconThing.png">
     <!-- og-meta:end -->
-    <link rel="stylesheet" href="style.css?v=26.5.19">
-    <script src="theme.js?v=26.5.19"></script>
+    <link rel="stylesheet" href="style.css?v=26.5.21">
+    <script src="theme.js?v=26.5.21"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=26.5.19" defer></script>
+<script src="sidebar.js?v=26.5.21" defer></script>
 
 <main>
 
@@ -211,6 +211,19 @@ tw.Completed:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</sp
                     without rebuilding the source chain.
                 </p>
             </li>
+            <li><strong><a href="gui.html#spline">Spline</a></strong>
+                <ul>
+                    <li><code>Color</code> &mdash; goal is a <code>Color3</code></li>
+                    <li><code>Transparency</code> &mdash; goal is a <code>number</code></li>
+                    <li><code>ZIndex</code> &mdash; goal is a <code>number</code></li>
+                    <li><code>Nodes</code> &mdash; goal is an array of node tables
+                        (<code>{ Position = Dim, Thickness = number?, Angle = number? }</code>).
+                        Node-count changes are handled gracefully: growing inserts
+                        midpoints into the source at snapshot time so the visible
+                        shape is unchanged at t=0; shrinking pads the target with
+                        the last node and truncates on completion.</li>
+                </ul>
+            </li>
         </ul>
         <p class="member-desc">
             The returned Tween starts in <code>"Idle"</code>. Call
@@ -347,7 +360,7 @@ tw.Completed:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</sp
 
 <!-- right-toc:begin -->
 <aside class="right-toc"></aside>
-<script src="right-toc.js?v=26.5.19" defer></script>
+<script src="right-toc.js?v=26.5.21" defer></script>
 <!-- right-toc:end -->
 
 

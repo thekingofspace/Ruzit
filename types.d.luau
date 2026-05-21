@@ -771,6 +771,31 @@ export type AnimatedImage = {
 	GetPrimitive: (self: AnimatedImage) -> any,
 	Destroy: (self: AnimatedImage) -> (),
 }
+export type SplineNode = {
+	Position: Dim,
+	Thickness: number?,
+	Angle: number?,
+}
+declare class Spline
+	Alive: boolean
+	Changed: Signal<string>
+	Color: Color3
+	Transparency: number
+	ZIndex: number
+	Visible: boolean
+	Style: "Solid" | "Dashed" | "Dotted"
+	Cap: "Rounded" | "Miter" | "Square"
+	NodeCount: number
+	function SetNodes(self, nodes: { SplineNode }): ()
+	function GetNodes(self): { SplineNode }
+	function InsertNode(self, index: number, node: SplineNode): ()
+	function RemoveNode(self, index: number): ()
+	function SetNode(self, index: number, node: SplineNode): ()
+	function AttachShader(self, asset: FragmentAsset | ShaderAsset): ()
+	function ClearShaders(self): ()
+	function GetPropertyChangedSignal(self, name: string): Signal<...any>
+	function Destroy(self): ()
+end
 export type GUI_API = {
 	Basic: {
 		Circle: () -> Primitive,
@@ -779,6 +804,7 @@ export type GUI_API = {
 		Image: (asset: ImageAsset) -> Primitive,
 		Font: (asset: FontAsset) -> Primitive,
 		Clippable: () -> Primitive,
+		Spline: () -> Spline,
 	},
 	DrawableImg: (width: number, height: number) -> DrawableImg,
 	CanvasBuffer: (width: number, height: number) -> CanvasBuffer,
@@ -1711,6 +1737,7 @@ export type Objects_API = {
 	Sizable: () -> Sizable,
 	Billboard: () -> Billboard,
 	UIEnvironment: () -> UIEnvironment,
+	BulkUpdate: (batch: { [any]: { [string]: any } }) -> number,
 }
 export type GuiPhysicsPlaneOptions = {
 	Gravity: Dim?,

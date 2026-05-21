@@ -381,6 +381,60 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 }
 "#;
 
+const SPLINE_VERTEX_WGSL: &str = r#"
+struct VsOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+struct RuzitUni {
+    pos: vec2<f32>,
+    size: vec2<f32>,
+    color: vec4<f32>,
+    resolution: vec2<f32>,
+    time: f32,
+    shape: u32,
+    rotation_pad: vec4<f32>,
+    clip_rect: vec4<f32>,
+    params: array<vec4<f32>, 4>,
+};
+
+@group(0) @binding(0) var<uniform> U: RuzitUni;
+
+struct SplineVin {
+    @location(0) pos: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(in: SplineVin) -> VsOut {
+    let x = (in.pos.x / U.resolution.x) * 2.0 - 1.0;
+    let y = 1.0 - (in.pos.y / U.resolution.y) * 2.0;
+    var out: VsOut;
+    out.clip = vec4<f32>(x, y, 0.0, 1.0);
+    out.uv = in.uv;
+    return out;
+}
+"#;
+
+const SPLINE_FRAGMENT_WGSL: &str = r#"
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    if (!ruzit_clip_test(in.clip.xy)) {
+        discard;
+    }
+    let style = u32(U.params[0].x);
+    if (style == 1u) {
+        let cycle = fract(in.uv.x * U.params[0].y);
+        if (cycle > 0.5) { discard; }
+    } else if (style == 2u) {
+        let cycle = fract(in.uv.x * U.params[0].y);
+        if (cycle > 0.25) { discard; }
+    }
+    return U.color;
+}
+"#;
+
 pub struct LiveTextureSlot {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
@@ -407,6 +461,13 @@ pub struct GpuState {
     pipelines: HashMap<u64, wgpu::RenderPipeline>,
 
     uniform_buffers: Vec<wgpu::Buffer>,
+
+    spline_default_pipeline: wgpu::RenderPipeline,
+    spline_pipelines: HashMap<u64, wgpu::RenderPipeline>,
+    spline_vertex_buffer: wgpu::Buffer,
+    spline_vertex_capacity_bytes: u64,
+    spline_uniform_buffers: Vec<wgpu::Buffer>,
+    spline_bind_groups: Vec<wgpu::BindGroup>,
 
     sampler: wgpu::Sampler,
 
@@ -817,6 +878,33 @@ impl GpuState {
             wgpu::TextureFormat::Depth32Float,
         );
 
+        let spline_vs = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Ruzit spline vertex"),
+            source: wgpu::ShaderSource::Wgsl(SPLINE_VERTEX_WGSL.into()),
+        });
+        let spline_fs = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Ruzit spline default fragment"),
+            source: wgpu::ShaderSource::Wgsl(
+                format!("{FRAGMENT_PRELUDE}\n{SPLINE_FRAGMENT_WGSL}").into(),
+            ),
+        });
+        let spline_default_pipeline = build_spline_pipeline(
+            &device,
+            &pipeline_layout,
+            &spline_vs,
+            &spline_fs,
+            config.format,
+            Some(wgpu::TextureFormat::Depth32Float),
+        );
+        let spline_vertex_capacity_bytes =
+            (std::mem::size_of::<crate::libs::gui::SplineVertex>() as u64) * 512;
+        let spline_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Ruzit spline vertex buffer"),
+            size: spline_vertex_capacity_bytes,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         Ok(Self {
             device,
             queue,
@@ -830,6 +918,12 @@ impl GpuState {
             default_pipeline,
             pipelines: HashMap::new(),
             uniform_buffers: Vec::new(),
+            spline_default_pipeline,
+            spline_pipelines: HashMap::new(),
+            spline_vertex_buffer,
+            spline_vertex_capacity_bytes,
+            spline_uniform_buffers: Vec::new(),
+            spline_bind_groups: Vec::new(),
             sampler,
             white_view,
             image_textures: HashMap::new(),
@@ -922,6 +1016,41 @@ impl GpuState {
             Some(wgpu::TextureFormat::Depth32Float),
         );
         self.pipelines.insert(shader_id, pipeline);
+        true
+    }
+
+    fn ensure_spline_pipeline(&mut self, shader_id: u64, wgsl: &str) -> bool {
+        if self.spline_pipelines.contains_key(&shader_id) {
+            return true;
+        }
+        let label = format!("Ruzit spline user shader #{shader_id}");
+        self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let wrapped = format!("{FRAGMENT_PRELUDE}\n{wgsl}");
+        let module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some(&label),
+                source: wgpu::ShaderSource::Wgsl(wrapped.into()),
+            });
+        if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
+            eprintln!("[GUI] spline shader #{shader_id} compile failed: {err}");
+            return false;
+        }
+        let vs = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Ruzit spline vertex (user)"),
+                source: wgpu::ShaderSource::Wgsl(SPLINE_VERTEX_WGSL.into()),
+            });
+        let pipeline = build_spline_pipeline(
+            &self.device,
+            &self.pipeline_layout,
+            &vs,
+            &module,
+            self.config.format,
+            Some(wgpu::TextureFormat::Depth32Float),
+        );
+        self.spline_pipelines.insert(shader_id, pipeline);
         true
     }
 
@@ -1397,6 +1526,13 @@ impl GpuState {
             }
             if let Some(tex) = &part.texture {
                 let _ = self.ensure_part_texture(tex);
+            }
+        }
+        let mut splines = crate::libs::gui::spline::snapshot();
+        splines.sort_by_key(|s| s.z_index);
+        for s in &splines {
+            if let Some(sh) = &s.active_shader {
+                self.ensure_spline_pipeline(sh.id, &sh.wgsl);
             }
         }
 
@@ -2066,6 +2202,155 @@ impl GpuState {
             }
         }
 
+        if !splines.is_empty() {
+            let total_vertices: usize = splines.iter().map(|s| s.vertices.len()).sum();
+            let needed_bytes =
+                (total_vertices.max(1) * std::mem::size_of::<crate::libs::gui::SplineVertex>())
+                    as u64;
+            if needed_bytes > self.spline_vertex_capacity_bytes {
+                let mut new_cap = self.spline_vertex_capacity_bytes.max(needed_bytes);
+                while new_cap < needed_bytes {
+                    new_cap *= 2;
+                }
+                self.spline_vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("Ruzit spline vertex buffer"),
+                    size: new_cap,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+                self.spline_vertex_capacity_bytes = new_cap;
+            }
+            let mut staging: Vec<crate::libs::gui::SplineVertex> =
+                Vec::with_capacity(total_vertices);
+            let mut spans: Vec<(u32, u32)> = Vec::with_capacity(splines.len());
+            let mut offset_v: u32 = 0;
+            for s in &splines {
+                let start = offset_v;
+                staging.extend_from_slice(&s.vertices);
+                offset_v += s.vertices.len() as u32;
+                spans.push((start, offset_v - start));
+            }
+            if !staging.is_empty() {
+                self.queue.write_buffer(
+                    &self.spline_vertex_buffer,
+                    0,
+                    bytemuck::cast_slice(&staging),
+                );
+            }
+            while self.spline_uniform_buffers.len() < splines.len() {
+                let buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Ruzit GUI spline uni"),
+                    contents: bytemuck::bytes_of(&UniData::zeroed()),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+                let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("Ruzit GUI spline bind"),
+                    layout: &self.bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: buf.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(&self.white_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(&self.sampler),
+                        },
+                    ],
+                });
+                self.spline_uniform_buffers.push(buf);
+                self.spline_bind_groups.push(bg);
+            }
+            let res = [self.config.width as f32, self.config.height as f32];
+            for (i, s) in splines.iter().enumerate() {
+                let mut params = [[0.0_f32; 4]; 4];
+                let style_id = match s.style {
+                    crate::libs::gui::spline::SplineStyle::Solid => 0.0,
+                    crate::libs::gui::spline::SplineStyle::Dashed => 1.0,
+                    crate::libs::gui::spline::SplineStyle::Dotted => 2.0,
+                };
+                params[0][0] = style_id;
+                params[0][1] = 20.0;
+                if let Some(sh) = &s.active_shader {
+                    let p = sh.params.lock().unwrap();
+                    for j in 0..16 {
+                        params[j / 4][j % 4] = p[j];
+                    }
+                }
+                let alpha = (1.0 - s.transparency).clamp(0.0, 1.0);
+                let data = UniData {
+                    pos: [s.aabb.0, s.aabb.1],
+                    size: [s.aabb.2, s.aabb.3],
+                    color: [s.color.r, s.color.g, s.color.b, alpha],
+                    resolution: res,
+                    time,
+                    shape: 0,
+                    rotation_pad: [0.0; 4],
+                    clip_rect: [0.0; 4],
+                    params,
+                };
+                self.queue.write_buffer(
+                    &self.spline_uniform_buffers[i],
+                    0,
+                    bytemuck::bytes_of(&data),
+                );
+            }
+            let main_target_for_splines: &wgpu::TextureView = if post_effect.is_some() {
+                self.scene_view
+                    .as_ref()
+                    .expect("scene target should be allocated")
+            } else {
+                &surface_view
+            };
+            let depth_view_for_splines = self
+                .depth_view
+                .as_ref()
+                .expect("depth target should be allocated");
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Ruzit GUI spline pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: main_target_for_splines,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_view_for_splines,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            for (i, s) in splines.iter().enumerate() {
+                let pipeline = match &s.active_shader {
+                    Some(sh) => self
+                        .spline_pipelines
+                        .get(&sh.id)
+                        .unwrap_or(&self.spline_default_pipeline),
+                    None => &self.spline_default_pipeline,
+                };
+                rpass.set_pipeline(pipeline);
+                rpass.set_bind_group(0, &self.spline_bind_groups[i], &[]);
+                let (start, count) = spans[i];
+                let byte_start = (start as u64)
+                    * std::mem::size_of::<crate::libs::gui::SplineVertex>() as u64;
+                let byte_end = byte_start
+                    + (count as u64)
+                        * std::mem::size_of::<crate::libs::gui::SplineVertex>() as u64;
+                rpass.set_vertex_buffer(0, self.spline_vertex_buffer.slice(byte_start..byte_end));
+                rpass.draw(0..count, 0..1);
+            }
+        }
+
         let mut overlay_indices: Vec<(i32, usize)> = parts
             .iter()
             .enumerate()
@@ -2239,6 +2524,79 @@ fn build_pipeline(
             module: vs,
             entry_point: "vs_main",
             buffers: &[],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: fs,
+            entry_point: "fs_main",
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState {
+                    color: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::SrcAlpha,
+                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                        operation: wgpu::BlendOperation::Add,
+                    },
+                    alpha: wgpu::BlendComponent::OVER,
+                }),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            unclipped_depth: false,
+            conservative: false,
+        },
+        depth_stencil,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+        cache: None,
+    })
+}
+
+fn build_spline_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    vs: &wgpu::ShaderModule,
+    fs: &wgpu::ShaderModule,
+    format: wgpu::TextureFormat,
+    depth_format: Option<wgpu::TextureFormat>,
+) -> wgpu::RenderPipeline {
+    let depth_stencil = depth_format.map(|fmt| wgpu::DepthStencilState {
+        format: fmt,
+        depth_write_enabled: false,
+        depth_compare: wgpu::CompareFunction::Always,
+        stencil: wgpu::StencilState::default(),
+        bias: wgpu::DepthBiasState::default(),
+    });
+    let vbuf = [wgpu::VertexBufferLayout {
+        array_stride: std::mem::size_of::<crate::libs::gui::SplineVertex>() as u64,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &[
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x2,
+                offset: 0,
+                shader_location: 0,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x2,
+                offset: 8,
+                shader_location: 1,
+            },
+        ],
+    }];
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Ruzit GUI spline pipeline"),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module: vs,
+            entry_point: "vs_main",
+            buffers: &vbuf,
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {

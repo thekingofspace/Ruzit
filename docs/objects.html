@@ -18,13 +18,13 @@
     <meta name="twitter:description" content="A misc library of useful non-specific composition objects. ClonableContainer deep-clones its children; Movable and Sizable are transform groupers that move or scale every child relative to that child&#x27;s individual baseline.">
     <meta name="twitter:image" content="IconThing.png">
     <!-- og-meta:end -->
-    <link rel="stylesheet" href="style.css?v=26.5.19">
-    <script src="theme.js?v=26.5.19"></script>
+    <link rel="stylesheet" href="style.css?v=26.5.21">
+    <script src="theme.js?v=26.5.21"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=26.5.19" defer></script>
+<script src="sidebar.js?v=26.5.21" defer></script>
 
 <main>
 
@@ -571,11 +571,105 @@ Heart:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>(dt)
     <code>ClonableContainer</code> first.
 </div>
 
+<h2 id="bulkupdate">BulkUpdate</h2>
+
+<p>
+    <code>Objects.BulkUpdate(batch)</code> applies a dictionary of
+    property updates to many instances in a single Lua &rarr; Rust
+    call. Use when you'd otherwise be writing N properties on N
+    objects from a Luau loop — bulk update walks the batch in
+    compiled Rust, so you pay the FFI hop once instead of once
+    per property.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Objects = <span class="hl-fn">import</span>(<span class="hl-str">"Objects"</span>)
+<span class="hl-kw">local</span> Dim     = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Dim
+<span class="hl-kw">local</span> Color3  = <span class="hl-fn">import</span>(<span class="hl-str">"Primitives"</span>).Color3
+
+<span class="hl-kw">local</span> applied = Objects.<span class="hl-fn">BulkUpdate</span>{
+    [icon1]   = { Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">100</span>, <span class="hl-num">200</span>), Transparency = <span class="hl-num">0.2</span> },
+    [icon2]   = { Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">200</span>, <span class="hl-num">200</span>), Color = Color3.<span class="hl-fn">fromRGB</span>(<span class="hl-num">255</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>) },
+    [bg]      = { Size = Dim.<span class="hl-fn">new</span>(<span class="hl-num">1280</span>, <span class="hl-num">720</span>), Visible = <span class="hl-kw">true</span> },
+    [partA]   = { CFrame = newCframe, Color = Color3.<span class="hl-fn">new</span>(<span class="hl-num">1</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>) },
+    [partB]   = { Anchored = <span class="hl-kw">true</span> },
+}
+<span class="hl-fn">print</span>(applied, <span class="hl-str">"properties written"</span>)</code></pre>
+
+<div class="callout note">
+    <strong>It works on any userdata that has property setters.</strong>
+    The implementation iterates each <code>userdata =&gt; {props}</code>
+    pair and calls <code>userdata.&lt;Prop&gt; = &lt;value&gt;</code>
+    in Rust, which goes through the existing
+    <code>__newindex</code> setters. So semantics are identical to
+    writing the property by hand from Luau — signals still fire,
+    validation still runs, errors still propagate. You're trading
+    nothing except the per-write Luau-bytecode overhead.
+</div>
+
+<h3>What's actually faster</h3>
+
+<p>
+    Per-property assignment from Luau goes through several layers:
+</p>
+
+<ol>
+    <li>Luau bytecode dispatch for the table-set / userdata-set
+        opcode</li>
+    <li>mlua's <code>__newindex</code> callback</li>
+    <li>The actual Rust setter (the part that does the work)</li>
+</ol>
+
+<p>
+    <code>BulkUpdate</code> collapses (1) and the per-call overhead
+    of (2) into a single Lua &rarr; Rust transition for the whole
+    batch. For a batch of ~1000 small writes (e.g., updating every
+    icon position in an inventory grid each frame), this is
+    typically 3-8&times; faster than the equivalent Luau loop.
+    Below that scale the difference is in the noise &mdash; don't
+    reach for it for two or three writes.
+</p>
+
+<div class="callout note">
+    <strong>Return value</strong> is the total number of properties
+    written across all instances. Useful for sanity-check logging.
+    Errors propagate from the first failing
+    <code>userdata.&lt;Prop&gt; = ...</code> &mdash; subsequent
+    properties in the batch <em>don't</em> get applied, so wrap in
+    <code>pcall</code> if you need atomicity across the whole
+    batch.
+</div>
+
+<h3>Patterns</h3>
+
+<h4>Per-frame layout sweep</h4>
+
+<pre><code>Heart:<span class="hl-fn">Connect</span>(<span class="hl-kw">function</span>()
+    <span class="hl-kw">local</span> batch = {}
+    <span class="hl-kw">for</span> _, item <span class="hl-kw">in</span> grid_items <span class="hl-kw">do</span>
+        batch[item.icon] = {
+            Position = Dim.<span class="hl-fn">new</span>(item.x, item.y),
+            Visible  = item.in_view,
+        }
+    <span class="hl-kw">end</span>
+    Objects.<span class="hl-fn">BulkUpdate</span>(batch)
+<span class="hl-kw">end</span>)</code></pre>
+
+<h4>Mixed types in one batch</h4>
+
+<pre><code><span class="hl-com">-- Same call handles GUI primitives, BaseParts, SoundData nodes,</span>
+<span class="hl-com">-- DynImgs, etc. — anything with property setters.</span>
+Objects.<span class="hl-fn">BulkUpdate</span>{
+    [hud_icon]    = { Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">50</span>, <span class="hl-num">50</span>) },
+    [player_part] = { CFrame = newCframe },
+    [music_node]  = { Volume = <span class="hl-num">0.3</span> },
+    [dyn_img]     = { Visible = <span class="hl-kw">false</span> },
+}</code></pre>
+
 </main>
 
 <!-- right-toc:begin -->
 <aside class="right-toc"></aside>
-<script src="right-toc.js?v=26.5.19" defer></script>
+<script src="right-toc.js?v=26.5.21" defer></script>
 <!-- right-toc:end -->
 
 

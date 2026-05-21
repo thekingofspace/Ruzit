@@ -3,8 +3,8 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use mlua::{
-    AnyUserData, Function, Lua, MultiValue, RegistryKey, Table, UserData, UserDataFields,
-    UserDataMethods, Value,
+    AnyUserData, Function, Lua, MultiValue, ObjectLike, RegistryKey, Table, UserData,
+    UserDataFields, UserDataMethods, Value,
 };
 
 use crate::libs::gui::{
@@ -1490,7 +1490,29 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         "UIEnvironment",
         lua.create_function(|_, _: ()| Ok(UIEnvironment::new()))?,
     )?;
+    t.set("BulkUpdate", lua.create_function(bulk_update)?)?;
     Ok(t)
+}
+
+fn bulk_update(_lua: &Lua, batch: Table) -> mlua::Result<i64> {
+    let mut applied = 0i64;
+    for outer in batch.pairs::<Value, Value>() {
+        let (k, v) = outer?;
+        let ud = match k {
+            Value::UserData(ud) => ud,
+            _ => continue,
+        };
+        let props = match v {
+            Value::Table(t) => t,
+            _ => continue,
+        };
+        for prop in props.clone().pairs::<Value, Value>() {
+            let (pk, pv) = prop?;
+            ud.set(pk, pv)?;
+            applied += 1;
+        }
+    }
+    Ok(applied)
 }
 
 pub struct UIEnvironmentInner {

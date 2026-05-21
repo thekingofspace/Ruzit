@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use mlua::{Lua, MultiValue, Table, UserData, UserDataFields, UserDataMethods, Value};
 
+use crate::libs::gui::spline::{Spline, SplineNode, SplineState};
 use crate::libs::gui::{GuiPrimitive, PrimitiveState};
 use crate::libs::primitives::{CFrame, Color3, Dim, Vector};
 use crate::libs::renderable::{
@@ -228,6 +229,14 @@ enum TweenProp {
     SBOutputFalloffMax { start: f32, end_: f32 },
     SBOutputPosition { start: Vector, end_: Vector },
     SBOutputCFrame { start: CFrame, end_: CFrame },
+    SplineColor { start: Color3, end_: Color3 },
+    SplineTransparency { start: f32, end_: f32 },
+    SplineZIndex { start: f32, end_: f32 },
+    SplineNodes {
+        start: Vec<SplineNode>,
+        end_: Vec<SplineNode>,
+        shrink_target: Option<usize>,
+    },
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -257,6 +266,7 @@ enum TweenTarget {
     Billboard(Arc<Mutex<crate::libs::gui::BillboardInner>>),
     SBModifier(Arc<Mutex<crate::libs::soundbyte::ModifierState>>),
     SBOutput(Arc<crate::libs::soundbyte::OutputState>),
+    Spline(Arc<Mutex<SplineState>>),
 }
 
 struct GoalSpec {
@@ -270,6 +280,7 @@ enum GoalValue {
     Vector(Vector),
     Dim(Dim),
     Number(f32),
+    Nodes(Vec<SplineNode>),
 }
 
 struct TweenInner {
@@ -637,6 +648,96 @@ fn snapshot_start_values(inner: &mut TweenInner) -> mlua::Result<()> {
                     (name, _) => {
                         return Err(mlua::Error::RuntimeError(format!(
                             "TweenService: SoundByte OutputNode has no tweenable property '{name}' (supported: Volume, FalloffMinDistance, FalloffMaxDistance, Position, CFrame)"
+                        )));
+                    }
+                };
+                inner.properties.push(prop);
+            }
+        }
+        TweenTarget::Spline(state_arc) => {
+            let mut s = state_arc.lock().unwrap();
+            for g in &inner.goals {
+                let prop = match (g.property.as_str(), &g.value) {
+                    ("Color", GoalValue::Color(end_)) => TweenProp::SplineColor {
+                        start: s.color,
+                        end_: *end_,
+                    },
+                    ("Transparency", GoalValue::Number(end_)) => TweenProp::SplineTransparency {
+                        start: s.transparency,
+                        end_: *end_,
+                    },
+                    ("ZIndex", GoalValue::Number(end_)) => TweenProp::SplineZIndex {
+                        start: s.z_index as f32,
+                        end_: *end_,
+                    },
+                    ("Nodes", GoalValue::Nodes(target)) => {
+                        let mut from = s.nodes.clone();
+                        let mut to = target.clone();
+                        let shrink = if to.len() < from.len() {
+                            let target_len = to.len();
+                            let last = *to.last().unwrap_or(&SplineNode {
+                                position: Dim::new(0.0, 0.0),
+                                thickness: 4.0,
+                                angle: 0.0,
+                            });
+                            while to.len() < from.len() {
+                                to.push(last);
+                            }
+                            Some(target_len)
+                        } else if to.len() > from.len() {
+                            let extra = to.len() - from.len();
+                            if from.len() >= 2 {
+                                let segments = from.len() - 1;
+                                let mut per_segment = vec![0_usize; segments];
+                                for i in 0..extra {
+                                    per_segment[i % segments] += 1;
+                                }
+                                let mut insert_offset = 0;
+                                for seg_i in 0..segments {
+                                    let count = per_segment[seg_i];
+                                    if count == 0 {
+                                        continue;
+                                    }
+                                    let a = from[seg_i + insert_offset];
+                                    let b = from[seg_i + insert_offset + 1];
+                                    for k in 1..=count {
+                                        let t = k as f32 / (count as f32 + 1.0);
+                                        let mid = SplineNode {
+                                            position: Dim::new(
+                                                a.position.x + (b.position.x - a.position.x) * t,
+                                                a.position.y + (b.position.y - a.position.y) * t,
+                                            ),
+                                            thickness: a.thickness + (b.thickness - a.thickness) * t,
+                                            angle: a.angle + (b.angle - a.angle) * t,
+                                        };
+                                        from.insert(seg_i + insert_offset + k, mid);
+                                    }
+                                    insert_offset += count;
+                                }
+                            } else {
+                                let pad = *from.last().unwrap_or(&SplineNode {
+                                    position: Dim::new(0.0, 0.0),
+                                    thickness: 4.0,
+                                    angle: 0.0,
+                                });
+                                while from.len() < to.len() {
+                                    from.push(pad);
+                                }
+                            }
+                            s.nodes = from.clone();
+                            None
+                        } else {
+                            None
+                        };
+                        TweenProp::SplineNodes {
+                            start: from,
+                            end_: to,
+                            shrink_target: shrink,
+                        }
+                    }
+                    (name, _) => {
+                        return Err(mlua::Error::RuntimeError(format!(
+                            "TweenService: Spline has no tweenable property '{name}' (supported: Color, Transparency, ZIndex, Nodes)"
                         )));
                     }
                 };
@@ -1025,6 +1126,59 @@ fn apply_progress(inner: &TweenInner, t: f32) {
                 }
             }
         }
+        TweenTarget::Spline(state_arc) => {
+            let mut s = state_arc.lock().unwrap();
+            let finished = t >= 1.0;
+            for prop in &inner.properties {
+                match prop {
+                    TweenProp::SplineColor { start, end_ } => {
+                        s.color = lerp_color(*start, *end_, eased);
+                    }
+                    TweenProp::SplineTransparency { start, end_ } => {
+                        s.transparency = lerp_f(*start, *end_, eased).clamp(0.0, 1.0);
+                    }
+                    TweenProp::SplineZIndex { start, end_ } => {
+                        s.z_index = lerp_f(*start, *end_, eased).round() as i32;
+                    }
+                    TweenProp::SplineNodes {
+                        start,
+                        end_,
+                        shrink_target,
+                    } => {
+                        let n = start.len().min(end_.len());
+                        if s.nodes.len() != n {
+                            s.nodes.resize(
+                                n,
+                                SplineNode {
+                                    position: Dim::new(0.0, 0.0),
+                                    thickness: 4.0,
+                                    angle: 0.0,
+                                },
+                            );
+                        }
+                        for i in 0..n {
+                            let a = start[i];
+                            let b = end_[i];
+                            s.nodes[i] = SplineNode {
+                                position: Dim::new(
+                                    a.position.x + (b.position.x - a.position.x) * eased,
+                                    a.position.y + (b.position.y - a.position.y) * eased,
+                                ),
+                                thickness: a.thickness + (b.thickness - a.thickness) * eased,
+                                angle: a.angle + (b.angle - a.angle) * eased,
+                            };
+                        }
+                        if finished {
+                            if let Some(target_len) = shrink_target {
+                                s.nodes.truncate(*target_len);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            crate::libs::gui::bump_dirty();
+        }
     }
 }
 
@@ -1177,6 +1331,43 @@ fn parse_goal(property: &str, value: Value) -> mlua::Result<GoalValue> {
                 "TweenService: {property} goal must be a Vector (BasePart) or a Dim (GUI)"
             ))),
         },
+        "Nodes" => match value {
+            Value::Table(t) => {
+                let len = t.raw_len() as usize;
+                let mut nodes: Vec<SplineNode> = Vec::with_capacity(len);
+                for i in 1..=len {
+                    let row: Value = t.get(i as i64)?;
+                    let row_t = match row {
+                        Value::Table(r) => r,
+                        _ => {
+                            return Err(mlua::Error::RuntimeError(format!(
+                                "TweenService: Nodes goal entry #{i} must be a table"
+                            )));
+                        }
+                    };
+                    let pos = if let Ok(ud) = row_t.get::<mlua::AnyUserData>("Position") {
+                        *ud.borrow::<Dim>().map_err(|_| {
+                            mlua::Error::RuntimeError(
+                                "TweenService: Nodes goal: Position must be a Dim".into(),
+                            )
+                        })?
+                    } else {
+                        Dim::new(0.0, 0.0)
+                    };
+                    let thickness = row_t.get::<f32>("Thickness").unwrap_or(4.0).max(0.0);
+                    let angle = row_t.get::<f32>("Angle").unwrap_or(0.0);
+                    nodes.push(SplineNode {
+                        position: pos,
+                        thickness,
+                        angle,
+                    });
+                }
+                Ok(GoalValue::Nodes(nodes))
+            }
+            _ => Err(mlua::Error::RuntimeError(
+                "TweenService: Nodes goal must be an array of node tables".into(),
+            )),
+        },
         "Transparency" | "ZIndex" | "Rotation" | "Volume" | "Pitch" | "Speed" | "Pan"
         | "Distortion" | "MinFalloff" | "MaxFalloff" | "Value" | "Min" | "Max"
         | "FalloffMinDistance" | "FalloffMaxDistance" => match value {
@@ -1272,6 +1463,8 @@ fn create_tween(lua: &Lua, args: MultiValue) -> mlua::Result<TweenHandle> {
                     TweenTarget::SBModifier(m.state.clone())
                 } else if let Ok(o) = ud.borrow::<crate::libs::soundbyte::OutputNode>() {
                     TweenTarget::SBOutput(o.state.clone())
+                } else if let Ok(sp) = ud.borrow::<Spline>() {
+                    TweenTarget::Spline(sp.state_arc())
                 } else {
                     return Err(mlua::Error::RuntimeError(
                     "TweenService.new: target must be a BasePart, DistortionBox, GUI primitive, Sound, VoiceChannel, Movable, Sizable, Billboard, SoundByte Modifier, or SoundByte OutputNode".into(),

@@ -18,13 +18,13 @@
     <meta name="twitter:description" content="2D overlay primitives, post-processing, and skybox shaders. Everything drawn over the 3D scene lives here.">
     <meta name="twitter:image" content="IconThing.png">
     <!-- og-meta:end -->
-    <link rel="stylesheet" href="style.css?v=26.5.19">
-    <script src="theme.js?v=26.5.19"></script>
+    <link rel="stylesheet" href="style.css?v=26.5.21">
+    <script src="theme.js?v=26.5.21"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=26.5.19" defer></script>
+<script src="sidebar.js?v=26.5.21" defer></script>
 
 <main>
 
@@ -174,6 +174,172 @@ mask:<span class="hl-fn">AddClippable</span>(img)                     <span clas
             <em>shape ID</em>, not its sampled output.
         </div>
     </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">GUI.Basic.Spline()</span>
+            <span class="member-type">-> Spline</span>
+        </div>
+        <p class="member-desc">
+            Polyline primitive. Unlike the other
+            <code>GUI.Basic.*</code> factories, a Spline has no
+            global <code>Position</code> or <code>Size</code>
+            &mdash; the nodes determine its shape. Each node
+            contributes a position (Dim), a per-node thickness
+            (pixels), and a per-node angle that biases the
+            perpendicular at that node. The renderer triangulates
+            ribbon segments between consecutive nodes, blends
+            perpendiculars at interior joints, and adds caps at
+            the start/end based on <code>.Cap</code>.
+        </p>
+        <pre><code><span class="hl-kw">local</span> line = GUI.Basic.<span class="hl-fn">Spline</span>()
+line.Color = Primitives.Color3.<span class="hl-fn">fromRGB</span>(<span class="hl-num">120</span>, <span class="hl-num">200</span>, <span class="hl-num">255</span>)
+line.Cap   = <span class="hl-str">"Rounded"</span>
+line:<span class="hl-fn">SetNodes</span>{
+    { Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">100</span>, <span class="hl-num">200</span>), Thickness = <span class="hl-num">6</span> },
+    { Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">300</span>, <span class="hl-num">200</span>), Thickness = <span class="hl-num">8</span> },
+    { Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">500</span>, <span class="hl-num">120</span>), Thickness = <span class="hl-num">4</span> },
+}</code></pre>
+    </div>
+</div>
+
+<h2 id="spline">Spline</h2>
+
+<p>
+    Polyline primitive (returned by
+    <code>GUI.Basic.Spline()</code>). Renders in its own pass after
+    the regular 2D items, sorted by <code>.ZIndex</code> among
+    splines. Supports 2D fragment shaders via
+    <code>:AttachShader</code> and the standard
+    <a href="#shaders">FRAGMENT_PRELUDE</a>.
+</p>
+
+<h3>Properties</h3>
+
+<table>
+    <thead><tr><th>Property</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead>
+    <tbody>
+        <tr><td><code>Color</code></td><td>Color3</td><td>(1, 1, 1)</td><td>Whole-spline base color. Tweenable via <code>:Tween</code>'s <code>Color</code> option.</td></tr>
+        <tr><td><code>Transparency</code></td><td>number</td><td>0</td><td>0..1, applied as alpha multiplier.</td></tr>
+        <tr><td><code>ZIndex</code></td><td>number</td><td>0</td><td>Splines sort among themselves; all splines render <em>above</em> regular 2D items.</td></tr>
+        <tr><td><code>Visible</code></td><td>boolean</td><td>true</td><td>Hides the spline without destroying it.</td></tr>
+        <tr><td><code>Style</code></td><td>string</td><td>"Solid"</td><td>"Solid" / "Dashed" / "Dotted". Dashed and Dotted are rendered via UV-based discard.</td></tr>
+        <tr><td><code>Cap</code></td><td>string</td><td>"Rounded"</td><td>"Rounded" / "Miter" / "Square". Applied at the start and end nodes.</td></tr>
+        <tr><td><code>NodeCount</code></td><td>number</td><td>—</td><td>Read-only.</td></tr>
+        <tr><td><code>Alive</code></td><td>boolean</td><td>—</td><td>Read-only.</td></tr>
+        <tr><td><code>Changed</code></td><td>Signal&lt;string&gt;</td><td>—</td><td>Fires with property name on any change. Connect for "anything changed" notifications.</td></tr>
+    </tbody>
+</table>
+
+<h3>Node table shape</h3>
+
+<pre><code>{
+    Position  = Dim.<span class="hl-fn">new</span>(<span class="hl-num">x</span>, <span class="hl-num">y</span>),
+    Thickness = <span class="hl-num">4</span>,                    <span class="hl-com">-- pixels, default 4</span>
+    Angle     = <span class="hl-num">0</span>,                    <span class="hl-com">-- degrees, biases the perpendicular at this node</span>
+}</code></pre>
+
+<h3>Methods</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">spline:SetNodes({ ... })</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Replace the entire node array. Cancels any active
+            tween. Fires <code>.Changed("Nodes")</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">spline:GetNodes()</span><span class="member-type">-> { SplineNode }</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Snapshot copy of the current node array.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">spline:InsertNode(index, node)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            1-based insertion. <code>index = 1</code> prepends,
+            <code>index &gt; NodeCount</code> appends. Doesn't
+            touch the tween — useful for hand-editing during an
+            animation.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">spline:RemoveNode(index)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">1-based removal. Errors if out of range.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">spline:SetNode(index, node)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Replace a single node in place.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">spline:AttachShader(asset)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Attach a <a href="asset.html#fragment">FragmentAsset</a>
+            (or ShaderAsset) as the fragment stage. The shader
+            receives the same <code>U: RuzitUni</code> uniform and
+            the standard prelude; <code>in.uv.x</code> is the
+            along-line parameter (0 at start, 1 at end) and
+            <code>in.uv.y</code> is the cross-line parameter (0 on
+            one edge, 1 on the other).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">spline:ClearShaders()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Detach all shaders; reverts to the default solid-color fragment.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">spline:Destroy()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Mark dead; the spline stops rendering and is reaped on the next snapshot.</p>
+    </div>
+</div>
+
+<h3>Animating splines</h3>
+
+<p>
+    Splines tween through
+    <a href="tweenservice.html"><code>TweenService.new</code></a>
+    like every other tweenable primitive. The supported goal
+    properties are <code>Color</code>, <code>Transparency</code>,
+    <code>ZIndex</code>, and <code>Nodes</code> (an array of node
+    tables with the same shape as <code>:SetNodes</code>):
+</p>
+
+<pre><code><span class="hl-kw">local</span> Tween = <span class="hl-fn">import</span>(<span class="hl-str">"TweenService"</span>)
+<span class="hl-kw">local</span> tw = Tween.<span class="hl-fn">new</span>(line, <span class="hl-num">0.6</span>, <span class="hl-str">"Quad"</span>, <span class="hl-str">"InOut"</span>, {
+    Color = Primitives.Color3.<span class="hl-fn">fromRGB</span>(<span class="hl-num">255</span>, <span class="hl-num">80</span>, <span class="hl-num">80</span>),
+    Nodes = {
+        { Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">100</span>, <span class="hl-num">200</span>), Thickness = <span class="hl-num">10</span> },
+        { Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">300</span>, <span class="hl-num">120</span>), Thickness = <span class="hl-num">10</span> },
+        { Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">500</span>, <span class="hl-num">240</span>), Thickness = <span class="hl-num">10</span> },
+        { Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">700</span>, <span class="hl-num">120</span>), Thickness = <span class="hl-num">10</span> },
+    },
+})
+tw:<span class="hl-fn">Play</span>()</code></pre>
+
+<p>
+    Node-count changes are handled transparently:
+</p>
+
+<ul>
+    <li><strong>Target has more nodes than current:</strong> extra
+        nodes are inserted into the current array at interpolated
+        polyline positions <em>before the tween starts</em> (the
+        line shape stays unchanged visually); each inserted node
+        then animates to its target.</li>
+    <li><strong>Target has fewer nodes than current:</strong>
+        excess current nodes animate toward the last target node;
+        once the tween completes, the array is truncated.</li>
+    <li><strong>Same count:</strong> straight per-node lerp of
+        Position / Thickness / Angle.</li>
+</ul>
+
+<div class="callout note">
+    <strong>v1 limitations.</strong>
+    Splines render in a dedicated pass after the regular 2D items,
+    so a spline cannot interleave at a particular z-index between
+    other GUI primitives — all splines are above all primitives.
+    Spatial queries (CheckArea / Raycast) currently use the
+    spline's AABB rather than precise segment tests; expect false
+    positives near the bounding rect. Per-node <code>Angle</code>
+    biases the perpendicular but does not rotate the cap geometry.
 </div>
 
 <h2 id="primitive">Primitive</h2>
@@ -1167,7 +1333,7 @@ burst.TimeScaleTransparency = { [<span class="hl-num">0</span>] = <span class="h
 
 <!-- right-toc:begin -->
 <aside class="right-toc"></aside>
-<script src="right-toc.js?v=26.5.19" defer></script>
+<script src="right-toc.js?v=26.5.21" defer></script>
 <!-- right-toc:end -->
 
 

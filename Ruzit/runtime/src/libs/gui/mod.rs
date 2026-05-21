@@ -13,11 +13,13 @@ pub mod effect_volume;
 pub mod particle_pipeline;
 pub mod render;
 pub mod spatial;
+pub mod spline;
 
 pub use effect_volume::{
     tick_ui_effect_volumes, ui_effect_volume_snapshot, UIEffectVolumeHandle, UIEffectVolumeRender,
     UIParticleRender,
 };
+pub use spline::{Spline, SplineRender, SplineVertex};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -1593,6 +1595,10 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
     basic.set(
         "Clippable",
         lua.create_function(|lua, _: ()| GuiPrimitive::new(lua, Shape::Clippable))?,
+    )?;
+    basic.set(
+        "Spline",
+        lua.create_function(|lua, _: ()| spline::Spline::new(lua))?,
     )?;
     basic.set(
         "Image",
