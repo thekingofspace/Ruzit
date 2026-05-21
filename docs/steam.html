@@ -120,6 +120,114 @@
     breaks Steam, not the whole game.
 </div>
 
+<h2 id="sdk-version">Supported Steamworks SDK version</h2>
+
+<p>
+    Ruzit's <code>steam</code> Cargo feature is built against the
+    <code>steamworks</code> Rust crate version <code>0.11.x</code>,
+    which is generated from <strong>Steamworks SDK ~1.59 / 1.60</strong>
+    (interface set <code>SteamClient020</code>,
+    <code>SteamUser023</code>, <code>SteamFriends017</code>). The
+    <code>steam_api64.dll</code> you ship with your game has to
+    match this exact interface set — Windows will refuse to bind
+    missing exports at first call and raise
+    <code>STATUS_DELAYLOAD_PROC_NOT_FOUND</code>
+    (<code>0xC06D007F</code>), terminating the process before any
+    Rust code can catch it. Symptoms: the game launches, prints
+    <code>SteamInternal_SetMinidumpSteamID: ... [API loaded no]</code>,
+    then dies with exit code <code>-1066598273</code>.
+</p>
+
+<h3>Where to get the exact DLL</h3>
+
+<p>
+    The <code>steamworks-sys</code> Rust crate bundles the
+    redistributable binaries it was built against. Just copy them
+    from your local cargo registry:
+</p>
+
+<pre><code><span class="hl-com"># Windows host</span>
+~/.cargo/registry/src/index.crates.io-*/steamworks-sys-0.11.0/lib/steam/redistributable_bin/win64/steam_api64.dll
+
+<span class="hl-com"># Linux host</span>
+~/.cargo/registry/src/index.crates.io-*/steamworks-sys-0.11.0/lib/steam/redistributable_bin/linux64/libsteam_api.so
+
+<span class="hl-com"># macOS host</span>
+~/.cargo/registry/src/index.crates.io-*/steamworks-sys-0.11.0/lib/steam/redistributable_bin/osx/libsteam_api.dylib</code></pre>
+
+<p>
+    Drop the file next to <code>ruzitrun.exe</code> during
+    development. For shipping, list it in <code>build.toml</code>'s
+    <code>include = [...]</code> so <code>ruzit build</code> copies
+    it into <code>Generated/</code> next to your launcher exe.
+</p>
+
+<h3>Verification hashes</h3>
+
+<p>
+    SHA-256 of the redistributables that ship with
+    <code>steamworks-sys 0.11.0</code>:
+</p>
+
+<table>
+    <thead>
+        <tr><th>Platform</th><th>Filename</th><th>Bytes</th><th>SHA-256</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Windows x64</td>
+            <td><code>steam_api64.dll</code></td>
+            <td>301,928</td>
+            <td><code>dcfaa13aa419a0641917205957dbe15aa472e7cf09a28cf8d3cf429598e67799</code></td>
+        </tr>
+        <tr>
+            <td>Windows x86</td>
+            <td><code>steam_api.dll</code></td>
+            <td>268,136</td>
+            <td><code>e0ccfcdde7bbba55dba4c19007299018a2cf86f92c7bc1df4af134c65dbf8003</code></td>
+        </tr>
+        <tr>
+            <td>Linux x64</td>
+            <td><code>libsteam_api.so</code></td>
+            <td>395,696</td>
+            <td><code>b50b9d313eb554792216762f5cc0b972cfae14149f720440e0f0d6c4563c951f</code></td>
+        </tr>
+        <tr>
+            <td>Linux x86</td>
+            <td><code>libsteam_api.so</code></td>
+            <td>379,848</td>
+            <td><code>2cc33d34854148f4bef515e534b06707704185e364f729cc424a259fceb29cb1</code></td>
+        </tr>
+        <tr>
+            <td>macOS</td>
+            <td><code>libsteam_api.dylib</code></td>
+            <td>627,648</td>
+            <td><code>363ab50ce9bf4680d8ddb8c6142e566854803f831769fab0428867b9994d0520</code></td>
+        </tr>
+    </tbody>
+</table>
+
+<p>
+    If your file size matches but the hash doesn't, your DLL is from
+    a different Steamworks SDK release with the same payload size.
+    The hash is the authoritative check.
+</p>
+
+<h3>What about newer Steamworks SDK releases?</h3>
+
+<p>
+    Valve adds new interfaces (<code>SteamFriends018</code>,
+    <code>SteamUser024</code>, etc.) every couple of SDK releases.
+    A newer DLL <em>removes</em> the old interface exports the
+    <code>steamworks</code> crate is hard-wired to import — that's
+    why a 317 KB DLL from a 2025 release crashes against the
+    bindings expecting the 301 KB DLL. To use a newer SDK you'd
+    have to bump the <code>steamworks</code> Cargo dep to a
+    matching version (the crate is maintained out-of-tree from
+    Valve's release cadence). Stick with the bundled binary unless
+    you have a specific reason to chase the latest SDK.
+</p>
+
 <div class="callout note">
     <strong>Steam app id still matters.</strong>
     Set <code>steam-app-id = N</code> in <code>build.toml</code>
