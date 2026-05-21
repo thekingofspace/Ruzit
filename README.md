@@ -99,7 +99,6 @@ ruzit scaffold       [path]        regenerate .luaurc aliases from every manifes
 ruzit test           [path]        run a project from source
 ruzit build          [path] [-o]   produce Generated/<exe> + Generated/Managed/*.managed
 ruzit package        [folder] [-o] bake one folder into a .managed bundle
-ruzit fetch-deps     [path]        download steam_api into the given dir
 ruzit refresh-types  [path]        re-download types.d.luau
 ruzit update         [path]        refresh the bundled ruzitrun from the configured release base
 ```

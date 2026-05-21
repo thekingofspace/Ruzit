@@ -70,19 +70,33 @@ impl Default for BuildConfig {
 
 fn parse_include(v: &toml::Value) -> Vec<String> {
     let mut out = Vec::new();
-    if let Some(arr) = v.get("include").and_then(|x| x.as_array()) {
-        for item in arr {
-            if let Some(s) = item.as_str() {
-                out.push(s.to_string());
-            }
-        }
-        return out;
-    }
-    if let Some(t) = v.get("include").and_then(|x| x.as_table()) {
-        if let Some(arr) = t.get("paths").and_then(|x| x.as_array()) {
+    let candidates: [Option<&toml::Value>; 5] = [
+        v.get("include"),
+        v.get("build").and_then(|b| b.get("include")),
+        v.get("exe").and_then(|e| e.get("include")),
+        v.get("steam").and_then(|s| s.get("include")),
+        v.get("configs").and_then(|c| c.get("include")),
+    ];
+    for slot in candidates.iter().filter_map(|c| *c) {
+        if let Some(arr) = slot.as_array() {
             for item in arr {
                 if let Some(s) = item.as_str() {
                     out.push(s.to_string());
+                }
+            }
+            if !out.is_empty() {
+                return out;
+            }
+        }
+        if let Some(t) = slot.as_table() {
+            if let Some(arr) = t.get("paths").and_then(|x| x.as_array()) {
+                for item in arr {
+                    if let Some(s) = item.as_str() {
+                        out.push(s.to_string());
+                    }
+                }
+                if !out.is_empty() {
+                    return out;
                 }
             }
         }

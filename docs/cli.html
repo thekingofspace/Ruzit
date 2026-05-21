@@ -45,7 +45,6 @@ ruzit scaffold       [path]        regenerate .luaurc aliases from every manifes
 ruzit test           [path]        run a Luau file
 ruzit build          [path] [-o]   produce Generated/&lt;exe&gt; + Generated/Managed/*.managed
 ruzit package        [folder] [-o] produce &lt;id&gt;.scripts.managed + &lt;id&gt;.assets.managed
-ruzit fetch-deps     [path]        download steam_api into the given dir (default: cwd)
 ruzit refresh-types  [path]        re-download types.d.luau into the given dir (default: cwd)
 ruzit update         [path]        refresh ruzitrun from the configured release base (CLI itself is left alone)
                      --help        print this help
@@ -269,35 +268,6 @@ ruzit package . -o ../release  <span class="hl-com"># custom output dir</span></
     Players install your package by copying the <code>.managed</code> files
     into a host game's <code>Packages/</code> folder. The host game's
     runtime mounts them as <code>require("@your-id/...")</code>.
-</p>
-
-<h2 id="fetch-deps">ruzit fetch-deps</h2>
-
-<div class="sig">ruzit fetch-deps [path]</div>
-
-<p>
-    Download the Steam SDK redistributable
-    (<code>steam_api64.dll</code> on Windows,
-    <code>libsteam_api.so</code> on Linux,
-    <code>libsteam_api.dylib</code> on macOS) into the given directory
-    (current directory if omitted). The Steamworks SDK is not bundled
-    with Ruzit, you obtain it from
-    <a href="https://partner.steamgames.com/" target="_blank" rel="noopener">partner.steamgames.com</a>,
-    host the redist binary somewhere reachable, and point the CLI at
-    it via:
-</p>
-
-<pre><code>RUZIT_STEAMSDK_URL=https://your.host/path/steam_api64.dll
-ruzit fetch-deps .</code></pre>
-
-<p>
-    Without the env var set, the command exits with an explanation
-    rather than guessing a URL. Drop the resulting file alongside
-    your <code>ruzit</code> binary (or your shipped game's
-    launcher EXE), Ruzit only loads Steam when it sees the redist
-    file next to the executable AND either runs through Steam or
-    runs in test mode. See <a href="steam.html">Steam</a> for the
-    runtime gating logic.
 </p>
 
 <h2 id="refresh-types">ruzit refresh-types</h2>

@@ -6,22 +6,6 @@ use std::path::{Path, PathBuf};
 use ureq::Agent;
 use zip::ZipArchive;
 
-const STEAM_LIB_NAME_WIN: &str = "steam_api64.dll";
-const STEAM_LIB_NAME_LINUX: &str = "libsteam_api.so";
-const STEAM_LIB_NAME_MAC: &str = "libsteam_api.dylib";
-
-fn steam_lib_name() -> &'static str {
-    if cfg!(target_os = "windows") {
-        STEAM_LIB_NAME_WIN
-    } else if cfg!(target_os = "linux") {
-        STEAM_LIB_NAME_LINUX
-    } else if cfg!(target_os = "macos") {
-        STEAM_LIB_NAME_MAC
-    } else {
-        ""
-    }
-}
-
 fn agent() -> Agent {
     ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(60))
@@ -45,15 +29,6 @@ fn download_bytes(url: &str) -> Result<Vec<u8>, String> {
         .read_to_end(&mut buf)
         .map_err(|e| format!("read body: {e}"))?;
     Ok(buf)
-}
-
-fn download_to(url: &str, dest: &Path) -> Result<u64, String> {
-    let buf = download_bytes(url)?;
-    if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
-    }
-    fs::write(dest, &buf).map_err(|e| format!("write {}: {e}", dest.display()))?;
-    Ok(buf.len() as u64)
 }
 
 fn extract_one_from_zip(
@@ -104,32 +79,6 @@ pub fn cmd_refresh_types(arg: Option<&String>) -> Result<(), String> {
         dest.display(),
         body.len()
     );
-    Ok(())
-}
-
-pub fn cmd_fetch_deps(arg: Option<&String>) -> Result<(), String> {
-    let dest_dir = match arg {
-        Some(p) => PathBuf::from(p),
-        None => env::current_dir().map_err(|e| e.to_string())?,
-    };
-    let lib = steam_lib_name();
-    if lib.is_empty() {
-        return Err("fetch-deps: no Steam redistributable for this platform".into());
-    }
-    let url = match env::var("RUZIT_STEAMSDK_URL") {
-        Ok(v) => v,
-        Err(_) => {
-            return Err(format!(
-                "fetch-deps: set RUZIT_STEAMSDK_URL to a direct {lib} URL.\n\
-                 Get the Steamworks SDK from https://partner.steamgames.com/, host \n\
-                 the {lib} from sdk/redistributable_bin/ on your own server, then set\n\
-                 RUZIT_STEAMSDK_URL=https://your.host/path/{lib}"
-            ));
-        }
-    };
-    let dest = dest_dir.join(lib);
-    let bytes = download_to(&url, &dest)?;
-    println!("[ruzit] fetched {} ({} bytes)", dest.display(), bytes);
     Ok(())
 }
 

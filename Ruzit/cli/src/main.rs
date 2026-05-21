@@ -27,9 +27,6 @@ fn print_usage() {
     eprintln!();
     eprintln!("Tooling:");
     eprintln!(
-        "  ruzit fetch-deps     [path]        download steam_api into the given dir (default: cwd)"
-    );
-    eprintln!(
         "  ruzit refresh-types  [path]        re-download types.d.luau into the given dir (default: cwd)"
     );
     eprintln!(
@@ -54,7 +51,6 @@ fn dispatch(args: &[String]) -> Result<(), String> {
             let (folder, output) = parse_path_and_output(&args[1..]);
             commands::cmd_package(folder.as_ref(), output.as_ref())
         }
-        "FetchDeps" | "fetchdeps" | "fetch-deps" => update::cmd_fetch_deps(args.get(1)),
         "RefreshTypes" | "refreshtypes" | "refresh-types" => update::cmd_refresh_types(args.get(1)),
         "Update" | "update" | "SelfUpdate" | "selfupdate" | "self-update" => {
             update::cmd_update(args.get(1))

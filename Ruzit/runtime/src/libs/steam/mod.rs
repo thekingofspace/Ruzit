@@ -455,10 +455,27 @@ fn ensure_client() -> mlua::Result<&'static Client> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(DEFAULT_APP_ID);
     let appid_path = maybe_write_steam_appid(app_id);
-    let init_result = Client::init_app(AppId(app_id));
+    let init_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        Client::init_app(AppId(app_id))
+    }));
     if let Some(p) = appid_path {
         let _ = std::fs::remove_file(p);
     }
+    let init_result = match init_result {
+        Ok(r) => r,
+        Err(payload) => {
+            let msg = if let Some(s) = payload.downcast_ref::<&str>() {
+                (*s).to_string()
+            } else if let Some(s) = payload.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "panic inside steamworks (steam client not running, wrong app id, or DLL mismatch)".to_string()
+            };
+            return Err(mlua::Error::RuntimeError(format!(
+                "Steam init aborted (app id {app_id}): {msg}. Check Steam.SteamPresent first or ensure the Steam client is running."
+            )));
+        }
+    };
     let (client, single) = init_result.map_err(|e| {
         mlua::Error::RuntimeError(format!(
             "Steam init failed (app id {app_id}): {e}. Is the Steam client running?"
@@ -1318,9 +1335,17 @@ impl UserData for ServerHandle {
 }
 
 pub fn create(lua: &Lua) -> mlua::Result<Table> {
-    let _ = ensure_client();
-
     let t = lua.create_table()?;
+
+    t.set(
+        "Initialize",
+        lua.create_function(|_, _: ()| -> mlua::Result<bool> {
+            match ensure_client() {
+                Ok(_) => Ok(true),
+                Err(e) => Err(e),
+            }
+        })?,
+    )?;
 
     let on_disconnected = signal::new_instance(lua)?;
     let on_connected = signal::new_instance(lua)?;

@@ -14,8 +14,8 @@ fn print_usage() {
     eprintln!("ruzitrun (runtime) — engine binary used as the launcher template");
     eprintln!("for built games. Normally not invoked directly.");
     eprintln!();
-    eprintln!("For dev commands (init / test / build / package / fetch-deps");
-    eprintln!("/ update), use the `ruzit` CLI tool from this workspace.");
+    eprintln!("For dev commands (init / test / build / package / update),");
+    eprintln!("use the `ruzit` CLI tool from this workspace.");
     eprintln!();
     eprintln!("Direct invocations:");
     eprintln!("  --run <project-root> [<entry>]   run a project from disk");

@@ -1118,6 +1118,7 @@ export type SteamFriendInfo = {
 }
 export type Steam_API = {
 	SteamPresent: boolean,
+	Initialize: () -> boolean,
 	OnDisconnected: Signal<string>,
 	OnConnected: Signal<>,
 	OnConnectFailure: Signal<string, boolean>,

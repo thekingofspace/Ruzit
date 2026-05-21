@@ -49,8 +49,13 @@
     Boolean. <strong>True if the Steam SDK redistributable
     (<code>steam_api64.dll</code> / <code>libsteam_api.so</code> /
     <code>libsteam_api.dylib</code>) is present alongside the
-    executable.</strong> That's the only thing it checks. Use
-    <code>ruzit fetch-deps</code> to drop the DLL in.
+    executable.</strong> That's the only thing it checks. Obtain
+    the redist from
+    <a href="https://partner.steamgames.com/" target="_blank" rel="noopener">partner.steamgames.com</a>,
+    drop it next to <code>ruzitrun.exe</code> during development
+    or next to your shipped launcher exe, and list it under
+    <code>include = [...]</code> in <code>build.toml</code> so
+    <code>ruzit build</code> copies it into <code>Generated/</code>.
 </p>
 
 <p>
@@ -74,18 +79,46 @@
 </p>
 
 <p>
-    Importing <code>Steam</code> never fails on its own anymore, so
-    you can keep the import at the top of any module. Just gate
-    real Steam calls behind <code>Steam.SteamPresent</code>:
+    <strong>Importing <code>Steam</code> never touches the SDK.</strong>
+    <code>SteamPresent</code> is a file-existence check only.
+    To actually wire up the SDK you call
+    <code>Steam.Initialize()</code> explicitly — this is what
+    triggers <code>SteamAPI_Init</code> under the hood. Wrap it in
+    <code>pcall</code> so a missing-export delayload failure
+    (caused by shipping the wrong SDK version of
+    <code>steam_api64.dll</code>) doesn't take your script down:
 </p>
 
 <pre><code><span class="hl-kw">local</span> Steam = <span class="hl-fn">import</span>(<span class="hl-str">"Steam"</span>)
 
+<span class="hl-kw">local</span> SteamReady = <span class="hl-kw">false</span>
+<span class="hl-kw">if</span> Steam.SteamPresent <span class="hl-kw">then</span>
+    <span class="hl-kw">local</span> ok, err = <span class="hl-fn">pcall</span>(Steam.Initialize)
+    <span class="hl-kw">if</span> ok <span class="hl-kw">then</span>
+        SteamReady = <span class="hl-kw">true</span>
+    <span class="hl-kw">else</span>
+        <span class="hl-fn">print</span>(<span class="hl-str">"Steam init failed: "</span> .. <span class="hl-fn">tostring</span>(err))
+    <span class="hl-kw">end</span>
+<span class="hl-kw">end</span>
+
 <span class="hl-kw">local</span> <span class="hl-kw">function</span> on_kill()
-    <span class="hl-kw">if</span> <span class="hl-kw">not</span> Steam.SteamPresent <span class="hl-kw">then</span> <span class="hl-kw">return</span> <span class="hl-kw">end</span>
+    <span class="hl-kw">if</span> <span class="hl-kw">not</span> SteamReady <span class="hl-kw">then</span> <span class="hl-kw">return</span> <span class="hl-kw">end</span>
     Steam.Achievements.Unlock(<span class="hl-str">"FIRST_KILL"</span>)
     Steam.Achievements.Store()
 <span class="hl-kw">end</span></code></pre>
+
+<div class="callout warn">
+    <strong>Why explicit init?</strong>
+    Earlier versions called <code>SteamAPI_Init</code> eagerly during
+    <code>import("Steam")</code>. If the user's
+    <code>steam_api64.dll</code> didn't match the SDK version Ruzit
+    was built against, a Windows-level delayload failure
+    (<code>STATUS_DELAYLOAD_PROC_NOT_FOUND</code>) crashed the whole
+    runtime before any Rust code could intercept it. As of 26.5.21
+    the SDK is only loaded when you call
+    <code>Steam.Initialize()</code> &mdash; so a bad DLL only
+    breaks Steam, not the whole game.
+</div>
 
 <div class="callout note">
     <strong>Steam app id still matters.</strong>
@@ -100,10 +133,13 @@
     <strong>The Steam DLL is no longer bundled with Ruzit.</strong>
     Earlier versions embedded <code>steam_api64.dll</code> in the
     runtime binary so it could be written next to the launcher at
-    startup. As of v3.7 you fetch it explicitly with
-    <code>ruzit fetch-deps</code>. This keeps the runtime
-    binary small and avoids redistributing the SDK without
-    a clear license trail.
+    startup, and v3.7 shipped a <code>ruzit fetch-deps</code> helper
+    that downloaded it from a user-configured URL. Both are removed
+    as of 26.5.21 — the redistributable now lives next to your
+    binaries by hand or via <code>build.toml</code>'s
+    <code>include = [...]</code>. This keeps the runtime binary
+    small and avoids redistributing the SDK without a clear
+    license trail.
 </div>
 
 <h2 id="connection">Steam.OnDisconnected / OnConnected / OnConnectFailure</h2>

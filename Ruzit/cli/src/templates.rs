@@ -2,6 +2,18 @@ pub const BUILD_TOML: &str = r#"Name = "{name}"
 Version = "0.1.0"
 Creator = ""
 
+# Non-Luau files / folders to copy verbatim next to the built exe (not into
+# Managed). Use for Steam DLLs, third-party SDKs, license / readme text,
+# data folders read by external tooling. Folders replicate recursively.
+# `bin/` is auto-copied for FFI Rust DLLs -- you do NOT need to list it.
+# IMPORTANT: keep `include` ABOVE the [exe] / [steam] / [configs] headers,
+# otherwise TOML will associate it with whichever section it follows.
+include = [
+#    "steam_appid.txt",
+#    "third-party/openvr_api.dll",
+#    "localization/",
+]
+
 [configs]
 "File Type" = "Relative"
 
@@ -42,16 +54,6 @@ Creator = ""
                       # (Valve's free dev test app). Replace with your own
                       # registered app id at ship time. Falls back to 480 if
                       # unset; the RUZIT_STEAM_APPID env var overrides this.
-
-# Non-Luau files / folders to copy verbatim next to the built exe (not into
-# Managed). Use for Steam DLLs, third-party SDKs, license / readme text,
-# data folders read by external tooling. Folders replicate recursively.
-# `bin/` is auto-copied for FFI Rust DLLs -- you do NOT need to list it.
-include = [
-#    "steam_appid.txt",
-#    "third-party/openvr_api.dll",
-#    "localization/",
-]
 "#;
 
 pub const MAIN_LUAU: &str = r#"--!strict
@@ -69,18 +71,20 @@ Version = "0.1.0"
 Creator = ""
 Entry = "init.luau"
 
-[configs]
-"File Type" = "Relative"
-
 # Non-Luau files / folders shipped with this package and copied next to the
 # host game's exe at build time (NOT into Managed). Use for license text,
 # data folders, third-party SDKs that aren't FFI-loaded. Folders replicate
 # recursively. `bin/` is auto-copied for FFI Rust DLLs -- no need to list
 # it explicitly.
+# IMPORTANT: keep `include` ABOVE the [configs] header, otherwise TOML
+# will associate it with that section and the builder will not see it.
 include = [
 #    "LICENSE.txt",
 #    "reference-data/",
 ]
+
+[configs]
+"File Type" = "Relative"
 "#;
 
 pub const MANAGED_INIT_LUAU: &str = r#"--!strict
