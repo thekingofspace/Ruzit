@@ -467,6 +467,168 @@ mod.run()
     debugging. See <a href="cli.html">CLI</a>.
 </div>
 
+<h2 id="launch">launch</h2>
+
+<p>
+    <code>launch(path, ...args) -&gt; SubProcess</code>
+</p>
+
+<p>
+    Run a script as a sub-process. The path is resolved the same way
+    <code>require</code> resolves them (project-relative,
+    <code>@Game/...</code>, <code>@&lt;dlc_id&gt;/...</code>, etc.).
+    The script gets its own environment with fresh
+    <code>import</code> / <code>require</code> / <code>load</code> /
+    <code>launch</code> globals, but
+    <strong>module instances are still shared</strong> through the
+    require cache — a <code>require("@Game/modules/SaveData")</code>
+    in the parent and in the launched script returns the same table,
+    so they can use modules for cross-script state.
+</p>
+
+<p>
+    Engine subsystems are also shared automatically: a
+    <code>GUI.Basic.Square()</code> created inside the launched script
+    is the same registry as the parent's, signals fire across the
+    boundary, the world store is the same dictionary, etc. Effectively
+    you've got a second "Main" running cooperatively on the same Lua
+    state, with its own coroutine and its own caller-scoped
+    <code>__dirname</code> / require base.
+</p>
+
+<pre><code><span class="hl-com">-- parent.luau</span>
+<span class="hl-kw">local</span> dialog = <span class="hl-fn">launch</span>(<span class="hl-str">"@Game/scenes/dialog_runner"</span>,
+    <span class="hl-str">"campfire_intro"</span>,
+    { affection = <span class="hl-num">42</span>, time_of_day = <span class="hl-str">"night"</span> }
+)
+
+<span class="hl-fn">print</span>(dialog.Alive, dialog.Source)
+
+dialog:<span class="hl-fn">WriteStat</span>(<span class="hl-str">"player_choice"</span>, <span class="hl-str">"comfort"</span>)   <span class="hl-com">-- push input to the running script</span>
+<span class="hl-kw">local</span> result = dialog:<span class="hl-fn">ReadStat</span>(<span class="hl-str">"final_outcome"</span>)   <span class="hl-com">-- read its current state</span>
+
+dialog:<span class="hl-fn">Kill</span>()                                       <span class="hl-com">-- terminate the sub-process</span></code></pre>
+
+<h3>Inside the launched script</h3>
+
+<p>
+    The args you pass to <code>launch</code> after the path show up in
+    a <strong>positional</strong> <code>stats</code> global, plus
+    whatever the parent later writes via
+    <code>:WriteStat(key, value)</code>:
+</p>
+
+<pre><code><span class="hl-com">-- scenes/dialog_runner.luau</span>
+<span class="hl-kw">local</span> scene_name = stats[<span class="hl-num">1</span>]              <span class="hl-com">-- "campfire_intro"</span>
+<span class="hl-kw">local</span> ctx        = stats[<span class="hl-num">2</span>]              <span class="hl-com">-- { affection = 42, ... }</span>
+
+<span class="hl-kw">local</span> Heart = <span class="hl-fn">import</span>(<span class="hl-str">"RunService"</span>).Heartbeat
+<span class="hl-kw">while</span> <span class="hl-kw">true</span> <span class="hl-kw">do</span>
+    <span class="hl-kw">if</span> stats.player_choice <span class="hl-kw">then</span>            <span class="hl-com">-- parent wrote this in via :WriteStat</span>
+        stats.final_outcome = <span class="hl-str">"comforted"</span>
+        <span class="hl-kw">break</span>
+    <span class="hl-kw">end</span>
+    Heart:<span class="hl-fn">Wait</span>()
+<span class="hl-kw">end</span></code></pre>
+
+<h3>SubProcess</h3>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Alive</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            <code>true</code> until <code>:Kill()</code> is called.
+            Doesn't reflect whether the underlying coroutine has
+            finished — for that, check
+            <code>SubProcess.Coroutine.Status</code> (mlua exposes
+            <code>"finished" | "running" | "yielded" | "error"</code>).
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Source</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Resolved module path (the same one shown in stack traces).</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Coroutine</span><span class="member-type">thread</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            The Lua coroutine driving the sub-process. Resume it
+            manually with <code>coroutine.resume</code> if you need
+            to bypass the normal cooperative scheduling, or just
+            use <code>SubProcess:Resume(...)</code> which checks
+            <code>Alive</code> first.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Stats</span><span class="member-type">table</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            The same <code>stats</code> table the launched script
+            sees. Convenience for reading multiple keys at once.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">sub:Kill()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Mark dead and reset the coroutine to a no-op. Any in-progress
+            resume still runs to its next yield (you can't pre-empt
+            cooperative coroutines), but afterward the engine won't
+            schedule it again and a manual <code>:Resume(...)</code>
+            errors. Idempotent.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">sub:WriteStat(key, value)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Set <code>stats[key] = value</code> inside the launched
+            script. Any key/value the script can write itself is
+            valid here.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">sub:ReadStat(key)</span><span class="member-type">-> any</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">Read <code>stats[key]</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">sub:Resume(...)</span><span class="member-type">-> ...any</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Resume the coroutine with the given args (forwarded as
+            <code>coroutine.yield</code>'s return values inside the
+            sub-process). Errors if the sub-process has been killed.
+            <em>Most scripts don't call this directly</em> — they
+            yield via <code>Task.Wait</code> / signals /
+            <code>Heartbeat:Wait()</code> which the engine schedules
+            automatically. Use <code>:Resume</code> only when you
+            specifically need to drive the sub-process from outside.
+        </p>
+    </div>
+</div>
+
+<h3>What's shared, what isn't</h3>
+
+<table>
+    <thead>
+        <tr><th>Thing</th><th>Shared with parent?</th><th>Why</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>require</code>'d module tables</td><td><strong>Yes</strong></td><td>One registry-backed cache; same resolved path returns the same table.</td></tr>
+        <tr><td><code>import</code>'d engine tables</td><td>Same instances (state-level)</td><td>The lib tables are per-env (small wrappers); the actual state lives in <code>thread_local!</code>/static globals, so behavior is identical.</td></tr>
+        <tr><td>GUI primitives, BaseParts, Sounds, DynImgs, …</td><td><strong>Yes</strong></td><td>One renderer registry, one audio mixer, one world. A primitive created by the sub-process shows up alongside the parent's.</td></tr>
+        <tr><td>Signals</td><td><strong>Yes</strong></td><td>Signal instances are reference-typed; both sides can <code>:Connect</code> / <code>:Fire</code> the same one (typically routed through a shared module).</td></tr>
+        <tr><td>Globals like <code>game</code>, <code>shared</code></td><td>Yes</td><td>The new env's metatable indexes into <code>lua.globals()</code>, the same root table the parent sees.</td></tr>
+        <tr><td><code>__dirname</code></td><td>No — per-script</td><td>Resolved to the launched script's directory, not the parent's.</td></tr>
+        <tr><td><code>stats</code></td><td>No — per-launch</td><td>Each <code>launch</code> creates a fresh stats table only the parent (via <code>:WriteStat</code>) and the launched script can touch.</td></tr>
+    </tbody>
+</table>
+
+<div class="callout note">
+    <strong>Same thread.</strong>
+    <code>launch</code> runs the sub-process cooperatively on the main
+    thread — its coroutine is just another coroutine the Task scheduler
+    drives. Heavy compute inside the sub-process still blocks the main
+    frame. For real OS-thread parallelism use
+    <a href="actor.html"><code>Actor</code></a> (serialized message
+    passing, isolated Lua state).
+</div>
+
 </main>
 
 <!-- right-toc:begin -->

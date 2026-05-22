@@ -1864,3 +1864,15 @@ export type Imports = {
 declare import: <K>(name: keyof<Imports> & K) -> index<Imports, K>
 declare __dirname: string
 declare load: (path: string) -> any
+declare class SubProcess
+	Alive: boolean
+	Source: string
+	Coroutine: thread
+	Stats: { [any]: any }
+	function Kill(self): ()
+	function WriteStat(self, key: any, value: any): ()
+	function ReadStat(self, key: any): any
+	function Resume(self, ...: any): ...any
+end
+declare launch: (path: string, ...: any) -> SubProcess
+declare stats: { [any]: any }

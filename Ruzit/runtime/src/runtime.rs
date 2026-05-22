@@ -93,6 +93,7 @@ fn build_env(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
     install_import(lua, &env, &fs, &owner)?;
     install_print(lua, &env)?;
     install_load(lua, &env, &fs, &owner)?;
+    install_launch(lua, &env, &fs, &owner)?;
 
     Ok(env)
 }
@@ -341,4 +342,121 @@ fn describe_owner(fs: &Fs, owner: &str) -> String {
         }
     };
     format!("{inner} in {pkg}")
+}
+
+use std::sync::atomic::{AtomicBool, Ordering as AOrdering};
+
+pub struct SubProcess {
+    pub env_key: RegistryKey,
+    pub thread_key: RegistryKey,
+    pub stats_key: RegistryKey,
+    pub alive: std::sync::Arc<AtomicBool>,
+    pub source_label: String,
+}
+
+impl mlua::UserData for SubProcess {
+    fn add_fields<F: mlua::UserDataFields<Self>>(f: &mut F) {
+        f.add_field_method_get("Alive", |_, this| Ok(this.alive.load(AOrdering::Relaxed)));
+        f.add_field_method_get("Source", |_, this| Ok(this.source_label.clone()));
+        f.add_field_method_get("Coroutine", |lua, this| -> mlua::Result<mlua::Thread> {
+            lua.registry_value::<mlua::Thread>(&this.thread_key)
+        });
+        f.add_field_method_get("Stats", |lua, this| -> mlua::Result<Table> {
+            lua.registry_value::<Table>(&this.stats_key)
+        });
+    }
+
+    fn add_methods<M: mlua::UserDataMethods<Self>>(m: &mut M) {
+        m.add_method("Kill", |lua, this, _: ()| -> mlua::Result<()> {
+            this.alive.store(false, AOrdering::Relaxed);
+            if let Ok(thread) = lua.registry_value::<mlua::Thread>(&this.thread_key) {
+                let noop = lua.create_function(|_, _: MultiValue| -> mlua::Result<()> { Ok(()) })?;
+                let _ = thread.reset(noop);
+            }
+            Ok(())
+        });
+        m.add_method("WriteStat", |lua, this, (key, value): (Value, Value)| -> mlua::Result<()> {
+            let stats: Table = lua.registry_value(&this.stats_key)?;
+            stats.set(key, value)?;
+            Ok(())
+        });
+        m.add_method("ReadStat", |lua, this, key: Value| -> mlua::Result<Value> {
+            let stats: Table = lua.registry_value(&this.stats_key)?;
+            stats.get::<Value>(key)
+        });
+        m.add_method("Resume", |lua, this, args: MultiValue| -> mlua::Result<MultiValue> {
+            if !this.alive.load(AOrdering::Relaxed) {
+                return Err(mlua::Error::RuntimeError(
+                    "SubProcess:Resume: subprocess has been killed".into(),
+                ));
+            }
+            let thread: mlua::Thread = lua.registry_value(&this.thread_key)?;
+            thread.resume::<MultiValue>(args)
+        });
+        m.add_meta_method("__tostring", |_, this, _: ()| {
+            Ok(format!(
+                "SubProcess({}, alive={})",
+                this.source_label,
+                this.alive.load(AOrdering::Relaxed)
+            ))
+        });
+    }
+}
+
+fn install_launch(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<()> {
+    let fs = fs.clone();
+    let owner = owner.to_string();
+    let launch = lua.create_function(move |lua, args: MultiValue| -> mlua::Result<SubProcess> {
+        let mut iter = args.into_iter();
+        let path_v = iter.next().ok_or_else(|| {
+            mlua::Error::RuntimeError("launch: first argument must be a path string".into())
+        })?;
+        let path = match path_v {
+            Value::String(s) => s.to_str()?.to_string(),
+            _ => {
+                return Err(mlua::Error::RuntimeError(
+                    "launch: first argument must be a path string".into(),
+                ));
+            }
+        };
+        let lookup = unrebase_name(&fs, &path);
+        let resolved = resolve(&fs, &owner, &lookup).ok_or_else(|| {
+            mlua::Error::RuntimeError(format!(
+                "launch: module '{path}' not found (called from {})",
+                describe_owner(&fs, &owner)
+            ))
+        })?;
+        let source = read_module(&fs, &resolved).ok_or_else(|| {
+            mlua::Error::RuntimeError(format!("launch: could not read module: {resolved}"))
+        })?;
+
+        let new_env = build_env(lua, fs.clone(), resolved.clone())?;
+        let stats = lua.create_table()?;
+        let rest: Vec<Value> = iter.collect();
+        for (i, v) in rest.iter().enumerate() {
+            stats.set(i as i64 + 1, v.clone())?;
+        }
+        new_env.set("stats", stats.clone())?;
+
+        let chunk_name = format!("@{resolved}");
+        let entry_fn = lua
+            .load(&source)
+            .set_name(&chunk_name)
+            .set_environment(new_env.clone())
+            .into_function()?;
+        let thread = lua.create_thread(entry_fn)?;
+        let _: MultiValue = thread.resume::<MultiValue>(())?;
+
+        let env_key = lua.create_registry_value(new_env)?;
+        let thread_key = lua.create_registry_value(thread)?;
+        let stats_key = lua.create_registry_value(stats)?;
+        Ok(SubProcess {
+            env_key,
+            thread_key,
+            stats_key,
+            alive: std::sync::Arc::new(AtomicBool::new(true)),
+            source_label: resolved,
+        })
+    })?;
+    env.set("launch", launch)
 }
