@@ -244,12 +244,104 @@ fn generate_geometry(nodes: &[SplineNode], cap: SplineCap) -> Vec<SplineVertex> 
     if n < 2 {
         return Vec::new();
     }
-    let mut left_edges: Vec<(f32, f32)> = Vec::with_capacity(n);
-    let mut right_edges: Vec<(f32, f32)> = Vec::with_capacity(n);
+    let samples = sample_curve(nodes);
+    if samples.len() < 2 {
+        return Vec::new();
+    }
 
+    let mut out: Vec<SplineVertex> = Vec::with_capacity(samples.len() * 6 + 32);
+    for i in 0..samples.len() - 1 {
+        let a = &samples[i];
+        let b = &samples[i + 1];
+        let pa = perp(a.tangent);
+        let pb = perp(b.tangent);
+        let half_a = a.thickness * 0.5;
+        let half_b = b.thickness * 0.5;
+        let l0 = (a.pos.0 - pa.0 * half_a, a.pos.1 - pa.1 * half_a);
+        let r0 = (a.pos.0 + pa.0 * half_a, a.pos.1 + pa.1 * half_a);
+        let l1 = (b.pos.0 - pb.0 * half_b, b.pos.1 - pb.1 * half_b);
+        let r1 = (b.pos.0 + pb.0 * half_b, b.pos.1 + pb.1 * half_b);
+        out.push(SplineVertex { position: [l0.0, l0.1], uv: [a.u, 0.0] });
+        out.push(SplineVertex { position: [r0.0, r0.1], uv: [a.u, 1.0] });
+        out.push(SplineVertex { position: [r1.0, r1.1], uv: [b.u, 1.0] });
+        out.push(SplineVertex { position: [l0.0, l0.1], uv: [a.u, 0.0] });
+        out.push(SplineVertex { position: [r1.0, r1.1], uv: [b.u, 1.0] });
+        out.push(SplineVertex { position: [l1.0, l1.1], uv: [b.u, 0.0] });
+    }
+
+    match cap {
+        SplineCap::Rounded => {
+            let first = &samples[0];
+            let last = samples.last().unwrap();
+            push_round_cap_sample(&mut out, first.pos, first.tangent, first.thickness, true);
+            push_round_cap_sample(&mut out, last.pos, last.tangent, last.thickness, false);
+        }
+        SplineCap::Square => {
+            let first = &samples[0];
+            let last = samples.last().unwrap();
+            push_square_cap_sample(&mut out, first.pos, first.tangent, first.thickness, true);
+            push_square_cap_sample(&mut out, last.pos, last.tangent, last.thickness, false);
+        }
+        SplineCap::Miter => {}
+    }
+
+    out
+}
+
+struct CurveSample {
+    pos: (f32, f32),
+    tangent: (f32, f32),
+    thickness: f32,
+    u: f32,
+}
+
+fn sample_curve(nodes: &[SplineNode]) -> Vec<CurveSample> {
+    let n = nodes.len();
+    let mut out: Vec<CurveSample> = Vec::with_capacity(n * 12);
+    if n < 2 {
+        return out;
+    }
+    let tangents = node_tangents(nodes);
+    for i in 0..n - 1 {
+        let p0 = (nodes[i].position.x, nodes[i].position.y);
+        let p3 = (nodes[i + 1].position.x, nodes[i + 1].position.y);
+        let chord = ((p3.0 - p0.0).powi(2) + (p3.1 - p0.1).powi(2)).sqrt();
+        let handle = chord / 3.0;
+        let t0 = tangents[i];
+        let t1 = tangents[i + 1];
+        let p1 = (p0.0 + t0.0 * handle, p0.1 + t0.1 * handle);
+        let p2 = (p3.0 - t1.0 * handle, p3.1 - t1.1 * handle);
+        let steps = (chord / 8.0).round().clamp(8.0, 32.0) as i32;
+        let th0 = nodes[i].thickness;
+        let th1 = nodes[i + 1].thickness;
+        let u_start = i as f32 / (n - 1) as f32;
+        let u_end = (i + 1) as f32 / (n - 1) as f32;
+        let skip_first = i > 0;
+        for s in 0..=steps {
+            if s == 0 && skip_first {
+                continue;
+            }
+            let t = s as f32 / steps as f32;
+            let pos = cubic_bezier(p0, p1, p2, p3, t);
+            let tangent = norm(cubic_bezier_tangent(p0, p1, p2, p3, t));
+            let thickness = th0 + (th1 - th0) * t;
+            let u = u_start + (u_end - u_start) * t;
+            out.push(CurveSample {
+                pos,
+                tangent,
+                thickness,
+                u,
+            });
+        }
+    }
+    out
+}
+
+fn node_tangents(nodes: &[SplineNode]) -> Vec<(f32, f32)> {
+    let n = nodes.len();
+    let mut out = Vec::with_capacity(n);
     for i in 0..n {
         let pos = (nodes[i].position.x, nodes[i].position.y);
-        let half = nodes[i].thickness * 0.5;
         let incoming = if i > 0 {
             let p = (nodes[i - 1].position.x, nodes[i - 1].position.y);
             norm((pos.0 - p.0, pos.1 - p.1))
@@ -267,105 +359,80 @@ fn generate_geometry(nodes: &[SplineNode], cap: SplineCap) -> Vec<SplineVertex> 
             (incoming.0 + outgoing.0) * 0.5,
             (incoming.1 + outgoing.1) * 0.5,
         ));
-        let mut p = perp(avg);
-        let node_rot = nodes[i].angle.to_radians();
-        if node_rot.abs() > 1e-5 {
-            p = rotate(p, node_rot);
-        }
-        let dot = p.0 * perp(outgoing).0 + p.1 * perp(outgoing).1;
-        let miter_scale = if dot.abs() < 0.05 {
-            1.0
+        let rot = nodes[i].angle.to_radians();
+        out.push(if rot.abs() > 1e-5 {
+            rotate(avg, rot)
         } else {
-            (1.0 / dot).clamp(0.5, 4.0)
-        };
-        let ext = half * miter_scale;
-        left_edges.push((pos.0 - p.0 * ext, pos.1 - p.1 * ext));
-        right_edges.push((pos.0 + p.0 * ext, pos.1 + p.1 * ext));
-    }
-
-    let mut out: Vec<SplineVertex> = Vec::with_capacity((n - 1) * 6 + 32);
-    let total = (n - 1) as f32;
-    for i in 0..n - 1 {
-        let u0 = i as f32 / total;
-        let u1 = (i + 1) as f32 / total;
-        let l0 = left_edges[i];
-        let r0 = right_edges[i];
-        let l1 = left_edges[i + 1];
-        let r1 = right_edges[i + 1];
-        out.push(SplineVertex {
-            position: [l0.0, l0.1],
-            uv: [u0, 0.0],
-        });
-        out.push(SplineVertex {
-            position: [r0.0, r0.1],
-            uv: [u0, 1.0],
-        });
-        out.push(SplineVertex {
-            position: [r1.0, r1.1],
-            uv: [u1, 1.0],
-        });
-        out.push(SplineVertex {
-            position: [l0.0, l0.1],
-            uv: [u0, 0.0],
-        });
-        out.push(SplineVertex {
-            position: [r1.0, r1.1],
-            uv: [u1, 1.0],
-        });
-        out.push(SplineVertex {
-            position: [l1.0, l1.1],
-            uv: [u1, 0.0],
+            avg
         });
     }
-
-    match cap {
-        SplineCap::Rounded => {
-            push_round_cap(&mut out, &nodes[0], &nodes[1], true);
-            push_round_cap(&mut out, &nodes[n - 1], &nodes[n - 2], false);
-        }
-        SplineCap::Square => {
-            push_square_cap(&mut out, &nodes[0], &nodes[1], true);
-            push_square_cap(&mut out, &nodes[n - 1], &nodes[n - 2], false);
-        }
-        SplineCap::Miter => {}
-    }
-
     out
 }
 
-fn push_round_cap(
+fn cubic_bezier(
+    p0: (f32, f32),
+    p1: (f32, f32),
+    p2: (f32, f32),
+    p3: (f32, f32),
+    t: f32,
+) -> (f32, f32) {
+    let u = 1.0 - t;
+    let b0 = u * u * u;
+    let b1 = 3.0 * u * u * t;
+    let b2 = 3.0 * u * t * t;
+    let b3 = t * t * t;
+    (
+        b0 * p0.0 + b1 * p1.0 + b2 * p2.0 + b3 * p3.0,
+        b0 * p0.1 + b1 * p1.1 + b2 * p2.1 + b3 * p3.1,
+    )
+}
+
+fn cubic_bezier_tangent(
+    p0: (f32, f32),
+    p1: (f32, f32),
+    p2: (f32, f32),
+    p3: (f32, f32),
+    t: f32,
+) -> (f32, f32) {
+    let u = 1.0 - t;
+    let c0 = 3.0 * u * u;
+    let c1 = 6.0 * u * t;
+    let c2 = 3.0 * t * t;
+    (
+        c0 * (p1.0 - p0.0) + c1 * (p2.0 - p1.0) + c2 * (p3.0 - p2.0),
+        c0 * (p1.1 - p0.1) + c1 * (p2.1 - p1.1) + c2 * (p3.1 - p2.1),
+    )
+}
+
+fn push_round_cap_sample(
     out: &mut Vec<SplineVertex>,
-    here: &SplineNode,
-    neighbor: &SplineNode,
+    pos: (f32, f32),
+    tangent: (f32, f32),
+    thickness: f32,
     is_start: bool,
 ) {
-    let pos = (here.position.x, here.position.y);
-    let nbr = (neighbor.position.x, neighbor.position.y);
     let dir = if is_start {
-        norm((pos.0 - nbr.0, pos.1 - nbr.1))
+        (-tangent.0, -tangent.1)
     } else {
-        norm((pos.0 - nbr.0, pos.1 - nbr.1))
+        tangent
     };
-    let half = here.thickness * 0.5;
+    let half = thickness * 0.5;
     let segments = 8;
     let pi = std::f32::consts::PI;
     let perp = perp(dir);
-    let p_left = (pos.0 + perp.0 * half, pos.1 + perp.1 * half);
-    let p_right = (pos.0 - perp.0 * half, pos.1 - perp.1 * half);
     let u = if is_start { 0.0 } else { 1.0 };
+    let p_left = (pos.0 + perp.0 * half, pos.1 + perp.1 * half);
 
     let mut prev = p_left;
-    let mut prev_uv = if is_start { (u, 0.0) } else { (u, 0.0) };
+    let mut prev_uv = (u, 0.0);
     for k in 1..=segments {
         let t = (k as f32) / (segments as f32);
         let a = pi * t;
-        let mut rotated = (perp.0, perp.1);
         let c = a.cos();
         let s = a.sin();
-        let rx = rotated.0 * c - rotated.1 * s;
-        let ry = rotated.0 * s + rotated.1 * c;
-        rotated = (rx, ry);
-        let p = (pos.0 + rotated.0 * half, pos.1 + rotated.1 * half);
+        let rx = perp.0 * c - perp.1 * s;
+        let ry = perp.0 * s + perp.1 * c;
+        let p = (pos.0 + rx * half, pos.1 + ry * half);
         out.push(SplineVertex {
             position: [pos.0, pos.1],
             uv: [u, 0.5],
@@ -381,20 +448,22 @@ fn push_round_cap(
         prev = p;
         prev_uv = (u, t);
     }
-    let _ = p_right;
 }
 
-fn push_square_cap(
+fn push_square_cap_sample(
     out: &mut Vec<SplineVertex>,
-    here: &SplineNode,
-    neighbor: &SplineNode,
+    pos: (f32, f32),
+    tangent: (f32, f32),
+    thickness: f32,
     is_start: bool,
 ) {
-    let pos = (here.position.x, here.position.y);
-    let nbr = (neighbor.position.x, neighbor.position.y);
-    let dir = norm((pos.0 - nbr.0, pos.1 - nbr.1));
+    let dir = if is_start {
+        (-tangent.0, -tangent.1)
+    } else {
+        tangent
+    };
     let perp = perp(dir);
-    let half = here.thickness * 0.5;
+    let half = thickness * 0.5;
     let extended = (pos.0 + dir.0 * half, pos.1 + dir.1 * half);
     let p_left = (pos.0 + perp.0 * half, pos.1 + perp.1 * half);
     let p_right = (pos.0 - perp.0 * half, pos.1 - perp.1 * half);

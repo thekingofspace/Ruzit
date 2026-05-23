@@ -1874,5 +1874,5 @@ declare class SubProcess
 	function ReadStat(self, key: any): any
 	function Resume(self, ...: any): ...any
 end
-declare launch: (path: string, ...: any) -> SubProcess
+declare launch: (path: string, ...any) -> SubProcess
 declare stats: { [any]: any }

@@ -185,19 +185,34 @@ mask:<span class="hl-fn">AddClippable</span>(img)                     <span clas
             global <code>Position</code> or <code>Size</code>
             &mdash; the nodes determine its shape. Each node
             contributes a position (Dim), a per-node thickness
-            (pixels), and a per-node angle that biases the
-            perpendicular at that node. The renderer triangulates
-            ribbon segments between consecutive nodes, blends
-            perpendiculars at interior joints, and adds caps at
-            the start/end based on <code>.Cap</code>.
+            (pixels), and a per-node <strong>tangent angle</strong>
+            that rotates how the curve enters and leaves the node.
+            With angle = 0 you get a straight polyline through the
+            nodes; non-zero angles bend the curve to leave / arrive
+            at that tangent direction, so you can build arcs and
+            S-curves with just a handful of nodes. Geometry is
+            sampled along a cubic Bezier per segment (control points
+            derived from the node tangents), then triangulated into
+            a ribbon with caps at the start/end.
         </p>
         <pre><code><span class="hl-kw">local</span> line = GUI.Basic.<span class="hl-fn">Spline</span>()
 line.Color = Primitives.Color3.<span class="hl-fn">fromRGB</span>(<span class="hl-num">120</span>, <span class="hl-num">200</span>, <span class="hl-num">255</span>)
 line.Cap   = <span class="hl-str">"Rounded"</span>
+
+<span class="hl-com">-- All Angle = 0 gives a straight polyline through the points.</span>
 line:<span class="hl-fn">SetNodes</span>{
     { Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">100</span>, <span class="hl-num">200</span>), Thickness = <span class="hl-num">6</span> },
     { Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">300</span>, <span class="hl-num">200</span>), Thickness = <span class="hl-num">8</span> },
     { Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">500</span>, <span class="hl-num">120</span>), Thickness = <span class="hl-num">4</span> },
+}
+
+<span class="hl-com">-- Add tangent angles to arc the line through the middle node.</span>
+<span class="hl-com">-- The first &amp; last nodes' angles control how the line enters/leaves the endpoints;</span>
+<span class="hl-com">-- the middle node's 45 degrees pulls the curve into a smooth arc through it.</span>
+line:<span class="hl-fn">SetNodes</span>{
+    { Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">100</span>, <span class="hl-num">300</span>), Thickness = <span class="hl-num">6</span>, Angle = <span class="hl-num">0</span>   },   <span class="hl-com">-- leaves horizontally</span>
+    { Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">300</span>, <span class="hl-num">200</span>), Thickness = <span class="hl-num">8</span>, Angle = <span class="hl-num">45</span>  },   <span class="hl-com">-- curve passes through at +45</span>
+    { Position = Dim.<span class="hl-fn">new</span>(<span class="hl-num">500</span>, <span class="hl-num">300</span>), Thickness = <span class="hl-num">4</span>, Angle = <span class="hl-num">0</span>   },   <span class="hl-com">-- arrives horizontally</span>
 }</code></pre>
     </div>
 </div>
@@ -235,7 +250,7 @@ line:<span class="hl-fn">SetNodes</span>{
 <pre><code>{
     Position  = Dim.<span class="hl-fn">new</span>(<span class="hl-num">x</span>, <span class="hl-num">y</span>),
     Thickness = <span class="hl-num">4</span>,                    <span class="hl-com">-- pixels, default 4</span>
-    Angle     = <span class="hl-num">0</span>,                    <span class="hl-com">-- degrees, biases the perpendicular at this node</span>
+    Angle     = <span class="hl-num">0</span>,                    <span class="hl-com">-- degrees, tangent rotation. 0 = straight through; non-zero curves the line.</span>
 }</code></pre>
 
 <h3>Methods</h3>
@@ -338,8 +353,7 @@ tw:<span class="hl-fn">Play</span>()</code></pre>
     other GUI primitives — all splines are above all primitives.
     Spatial queries (CheckArea / Raycast) currently use the
     spline's AABB rather than precise segment tests; expect false
-    positives near the bounding rect. Per-node <code>Angle</code>
-    biases the perpendicular but does not rotate the cap geometry.
+    positives near the bounding rect.
 </div>
 
 <h2 id="primitive">Primitive</h2>
