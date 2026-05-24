@@ -160,6 +160,213 @@ pub struct LoadedLib {
 unsafe impl Send for LoadedLib {}
 unsafe impl Sync for LoadedLib {}
 
+// ───── Buffer: owned native memory for out-args / list reads ─────────
+
+pub struct PackageBuffer {
+    ptr: Arc<Mutex<BufferStorage>>,
+}
+
+struct BufferStorage {
+    data: Vec<u8>,
+    alive: bool,
+}
+
+impl PackageBuffer {
+    fn new(size: usize) -> Self {
+        Self {
+            ptr: Arc::new(Mutex::new(BufferStorage {
+                data: vec![0u8; size],
+                alive: true,
+            })),
+        }
+    }
+    fn with_slice<R>(&self, f: impl FnOnce(&mut [u8]) -> mlua::Result<R>) -> mlua::Result<R> {
+        let mut g = self.ptr.lock().unwrap();
+        if !g.alive {
+            return Err(mlua::Error::RuntimeError(
+                "Buffer: this buffer has been freed".into(),
+            ));
+        }
+        f(&mut g.data)
+    }
+    fn raw_ptr(&self) -> i64 {
+        let g = self.ptr.lock().unwrap();
+        if !g.alive {
+            return 0;
+        }
+        g.data.as_ptr() as usize as i64
+    }
+}
+
+fn coerce_buf_int(v: Value) -> mlua::Result<i128> {
+    match v {
+        Value::Integer(n) => Ok(n as i128),
+        Value::Number(n) => Ok(n as i128),
+        Value::Boolean(b) => Ok(if b { 1 } else { 0 }),
+        _ => Err(mlua::Error::RuntimeError(
+            "Buffer:Write*: value must be a number/integer/boolean".into(),
+        )),
+    }
+}
+
+fn coerce_buf_f64(v: Value) -> mlua::Result<f64> {
+    match v {
+        Value::Integer(n) => Ok(n as f64),
+        Value::Number(n) => Ok(n),
+        _ => Err(mlua::Error::RuntimeError(
+            "Buffer:Write*: value must be a number".into(),
+        )),
+    }
+}
+
+fn check_range(off: usize, n: usize, len: usize) -> mlua::Result<()> {
+    if off.checked_add(n).map(|end| end > len).unwrap_or(true) {
+        return Err(mlua::Error::RuntimeError(format!(
+            "Buffer: offset {off}+{n} out of range (size {len})"
+        )));
+    }
+    Ok(())
+}
+
+impl UserData for PackageBuffer {
+    fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
+        f.add_field_method_get("Pointer", |_, this| Ok(this.raw_ptr()));
+        f.add_field_method_get("Size", |_, this| {
+            Ok(this.ptr.lock().unwrap().data.len() as i64)
+        });
+        f.add_field_method_get("Alive", |_, this| Ok(this.ptr.lock().unwrap().alive));
+    }
+
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        macro_rules! read_method {
+            ($name:expr, $ty:ty, $into:expr) => {
+                m.add_method($name, |_, this, off: i64| -> mlua::Result<Value> {
+                    let off = off.max(0) as usize;
+                    this.with_slice(|d| {
+                        let n = std::mem::size_of::<$ty>();
+                        check_range(off, n, d.len())?;
+                        let mut buf = [0u8; std::mem::size_of::<$ty>()];
+                        buf.copy_from_slice(&d[off..off + n]);
+                        let v: $ty = <$ty>::from_le_bytes(buf);
+                        Ok($into(v))
+                    })
+                });
+            };
+        }
+        macro_rules! write_method {
+            ($name:expr, $ty:ty, $from:expr) => {
+                m.add_method(
+                    $name,
+                    |_, this, (off, val): (i64, Value)| -> mlua::Result<()> {
+                        let off = off.max(0) as usize;
+                        let v: $ty = $from(val)?;
+                        this.with_slice(|d| {
+                            let n = std::mem::size_of::<$ty>();
+                            check_range(off, n, d.len())?;
+                            d[off..off + n].copy_from_slice(&v.to_le_bytes());
+                            Ok(())
+                        })
+                    },
+                );
+            };
+        }
+        read_method!("ReadInt8", i8, |v: i8| Value::Integer(v as i64));
+        read_method!("ReadUInt8", u8, |v: u8| Value::Integer(v as i64));
+        read_method!("ReadInt16", i16, |v: i16| Value::Integer(v as i64));
+        read_method!("ReadUInt16", u16, |v: u16| Value::Integer(v as i64));
+        read_method!("ReadInt32", i32, |v: i32| Value::Integer(v as i64));
+        read_method!("ReadUInt32", u32, |v: u32| Value::Integer(v as i64));
+        read_method!("ReadInt64", i64, Value::Integer);
+        read_method!("ReadUInt64", u64, |v: u64| {
+            if v <= i64::MAX as u64 {
+                Value::Integer(v as i64)
+            } else {
+                Value::Number(v as f64)
+            }
+        });
+        read_method!("ReadFloat", f32, |v: f32| Value::Number(v as f64));
+        read_method!("ReadDouble", f64, Value::Number);
+        read_method!("ReadPointer", usize, |v: usize| Value::Integer(v as i64));
+        read_method!("ReadBool", u32, |v: u32| Value::Boolean(v != 0));
+
+        write_method!("WriteInt8", i8, |v: Value| coerce_buf_int(v).map(|n| n as i8));
+        write_method!("WriteUInt8", u8, |v: Value| coerce_buf_int(v).map(|n| n as u8));
+        write_method!("WriteInt16", i16, |v: Value| coerce_buf_int(v).map(|n| n as i16));
+        write_method!("WriteUInt16", u16, |v: Value| coerce_buf_int(v).map(|n| n as u16));
+        write_method!("WriteInt32", i32, |v: Value| coerce_buf_int(v).map(|n| n as i32));
+        write_method!("WriteUInt32", u32, |v: Value| coerce_buf_int(v).map(|n| n as u32));
+        write_method!("WriteInt64", i64, |v: Value| coerce_buf_int(v).map(|n| n as i64));
+        write_method!("WriteUInt64", u64, |v: Value| coerce_buf_int(v).map(|n| n as u64));
+        write_method!("WriteFloat", f32, |v: Value| coerce_buf_f64(v).map(|n| n as f32));
+        write_method!("WriteDouble", f64, coerce_buf_f64);
+        write_method!("WritePointer", usize, |v: Value| coerce_buf_int(v)
+            .map(|n| n as usize));
+        write_method!("WriteBool", u32, |v: Value| {
+            match v {
+                Value::Boolean(b) => Ok(if b { 1u32 } else { 0 }),
+                _ => coerce_buf_int(v).map(|n| if n != 0 { 1u32 } else { 0 }),
+            }
+        });
+
+        m.add_method(
+            "WriteString",
+            |_, this, (off, s): (i64, String)| -> mlua::Result<()> {
+                let off = off.max(0) as usize;
+                this.with_slice(|d| {
+                    let bytes = s.as_bytes();
+                    check_range(off, bytes.len() + 1, d.len())?;
+                    d[off..off + bytes.len()].copy_from_slice(bytes);
+                    d[off + bytes.len()] = 0;
+                    Ok(())
+                })
+            },
+        );
+        m.add_method(
+            "ReadCString",
+            |lua, this, off: i64| -> mlua::Result<Value> {
+                let off = off.max(0) as usize;
+                this.with_slice(|d| {
+                    if off >= d.len() {
+                        return Err(mlua::Error::RuntimeError(format!(
+                            "Buffer:ReadCString: offset {off} out of range (size {})",
+                            d.len()
+                        )));
+                    }
+                    let end = d[off..].iter().position(|&b| b == 0).map(|p| off + p).unwrap_or(d.len());
+                    let s = std::str::from_utf8(&d[off..end]).map_err(|_| {
+                        mlua::Error::RuntimeError("Buffer:ReadCString: bytes are not UTF-8".into())
+                    })?;
+                    Ok(Value::String(lua.create_string(s)?))
+                })
+            },
+        );
+        m.add_method("Zero", |_, this, _: ()| -> mlua::Result<()> {
+            this.with_slice(|d| {
+                for b in d.iter_mut() {
+                    *b = 0;
+                }
+                Ok(())
+            })
+        });
+        m.add_method("Free", |_, this, _: ()| -> mlua::Result<()> {
+            let mut g = this.ptr.lock().unwrap();
+            g.alive = false;
+            g.data.clear();
+            g.data.shrink_to_fit();
+            Ok(())
+        });
+        m.add_meta_method("__tostring", |_, this, _: ()| {
+            let g = this.ptr.lock().unwrap();
+            Ok(format!(
+                "Buffer(size={}, ptr=0x{:X}, alive={})",
+                g.data.len(),
+                if g.alive { g.data.as_ptr() as usize } else { 0 },
+                g.alive
+            ))
+        });
+    }
+}
+
 pub struct PackageHandle {
     pub state: Arc<Mutex<Option<LoadedLib>>>,
 }
@@ -1306,6 +1513,55 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
             Ok(Value::String(lua.create_string(&s)?))
         })?,
     )?;
+
+    t.set(
+        "Buffer",
+        lua.create_function(|_, size: i64| -> mlua::Result<PackageBuffer> {
+            if size < 0 || size > 1024 * 1024 * 1024 {
+                return Err(mlua::Error::RuntimeError(format!(
+                    "Package.Buffer: invalid size {size} (0..=1 GiB)"
+                )));
+            }
+            Ok(PackageBuffer::new(size as usize))
+        })?,
+    )?;
+
+    macro_rules! read_mem {
+        ($name:expr, $ty:ty, $into:expr) => {
+            t.set(
+                $name,
+                lua.create_function(
+                    |_, (ptr, off): (i64, Option<i64>)| -> mlua::Result<Value> {
+                        if ptr == 0 {
+                            return Ok(Value::Nil);
+                        }
+                        let off = off.unwrap_or(0).max(0) as usize;
+                        let p = (ptr as usize + off) as *const $ty;
+                        let v: $ty = unsafe { p.read_unaligned() };
+                        Ok($into(v))
+                    },
+                )?,
+            )?;
+        };
+    }
+    read_mem!("ReadMemoryInt8", i8, |v: i8| Value::Integer(v as i64));
+    read_mem!("ReadMemoryUInt8", u8, |v: u8| Value::Integer(v as i64));
+    read_mem!("ReadMemoryInt16", i16, |v: i16| Value::Integer(v as i64));
+    read_mem!("ReadMemoryUInt16", u16, |v: u16| Value::Integer(v as i64));
+    read_mem!("ReadMemoryInt32", i32, |v: i32| Value::Integer(v as i64));
+    read_mem!("ReadMemoryUInt32", u32, |v: u32| Value::Integer(v as i64));
+    read_mem!("ReadMemoryInt64", i64, Value::Integer);
+    read_mem!("ReadMemoryUInt64", u64, |v: u64| {
+        if v <= i64::MAX as u64 {
+            Value::Integer(v as i64)
+        } else {
+            Value::Number(v as f64)
+        }
+    });
+    read_mem!("ReadMemoryFloat", f32, |v: f32| Value::Number(v as f64));
+    read_mem!("ReadMemoryDouble", f64, Value::Number);
+    read_mem!("ReadMemoryPointer", usize, |v: usize| Value::Integer(v as i64));
+    read_mem!("ReadMemoryBool", u32, |v: u32| Value::Boolean(v != 0));
 
     Ok(t)
 }

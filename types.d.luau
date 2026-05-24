@@ -1797,9 +1797,55 @@ declare class PackageHandle
 	function Exports(self): { string }
 	function Unload(self): ()
 end
+declare class PackageBuffer
+	Pointer: number
+	Size: number
+	Alive: boolean
+	function ReadInt8(self, offset: number): number
+	function ReadUInt8(self, offset: number): number
+	function ReadInt16(self, offset: number): number
+	function ReadUInt16(self, offset: number): number
+	function ReadInt32(self, offset: number): number
+	function ReadUInt32(self, offset: number): number
+	function ReadInt64(self, offset: number): number
+	function ReadUInt64(self, offset: number): number
+	function ReadFloat(self, offset: number): number
+	function ReadDouble(self, offset: number): number
+	function ReadPointer(self, offset: number): number
+	function ReadBool(self, offset: number): boolean
+	function ReadCString(self, offset: number): string
+	function WriteInt8(self, offset: number, value: number | boolean): ()
+	function WriteUInt8(self, offset: number, value: number | boolean): ()
+	function WriteInt16(self, offset: number, value: number | boolean): ()
+	function WriteUInt16(self, offset: number, value: number | boolean): ()
+	function WriteInt32(self, offset: number, value: number | boolean): ()
+	function WriteUInt32(self, offset: number, value: number | boolean): ()
+	function WriteInt64(self, offset: number, value: number | boolean): ()
+	function WriteUInt64(self, offset: number, value: number | boolean): ()
+	function WriteFloat(self, offset: number, value: number): ()
+	function WriteDouble(self, offset: number, value: number): ()
+	function WritePointer(self, offset: number, value: number): ()
+	function WriteBool(self, offset: number, value: boolean | number): ()
+	function WriteString(self, offset: number, value: string): ()
+	function Zero(self): ()
+	function Free(self): ()
+end
 export type Package_API = {
 	Load: (path: string) -> PackageHandle,
 	ReadCString: (pointer: number) -> string?,
+	Buffer: (size: number) -> PackageBuffer,
+	ReadMemoryInt8: (pointer: number, offset: number?) -> number?,
+	ReadMemoryUInt8: (pointer: number, offset: number?) -> number?,
+	ReadMemoryInt16: (pointer: number, offset: number?) -> number?,
+	ReadMemoryUInt16: (pointer: number, offset: number?) -> number?,
+	ReadMemoryInt32: (pointer: number, offset: number?) -> number?,
+	ReadMemoryUInt32: (pointer: number, offset: number?) -> number?,
+	ReadMemoryInt64: (pointer: number, offset: number?) -> number?,
+	ReadMemoryUInt64: (pointer: number, offset: number?) -> number?,
+	ReadMemoryFloat: (pointer: number, offset: number?) -> number?,
+	ReadMemoryDouble: (pointer: number, offset: number?) -> number?,
+	ReadMemoryPointer: (pointer: number, offset: number?) -> number?,
+	ReadMemoryBool: (pointer: number, offset: number?) -> boolean?,
 	Types: PackageTypes_API,
 }
 export type Objects_API = {
