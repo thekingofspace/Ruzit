@@ -195,6 +195,7 @@ fn install_import(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             "Mouse" => libs::mouse::create(lua)?,
             "Net" => libs::net::create(lua)?,
             "Objects" => libs::objects::create(lua)?,
+            "Package" => libs::package::create(lua)?,
             "PhysicsService" => libs::physics::create(lua)?,
             "Primitives" => libs::primitives::create(lua)?,
             "Process" => libs::process::create(lua)?,

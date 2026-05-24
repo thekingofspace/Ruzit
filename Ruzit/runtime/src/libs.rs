@@ -18,6 +18,7 @@ pub mod managed;
 pub mod mouse;
 pub mod net;
 pub mod objects;
+pub mod package;
 pub mod physics;
 pub mod primitives;
 pub mod process;

@@ -1,6 +1,6 @@
 [package]
 name = "ruzit"
-version = "26.5.21"
+version = "26.5.23"
 edition = "2024"
 
 [lib]
@@ -50,6 +50,7 @@ rodio = { version = "0.20", default-features = false, features = [
 rapier3d = { version = "0.22", features = ["parallel"] }
 nalgebra = "0.33"
 libloading = "0.8"
+libffi = "3"
 opus = { version = "0.3", optional = true }
 steamworks = { version = "0.11", optional = true }
 steamworks-sys = { version = "0.11", optional = true }

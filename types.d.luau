@@ -1734,6 +1734,74 @@ declare class UIEnvironment
 	function GetChildren(self): { BasePart }
 	function Destroy(self): ()
 end
+declare class PackageType
+	Name: "Void" | "Int8" | "UInt8" | "Int16" | "UInt16" | "Int32" | "UInt32" | "Int64" | "UInt64" | "ISize" | "USize" | "Float" | "Double" | "Bool" | "Pointer" | "CString"
+end
+declare class PackageValue
+	Type: "Void" | "Int8" | "UInt8" | "Int16" | "UInt16" | "Int32" | "UInt32" | "Int64" | "UInt64" | "ISize" | "USize" | "Float" | "Double" | "Bool" | "Pointer" | "CString"
+	Value: any
+end
+export type PackageTypes_API = {
+	Void: ((value: nil) -> PackageValue) & (() -> PackageType),
+	Int8: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	UInt8: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	Int16: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	UInt16: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	Int32: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	UInt32: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	Int64: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	UInt64: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	ISize: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	USize: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	Float: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	Double: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	Bool: ((value: boolean | number) -> PackageValue) & (() -> PackageType),
+	Pointer: ((value: number?) -> PackageValue) & (() -> PackageType),
+	CString: ((value: string?) -> PackageValue) & (() -> PackageType),
+	Char: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	UChar: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	Byte: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	Short: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	UShort: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	Int: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	UInt: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	Long: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	ULong: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	LongLong: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	ULongLong: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	Size: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	SSize: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	IntPtr: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+	UIntPtr: ((value: number | boolean) -> PackageValue) & (() -> PackageType),
+}
+declare class PackagePromise
+	Done: boolean
+	Resolved: boolean
+	Rejected: boolean
+	function AndThen(self, callback: (result: any) -> ()): PackagePromise
+	function Catch(self, callback: (error: string) -> ()): PackagePromise
+	function Await(self): any
+end
+declare class BoundFn
+	Name: string
+	Arity: number
+	ReturnType: string
+	ArgTypes: { string }
+	function Call(self, ...: any): any
+	function Async(self, ...: any): PackagePromise
+end
+declare class PackageHandle
+	Alive: boolean
+	Source: string
+	function Bind(self, name: string, returnType: PackageType, argTypes: { PackageType }?): BoundFn
+	function Exports(self): { string }
+	function Unload(self): ()
+end
+export type Package_API = {
+	Load: (path: string) -> PackageHandle,
+	ReadCString: (pointer: number) -> string?,
+	Types: PackageTypes_API,
+}
 export type Objects_API = {
 	ClonableContainer: () -> ClonableContainer,
 	Movable: () -> Movable,
@@ -1846,6 +1914,7 @@ export type Imports = {
 	Mouse: Mouse_API,
 	Net: Net_API,
 	Objects: Objects_API,
+	Package: Package_API,
 	PhysicsService: PhysicsService_API,
 	Primitives: Primitives_API,
 	Process: Process_API,

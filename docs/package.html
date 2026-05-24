@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Package - Ruzit Docs</title>
+    <!-- og-meta:begin -->
+    <meta name="description" content="Load arbitrary native DLLs (.dll / .so / .dylib) and call their C-ABI functions with runtime-determined signatures via libffi. Different from FFI, which requires the DLL to implement the Ruzit ABI.">
+    <meta name="theme-color" content="#7289da">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Ruzit Docs">
+    <meta property="og:title" content="Package">
+    <meta property="og:description" content="Load arbitrary native DLLs (.dll / .so / .dylib) and call their C-ABI functions with runtime-determined signatures via libffi. Different from FFI, which requires the DLL to implement the Ruzit ABI.">
+    <meta property="og:image" content="IconThing.png">
+    <meta property="og:image:alt" content="Ruzit logo">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Package">
+    <meta name="twitter:description" content="Load arbitrary native DLLs (.dll / .so / .dylib) and call their C-ABI functions with runtime-determined signatures via libffi. Different from FFI, which requires the DLL to implement the Ruzit ABI.">
+    <meta name="twitter:image" content="IconThing.png">
+    <!-- og-meta:end -->
+    <link rel="stylesheet" href="style.css?v=26.5.23">
+    <script src="theme.js?v=26.5.23"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=26.5.23" defer></script>
+
+<main>
+
+<h1>Package</h1>
+
+<p class="lede">
+    Load arbitrary native shared libraries from disk and call their
+    C-ABI functions with runtime-determined signatures. Unlike
+    <a href="ffi.html"><code>FFI</code></a> &mdash; which requires the
+    DLL to implement Ruzit's own
+    <code>ruzit_ffi_call</code>/<code>ruzit_ffi_free</code> ABI &mdash;
+    <code>Package</code> can talk to any C library: Win32 APIs,
+    Steam, OpenVR, a shared library you pulled in via your build
+    tooling, anything. It uses
+    <a href="https://sourceware.org/libffi/" target="_blank" rel="noopener">libffi</a>
+    under the hood to assemble argument lists at runtime.
+</p>
+
+<pre><code><span class="hl-kw">local</span> Package = <span class="hl-fn">import</span>(<span class="hl-str">"Package"</span>)
+
+<span class="hl-kw">local</span> lib = Package.<span class="hl-fn">Load</span>(<span class="hl-str">"./mylib"</span>)        <span class="hl-com">-- ./ implies exe directory</span>
+<span class="hl-kw">local</span> add = lib:<span class="hl-fn">Bind</span>(<span class="hl-str">"add_ints"</span>, Package.Types.<span class="hl-fn">Int32</span>(), {
+    Package.Types.<span class="hl-fn">Int32</span>(),
+    Package.Types.<span class="hl-fn">Int32</span>(),
+})
+<span class="hl-fn">print</span>(<span class="hl-fn">add</span>(<span class="hl-num">3</span>, <span class="hl-num">4</span>))                            <span class="hl-com">-- 7</span></code></pre>
+
+<h2 id="paths">Where DLLs live (and don't)</h2>
+
+<p>
+    <code>Package.Load(path)</code> only resolves paths
+    <strong>relative to the executable's directory</strong>.
+    <code>./mylib</code> means "next to the running exe". The
+    loader auto-appends the platform extension if you don't include
+    one:
+</p>
+
+<table>
+    <thead><tr><th>Platform</th><th>Tried filenames for <code>./mylib</code></th></tr></thead>
+    <tbody>
+        <tr><td>Windows</td><td><code>mylib.dll</code></td></tr>
+        <tr><td>Linux</td><td><code>libmylib.so</code>, then <code>mylib.so</code></td></tr>
+        <tr><td>macOS</td><td><code>libmylib.dylib</code>, then <code>mylib.dylib</code></td></tr>
+    </tbody>
+</table>
+
+<p>
+    Use <code>"./mylib.dll"</code> or <code>"./libmylib.so"</code>
+    when you want to pin a specific filename across platforms.
+</p>
+
+<div class="callout warn">
+    <strong>No traversal, no absolute paths, no Asset bundles.</strong>
+    <code>Package.Load</code> rejects any path containing
+    <code>..</code>, any absolute path, and anything that isn't
+    relative to the exe directory. This is deliberate &mdash; native
+    code runs with full process privileges, so loading is restricted
+    to known-good locations you control at ship time. DLLs cannot
+    live inside <code>assets/</code> (they're encrypted inside a
+    <code>.managed</code> bundle and not real files on disk); ship
+    them next to the launcher via <code>include = [...]</code> in
+    <code>build.toml</code>.
+</div>
+
+<h2 id="types">Package.Types</h2>
+
+<p>
+    Type constructors. Each one works two ways:
+</p>
+
+<ul>
+    <li><strong><code>Types.Int32()</code></strong> with no argument
+        returns a <em>type tag</em>. Use it inside
+        <code>library:Bind(name, returnType, { argTypes... })</code>
+        to declare the signature.</li>
+    <li><strong><code>Types.Int32(42)</code></strong> with an argument
+        returns a <em>wrapped value</em>. Pass it as an arg to a
+        bound function instead of a bare number, and the runtime
+        validates that the wrap's type matches the slot before
+        coercing.</li>
+</ul>
+
+<p>
+    These styles compose &mdash; you can mix bare values and wrapped
+    values in the same call:
+</p>
+
+<pre><code><span class="hl-kw">local</span> Package = <span class="hl-fn">import</span>(<span class="hl-str">"Package"</span>)
+<span class="hl-kw">local</span> T = Package.Types
+
+<span class="hl-kw">local</span> lib = Package.<span class="hl-fn">Load</span>(<span class="hl-str">"./mylib"</span>)
+<span class="hl-kw">local</span> add = lib:<span class="hl-fn">Bind</span>(<span class="hl-str">"add"</span>, T.<span class="hl-fn">Int32</span>(), { T.<span class="hl-fn">Int32</span>(), T.<span class="hl-fn">Int32</span>() })
+
+<span class="hl-com">-- Style A: bare values, coerced per the declared signature.</span>
+<span class="hl-fn">print</span>(<span class="hl-fn">add</span>(<span class="hl-num">3</span>, <span class="hl-num">4</span>))                  <span class="hl-com">-- 7</span>
+
+<span class="hl-com">-- Style B: explicit type-wrapped values. Errors at call time if a wrap</span>
+<span class="hl-com">-- doesn't match the declared slot, useful for catching bugs early.</span>
+<span class="hl-fn">print</span>(<span class="hl-fn">add</span>(T.<span class="hl-fn">Int32</span>(<span class="hl-num">3</span>), T.<span class="hl-fn">Int32</span>(<span class="hl-num">4</span>)))   <span class="hl-com">-- 7</span>
+
+<span class="hl-com">-- Mixed:</span>
+<span class="hl-fn">print</span>(<span class="hl-fn">add</span>(T.<span class="hl-fn">Int32</span>(<span class="hl-num">3</span>), <span class="hl-num">4</span>))           <span class="hl-com">-- 7</span></code></pre>
+
+<p>
+    The "tag" returned by <code>Types.X()</code> is just a marker
+    userdata with a <code>.Name</code> field; the "wrapped value"
+    returned by <code>Types.X(v)</code> is a userdata with
+    <code>.Type</code> and <code>.Value</code> fields. Neither
+    pre-coerces &mdash; the conversion happens at call time, after
+    the runtime has both the declared type and the value.
+</p>
+
+<h3>Picking a type</h3>
+
+<h3>Canonical types</h3>
+
+<table>
+    <thead><tr><th>Constructor</th><th>C type</th><th>Bytes</th><th>Luau side</th></tr></thead>
+    <tbody>
+        <tr><td><code>Types.Void()</code></td><td><code>void</code></td><td>—</td><td>return only; comes back as <code>nil</code></td></tr>
+        <tr><td><code>Types.Int8()</code></td><td><code>int8_t</code> / <code>signed char</code></td><td>1</td><td>number (Lua integer)</td></tr>
+        <tr><td><code>Types.UInt8()</code></td><td><code>uint8_t</code> / <code>unsigned char</code> / <code>BYTE</code></td><td>1</td><td>number (Lua integer)</td></tr>
+        <tr><td><code>Types.Int16()</code></td><td><code>int16_t</code> / <code>short</code></td><td>2</td><td>number</td></tr>
+        <tr><td><code>Types.UInt16()</code></td><td><code>uint16_t</code> / <code>unsigned short</code> / <code>WORD</code></td><td>2</td><td>number</td></tr>
+        <tr><td><code>Types.Int32()</code></td><td><code>int32_t</code> / <code>int</code> (most platforms)</td><td>4</td><td>number</td></tr>
+        <tr><td><code>Types.UInt32()</code></td><td><code>uint32_t</code> / <code>unsigned int</code> / <code>DWORD</code></td><td>4</td><td>number</td></tr>
+        <tr><td><code>Types.Int64()</code></td><td><code>int64_t</code> / <code>long long</code></td><td>8</td><td>number</td></tr>
+        <tr><td><code>Types.UInt64()</code></td><td><code>uint64_t</code> / <code>unsigned long long</code> / <code>QWORD</code></td><td>8</td><td>number (drops to double above 2<sup>63</sup>)</td></tr>
+        <tr><td><code>Types.ISize()</code></td><td><code>intptr_t</code> / <code>ssize_t</code> / <code>long</code> on Unix</td><td>pointer-sized</td><td>number</td></tr>
+        <tr><td><code>Types.USize()</code></td><td><code>uintptr_t</code> / <code>size_t</code> / <code>unsigned long</code> on Unix</td><td>pointer-sized</td><td>number</td></tr>
+        <tr><td><code>Types.Float()</code></td><td><code>float</code></td><td>4</td><td>number</td></tr>
+        <tr><td><code>Types.Double()</code></td><td><code>double</code></td><td>8</td><td>number</td></tr>
+        <tr><td><code>Types.Bool()</code></td><td>4-byte <code>int</code> (Win32 <code>BOOL</code> convention)</td><td>4</td><td>boolean</td></tr>
+        <tr><td><code>Types.Pointer()</code></td><td><code>void*</code></td><td>pointer-sized</td><td>number (address). <code>nil</code> sends NULL.</td></tr>
+        <tr><td><code>Types.CString()</code></td><td>null-terminated <code>const char*</code></td><td>pointer-sized</td><td>string. In: allocated + NUL-terminated. Out: copied with <code>CStr::from_ptr</code>.</td></tr>
+    </tbody>
+</table>
+
+<h3>Aliases (same as a canonical type, named for C-API readability)</h3>
+
+<table>
+    <thead><tr><th>Alias</th><th>Same as</th><th>Typical use</th></tr></thead>
+    <tbody>
+        <tr><td><code>Types.Char()</code></td><td>Int8</td><td><code>char</code></td></tr>
+        <tr><td><code>Types.UChar()</code></td><td>UInt8</td><td><code>unsigned char</code></td></tr>
+        <tr><td><code>Types.Byte()</code></td><td>UInt8</td><td><code>BYTE</code></td></tr>
+        <tr><td><code>Types.Short()</code></td><td>Int16</td><td><code>short</code></td></tr>
+        <tr><td><code>Types.UShort()</code></td><td>UInt16</td><td><code>unsigned short</code></td></tr>
+        <tr><td><code>Types.Int()</code></td><td>Int32</td><td><code>int</code></td></tr>
+        <tr><td><code>Types.UInt()</code></td><td>UInt32</td><td><code>unsigned int</code></td></tr>
+        <tr><td><code>Types.Long()</code></td><td>ISize</td><td><code>long</code> (pointer-sized on Unix, 4-byte on Windows — the alias maps to ISize, so on Windows pass <code>Int32</code> if you specifically need 4-byte)</td></tr>
+        <tr><td><code>Types.ULong()</code></td><td>USize</td><td><code>unsigned long</code> (same caveat)</td></tr>
+        <tr><td><code>Types.LongLong()</code></td><td>Int64</td><td><code>long long</code></td></tr>
+        <tr><td><code>Types.ULongLong()</code></td><td>UInt64</td><td><code>unsigned long long</code></td></tr>
+        <tr><td><code>Types.Size()</code></td><td>USize</td><td><code>size_t</code></td></tr>
+        <tr><td><code>Types.SSize()</code></td><td>ISize</td><td><code>ssize_t</code></td></tr>
+        <tr><td><code>Types.IntPtr()</code></td><td>ISize</td><td><code>intptr_t</code></td></tr>
+        <tr><td><code>Types.UIntPtr()</code></td><td>USize</td><td><code>uintptr_t</code></td></tr>
+    </tbody>
+</table>
+
+<div class="callout note">
+    <strong>Bool semantics.</strong>
+    Most Win32 / OS APIs use <code>BOOL</code> which is a 4-byte
+    <code>int</code> (0 = false, anything else = true).
+    <code>Types.Bool()</code> matches that convention — pass a Luau
+    boolean and get a boolean back. If a specific API uses
+    C99 <code>_Bool</code> (1 byte) instead, pass
+    <code>Types.UInt8()</code> and convert manually.
+</div>
+
+<div class="callout note">
+    <strong>About <code>long</code>.</strong>
+    C's <code>long</code> is 4 bytes on Windows x64 but 8 bytes on
+    Linux / macOS x64. The <code>Long</code>/<code>ULong</code>
+    aliases map to <code>ISize</code>/<code>USize</code>, which is
+    pointer-sized — that's 8 bytes on all 64-bit platforms.
+    <strong>This is wrong for Windows.</strong> When you're calling
+    into a Windows API that takes a 4-byte <code>long</code>, use
+    <code>Int32</code>/<code>UInt32</code> explicitly. For
+    cross-platform code that uses Rust-style sizing or LP64 Unix,
+    <code>Long</code>/<code>ULong</code> is what you want.
+</div>
+
+<h2 id="library">PackageHandle</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Alive</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">False after <code>:Unload()</code>.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Source</span><span class="member-type">string</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">Absolute path the library was opened from.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">lib:Bind(name, returnType, argTypes?)</span>
+            <span class="member-type">-> BoundFn</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Resolve <code>name</code> in the library's export table
+            and prepare a libffi CIF for the given signature.
+            <code>argTypes</code> is an optional array of
+            <code>Package.Types.*</code> values; omit for a
+            zero-argument function. Errors if the symbol doesn't
+            exist or any type tag is invalid.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">lib:Exports()</span>
+            <span class="member-type">-> { string }</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Parses the binary's export table and returns an array of
+            exported symbol names. Windows uses the PE export
+            directory; Linux walks <code>.dynsym</code>. macOS isn't
+            implemented yet &mdash; you'll get an error there, but
+            <code>:Bind</code> by name still works. Note that
+            <strong>signatures are not discoverable</strong> &mdash;
+            you only get names. You're expected to know what each
+            function takes / returns from its header / docs.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">lib:Unload()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Close the library handle. Any subsequent
+            <code>:Bind</code> errors; any pre-existing
+            <code>BoundFn</code>s also start erroring on call.
+        </p>
+    </div>
+</div>
+
+<h2 id="boundfn">BoundFn</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Name / .Arity / .ReturnType / .ArgTypes</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Introspection — the symbol name, number of args,
+            return type as a string, and the array of arg type
+            strings.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">fn(...)</span>
+            <span class="member-type">-> any</span>
+            <span class="tag tag-method">callable</span>
+        </div>
+        <p class="member-desc">
+            <strong>Blocking call.</strong> Coerces every arg
+            against its declared type, hands them to libffi, and
+            returns the result (or <code>nil</code> for Void). The
+            Luau thread blocks for the duration of the C function
+            — fine for fast pure compute or quick syscalls, bad
+            for anything that does network I/O or waits on a
+            mutex. For those, use <code>:Async</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">fn:Call(...)</span>
+            <span class="member-type">-> any</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Same as <code>fn(...)</code> — provided as an explicit
+            method when you'd rather not use the call metamethod.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">fn:Async(...)</span>
+            <span class="member-type">-> PackagePromise</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Spawns a worker OS thread that performs the call. The
+            Luau thread doesn't block — the worker delivers the
+            result via the engine's completion queue, drained each
+            frame, which fires
+            <code>:AndThen</code> / <code>:Catch</code> callbacks
+            and wakes any pending <code>:Await</code>. Args are
+            snapshotted before the spawn, so the Luau side
+            can drop references freely.
+        </p>
+    </div>
+</div>
+
+<h2 id="promise">PackagePromise</h2>
+
+<div class="member-list">
+    <div class="member">
+        <div class="member-header"><span class="member-name">.Done / .Resolved / .Rejected</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Booleans reflecting the promise's current state. Useful
+            for polling without yielding.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">promise:AndThen(callback)</span>
+            <span class="member-type">-> PackagePromise</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Register a success callback. If the promise is already
+            resolved, the callback fires immediately on the calling
+            thread; otherwise it fires when the worker completes
+            and the engine drains the queue (per-frame). Returns
+            the same promise so you can chain
+            <code>:AndThen(...):Catch(...)</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">promise:Catch(callback)</span>
+            <span class="member-type">-> PackagePromise</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Register an error callback. Fires once with the error
+            string if the worker panicked or the call mid-flight
+            saw the library get unloaded. <strong>An async call
+            never throws on the Luau side</strong> — uncaught
+            errors stay confined to the worker thread and are
+            reported through this callback.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">promise:Await()</span>
+            <span class="member-type">-> any</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Block the current Luau coroutine until the promise
+            settles, then return the resolved value (or raise the
+            error from a rejection). Internally yields the
+            coroutine; the engine's heart loop resumes it when the
+            worker delivers a result.
+        </p>
+    </div>
+</div>
+
+<h2 id="patterns">Patterns</h2>
+
+<h3>Calling a Win32 API</h3>
+
+<pre><code><span class="hl-kw">local</span> Package = <span class="hl-fn">import</span>(<span class="hl-str">"Package"</span>)
+
+<span class="hl-com">-- kernel32.dll is in the system PATH on Windows, so it can be loaded</span>
+<span class="hl-com">-- by name without a full path. On Linux you'd Load("./libc") and adjust.</span>
+<span class="hl-kw">local</span> kernel32 = Package.<span class="hl-fn">Load</span>(<span class="hl-str">"./kernel32"</span>)
+
+<span class="hl-kw">local</span> GetTickCount = kernel32:<span class="hl-fn">Bind</span>(<span class="hl-str">"GetTickCount"</span>, Package.Types.<span class="hl-fn">UInt32</span>())
+<span class="hl-fn">print</span>(<span class="hl-fn">GetTickCount</span>())                                <span class="hl-com">-- ms since boot</span>
+
+<span class="hl-kw">local</span> Sleep = kernel32:<span class="hl-fn">Bind</span>(<span class="hl-str">"Sleep"</span>, Package.Types.<span class="hl-fn">Void</span>(), {
+    Package.Types.<span class="hl-fn">UInt32</span>(),
+})
+<span class="hl-fn">Sleep</span>(<span class="hl-num">100</span>)                                          <span class="hl-com">-- blocking 100ms — careful</span></code></pre>
+
+<h3>Async — keep the game responsive</h3>
+
+<pre><code><span class="hl-kw">local</span> heavy = lib:<span class="hl-fn">Bind</span>(<span class="hl-str">"do_heavy_compute"</span>, Package.Types.<span class="hl-fn">Double</span>(), {
+    Package.Types.<span class="hl-fn">UInt32</span>(),
+})
+
+heavy:<span class="hl-fn">Async</span>(<span class="hl-num">100000</span>)
+    :<span class="hl-fn">AndThen</span>(<span class="hl-kw">function</span>(result)
+        <span class="hl-fn">print</span>(<span class="hl-str">"finished:"</span>, result)
+    <span class="hl-kw">end</span>)
+    :<span class="hl-fn">Catch</span>(<span class="hl-kw">function</span>(err)
+        <span class="hl-fn">warn</span>(<span class="hl-str">"heavy compute failed: "</span> .. err)
+    <span class="hl-kw">end</span>)
+
+<span class="hl-com">-- Or yield-style inside a coroutine:</span>
+<span class="hl-kw">local</span> Task = <span class="hl-fn">import</span>(<span class="hl-str">"Task"</span>)
+Task.<span class="hl-fn">Spawn</span>(<span class="hl-kw">function</span>()
+    <span class="hl-kw">local</span> result = heavy:<span class="hl-fn">Async</span>(<span class="hl-num">100000</span>):<span class="hl-fn">Await</span>()
+    <span class="hl-fn">print</span>(<span class="hl-str">"finished:"</span>, result)
+<span class="hl-kw">end</span>)</code></pre>
+
+<h3>Listing what's available</h3>
+
+<pre><code><span class="hl-kw">local</span> lib = Package.<span class="hl-fn">Load</span>(<span class="hl-str">"./steam_api64"</span>)
+
+<span class="hl-kw">for</span> _, name <span class="hl-kw">in</span> lib:<span class="hl-fn">Exports</span>() <span class="hl-kw">do</span>
+    <span class="hl-kw">if</span> name:<span class="hl-fn">find</span>(<span class="hl-str">"Achievement"</span>) <span class="hl-kw">then</span>
+        <span class="hl-fn">print</span>(name)
+    <span class="hl-kw">end</span>
+<span class="hl-kw">end</span>
+
+<span class="hl-com">-- Once you've found one you want, declare the signature manually</span>
+<span class="hl-com">-- (the export table doesn't carry argument types).</span>
+<span class="hl-kw">local</span> init = lib:<span class="hl-fn">Bind</span>(<span class="hl-str">"SteamAPI_Init"</span>, Package.Types.<span class="hl-fn">UInt32</span>())
+<span class="hl-fn">print</span>(<span class="hl-fn">init</span>())                                <span class="hl-com">-- 1 = success</span></code></pre>
+
+<h2 id="limits">Limitations of this build</h2>
+
+<ul>
+    <li>
+        <strong>Scalar args only.</strong> No struct args / returns,
+        no array args, no function-pointer callbacks (DLL →
+        Luau). Each will need separate libffi work; the existing
+        scalar / pointer / cstring set covers ~90% of typical OS
+        and SDK APIs.
+    </li>
+    <li>
+        <strong>No variadics.</strong> <code>printf</code>-style
+        functions can't be bound directly. Use a typed wrapper in
+        your DLL instead.
+    </li>
+    <li>
+        <strong>Calling convention is the platform default.</strong>
+        On Windows x64 that's the standard x64 ABI. <code>stdcall</code>
+        / <code>fastcall</code> on x86 aren't currently selectable
+        — Windows x64 only.
+    </li>
+    <li>
+        <strong>macOS export enumeration not implemented.</strong>
+        <code>:Bind</code> by name still works; only
+        <code>:Exports()</code> errors there in this build.
+    </li>
+    <li>
+        <strong>UB is on you.</strong> A mismatched signature, a
+        wrong arg type, or a stale pointer crashes the process
+        with no recovery path — this is C-ABI calling, not a sandbox.
+        Test signatures carefully.
+    </li>
+</ul>
+
+</main>
+
+<!-- right-toc:begin -->
+<aside class="right-toc"></aside>
+<script src="right-toc.js?v=26.5.23" defer></script>
+<!-- right-toc:end -->
+
+
+</body>
+</html>

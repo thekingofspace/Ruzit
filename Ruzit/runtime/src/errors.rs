@@ -17,6 +17,7 @@ pub const IMPORT_LIBS: &[&str] = &[
     "Managed",
     "Mouse",
     "Net",
+    "Package",
     "Primitives",
     "Process",
     "Register",
