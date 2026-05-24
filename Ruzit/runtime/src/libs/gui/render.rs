@@ -424,12 +424,21 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         discard;
     }
     let style = u32(U.params[0].x);
-    if (style == 1u) {
-        let cycle = fract(in.uv.x * U.params[0].y);
-        if (cycle > 0.5) { discard; }
-    } else if (style == 2u) {
-        let cycle = fract(in.uv.x * U.params[0].y);
-        if (cycle > 0.25) { discard; }
+    if (style != 0u) {
+        let total = max(U.params[0].y, 1.0);
+        let length_px = max(U.params[0].z, 0.0);
+        let padding_px = max(U.params[0].w, 0.0);
+        var visible = length_px;
+        if (style == 2u) {
+            // Dotted: ignore Length; dot extent = 40% of padding (small dots).
+            visible = max(padding_px * 0.4, 1.0);
+        }
+        let period = max(visible + padding_px, 0.001);
+        let pos_pix = in.uv.x * total;
+        let in_period = pos_pix - floor(pos_pix / period) * period;
+        if (in_period > visible) {
+            discard;
+        }
     }
     return U.color;
 }
@@ -2273,7 +2282,9 @@ impl GpuState {
                     crate::libs::gui::spline::SplineStyle::Dotted => 2.0,
                 };
                 params[0][0] = style_id;
-                params[0][1] = 20.0;
+                params[0][1] = s.total_pixel_length;
+                params[0][2] = s.length;
+                params[0][3] = s.padding;
                 if let Some(sh) = &s.active_shader {
                     let p = sh.params.lock().unwrap();
                     for j in 0..16 {

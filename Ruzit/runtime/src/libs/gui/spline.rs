@@ -101,6 +101,8 @@ pub struct SplineState {
     pub z_index: i32,
     pub style: SplineStyle,
     pub cap: SplineCap,
+    pub length: f32,
+    pub padding: f32,
     pub visible: bool,
     pub alive: bool,
     pub attached: Vec<AttachedShader>,
@@ -124,6 +126,8 @@ impl Spline {
             z_index: 0,
             style: SplineStyle::Solid,
             cap: SplineCap::Rounded,
+            length: 12.0,
+            padding: 8.0,
             visible: true,
             alive: true,
             attached: Vec::new(),
@@ -156,6 +160,9 @@ pub struct SplineRender {
     pub active_shader: Option<AttachedShader>,
     pub aabb: (f32, f32, f32, f32),
     pub style: SplineStyle,
+    pub length: f32,
+    pub padding: f32,
+    pub total_pixel_length: f32,
 }
 
 pub fn snapshot() -> Vec<SplineRender> {
@@ -173,6 +180,7 @@ pub fn snapshot() -> Vec<SplineRender> {
                     return None;
                 }
                 let aabb = compute_aabb(&s.nodes);
+                let total_pixel_length = polyline_length(&s.nodes);
                 Some(SplineRender {
                     id: s.id,
                     vertices,
@@ -182,10 +190,25 @@ pub fn snapshot() -> Vec<SplineRender> {
                     active_shader: s.attached.last().cloned(),
                     aabb,
                     style: s.style,
+                    length: s.length,
+                    padding: s.padding,
+                    total_pixel_length,
                 })
             })
             .collect()
     })
+}
+
+fn polyline_length(nodes: &[SplineNode]) -> f32 {
+    let mut total = 0.0_f32;
+    for i in 0..nodes.len().saturating_sub(1) {
+        let a = nodes[i].position;
+        let b = nodes[i + 1].position;
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        total += (dx * dx + dy * dy).sqrt();
+    }
+    total.max(1.0)
 }
 
 fn compute_aabb(nodes: &[SplineNode]) -> (f32, f32, f32, f32) {
@@ -584,6 +607,26 @@ impl UserData for Spline {
         });
         f.add_field_method_get("NodeCount", |_, this| {
             Ok(this.state.lock().unwrap().nodes.len() as i64)
+        });
+        f.add_field_method_get("Length", |_, this| Ok(this.state.lock().unwrap().length));
+        f.add_field_method_set("Length", |lua, this, v: f32| {
+            let sig = {
+                let mut s = this.state.lock().unwrap();
+                s.length = v.max(0.0);
+                s.changed_signal.clone()
+            };
+            fire_changed(lua, sig, "Length")?;
+            Ok(())
+        });
+        f.add_field_method_get("Padding", |_, this| Ok(this.state.lock().unwrap().padding));
+        f.add_field_method_set("Padding", |lua, this, v: f32| {
+            let sig = {
+                let mut s = this.state.lock().unwrap();
+                s.padding = v.max(0.0);
+                s.changed_signal.clone()
+            };
+            fire_changed(lua, sig, "Padding")?;
+            Ok(())
         });
     }
 

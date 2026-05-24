@@ -785,6 +785,8 @@ declare class Spline
 	Visible: boolean
 	Style: "Solid" | "Dashed" | "Dotted"
 	Cap: "Rounded" | "Miter" | "Square"
+	Length: number
+	Padding: number
 	NodeCount: number
 	function SetNodes(self, nodes: { SplineNode }): ()
 	function GetNodes(self): { SplineNode }

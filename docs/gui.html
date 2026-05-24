@@ -237,8 +237,10 @@ line:<span class="hl-fn">SetNodes</span>{
         <tr><td><code>Transparency</code></td><td>number</td><td>0</td><td>0..1, applied as alpha multiplier.</td></tr>
         <tr><td><code>ZIndex</code></td><td>number</td><td>0</td><td>Splines sort among themselves; all splines render <em>above</em> regular 2D items.</td></tr>
         <tr><td><code>Visible</code></td><td>boolean</td><td>true</td><td>Hides the spline without destroying it.</td></tr>
-        <tr><td><code>Style</code></td><td>string</td><td>"Solid"</td><td>"Solid" / "Dashed" / "Dotted". Dashed and Dotted are rendered via UV-based discard.</td></tr>
+        <tr><td><code>Style</code></td><td>string</td><td>"Solid"</td><td>"Solid" / "Dashed" / "Dotted". Pixel-accurate pattern is generated in the fragment shader using <code>Length</code> + <code>Padding</code> below.</td></tr>
         <tr><td><code>Cap</code></td><td>string</td><td>"Rounded"</td><td>"Rounded" / "Miter" / "Square". Applied at the start and end nodes.</td></tr>
+        <tr><td><code>Length</code></td><td>number</td><td>12</td><td>Length of each visible dash, in pixels along the line. <strong>Dashed only</strong> &mdash; ignored for Solid and Dotted.</td></tr>
+        <tr><td><code>Padding</code></td><td>number</td><td>8</td><td>Gap between dashes / dots, in pixels along the line. Used by both Dashed and Dotted styles. For Dotted, the visible dot extent is automatically 40% of <code>Padding</code> (no separate size knob &mdash; thickness controls dot diameter perpendicular to the line; padding controls the cycle).</td></tr>
         <tr><td><code>NodeCount</code></td><td>number</td><td>—</td><td>Read-only.</td></tr>
         <tr><td><code>Alive</code></td><td>boolean</td><td>—</td><td>Read-only.</td></tr>
         <tr><td><code>Changed</code></td><td>Signal&lt;string&gt;</td><td>—</td><td>Fires with property name on any change. Connect for "anything changed" notifications.</td></tr>
