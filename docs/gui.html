@@ -382,6 +382,24 @@ tw:<span class="hl-fn">Play</span>()</code></pre>
         <p class="member-desc">Top-left position. Origin at the top-left of the window.</p>
     </div>
     <div class="member">
+        <div class="member-header"><span class="member-name">.AnchorPoint</span><span class="member-type">Dim</span></div>
+        <p class="member-desc">
+            Fractional anchor in 0..1 used by layout systems
+            (e.g. Declar) to position the primitive relative to
+            its own pixel rectangle: <code>(0, 0)</code> anchors
+            the top-left corner, <code>(0.5, 0.5)</code> centres
+            the primitive on its <code>.Position</code>,
+            <code>(1, 1)</code> anchors the bottom-right. The
+            engine reads this for baked-text re-centring and for
+            <a href="objects.html#billboard">Billboard</a>
+            alignment; the renderer itself still uses
+            <code>.Position</code> as a top-left anchor, so most
+            game code only touches <code>.AnchorPoint</code> through
+            a layout library. No <code>.Changed</code> fire — it's
+            a layout input, not an observable visual property.
+        </p>
+    </div>
+    <div class="member">
         <div class="member-header"><span class="member-name">.Rotation</span><span class="member-type">number (degrees)</span></div>
         <p class="member-desc">
             Rotation around the primitive's center. <code>0</code> is the

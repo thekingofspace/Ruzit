@@ -2128,69 +2128,6 @@ impl GpuState {
                 }
             }
 
-            let win_w = self.config.width;
-            let win_h = self.config.height;
-            let full_scissor = (0u32, 0u32, win_w, win_h);
-            let mut current_scissor = full_scissor;
-            rpass.set_scissor_rect(0, 0, win_w, win_h);
-
-            let mut draw_seq_2d: Vec<(i32, usize, bool)> =
-                Vec::with_capacity(items.len() + spans_2d.len());
-            for (i, item) in items.iter().enumerate() {
-                draw_seq_2d.push((item.z_index, i, false));
-            }
-            for (i, span) in spans_2d.iter().enumerate() {
-                draw_seq_2d.push((span.4, i, true));
-            }
-            draw_seq_2d.sort_by_key(|e| e.0);
-
-            for (_, idx, is_particle) in &draw_seq_2d {
-                if *is_particle {
-                    let (tex_key, base, count, shader_id, _) = &spans_2d[*idx];
-                    if current_scissor != full_scissor {
-                        rpass.set_scissor_rect(0, 0, win_w, win_h);
-                        current_scissor = full_scissor;
-                    }
-                    let pipeline = match shader_id {
-                        Some(id) => self
-                            .particles
-                            .pipelines_2d
-                            .get(id)
-                            .unwrap_or(&self.particles.default_pipeline_2d),
-                        None => &self.particles.default_pipeline_2d,
-                    };
-                    if let Some(bg) = self.particles.bind_cache_2d.get(tex_key) {
-                        rpass.set_pipeline(pipeline);
-                        rpass.set_bind_group(0, bg, &[]);
-                        rpass.draw(0..6, *base..*base + *count);
-                    }
-                } else {
-                    let i = *idx;
-                    let item = &items[i];
-                    let want = match &item.clip {
-                        Some(c) => {
-                            let (x, y, w, h) = clip_aabb(c);
-                            clamp_scissor(x, y, w, h, win_w, win_h)
-                        }
-                        None => Some(full_scissor),
-                    };
-                    let scissor = match want {
-                        Some(s) => s,
-                        None => continue,
-                    };
-                    if scissor != current_scissor {
-                        rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
-                        current_scissor = scissor;
-                    }
-                    let pipeline = match &item.active_shader {
-                        Some(sh) => self.pipelines.get(&sh.id).unwrap_or(&self.default_pipeline),
-                        None => &self.default_pipeline,
-                    };
-                    rpass.set_pipeline(pipeline);
-                    rpass.set_bind_group(0, &bind_groups_2d[i], &[]);
-                    rpass.draw(0..6, 0..1);
-                }
-            }
         }
 
         if !splines.is_empty() {
@@ -2213,13 +2150,8 @@ impl GpuState {
             }
             let mut staging: Vec<crate::libs::gui::SplineVertex> =
                 Vec::with_capacity(total_vertices);
-            let mut spans: Vec<(u32, u32)> = Vec::with_capacity(splines.len());
-            let mut offset_v: u32 = 0;
             for s in &splines {
-                let start = offset_v;
                 staging.extend_from_slice(&s.vertices);
-                offset_v += s.vertices.len() as u32;
-                spans.push((start, offset_v - start));
             }
             if !staging.is_empty() {
                 self.queue.write_buffer(
@@ -2290,57 +2222,6 @@ impl GpuState {
                     0,
                     bytemuck::bytes_of(&data),
                 );
-            }
-            let main_target_for_splines: &wgpu::TextureView = if post_effect.is_some() {
-                self.scene_view
-                    .as_ref()
-                    .expect("scene target should be allocated")
-            } else {
-                &surface_view
-            };
-            let depth_view_for_splines = self
-                .depth_view
-                .as_ref()
-                .expect("depth target should be allocated");
-            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Ruzit GUI spline pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: main_target_for_splines,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: depth_view_for_splines,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            for (i, s) in splines.iter().enumerate() {
-                let pipeline = match &s.active_shader {
-                    Some(sh) => self
-                        .spline_pipelines
-                        .get(&sh.id)
-                        .unwrap_or(&self.spline_default_pipeline),
-                    None => &self.spline_default_pipeline,
-                };
-                rpass.set_pipeline(pipeline);
-                rpass.set_bind_group(0, &self.spline_bind_groups[i], &[]);
-                let (start, count) = spans[i];
-                let byte_start = (start as u64)
-                    * std::mem::size_of::<crate::libs::gui::SplineVertex>() as u64;
-                let byte_end = byte_start
-                    + (count as u64)
-                        * std::mem::size_of::<crate::libs::gui::SplineVertex>() as u64;
-                rpass.set_vertex_buffer(0, self.spline_vertex_buffer.slice(byte_start..byte_end));
-                rpass.draw(0..count, 0..1);
             }
         }
 
@@ -2439,6 +2320,146 @@ impl GpuState {
                 rpass.set_pipeline(pipeline);
                 rpass.set_bind_group(0, post_bind, &[]);
                 rpass.draw(0..6, 0..1);
+            }
+        }
+
+        // -------------------------------------------------------------------
+        // 2D GUI (items + 2D particles) and splines are drawn LAST, straight
+        // onto the surface AFTER the post-effect has resolved the (blurred)
+        // scene. This guarantees screen-space UI -- the HUD, pause menu and
+        // every menu -- is never passed through the post-process blur (e.g.
+        // the blink effect). When no post effect is active they simply
+        // composite over the scene already present in the surface.
+        // -------------------------------------------------------------------
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Ruzit GUI 2D pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &surface_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            let win_w = self.config.width;
+            let win_h = self.config.height;
+            let full_scissor = (0u32, 0u32, win_w, win_h);
+            let mut current_scissor = full_scissor;
+            rpass.set_scissor_rect(0, 0, win_w, win_h);
+
+            let mut draw_seq_2d: Vec<(i32, usize, bool)> =
+                Vec::with_capacity(items.len() + spans_2d.len());
+            for (i, item) in items.iter().enumerate() {
+                draw_seq_2d.push((item.z_index, i, false));
+            }
+            for (i, span) in spans_2d.iter().enumerate() {
+                draw_seq_2d.push((span.4, i, true));
+            }
+            draw_seq_2d.sort_by_key(|e| e.0);
+
+            for (_, idx, is_particle) in &draw_seq_2d {
+                if *is_particle {
+                    let (tex_key, base, count, shader_id, _) = &spans_2d[*idx];
+                    if current_scissor != full_scissor {
+                        rpass.set_scissor_rect(0, 0, win_w, win_h);
+                        current_scissor = full_scissor;
+                    }
+                    let pipeline = match shader_id {
+                        Some(id) => self
+                            .particles
+                            .pipelines_2d
+                            .get(id)
+                            .unwrap_or(&self.particles.default_pipeline_2d),
+                        None => &self.particles.default_pipeline_2d,
+                    };
+                    if let Some(bg) = self.particles.bind_cache_2d.get(tex_key) {
+                        rpass.set_pipeline(pipeline);
+                        rpass.set_bind_group(0, bg, &[]);
+                        rpass.draw(0..6, *base..*base + *count);
+                    }
+                } else {
+                    let i = *idx;
+                    let item = &items[i];
+                    let want = match &item.clip {
+                        Some(c) => {
+                            let (x, y, w, h) = clip_aabb(c);
+                            clamp_scissor(x, y, w, h, win_w, win_h)
+                        }
+                        None => Some(full_scissor),
+                    };
+                    let scissor = match want {
+                        Some(s) => s,
+                        None => continue,
+                    };
+                    if scissor != current_scissor {
+                        rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
+                        current_scissor = scissor;
+                    }
+                    let pipeline = match &item.active_shader {
+                        Some(sh) => self.pipelines.get(&sh.id).unwrap_or(&self.default_pipeline),
+                        None => &self.default_pipeline,
+                    };
+                    rpass.set_pipeline(pipeline);
+                    rpass.set_bind_group(0, &bind_groups_2d[i], &[]);
+                    rpass.draw(0..6, 0..1);
+                }
+            }
+        }
+
+        if !splines.is_empty() {
+            let stride = std::mem::size_of::<crate::libs::gui::SplineVertex>() as u64;
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Ruzit GUI spline pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &surface_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            let mut offset_v: u32 = 0;
+            for (i, s) in splines.iter().enumerate() {
+                let count = s.vertices.len() as u32;
+                let start = offset_v;
+                offset_v += count;
+                let pipeline = match &s.active_shader {
+                    Some(sh) => self
+                        .spline_pipelines
+                        .get(&sh.id)
+                        .unwrap_or(&self.spline_default_pipeline),
+                    None => &self.spline_default_pipeline,
+                };
+                rpass.set_pipeline(pipeline);
+                rpass.set_bind_group(0, &self.spline_bind_groups[i], &[]);
+                let byte_start = (start as u64) * stride;
+                let byte_end = byte_start + (count as u64) * stride;
+                rpass.set_vertex_buffer(0, self.spline_vertex_buffer.slice(byte_start..byte_end));
+                rpass.draw(0..count, 0..1);
             }
         }
 

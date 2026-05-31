@@ -83,6 +83,11 @@ pub struct PrimitiveState {
     pub shape: Shape,
     pub size: Dim,
     pub position: Dim,
+    // Raw anchor point (0..1), forwarded from Declar. Declar pre-applies the anchor
+    // against the node's Size when computing `position`; for TEXT we re-apply it
+    // against the true BAKED width at snapshot time so centred text lands exactly
+    // on centre regardless of how good the Lua width estimate was.
+    pub anchor: Dim,
     pub rotation: f32,
     pub color: Color3,
     pub transparency: f32,
@@ -360,15 +365,25 @@ fn build_snapshot() -> Vec<RenderItem> {
                     return None;
                 }
 
-                let (image, size) = if matches!(s.shape, Shape::Text) {
+                let (image, size, position) = if matches!(s.shape, Shape::Text) {
                     let baked = bake_text_if_dirty(&mut s);
                     let size = match &baked {
                         Some(img) => Dim::new(img.width as f32, img.height as f32),
                         None => Dim::new(0.0, 0.0),
                     };
-                    (baked, size)
+                    // Declar applied the anchor against the node's estimated Size; the
+                    // baked image is a different width, so re-apply it on X against the
+                    // TRUE baked width -> centred/anchored text lands exactly on target
+                    // no matter how rough the Lua width estimate was. Y is left as-is so
+                    // the caller's optical vertical lift (for the font's ascent band)
+                    // still applies.
+                    let pos = Dim::new(
+                        s.position.x + s.anchor.x * (s.size.x - size.x),
+                        s.position.y,
+                    );
+                    (baked, size, pos)
                 } else {
-                    (s.image.clone(), s.size)
+                    (s.image.clone(), s.size, s.position)
                 };
 
                 let clip = s.clip_parent.as_ref().and_then(|parent_arc| {
@@ -398,7 +413,7 @@ fn build_snapshot() -> Vec<RenderItem> {
                 Some(RenderItem {
                     shape: s.shape,
                     size,
-                    position: s.position,
+                    position,
                     rotation: s.rotation,
                     color: s.color,
                     transparency: s.transparency,
@@ -855,6 +870,7 @@ impl GuiPrimitive {
             shape,
             size,
             position: Dim::new(0.0, 0.0),
+            anchor: Dim::new(0.0, 0.0),
             rotation: 0.0,
             color: Color3::new(1.0, 1.0, 1.0),
             transparency: 0.0,
@@ -1024,6 +1040,18 @@ impl UserData for GuiPrimitive {
             };
             fire_changed(lua, signal_table, "Position")?;
             fire_prop_changed(lua, prop_sig, Value::UserData(lua.create_userdata(dim)?));
+            Ok(())
+        });
+        // Raw anchor (0..1) forwarded by Declar so the engine can re-centre baked
+        // text. No signals -- it's a layout input, not an observable visual prop.
+        f.add_field_method_get("AnchorPoint", |_, this| {
+            Ok(this.state.lock().unwrap().anchor)
+        });
+        f.add_field_method_set("AnchorPoint", |_, this, value: AnyUserData| {
+            let dim = *value.borrow::<Dim>().map_err(|_| {
+                mlua::Error::RuntimeError("AnchorPoint expects a Primitives.Dim".into())
+            })?;
+            this.state.lock().unwrap().anchor = dim;
             Ok(())
         });
         f.add_field_method_get("Rotation", |_, this| {

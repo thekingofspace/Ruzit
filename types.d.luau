@@ -666,6 +666,7 @@ declare class Primitive
 	Shape: "Square" | "Circle" | "Triangle" | "Image" | "Text" | "Clippable"
 	Size: Dim
 	Position: Dim
+	AnchorPoint: Dim
 	Rotation: number
 	Color: Color3
 	Transparency: number
