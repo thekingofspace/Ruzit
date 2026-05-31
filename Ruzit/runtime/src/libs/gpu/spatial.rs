@@ -688,7 +688,11 @@ fn init_resources(device: &wgpu::Device) -> Resources {
     let tris_capacity = min_capacity(256);
     let tris_buffer = make_storage(device, "ruzit tris", tris_capacity, 16);
     let hits_capacity = min_capacity(64);
-    let hits_buffer = make_storage(device, "ruzit hits", hits_capacity, std::mem::size_of::<RaycastHitGpu>() as u64);
+    // Must match the grow path (make_storage_rw): hits_buffer is the SOURCE of a
+    // copy_buffer_to_buffer into hits_readback, so it needs COPY_SRC. Using
+    // make_storage here (STORAGE | COPY_DST only) panics on the first raycast
+    // whenever part_count stays under the initial capacity (grow never runs).
+    let hits_buffer = make_storage_rw(device, "ruzit hits", hits_capacity, std::mem::size_of::<RaycastHitGpu>() as u64);
     let hits_readback_capacity = hits_capacity;
     let hits_readback = make_readback(device, "ruzit hits readback", hits_readback_capacity, std::mem::size_of::<RaycastHitGpu>() as u64);
 
