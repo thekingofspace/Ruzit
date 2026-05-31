@@ -43,7 +43,7 @@ LightingService.<span class="hl-fn">SetSun</span>(Vector.<span class="hl-fn">new
 LightingService.<span class="hl-fn">SetAmbient</span>(Color3.<span class="hl-fn">fromRGB</span>(<span class="hl-num">30</span>, <span class="hl-num">35</span>, <span class="hl-num">45</span>))
 
 <span class="hl-com">-- Parts default to Lit = false. Add them explicitly to opt in.</span>
-LightingService:<span class="hl-fn">AddObject</span>(somePart)
+LightingService.<span class="hl-fn">AddObject</span>(somePart)
 
 <span class="hl-kw">local</span> lamp = LightingService.<span class="hl-fn">GenerateLightSource</span>(<span class="hl-str">"PointLight"</span>, {
     CFrame     = CFrame.<span class="hl-fn">new</span>(Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">4</span>, <span class="hl-num">0</span>), Vector.<span class="hl-fn">new</span>(<span class="hl-num">0</span>, <span class="hl-num">0</span>, <span class="hl-num">0</span>)),
@@ -66,7 +66,7 @@ LightingService:<span class="hl-fn">AddObject</span>(somePart)
     Toggle it with any of:
 </p>
 <ul>
-    <li><code>LightingService:AddObject(part)</code> / <code>:RemoveObject(part)</code></li>
+    <li><code>LightingService.AddObject(part)</code> / <code>:RemoveObject(part)</code></li>
     <li><code>part.Lit = true</code> / <code>part.Lit = false</code></li>
     <li>Or just attach your own <code>Frag3D</code> shader to that part &mdash; the
         attached shader replaces the default fragment stage entirely, so
@@ -194,7 +194,7 @@ LightingService:<span class="hl-fn">AddObject</span>(somePart)
     </div>
     <div class="member">
         <div class="member-header">
-            <span class="member-name">LightingService:AddObject(part)</span>
+            <span class="member-name">LightingService.AddObject(part)</span>
         </div>
         <p class="member-desc">
             Mark a <code>BasePart</code> as participating in engine-managed
@@ -203,7 +203,7 @@ LightingService:<span class="hl-fn">AddObject</span>(somePart)
     </div>
     <div class="member">
         <div class="member-header">
-            <span class="member-name">LightingService:RemoveObject(part)</span>
+            <span class="member-name">LightingService.RemoveObject(part)</span>
         </div>
         <p class="member-desc">
             Remove a part from engine-managed lighting (it goes back to
@@ -213,7 +213,7 @@ LightingService:<span class="hl-fn">AddObject</span>(somePart)
     </div>
     <div class="member">
         <div class="member-header">
-            <span class="member-name">LightingService:IsObjectManaged(part)</span>
+            <span class="member-name">LightingService.IsObjectManaged(part)</span>
             <span class="member-type">-> boolean</span>
         </div>
         <p class="member-desc">
