@@ -584,6 +584,13 @@ impl GpuState {
             None,
         ))
         .map_err(|e| format!("request_device: {e}"))?;
+        // Route validation errors through stderr instead of panicking. Lets
+        // pipeline creation drop the per-call `pop_error_scope` synchronous
+        // wait (the source of the multi-second first-frame stall on custom
+        // shaders) without losing error visibility.
+        device.on_uncaptured_error(Box::new(|err: wgpu::Error| {
+            eprintln!("[wgpu] {err}");
+        }));
         let instance_stride = {
             let raw = std::mem::size_of::<r3d::InstanceUniform3D>() as u64;
             let align = device.limits().min_uniform_buffer_offset_alignment as u64;
@@ -1005,17 +1012,12 @@ impl GpuState {
         }
         let label = format!("Ruzit GUI user shader #{shader_id}");
 
-        self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let module = self
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some(&label),
                 source: wgpu::ShaderSource::Wgsl(wgsl.to_string().into()),
             });
-        if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-            eprintln!("[GUI] shader #{shader_id} compile failed: {err}");
-            return false;
-        }
         let pipeline = build_pipeline(
             &self.device,
             &self.pipeline_layout,
@@ -1033,7 +1035,6 @@ impl GpuState {
             return true;
         }
         let label = format!("Ruzit spline user shader #{shader_id}");
-        self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let wrapped = format!("{FRAGMENT_PRELUDE}\n{wgsl}");
         let module = self
             .device
@@ -1041,10 +1042,6 @@ impl GpuState {
                 label: Some(&label),
                 source: wgpu::ShaderSource::Wgsl(wrapped.into()),
             });
-        if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-            eprintln!("[GUI] spline shader #{shader_id} compile failed: {err}");
-            return false;
-        }
         let vs = self
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1081,17 +1078,12 @@ impl GpuState {
             return true;
         }
         let label = format!("Ruzit skybox shader #{shader_id}");
-        self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let module = self
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some(&label),
                 source: wgpu::ShaderSource::Wgsl(wgsl.to_string().into()),
             });
-        if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-            eprintln!("[GUI] skybox shader #{shader_id} compile failed: {err}");
-            return false;
-        }
 
         let pipeline = build_pipeline(
             &self.device,
@@ -1110,17 +1102,12 @@ impl GpuState {
             return true;
         }
         let label = format!("Ruzit post shader #{shader_id}");
-        self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let module = self
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some(&label),
                 source: wgpu::ShaderSource::Wgsl(wgsl.to_string().into()),
             });
-        if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-            eprintln!("[GUI] post shader #{shader_id} compile failed: {err}");
-            return false;
-        }
 
         let pipeline = build_pipeline(
             &self.device,
@@ -1233,17 +1220,12 @@ impl GpuState {
             return true;
         }
         let label = format!("Ruzit 3D user shader #{shader_id}");
-        self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let module = self
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some(&label),
                 source: wgpu::ShaderSource::Wgsl(wgsl.to_string().into()),
             });
-        if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-            eprintln!("[Renderable] 3D shader #{shader_id} compile failed: {err}");
-            return false;
-        }
 
         let pipeline = r3d::build_pipeline_3d(
             &self.device,
