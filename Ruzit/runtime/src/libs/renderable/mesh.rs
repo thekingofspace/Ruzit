@@ -856,29 +856,79 @@ fn load_fbx_ascii(bytes: &[u8]) -> Result<Mesh, String> {
             continue;
         }
 
-        let base = vertices.len() as u32;
-        for chunk in positions.chunks_exact(3) {
-            vertices.push(Vertex3D {
-                position: [chunk[0] as f32, chunk[1] as f32, chunk[2] as f32],
-                normal: [0.0; 3],
-                uv: [0.0; 2],
-            });
-        }
+        // Control points (shared vertex positions).
+        let cps: Vec<[f32; 3]> = positions
+            .chunks_exact(3)
+            .map(|c| [c[0] as f32, c[1] as f32, c[2] as f32])
+            .collect();
 
-        let mut current: Vec<u32> = Vec::new();
-        for raw in raw_indices {
-            if raw < 0 {
-                current.push((!raw) as u32);
-                if current.len() >= 3 {
-                    for i in 1..current.len() - 1 {
-                        indices.push(base + current[0]);
-                        indices.push(base + current[i]);
-                        indices.push(base + current[i + 1]);
+        // Optional UV layer. FBX maps UVs either per control-point or per
+        // polygon-vertex, with Direct or IndexToDirect referencing.
+        let uv_layer = sub_block(block, "LayerElementUV");
+        let uv_array = uv_layer
+            .map(|b| parse_named_float_array(b, "UV"))
+            .unwrap_or_default();
+        let uv_index = uv_layer
+            .map(|b| parse_named_int_array(b, "UVIndex"))
+            .unwrap_or_default();
+        let uv_by_control = uv_layer
+            .and_then(|b| parse_quoted_value(b, "MappingInformationType"))
+            .map(|s| s.contains("ControlPoint"))
+            .unwrap_or(false);
+        let uv_indexed = uv_layer
+            .and_then(|b| parse_quoted_value(b, "ReferenceInformationType"))
+            .map(|s| s.contains("Index"))
+            .unwrap_or(false);
+
+        // UV for the polygon-vertex at global index `pvi` whose control point is `cp`.
+        let uv_at = |pvi: usize, cp: usize| -> [f32; 2] {
+            if uv_array.len() < 2 {
+                return [0.0, 0.0];
+            }
+            let key = if uv_by_control { cp } else { pvi };
+            let di = if uv_indexed {
+                match uv_index.get(key) {
+                    Some(&v) if v >= 0 => v as usize,
+                    _ => return [0.0, 0.0],
+                }
+            } else {
+                key
+            };
+            let o = di * 2;
+            if o + 1 < uv_array.len() {
+                // FBX UV origin is bottom-left; flip V for top-left texture sampling.
+                [uv_array[o] as f32, 1.0 - uv_array[o + 1] as f32]
+            } else {
+                [0.0, 0.0]
+            }
+        };
+
+        // Expand to per-polygon-vertex vertices (so each carries its own UV) and
+        // triangulate every polygon as a fan. PolygonVertexIndex entries are control-
+        // point indices; a negative entry (bitwise-NOT) marks the end of a polygon.
+        let mut poly: Vec<(usize, usize)> = Vec::new(); // (control-point index, polygon-vertex index)
+        let mut pvi = 0usize;
+        for raw in &raw_indices {
+            let r = *raw;
+            let cp = if r < 0 { (!r) as usize } else { r as usize };
+            poly.push((cp, pvi));
+            pvi += 1;
+            if r < 0 {
+                if poly.len() >= 3 {
+                    for i in 1..poly.len() - 1 {
+                        for &(cpi, pv) in &[poly[0], poly[i], poly[i + 1]] {
+                            let pos = cps.get(cpi).copied().unwrap_or([0.0; 3]);
+                            let idx = vertices.len() as u32;
+                            vertices.push(Vertex3D {
+                                position: pos,
+                                normal: [0.0; 3],
+                                uv: uv_at(pv, cpi),
+                            });
+                            indices.push(idx);
+                        }
                     }
                 }
-                current.clear();
-            } else {
-                current.push(raw as u32);
+                poly.clear();
             }
         }
 
@@ -939,6 +989,28 @@ fn find_matching_brace(text: &str, start: usize) -> usize {
         i += 1;
     }
     i.saturating_sub(1)
+}
+
+// Return the contents between the braces that follow `key:` (e.g. the body of a
+// `LayerElementUV: 0 { ... }` node), or None if the key isn't present.
+fn sub_block<'a>(block: &'a str, key: &str) -> Option<&'a str> {
+    let needle = format!("{key}:");
+    let i = block.find(&needle)?;
+    let after = &block[i + needle.len()..];
+    let open = after.find('{')?;
+    let close = find_matching_brace(after, open + 1);
+    Some(&after[open + 1..close])
+}
+
+// First double-quoted string value following `key:` (e.g. MappingInformationType).
+fn parse_quoted_value(block: &str, key: &str) -> Option<String> {
+    let needle = format!("{key}:");
+    let i = block.find(&needle)?;
+    let after = &block[i + needle.len()..];
+    let q1 = after.find('"')?;
+    let rest = &after[q1 + 1..];
+    let q2 = rest.find('"')?;
+    Some(rest[..q2].to_string())
 }
 
 fn parse_named_float_array(block: &str, name: &str) -> Vec<f64> {
