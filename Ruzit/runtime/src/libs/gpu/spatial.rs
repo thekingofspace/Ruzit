@@ -803,7 +803,7 @@ pub fn gpu_raycast(
     let mut kept_states: Vec<Arc<Mutex<PartState>>> = Vec::with_capacity(states.len());
 
     for state_arc in states.iter() {
-        let s = state_arc.lock().unwrap();
+        let s = state_arc.lock().unwrap_or_else(|e| e.into_inner());
         if !s.alive || !s.render {
             continue;
         }
@@ -857,7 +857,7 @@ pub fn gpu_raycast(
     }
 
     let part_count = headers.len() as u32;
-    let mut res = res_lock.lock().unwrap();
+    let mut res = res_lock.lock().unwrap_or_else(|e| e.into_inner());
 
     if part_count > res.parts_capacity {
         let cap = grow(res.parts_capacity, part_count);
@@ -995,7 +995,7 @@ pub fn gpu_overlap(query: OverlapShape) -> Option<Vec<Arc<Mutex<PartState>>>> {
     let mut aabbs: Vec<AabbGpu> = Vec::with_capacity(states.len());
     let mut kept: Vec<Arc<Mutex<PartState>>> = Vec::with_capacity(states.len());
     for state_arc in states.iter() {
-        let s = state_arc.lock().unwrap();
+        let s = state_arc.lock().unwrap_or_else(|e| e.into_inner());
         if !s.alive || !s.render {
             continue;
         }
@@ -1014,7 +1014,7 @@ pub fn gpu_overlap(query: OverlapShape) -> Option<Vec<Arc<Mutex<PartState>>>> {
         return Some(Vec::new());
     }
 
-    let mut res = res_lock.lock().unwrap();
+    let mut res = res_lock.lock().unwrap_or_else(|e| e.into_inner());
 
     if count > res.aabbs_capacity {
         let cap = grow(res.aabbs_capacity, count);
@@ -1289,7 +1289,7 @@ pub fn gpu_zone_query(
     let mut kept_states: Vec<Arc<Mutex<PartState>>> = Vec::with_capacity(states.len());
 
     for state_arc in states.iter() {
-        let s = state_arc.lock().unwrap();
+        let s = state_arc.lock().unwrap_or_else(|e| e.into_inner());
         if !s.alive || !s.render {
             continue;
         }
@@ -1342,7 +1342,7 @@ pub fn gpu_zone_query(
     }
 
     let part_count = headers.len() as u32;
-    let mut res = res_lock.lock().unwrap();
+    let mut res = res_lock.lock().unwrap_or_else(|e| e.into_inner());
 
     if part_count > res.parts_capacity {
         let cap = grow(res.parts_capacity, part_count);
