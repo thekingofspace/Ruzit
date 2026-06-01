@@ -1,6 +1,6 @@
 ﻿use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use mlua::{
@@ -610,7 +610,27 @@ pub fn camera_snapshot() -> CameraState {
     })
 }
 
+// CAMERA above is thread-local, so the audio thread can't see the real camera. Mirror
+// the listener (position + yaw) into cross-thread atomics so spatial audio can read it.
+static LISTENER: [AtomicU32; 4] = [
+    AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0),
+];
+pub fn audio_listener() -> ([f32; 3], f32) {
+    (
+        [
+            f32::from_bits(LISTENER[0].load(Ordering::Relaxed)),
+            f32::from_bits(LISTENER[1].load(Ordering::Relaxed)),
+            f32::from_bits(LISTENER[2].load(Ordering::Relaxed)),
+        ],
+        f32::from_bits(LISTENER[3].load(Ordering::Relaxed)),
+    )
+}
+
 pub fn set_camera_cframe(cf: CFrame) {
+    LISTENER[0].store(cf.position.x.to_bits(), Ordering::Relaxed);
+    LISTENER[1].store(cf.position.y.to_bits(), Ordering::Relaxed);
+    LISTENER[2].store(cf.position.z.to_bits(), Ordering::Relaxed);
+    LISTENER[3].store(cf.rotation.y.to_bits(), Ordering::Relaxed);
     CAMERA.with(|c| c.borrow_mut().cframe = cf);
     bump_camera_dirty();
 }
