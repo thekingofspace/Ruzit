@@ -13,7 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 ruzit-core = { path = "../core" }
-mlua = { version = "0.11", features = ["luau", "luau-jit"] }
+mlua = { version = "0.12.0-rc.1", features = ["luau", "luau-jit"] }
 serde_json = "1"
 toml = "0.8"
 serde_yaml = "0.9"

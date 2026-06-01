@@ -656,7 +656,7 @@ pub struct PartRender {
     pub cframe: CFrame,
     pub size: Vector,
     pub color: Color3,
-    pub active_shader: Option<AttachedShader3D>,
+    pub active_shaders: Vec<AttachedShader3D>,
     pub model: Option<ModelRef>,
     pub texture: Option<PartTextureRef>,
     pub cast_shadow: bool,
@@ -706,7 +706,7 @@ fn build_parts_snapshot() -> Vec<PartRender> {
                     cframe: s.current_cframe(),
                     size: s.size,
                     color: s.color,
-                    active_shader: s.attached.last().cloned(),
+                    active_shaders: s.attached.clone(),
 
                     model: s.deformed.clone().or_else(|| s.model.clone()),
                     texture: s.texture.clone(),

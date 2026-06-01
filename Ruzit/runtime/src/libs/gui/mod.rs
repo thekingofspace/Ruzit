@@ -243,7 +243,7 @@ pub struct RenderItem {
     pub transparency: f32,
     pub z_index: i32,
 
-    pub active_shader: Option<AttachedShader>,
+    pub active_shaders: Vec<AttachedShader>,
     pub image: Option<Arc<ImageRef>>,
 
     pub clip: Option<ClipInfo>,
@@ -418,7 +418,7 @@ fn build_snapshot() -> Vec<RenderItem> {
                     color: s.color,
                     transparency: s.transparency,
                     z_index: s.z_index,
-                    active_shader: s.attached.last().cloned(),
+                    active_shaders: s.attached.clone(),
                     image,
                     clip,
                     billboard_anchor,

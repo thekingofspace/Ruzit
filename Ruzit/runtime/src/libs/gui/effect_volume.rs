@@ -216,7 +216,7 @@ pub struct UIParticleRender {
 pub struct UIEffectVolumeRender {
     pub id: u64,
     pub texture: Option<PartTextureRef>,
-    pub active_shader: Option<AttachedShader>,
+    pub active_shaders: Vec<AttachedShader>,
     pub z_index: i32,
     pub particles: Vec<UIParticleRender>,
 }
@@ -251,7 +251,7 @@ pub fn ui_effect_volume_snapshot() -> Vec<UIEffectVolumeRender> {
                 Some(UIEffectVolumeRender {
                     id: s.id,
                     texture: s.texture.clone(),
-                    active_shader: s.attached.last().cloned(),
+                    active_shaders: s.attached.clone(),
                     z_index: s.z_index,
                     particles,
                 })

@@ -489,7 +489,10 @@ pub struct GpuState {
     last_instance_count: usize,
 
     cached_2d_bind_groups: Vec<wgpu::BindGroup>,
-    last_2d_item_count: usize,
+    // Per-item layer counts from the last bind-group rebuild. Used to detect
+    // when stacking layout shifts (an item gaining or losing an AttachShader),
+    // since bind groups are now slotted per (item, layer) and not per item.
+    last_2d_layer_counts: Vec<u32>,
     last_2d_image_ids: Vec<u64>,
 
     fullscreen_vs: wgpu::ShaderModule,
@@ -947,7 +950,7 @@ impl GpuState {
             last_parts_version: 0,
             last_instance_count: 0,
             cached_2d_bind_groups: Vec::new(),
-            last_2d_item_count: 0,
+            last_2d_layer_counts: Vec::new(),
             last_2d_image_ids: Vec::new(),
             fullscreen_vs,
             skybox_pipelines: HashMap::new(),
@@ -1497,11 +1500,39 @@ impl GpuState {
             self.ensure_scene_target(self.size.0, self.size.1);
         }
         self.ensure_depth_target(self.size.0, self.size.1);
-        self.ensure_uniform_buffers(items.len());
-        self.ensure_instance_capacity(parts.len());
+        // Each item draws once per attached shader (or once with the default
+        // pipeline if none attached). One uniform slot per (item, layer).
+        let layer_count_2d = |it: &RenderItem| it.active_shaders.len().max(1);
+        let item_layer_counts: Vec<u32> = items
+            .iter()
+            .map(|it| layer_count_2d(it) as u32)
+            .collect();
+        let mut item_layer_offsets: Vec<u32> = Vec::with_capacity(items.len() + 1);
+        let mut acc_2d: u32 = 0;
+        for c in &item_layer_counts {
+            item_layer_offsets.push(acc_2d);
+            acc_2d += c;
+        }
+        let total_2d_slots = acc_2d as usize;
+        self.ensure_uniform_buffers(total_2d_slots);
+        // 3D parts use the same per-(part, layer) slotting on the shared
+        // dynamic-offset instance buffer.
+        let layer_count_3d = |p: &renderable::PartRender| p.active_shaders.len().max(1);
+        let part_layer_counts: Vec<u32> = parts
+            .iter()
+            .map(|p| layer_count_3d(p) as u32)
+            .collect();
+        let mut part_layer_offsets: Vec<u32> = Vec::with_capacity(parts.len() + 1);
+        let mut acc_3d: u32 = 0;
+        for c in &part_layer_counts {
+            part_layer_offsets.push(acc_3d);
+            acc_3d += c;
+        }
+        let total_3d_slots = acc_3d as usize;
+        self.ensure_instance_capacity(total_3d_slots);
         self.evict_unused_resources(&parts, items);
         for item in items {
-            if let Some(sh) = &item.active_shader {
+            for sh in &item.active_shaders {
                 self.ensure_pipeline(sh.id, &sh.wgsl);
             }
             if let Some(img) = &item.image {
@@ -1509,7 +1540,7 @@ impl GpuState {
             }
         }
         for part in parts {
-            if let Some(sh) = &part.active_shader {
+            for sh in &part.active_shaders {
                 self.ensure_pipeline_3d(sh.id, &sh.wgsl);
             }
             if let Some(model) = &part.model {
@@ -1522,7 +1553,7 @@ impl GpuState {
         let mut splines = crate::libs::gui::spline::snapshot();
         splines.sort_by_key(|s| s.z_index);
         for s in &splines {
-            if let Some(sh) = &s.active_shader {
+            for sh in &s.active_shaders {
                 self.ensure_spline_pipeline(sh.id, &sh.wgsl);
             }
         }
@@ -1566,13 +1597,6 @@ impl GpuState {
         for (i, item) in items.iter().enumerate() {
             let alpha = (1.0 - item.transparency).clamp(0.0, 1.0);
             let color = [item.color.r, item.color.g, item.color.b, alpha];
-            let mut params = [[0.0_f32; 4]; 4];
-            if let Some(sh) = &item.active_shader {
-                let p = sh.params.lock().unwrap();
-                for j in 0..16 {
-                    params[j / 4][j % 4] = p[j];
-                }
-            }
 
             let (pos_out, size_out, alpha_out) = match &item.billboard_anchor {
                 Some(b) => {
@@ -1635,19 +1659,36 @@ impl GpuState {
                 ),
                 None => (0.0, 0.0, 0.0, [0.0; 4]),
             };
-            let data = UniData {
-                pos: pos_out,
-                size: size_out,
-                color: color_out,
-                resolution: res,
-                time,
-                shape: item.shape.shape_id(),
-                rotation_pad: [rotation_rad, clip_rot_rad, clip_shape_id, has_clip],
-                clip_rect: clip_rect_vec,
-                params,
-            };
-            self.queue
-                .write_buffer(&self.uniform_buffers[i], 0, bytemuck::bytes_of(&data));
+            // Stacking: write one uniform per (item, layer). Each pass binds
+            // its own params block; the rest of the per-item state (pos, size,
+            // colour, clip) is identical across layers.
+            let layer_count = layer_count_2d(item);
+            let base_slot = item_layer_offsets[i] as usize;
+            for layer in 0..layer_count {
+                let mut params = [[0.0_f32; 4]; 4];
+                if let Some(sh) = item.active_shaders.get(layer) {
+                    let p = sh.params.lock().unwrap();
+                    for j in 0..16 {
+                        params[j / 4][j % 4] = p[j];
+                    }
+                }
+                let data = UniData {
+                    pos: pos_out,
+                    size: size_out,
+                    color: color_out,
+                    resolution: res,
+                    time,
+                    shape: item.shape.shape_id(),
+                    rotation_pad: [rotation_rad, clip_rot_rad, clip_shape_id, has_clip],
+                    clip_rect: clip_rect_vec,
+                    params,
+                };
+                self.queue.write_buffer(
+                    &self.uniform_buffers[base_slot + layer],
+                    0,
+                    bytemuck::bytes_of(&data),
+                );
+            }
         }
 
         if let Some(sb) = &skybox {
@@ -1703,12 +1744,12 @@ impl GpuState {
 
         let parts_version = renderable::parts_version();
         let parts_dirty = parts_version != self.last_parts_version
-            || parts.len() != self.last_instance_count;
-        let any_animated_shader = parts.iter().any(|p| p.active_shader.is_some());
+            || total_3d_slots != self.last_instance_count;
+        let any_animated_shader = parts.iter().any(|p| !p.active_shaders.is_empty());
         if !parts.is_empty() && (parts_dirty || any_animated_shader) {
             let stride = self.instance_stride as usize;
             let inst_size = std::mem::size_of::<r3d::InstanceUniform3D>();
-            let total = parts.len() * stride;
+            let total = total_3d_slots * stride;
             let mut staging = vec![0u8; total];
             for (i, part) in parts.iter().enumerate() {
                 let model_mat = r3d::part_model_matrix(
@@ -1725,55 +1766,64 @@ impl GpuState {
                     [part.size.x, part.size.y, part.size.z],
                 );
                 let color = [part.color.r, part.color.g, part.color.b, 1.0];
-                let mut params = [[0.0_f32; 4]; 4];
-                if let Some(sh) = &part.active_shader {
-                    let p = sh.params.lock().unwrap();
-                    for j in 0..16 {
-                        params[j / 4][j % 4] = p[j];
+                let flags = [
+                    if part.cast_shadow { 1 } else { 0 },
+                    if part.receive_shadow { 1 } else { 0 },
+                    if part.lit { 1 } else { 0 },
+                    0,
+                ];
+                let layer_count = layer_count_3d(part);
+                let base_slot = part_layer_offsets[i] as usize;
+                let model_t = r3d::transpose4(model_mat);
+                for layer in 0..layer_count {
+                    let mut params = [[0.0_f32; 4]; 4];
+                    if let Some(sh) = part.active_shaders.get(layer) {
+                        let p = sh.params.lock().unwrap();
+                        for j in 0..16 {
+                            params[j / 4][j % 4] = p[j];
+                        }
                     }
+                    let inst = r3d::InstanceUniform3D {
+                        model: model_t,
+                        color,
+                        params,
+                        flags,
+                    };
+                    let offset = (base_slot + layer) * stride;
+                    staging[offset..offset + inst_size]
+                        .copy_from_slice(bytemuck::bytes_of(&inst));
                 }
-                let inst = r3d::InstanceUniform3D {
-                    model: r3d::transpose4(model_mat),
-                    color,
-                    params,
-                    flags: [
-                        if part.cast_shadow { 1 } else { 0 },
-                        if part.receive_shadow { 1 } else { 0 },
-                        if part.lit { 1 } else { 0 },
-                        0,
-                    ],
-                };
-                let offset = i * stride;
-                staging[offset..offset + inst_size].copy_from_slice(bytemuck::bytes_of(&inst));
             }
             self.queue.write_buffer(&self.instance_buffer, 0, &staging);
         }
         self.last_parts_version = parts_version;
-        self.last_instance_count = parts.len();
+        self.last_instance_count = total_3d_slots;
 
         let current_image_ids: Vec<u64> = items
             .iter()
             .map(|i| i.image.as_ref().map(|img| img.id).unwrap_or(0))
             .collect();
-        let bind_groups_dirty = items.len() != self.last_2d_item_count
+        let bind_groups_dirty = item_layer_counts != self.last_2d_layer_counts
             || current_image_ids != self.last_2d_image_ids
-            || self.cached_2d_bind_groups.len() != items.len();
+            || self.cached_2d_bind_groups.len() != total_2d_slots;
         if bind_groups_dirty {
-            self.cached_2d_bind_groups = items
-                .iter()
-                .enumerate()
-                .map(|(i, item)| {
-                    let texture_view = match &item.image {
-                        Some(img) => self.image_textures.get(&img.id).unwrap_or(&self.white_view),
-                        None => &self.white_view,
-                    };
-                    self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            let mut groups: Vec<wgpu::BindGroup> = Vec::with_capacity(total_2d_slots);
+            for (i, item) in items.iter().enumerate() {
+                let texture_view = match &item.image {
+                    Some(img) => self.image_textures.get(&img.id).unwrap_or(&self.white_view),
+                    None => &self.white_view,
+                };
+                let layer_count = layer_count_2d(item);
+                let base_slot = item_layer_offsets[i] as usize;
+                for layer in 0..layer_count {
+                    groups.push(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                         label: Some("Ruzit 2D bind"),
                         layout: &self.bind_group_layout,
                         entries: &[
                             wgpu::BindGroupEntry {
                                 binding: 0,
-                                resource: self.uniform_buffers[i].as_entire_binding(),
+                                resource: self.uniform_buffers[base_slot + layer]
+                                    .as_entire_binding(),
                             },
                             wgpu::BindGroupEntry {
                                 binding: 1,
@@ -1784,10 +1834,11 @@ impl GpuState {
                                 resource: wgpu::BindingResource::Sampler(&self.sampler),
                             },
                         ],
-                    })
-                })
-                .collect();
-            self.last_2d_item_count = items.len();
+                    }));
+                }
+            }
+            self.cached_2d_bind_groups = groups;
+            self.last_2d_layer_counts = item_layer_counts.clone();
             self.last_2d_image_ids = current_image_ids;
         }
         let bind_groups_2d = &self.cached_2d_bind_groups;
@@ -1846,12 +1897,12 @@ impl GpuState {
         }
 
         for v in &effect_3d {
-            if let Some(sh) = &v.active_shader {
+            for sh in &v.active_shaders {
                 self.particles.ensure_pipeline_3d(&self.device, sh.id, &sh.wgsl);
             }
         }
         for v in &ui_effects {
-            if let Some(sh) = &v.active_shader {
+            for sh in &v.active_shaders {
                 self.particles.ensure_pipeline_2d(&self.device, sh.id, &sh.wgsl);
             }
         }
@@ -1877,8 +1928,16 @@ impl GpuState {
             }
             let count = packed_3d.len() as u32 - base;
             let tex_key = v.texture.as_ref().map(|t| t.id).unwrap_or(0);
-            let shader_id = v.active_shader.as_ref().map(|s| s.id);
-            spans_3d.push((tex_key, base, count, shader_id));
+            // One span per layer, all aimed at the same particle range. The
+            // renderer will issue a separate draw per span, alpha-blending
+            // each shader's output over the previous.
+            if v.active_shaders.is_empty() {
+                spans_3d.push((tex_key, base, count, None));
+            } else {
+                for sh in &v.active_shaders {
+                    spans_3d.push((tex_key, base, count, Some(sh.id)));
+                }
+            }
         }
         if !packed_3d.is_empty() {
             self.particles
@@ -1921,8 +1980,13 @@ impl GpuState {
             }
             let count = packed_2d.len() as u32 - base;
             let tex_key = v.texture.as_ref().map(|t| t.id).unwrap_or(0);
-            let shader_id = v.active_shader.as_ref().map(|s| s.id);
-            spans_2d.push((tex_key, base, count, shader_id, v.z_index));
+            if v.active_shaders.is_empty() {
+                spans_2d.push((tex_key, base, count, None, v.z_index));
+            } else {
+                for sh in &v.active_shaders {
+                    spans_2d.push((tex_key, base, count, Some(sh.id), v.z_index));
+                }
+            }
         }
         if !packed_2d.is_empty() {
             self.particles
@@ -2073,20 +2137,10 @@ impl GpuState {
                 if part.ui_overlay.is_some() {
                     continue;
                 }
-                let pipeline = match &part.active_shader {
-                    Some(sh) => self
-                        .pipelines_3d
-                        .get(&sh.id)
-                        .unwrap_or(&self.default_pipeline_3d),
-                    None => &self.default_pipeline_3d,
-                };
-                rpass.set_pipeline(pipeline);
                 let key = part.texture.as_ref().map(|t| t.id).unwrap_or(0);
                 let Some(bind_group) = self.bind_group_3d_cache.get(&key) else {
                     continue;
                 };
-                let dyn_offset = (i as u64 * self.instance_stride) as u32;
-                rpass.set_bind_group(0, bind_group, &[dyn_offset]);
 
                 let (vbuf, ibuf, idx_count) = match part.shape {
                     renderable::PartShape::Cube => {
@@ -2107,7 +2161,22 @@ impl GpuState {
                 };
                 rpass.set_vertex_buffer(0, vbuf.slice(..));
                 rpass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint32);
-                rpass.draw_indexed(0..idx_count, 0, 0..1);
+
+                let layer_count = part.active_shaders.len().max(1);
+                let base_slot = part_layer_offsets[i] as usize;
+                for layer in 0..layer_count {
+                    let pipeline = match part.active_shaders.get(layer) {
+                        Some(sh) => self
+                            .pipelines_3d
+                            .get(&sh.id)
+                            .unwrap_or(&self.default_pipeline_3d),
+                        None => &self.default_pipeline_3d,
+                    };
+                    rpass.set_pipeline(pipeline);
+                    let dyn_offset = ((base_slot + layer) as u64 * self.instance_stride) as u32;
+                    rpass.set_bind_group(0, bind_group, &[dyn_offset]);
+                    rpass.draw_indexed(0..idx_count, 0, 0..1);
+                }
             }
 
             if !spans_3d.is_empty() {
@@ -2160,7 +2229,23 @@ impl GpuState {
                     bytemuck::cast_slice(&staging),
                 );
             }
-            while self.spline_uniform_buffers.len() < splines.len() {
+            // Splines also slot per (spline, layer) so multi-shader splines
+            // get their own params block per layer.
+            let spline_layer_count = |s: &crate::libs::gui::SplineRender| {
+                s.active_shaders.len().max(1)
+            };
+            let spline_layer_counts: Vec<u32> = splines
+                .iter()
+                .map(|s| spline_layer_count(s) as u32)
+                .collect();
+            let mut spline_layer_offsets: Vec<u32> = Vec::with_capacity(splines.len() + 1);
+            let mut acc_sp: u32 = 0;
+            for c in &spline_layer_counts {
+                spline_layer_offsets.push(acc_sp);
+                acc_sp += c;
+            }
+            let total_spline_slots = acc_sp as usize;
+            while self.spline_uniform_buffers.len() < total_spline_slots {
                 let buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Ruzit GUI spline uni"),
                     contents: bytemuck::bytes_of(&UniData::zeroed()),
@@ -2189,39 +2274,43 @@ impl GpuState {
             }
             let res = [self.config.width as f32, self.config.height as f32];
             for (i, s) in splines.iter().enumerate() {
-                let mut params = [[0.0_f32; 4]; 4];
                 let style_id = match s.style {
                     crate::libs::gui::spline::SplineStyle::Solid => 0.0,
                     crate::libs::gui::spline::SplineStyle::Dashed => 1.0,
                     crate::libs::gui::spline::SplineStyle::Dotted => 2.0,
                 };
-                params[0][0] = style_id;
-                params[0][1] = s.total_pixel_length;
-                params[0][2] = s.length;
-                params[0][3] = s.padding;
-                if let Some(sh) = &s.active_shader {
-                    let p = sh.params.lock().unwrap();
-                    for j in 0..16 {
-                        params[j / 4][j % 4] = p[j];
-                    }
-                }
                 let alpha = (1.0 - s.transparency).clamp(0.0, 1.0);
-                let data = UniData {
-                    pos: [s.aabb.0, s.aabb.1],
-                    size: [s.aabb.2, s.aabb.3],
-                    color: [s.color.r, s.color.g, s.color.b, alpha],
-                    resolution: res,
-                    time,
-                    shape: 0,
-                    rotation_pad: [0.0; 4],
-                    clip_rect: [0.0; 4],
-                    params,
-                };
-                self.queue.write_buffer(
-                    &self.spline_uniform_buffers[i],
-                    0,
-                    bytemuck::bytes_of(&data),
-                );
+                let layer_count = spline_layer_count(s);
+                let base_slot = spline_layer_offsets[i] as usize;
+                for layer in 0..layer_count {
+                    let mut params = [[0.0_f32; 4]; 4];
+                    params[0][0] = style_id;
+                    params[0][1] = s.total_pixel_length;
+                    params[0][2] = s.length;
+                    params[0][3] = s.padding;
+                    if let Some(sh) = s.active_shaders.get(layer) {
+                        let p = sh.params.lock().unwrap();
+                        for j in 0..16 {
+                            params[j / 4][j % 4] = p[j];
+                        }
+                    }
+                    let data = UniData {
+                        pos: [s.aabb.0, s.aabb.1],
+                        size: [s.aabb.2, s.aabb.3],
+                        color: [s.color.r, s.color.g, s.color.b, alpha],
+                        resolution: res,
+                        time,
+                        shape: 0,
+                        rotation_pad: [0.0; 4],
+                        clip_rect: [0.0; 4],
+                        params,
+                    };
+                    self.queue.write_buffer(
+                        &self.spline_uniform_buffers[base_slot + layer],
+                        0,
+                        bytemuck::bytes_of(&data),
+                    );
+                }
             }
         }
 
@@ -2255,20 +2344,10 @@ impl GpuState {
             });
             for (_, i) in &overlay_indices {
                 let part = &parts[*i];
-                let pipeline = match &part.active_shader {
-                    Some(sh) => self
-                        .pipelines_3d
-                        .get(&sh.id)
-                        .unwrap_or(&self.default_pipeline_3d),
-                    None => &self.default_pipeline_3d,
-                };
-                rpass.set_pipeline(pipeline);
                 let key = part.texture.as_ref().map(|t| t.id).unwrap_or(0);
                 let Some(bind_group) = self.bind_group_3d_cache.get(&key) else {
                     continue;
                 };
-                let dyn_offset = (*i as u64 * self.instance_stride) as u32;
-                rpass.set_bind_group(0, bind_group, &[dyn_offset]);
 
                 let (vbuf, ibuf, idx_count) = match part.shape {
                     renderable::PartShape::Cube => {
@@ -2289,7 +2368,22 @@ impl GpuState {
                 };
                 rpass.set_vertex_buffer(0, vbuf.slice(..));
                 rpass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint32);
-                rpass.draw_indexed(0..idx_count, 0, 0..1);
+
+                let layer_count = part.active_shaders.len().max(1);
+                let base_slot = part_layer_offsets[*i] as usize;
+                for layer in 0..layer_count {
+                    let pipeline = match part.active_shaders.get(layer) {
+                        Some(sh) => self
+                            .pipelines_3d
+                            .get(&sh.id)
+                            .unwrap_or(&self.default_pipeline_3d),
+                        None => &self.default_pipeline_3d,
+                    };
+                    rpass.set_pipeline(pipeline);
+                    let dyn_offset = ((base_slot + layer) as u64 * self.instance_stride) as u32;
+                    rpass.set_bind_group(0, bind_group, &[dyn_offset]);
+                    rpass.draw_indexed(0..idx_count, 0, 0..1);
+                }
             }
         }
 
@@ -2408,13 +2502,20 @@ impl GpuState {
                         rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                         current_scissor = scissor;
                     }
-                    let pipeline = match &item.active_shader {
-                        Some(sh) => self.pipelines.get(&sh.id).unwrap_or(&self.default_pipeline),
-                        None => &self.default_pipeline,
-                    };
-                    rpass.set_pipeline(pipeline);
-                    rpass.set_bind_group(0, &bind_groups_2d[i], &[]);
-                    rpass.draw(0..6, 0..1);
+                    let layer_count = item.active_shaders.len().max(1);
+                    let base_slot = item_layer_offsets[i] as usize;
+                    for layer in 0..layer_count {
+                        let pipeline = match item.active_shaders.get(layer) {
+                            Some(sh) => self
+                                .pipelines
+                                .get(&sh.id)
+                                .unwrap_or(&self.default_pipeline),
+                            None => &self.default_pipeline,
+                        };
+                        rpass.set_pipeline(pipeline);
+                        rpass.set_bind_group(0, &bind_groups_2d[base_slot + layer], &[]);
+                        rpass.draw(0..6, 0..1);
+                    }
                 }
             }
         }
@@ -2442,24 +2543,37 @@ impl GpuState {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+            // Recompute spline layer offsets locally (the write block computed
+            // its own; this keeps the draw block self-contained).
+            let mut sp_offsets: Vec<u32> = Vec::with_capacity(splines.len());
+            let mut sp_acc: u32 = 0;
+            for s in &splines {
+                sp_offsets.push(sp_acc);
+                sp_acc += s.active_shaders.len().max(1) as u32;
+            }
             let mut offset_v: u32 = 0;
             for (i, s) in splines.iter().enumerate() {
                 let count = s.vertices.len() as u32;
                 let start = offset_v;
                 offset_v += count;
-                let pipeline = match &s.active_shader {
-                    Some(sh) => self
-                        .spline_pipelines
-                        .get(&sh.id)
-                        .unwrap_or(&self.spline_default_pipeline),
-                    None => &self.spline_default_pipeline,
-                };
-                rpass.set_pipeline(pipeline);
-                rpass.set_bind_group(0, &self.spline_bind_groups[i], &[]);
                 let byte_start = (start as u64) * stride;
                 let byte_end = byte_start + (count as u64) * stride;
                 rpass.set_vertex_buffer(0, self.spline_vertex_buffer.slice(byte_start..byte_end));
-                rpass.draw(0..count, 0..1);
+
+                let layer_count = s.active_shaders.len().max(1);
+                let base_slot = sp_offsets[i] as usize;
+                for layer in 0..layer_count {
+                    let pipeline = match s.active_shaders.get(layer) {
+                        Some(sh) => self
+                            .spline_pipelines
+                            .get(&sh.id)
+                            .unwrap_or(&self.spline_default_pipeline),
+                        None => &self.spline_default_pipeline,
+                    };
+                    rpass.set_pipeline(pipeline);
+                    rpass.set_bind_group(0, &self.spline_bind_groups[base_slot + layer], &[]);
+                    rpass.draw(0..count, 0..1);
+                }
             }
         }
 

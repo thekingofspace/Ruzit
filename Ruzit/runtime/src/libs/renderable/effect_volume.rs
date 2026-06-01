@@ -349,7 +349,7 @@ pub struct ParticleRender {
 pub struct EffectVolumeRender {
     pub id: u64,
     pub texture: Option<PartTextureRef>,
-    pub active_shader: Option<ParticleAttachedShader>,
+    pub active_shaders: Vec<ParticleAttachedShader>,
     pub face_camera: bool,
     pub particles: Vec<ParticleRender>,
 }
@@ -384,7 +384,7 @@ pub fn effect_volume_snapshot() -> Vec<EffectVolumeRender> {
                 Some(EffectVolumeRender {
                     id: s.id,
                     texture: s.texture.clone(),
-                    active_shader: s.attached.last().cloned(),
+                    active_shaders: s.attached.clone(),
                     face_camera: s.face_camera,
                     particles,
                 })
