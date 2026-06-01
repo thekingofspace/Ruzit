@@ -420,7 +420,8 @@ mesh:Free()</code></pre>
         <pre><code><span class="hl-kw">local</span> parts = Asset.<span class="hl-fn">LoadFragmented</span>(<span class="hl-str">"vehicles.car"</span>)
 <span class="hl-kw">for</span> _, mesh <span class="hl-kw">in</span> parts <span class="hl-kw">do</span>
     <span class="hl-kw">local</span> part = Renderable.<span class="hl-fn">BaseModel</span>(mesh)
-    part.CFrame = root.CFrame:<span class="hl-fn">ToWorldSpace</span>(mesh:<span class="hl-fn">GetPivot</span>())
+    <span class="hl-cmt">-- root.CFrame * mesh:GetPivot() places each piece in world space</span>
+    part.CFrame = root.CFrame * mesh:<span class="hl-fn">GetPivot</span>()
 <span class="hl-kw">end</span></code></pre>
     </div>
     <div class="member">
