@@ -521,14 +521,10 @@ pub struct FbxAnimClip {
 pub struct LoadedFbx {
     pub mesh: Mesh,
     pub animations: Vec<FbxAnimClip>,
-    /// Local translation (Lcl Translation) of the model node, i.e. where the
-    /// geometry's local origin sits. `[0, 0, 0]` when unknown (OBJ / ASCII FBX).
     pub origin: [f32; 3],
-    /// Rotation pivot (RotationPivot) of the model node. `[0, 0, 0]` when unknown.
     pub pivot: [f32; 3],
 }
 
-/// One named sub-mesh pulled out of a multi-mesh FBX, plus its node transform.
 pub struct MeshFragment {
     pub name: String,
     pub mesh: Mesh,
@@ -549,18 +545,10 @@ pub fn load_fbx_full(bytes: &[u8]) -> Result<LoadedFbx, String> {
     load_fbx_binary_full(bytes)
 }
 
-/// Load every mesh in an FBX as its own [`MeshFragment`] instead of merging
-/// them into a single mesh. Names come from the owning Model node. ASCII FBX
-/// (which we can't split per-node here) falls back to a single fragment.
+
 pub fn load_fbx_fragments(bytes: &[u8]) -> Result<Vec<MeshFragment>, String> {
     if !bytes.starts_with(b"Kaydara FBX Binary") {
-        let mesh = load_fbx_ascii(bytes)?;
-        return Ok(vec![MeshFragment {
-            name: "Mesh".to_string(),
-            mesh,
-            origin: [0.0, 0.0, 0.0],
-            pivot: [0.0, 0.0, 0.0],
-        }]);
+        return load_fbx_ascii_fragments(bytes);
     }
     load_fbx_binary_fragments(bytes)
 }
@@ -666,10 +654,6 @@ fn load_fbx_binary_full(bytes: &[u8]) -> Result<LoadedFbx, String> {
     })
 }
 
-/// Per-geometry split of a binary FBX. Each `Geometry::Mesh` becomes one
-/// fragment, named after its owning `Model` node and tagged with that node's
-/// `Lcl Translation` (origin) and `RotationPivot` (pivot). Vertices stay in
-/// geometry-local space — the transform is reported, not baked in.
 fn load_fbx_binary_fragments(bytes: &[u8]) -> Result<Vec<MeshFragment>, String> {
     use fbxcel_dom::any::AnyDocument;
     use fbxcel_dom::v7400::object::TypedObjectHandle;
@@ -696,7 +680,6 @@ fn load_fbx_binary_fragments(bytes: &[u8]) -> Result<Vec<MeshFragment>, String> 
             _ => continue,
         };
 
-        // The owning Model node(s) reference this geometry.
         let model = geom.models().next();
 
         let name = model
@@ -726,8 +709,6 @@ fn load_fbx_binary_fragments(bytes: &[u8]) -> Result<Vec<MeshFragment>, String> 
     Ok(fragments)
 }
 
-/// Build a single mesh (positions + indices + computed normals) from one FBX
-/// geometry handle, in geometry-local space.
 fn build_geom_mesh(
     geom: &fbxcel_dom::v7400::object::geometry::MeshHandle,
 ) -> Option<Mesh> {
@@ -759,7 +740,6 @@ fn build_geom_mesh(
     Some(Mesh { vertices, indices })
 }
 
-/// Read `Lcl Translation` (origin) and `RotationPivot` (pivot) off a model node.
 fn model_transform(
     model: &fbxcel_dom::v7400::object::model::MeshHandle,
 ) -> ([f32; 3], [f32; 3]) {
@@ -781,8 +761,6 @@ fn first_model_transform(doc: &fbxcel_dom::v7400::Document) -> ([f32; 3], [f32; 
     ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
 }
 
-/// Pull the last three numeric components out of an FBX property's value part
-/// (FBX vec3 properties store `[name, type, subtype, flags, x, y, z]`).
 fn read_prop_vec3(
     props: &fbxcel_dom::v7400::object::property::ObjectProperties,
     name: &str,
@@ -1276,6 +1254,249 @@ fn load_fbx_ascii(bytes: &[u8]) -> Result<Mesh, String> {
     }
 
     Ok(Mesh { vertices, indices })
+}
+
+/// Per-geometry split of an ASCII FBX. Each `Geometry:` block becomes one
+/// fragment, named after its owning `Model:` node and tagged with that node's
+/// `Lcl Translation` (origin) and `RotationPivot` (pivot). Vertices stay in
+/// geometry-local space -- the transform is reported, not baked in.
+fn load_fbx_ascii_fragments(bytes: &[u8]) -> Result<Vec<MeshFragment>, String> {
+    use std::collections::HashMap;
+    let text = std::str::from_utf8(bytes).map_err(|e| format!("ASCII FBX: not UTF-8: {e}"))?;
+
+    let mut parents: HashMap<i64, i64> = HashMap::new();
+    if let Some(ci) = text.find("Connections:") {
+        for line in text[ci..].lines() {
+            let l = line.trim();
+            if l.starts_with("C:") && l.contains("\"OO\"") {
+                let nums: Vec<i64> = l
+                    .split(',')
+                    .filter_map(|s| s.trim().trim_matches('"').parse::<i64>().ok())
+                    .collect();
+                if nums.len() >= 2 {
+                    parents.insert(nums[0], nums[1]);
+                }
+            }
+        }
+    }
+
+    let mut models: HashMap<i64, (String, [f32; 3], [f32; 3])> = HashMap::new();
+    let (objects, objects_offset) = if let Some(oi) = text.find("Objects:") {
+        match text[oi..].find('{') {
+            Some(b) => {
+                let bs = oi + b + 1;
+                (&text[bs..find_matching_brace(text, bs)], bs)
+            }
+            None => (text, 0),
+        }
+    } else {
+        (text, 0)
+    };
+    {
+        let mut c = 0usize;
+        while let Some(p) = objects[c..].find("Model:") {
+            let abs = c + p;
+            let after_kw = &objects[abs + "Model:".len()..];
+            let id: Option<i64> = after_kw
+                .trim_start()
+                .chars()
+                .take_while(|ch| ch.is_ascii_digit() || *ch == '-')
+                .collect::<String>()
+                .parse()
+                .ok();
+            let name = parse_quoted_name_after(after_kw)
+                .map(|s| s.strip_prefix("Model::").unwrap_or(&s).trim().to_string())
+                .filter(|s| !s.is_empty());
+            let bstart = match objects[abs..].find('{') {
+                Some(b) => abs + b + 1,
+                None => break,
+            };
+            let bend = find_matching_brace(objects, bstart);
+            if let Some(id) = id {
+                let block = &objects[bstart..bend];
+                let origin = parse_prop_vec3(block, "Lcl Translation").unwrap_or([0.0, 0.0, 0.0]);
+                let pivot = parse_prop_vec3(block, "RotationPivot").unwrap_or([0.0, 0.0, 0.0]);
+                models.insert(id, (name.unwrap_or_default(), origin, pivot));
+            }
+            c = bend;
+        }
+    }
+    let _ = objects_offset;
+
+    let mut fragments: Vec<MeshFragment> = Vec::new();
+    let mut fallback_idx = 0usize;
+    let mut counts: HashMap<String, usize> = HashMap::new();
+
+    let mut cursor = 0usize;
+    while let Some(geom_start) = text[cursor..].find("Geometry:") {
+        let abs = cursor + geom_start;
+        let block_start = match text[abs..].find('{') {
+            Some(b) => abs + b + 1,
+            None => break,
+        };
+        let block_end = find_matching_brace(text, block_start);
+        let block = &text[block_start..block_end];
+
+        let positions = parse_named_float_array(block, "Vertices");
+        let raw_indices = parse_named_int_array(block, "PolygonVertexIndex");
+
+        if positions.is_empty() || raw_indices.is_empty() || positions.len() % 3 != 0 {
+            cursor = block_end;
+            continue;
+        }
+
+        let geom_id: i64 = text[abs + "Geometry:".len()..]
+            .trim_start()
+            .chars()
+            .take_while(|ch| ch.is_ascii_digit() || *ch == '-')
+            .collect::<String>()
+            .parse()
+            .unwrap_or(0);
+        let model_id = parents.get(&geom_id).copied().unwrap_or(0);
+
+        let cps: Vec<[f32; 3]> = positions
+            .chunks_exact(3)
+            .map(|c| [c[0] as f32, c[1] as f32, c[2] as f32])
+            .collect();
+
+        let uv_layer = sub_block(block, "LayerElementUV");
+        let uv_array = uv_layer
+            .map(|b| parse_named_float_array(b, "UV"))
+            .unwrap_or_default();
+        let uv_index = uv_layer
+            .map(|b| parse_named_int_array(b, "UVIndex"))
+            .unwrap_or_default();
+        let uv_by_control = uv_layer
+            .and_then(|b| parse_quoted_value(b, "MappingInformationType"))
+            .map(|s| s.contains("ControlPoint"))
+            .unwrap_or(false);
+        let uv_indexed = uv_layer
+            .and_then(|b| parse_quoted_value(b, "ReferenceInformationType"))
+            .map(|s| s.contains("Index"))
+            .unwrap_or(false);
+        let uv_at = |pvi: usize, cp: usize| -> [f32; 2] {
+            if uv_array.len() < 2 {
+                return [0.0, 0.0];
+            }
+            let key = if uv_by_control { cp } else { pvi };
+            let di = if uv_indexed {
+                match uv_index.get(key) {
+                    Some(&v) if v >= 0 => v as usize,
+                    _ => return [0.0, 0.0],
+                }
+            } else {
+                key
+            };
+            let o = di * 2;
+            if o + 1 < uv_array.len() {
+                [uv_array[o] as f32, 1.0 - uv_array[o + 1] as f32]
+            } else {
+                [0.0, 0.0]
+            }
+        };
+
+        let mut vertices: Vec<Vertex3D> = Vec::new();
+        let mut indices: Vec<u32> = Vec::new();
+        let mut poly: Vec<(usize, usize)> = Vec::new();
+        let mut pvi = 0usize;
+        for raw in &raw_indices {
+            let r = *raw;
+            let cp = if r < 0 { (!r) as usize } else { r as usize };
+            poly.push((cp, pvi));
+            pvi += 1;
+            if r < 0 {
+                if poly.len() >= 3 {
+                    for i in 1..poly.len() - 1 {
+                        for &(cpi, pv) in &[poly[0], poly[i], poly[i + 1]] {
+                            let pos = cps.get(cpi).copied().unwrap_or([0.0; 3]);
+                            let idx = vertices.len() as u32;
+                            vertices.push(Vertex3D {
+                                position: pos,
+                                normal: [0.0; 3],
+                                uv: uv_at(pv, cpi),
+                            });
+                            indices.push(idx);
+                        }
+                    }
+                }
+                poly.clear();
+            }
+        }
+
+        cursor = block_end;
+
+        if vertices.is_empty() {
+            continue;
+        }
+
+        let mut accum = vec![[0.0_f32; 3]; vertices.len()];
+        for tri in indices.chunks(3) {
+            if tri.len() < 3 {
+                continue;
+            }
+            let (a, b, c) = (tri[0] as usize, tri[1] as usize, tri[2] as usize);
+            if a >= vertices.len() || b >= vertices.len() || c >= vertices.len() {
+                continue;
+            }
+            let pa = vertices[a].position;
+            let pb = vertices[b].position;
+            let pc = vertices[c].position;
+            let ab = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+            let ac = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
+            let n = [
+                ab[1] * ac[2] - ab[2] * ac[1],
+                ab[2] * ac[0] - ab[0] * ac[2],
+                ab[0] * ac[1] - ab[1] * ac[0],
+            ];
+            for &i in &[a, b, c] {
+                accum[i][0] += n[0];
+                accum[i][1] += n[1];
+                accum[i][2] += n[2];
+            }
+        }
+        for (i, n) in accum.iter().enumerate() {
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            vertices[i].normal = if len > 1e-6 {
+                [n[0] / len, n[1] / len, n[2] / len]
+            } else {
+                [0.0, 1.0, 0.0]
+            };
+        }
+
+        let (base_name, origin, pivot) = models
+            .get(&model_id)
+            .cloned()
+            .unwrap_or_else(|| (String::new(), [0.0; 3], [0.0; 3]));
+        let base = if base_name.is_empty() {
+            fallback_idx += 1;
+            format!("Mesh{fallback_idx}")
+        } else {
+            base_name
+        };
+        let n = counts.entry(base.clone()).or_insert(0);
+        let name = if *n == 0 { base.clone() } else { format!("{base} ({n})") };
+        *n += 1;
+
+        fragments.push(MeshFragment {
+            name,
+            mesh: Mesh { vertices, indices },
+            origin,
+            pivot,
+        });
+    }
+
+    if fragments.is_empty() {
+        return Err("ASCII FBX: no Geometry/Vertices found".into());
+    }
+    Ok(fragments)
+}
+
+/// Read the first `"..."` literal that follows the cursor in `s`.
+fn parse_quoted_name_after(s: &str) -> Option<String> {
+    let q1 = s.find('"')?;
+    let after = &s[q1 + 1..];
+    let q2 = after.find('"')?;
+    Some(after[..q2].to_string())
 }
 
 fn find_matching_brace(text: &str, start: usize) -> usize {
