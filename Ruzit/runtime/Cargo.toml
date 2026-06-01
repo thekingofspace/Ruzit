@@ -47,6 +47,11 @@ rayon = "1"
 rodio = { version = "0.20", default-features = false, features = [
     "symphonia-all",
 ] }
+# rodio's "symphonia-all" pulls the Vorbis codec but not the OGG *container*
+# demuxer. Depending on symphonia directly with "ogg" enabled adds the OGG
+# format reader to the shared symphonia probe (Cargo feature unification), so
+# rodio::Decoder can read .ogg files for both the sfx and SoundByte paths.
+symphonia = { version = "0.5", default-features = false, features = ["ogg", "vorbis"] }
 rapier3d = { version = "0.22", features = ["parallel"] }
 nalgebra = "0.33"
 libloading = "0.8"

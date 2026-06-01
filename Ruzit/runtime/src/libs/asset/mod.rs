@@ -237,6 +237,14 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
             },
         )?,
     )?;
+    let fs_frag = fs.clone();
+    let owner_frag = owner.clone();
+    t.set(
+        "LoadFragmented",
+        lua.create_function(move |lua, path: String| -> mlua::Result<Table> {
+            load_fragmented(lua, &fs_frag, &owner_frag, &path)
+        })?,
+    )?;
     t.set(
         "FromString",
         lua.create_function(
@@ -601,25 +609,94 @@ fn load_model(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value
     parse_model(lua, bytes, source)
 }
 
+/// Load a model and split it into one ModelAsset per mesh. Returns a table
+/// keyed by mesh name; meshes that share a name are disambiguated with a
+/// ` (n)` suffix. Only FBX carries multiple named meshes; OBJ yields a single
+/// entry keyed by the file stem.
+fn load_fragmented(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Table> {
+    use crate::libs::renderable::mesh::{self, MeshFragment};
+
+    let (bytes, source) = read_bytes(fs, owner, path, MODEL_EXTS, "Model")?;
+    let is_fbx =
+        bytes.starts_with(b"Kaydara FBX Binary") || source.to_ascii_lowercase().ends_with(".fbx");
+
+    let fragments: Vec<MeshFragment> = if is_fbx {
+        mesh::load_fbx_fragments(&bytes).map_err(|e| {
+            mlua::Error::RuntimeError(format!("Asset.LoadFragmented '{source}': {e}"))
+        })?
+    } else {
+        let text = String::from_utf8(bytes).map_err(|e| {
+            mlua::Error::RuntimeError(format!("Asset.LoadFragmented '{source}' not UTF-8: {e}"))
+        })?;
+        let mesh = mesh::load_obj(&text).map_err(|e| {
+            mlua::Error::RuntimeError(format!("Asset.LoadFragmented '{source}': {e}"))
+        })?;
+        let name = Path::new(&source)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Mesh")
+            .to_string();
+        vec![MeshFragment {
+            name,
+            mesh,
+            origin: [0.0, 0.0, 0.0],
+            pivot: [0.0, 0.0, 0.0],
+        }]
+    };
+
+    let result = lua.create_table()?;
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for frag in fragments {
+        let base = frag.name;
+        let n = counts.entry(base.clone()).or_insert(0);
+        let mut key = if *n == 0 {
+            base.clone()
+        } else {
+            format!("{base} ({n})")
+        };
+        *n += 1;
+        // Guard against colliding with an already-used key (e.g. a node literally
+        // named "Wheel (1)").
+        while result.contains_key(key.clone())? {
+            key = format!("{base} ({n})");
+            *n += 1;
+        }
+
+        let asset = ModelAsset {
+            id: next_shader_id(),
+            vertices: Arc::new(frag.mesh.vertices),
+            indices: Arc::new(frag.mesh.indices),
+            source: format!("{source}#{key}"),
+            origin: frag.origin,
+            pivot: frag.pivot,
+        };
+        result.set(key, Value::UserData(lua.create_userdata(asset)?))?;
+    }
+    Ok(result)
+}
+
 fn parse_model(lua: &Lua, bytes: Vec<u8>, source: String) -> mlua::Result<Value> {
     let is_fbx =
         bytes.starts_with(b"Kaydara FBX Binary") || source.to_ascii_lowercase().ends_with(".fbx");
 
-    let mesh = if is_fbx {
+    let (mesh, origin, pivot) = if is_fbx {
         let loaded = crate::libs::renderable::mesh::load_fbx_full(&bytes)
             .map_err(|e| mlua::Error::RuntimeError(format!("Model parse '{source}': {e}")))?;
-        loaded.mesh
+        (loaded.mesh, loaded.origin, loaded.pivot)
     } else {
         let text = String::from_utf8(bytes)
             .map_err(|e| mlua::Error::RuntimeError(format!("Model '{source}' not UTF-8: {e}")))?;
-        crate::libs::renderable::mesh::load_obj(&text)
-            .map_err(|e| mlua::Error::RuntimeError(format!("Model parse '{source}': {e}")))?
+        let mesh = crate::libs::renderable::mesh::load_obj(&text)
+            .map_err(|e| mlua::Error::RuntimeError(format!("Model parse '{source}': {e}")))?;
+        (mesh, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
     };
     let asset = ModelAsset {
         id: next_shader_id(),
         vertices: Arc::new(mesh.vertices),
         indices: Arc::new(mesh.indices),
         source,
+        origin,
+        pivot,
     };
     Ok(Value::UserData(lua.create_userdata(asset)?))
 }
@@ -910,6 +987,8 @@ pub struct ModelAsset {
     pub vertices: Arc<Vec<crate::libs::renderable::mesh::Vertex3D>>,
     pub indices: Arc<Vec<u32>>,
     pub source: String,
+    pub origin: [f32; 3],
+    pub pivot: [f32; 3],
 }
 
 impl UserData for ModelAsset {
@@ -921,6 +1000,20 @@ impl UserData for ModelAsset {
             Ok((this.indices.len() / 3) as i64)
         });
         m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
+        m.add_method("Origin", |_, this, _: ()| {
+            Ok(crate::libs::primitives::Vector::new(
+                this.origin[0],
+                this.origin[1],
+                this.origin[2],
+            ))
+        });
+        m.add_method("Pivot", |_, this, _: ()| {
+            Ok(crate::libs::primitives::Vector::new(
+                this.pivot[0],
+                this.pivot[1],
+                this.pivot[2],
+            ))
+        });
         m.add_method("LocalBounds", |lua, this, _: ()| -> mlua::Result<Table> {
             if this.vertices.is_empty() {
                 let t = lua.create_table()?;

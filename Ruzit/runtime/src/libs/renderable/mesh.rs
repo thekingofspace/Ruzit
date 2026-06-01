@@ -521,6 +521,19 @@ pub struct FbxAnimClip {
 pub struct LoadedFbx {
     pub mesh: Mesh,
     pub animations: Vec<FbxAnimClip>,
+    /// Local translation (Lcl Translation) of the model node, i.e. where the
+    /// geometry's local origin sits. `[0, 0, 0]` when unknown (OBJ / ASCII FBX).
+    pub origin: [f32; 3],
+    /// Rotation pivot (RotationPivot) of the model node. `[0, 0, 0]` when unknown.
+    pub pivot: [f32; 3],
+}
+
+/// One named sub-mesh pulled out of a multi-mesh FBX, plus its node transform.
+pub struct MeshFragment {
+    pub name: String,
+    pub mesh: Mesh,
+    pub origin: [f32; 3],
+    pub pivot: [f32; 3],
 }
 
 pub fn load_fbx_full(bytes: &[u8]) -> Result<LoadedFbx, String> {
@@ -529,9 +542,27 @@ pub fn load_fbx_full(bytes: &[u8]) -> Result<LoadedFbx, String> {
         return Ok(LoadedFbx {
             mesh,
             animations: Vec::new(),
+            origin: [0.0, 0.0, 0.0],
+            pivot: [0.0, 0.0, 0.0],
         });
     }
     load_fbx_binary_full(bytes)
+}
+
+/// Load every mesh in an FBX as its own [`MeshFragment`] instead of merging
+/// them into a single mesh. Names come from the owning Model node. ASCII FBX
+/// (which we can't split per-node here) falls back to a single fragment.
+pub fn load_fbx_fragments(bytes: &[u8]) -> Result<Vec<MeshFragment>, String> {
+    if !bytes.starts_with(b"Kaydara FBX Binary") {
+        let mesh = load_fbx_ascii(bytes)?;
+        return Ok(vec![MeshFragment {
+            name: "Mesh".to_string(),
+            mesh,
+            origin: [0.0, 0.0, 0.0],
+            pivot: [0.0, 0.0, 0.0],
+        }]);
+    }
+    load_fbx_binary_fragments(bytes)
 }
 
 fn load_fbx_binary_full(bytes: &[u8]) -> Result<LoadedFbx, String> {
@@ -626,10 +657,155 @@ fn load_fbx_binary_full(bytes: &[u8]) -> Result<LoadedFbx, String> {
     }
 
     let animations = parse_fbx_animations(&doc);
+    let (origin, pivot) = first_model_transform(&doc);
     Ok(LoadedFbx {
         mesh: Mesh { vertices, indices },
         animations,
+        origin,
+        pivot,
     })
+}
+
+/// Per-geometry split of a binary FBX. Each `Geometry::Mesh` becomes one
+/// fragment, named after its owning `Model` node and tagged with that node's
+/// `Lcl Translation` (origin) and `RotationPivot` (pivot). Vertices stay in
+/// geometry-local space — the transform is reported, not baked in.
+fn load_fbx_binary_fragments(bytes: &[u8]) -> Result<Vec<MeshFragment>, String> {
+    use fbxcel_dom::any::AnyDocument;
+    use fbxcel_dom::v7400::object::TypedObjectHandle;
+    use fbxcel_dom::v7400::object::geometry::TypedGeometryHandle;
+
+    let cursor = std::io::Cursor::new(bytes);
+    let doc = AnyDocument::from_seekable_reader(cursor).map_err(|e| format!("FBX parse: {e}"))?;
+    let doc = match doc {
+        AnyDocument::V7400(_, doc) => doc,
+        _ => return Err("FBX: only v7.4+ binary FBX is supported".into()),
+    };
+
+    let mut fragments: Vec<MeshFragment> = Vec::new();
+    let mut fallback_idx = 0usize;
+
+    for obj in doc.objects() {
+        let geom = match obj.get_typed() {
+            TypedObjectHandle::Geometry(TypedGeometryHandle::Mesh(m)) => m,
+            _ => continue,
+        };
+
+        let mesh = match build_geom_mesh(&geom) {
+            Some(m) if !m.vertices.is_empty() => m,
+            _ => continue,
+        };
+
+        // The owning Model node(s) reference this geometry.
+        let model = geom.models().next();
+
+        let name = model
+            .and_then(|m| m.name())
+            .map(|s| s.split('\u{0001}').next().unwrap_or(s).trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| {
+                fallback_idx += 1;
+                format!("Mesh{fallback_idx}")
+            });
+
+        let (origin, pivot) = model
+            .map(|m| model_transform(&m))
+            .unwrap_or(([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]));
+
+        fragments.push(MeshFragment {
+            name,
+            mesh,
+            origin,
+            pivot,
+        });
+    }
+
+    if fragments.is_empty() {
+        return Err("FBX has no mesh data".into());
+    }
+    Ok(fragments)
+}
+
+/// Build a single mesh (positions + indices + computed normals) from one FBX
+/// geometry handle, in geometry-local space.
+fn build_geom_mesh(
+    geom: &fbxcel_dom::v7400::object::geometry::MeshHandle,
+) -> Option<Mesh> {
+    let polygon_vertices = geom.polygon_vertices().ok()?;
+    let triangles = polygon_vertices.triangulate_each(triangulator).ok()?;
+    let control_points: Vec<[f32; 3]> = polygon_vertices
+        .raw_control_points()
+        .ok()?
+        .map(|p| [p.x as f32, p.y as f32, p.z as f32])
+        .collect();
+
+    let mut vertices: Vec<Vertex3D> = control_points
+        .iter()
+        .map(|cp| Vertex3D {
+            position: *cp,
+            normal: [0.0, 0.0, 0.0],
+            uv: [0.0, 0.0],
+        })
+        .collect();
+
+    let mut indices: Vec<u32> = Vec::new();
+    for tri_vi in triangles.triangle_vertex_indices() {
+        if let Some(cpi) = triangles.control_point_index(tri_vi) {
+            indices.push(cpi.to_u32());
+        }
+    }
+
+    recompute_normals(&mut vertices, &indices);
+    Some(Mesh { vertices, indices })
+}
+
+/// Read `Lcl Translation` (origin) and `RotationPivot` (pivot) off a model node.
+fn model_transform(
+    model: &fbxcel_dom::v7400::object::model::MeshHandle,
+) -> ([f32; 3], [f32; 3]) {
+    let props = model.properties_by_native_typename("FbxNode");
+    let origin = read_prop_vec3(&props, "Lcl Translation").unwrap_or([0.0, 0.0, 0.0]);
+    let pivot = read_prop_vec3(&props, "RotationPivot").unwrap_or([0.0, 0.0, 0.0]);
+    (origin, pivot)
+}
+
+/// Transform (origin, pivot) of the first mesh model node in the document.
+fn first_model_transform(doc: &fbxcel_dom::v7400::Document) -> ([f32; 3], [f32; 3]) {
+    use fbxcel_dom::v7400::object::TypedObjectHandle;
+    use fbxcel_dom::v7400::object::model::TypedModelHandle;
+    for obj in doc.objects() {
+        if let TypedObjectHandle::Model(TypedModelHandle::Mesh(m)) = obj.get_typed() {
+            return model_transform(&m);
+        }
+    }
+    ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+}
+
+/// Pull the last three numeric components out of an FBX property's value part
+/// (FBX vec3 properties store `[name, type, subtype, flags, x, y, z]`).
+fn read_prop_vec3(
+    props: &fbxcel_dom::v7400::object::property::ObjectProperties,
+    name: &str,
+) -> Option<[f32; 3]> {
+    use fbxcel_dom::fbxcel::low::v7400::AttributeValue;
+    let handle = props.get_property(name)?;
+    let nums: Vec<f32> = handle
+        .value_part()
+        .iter()
+        .filter_map(|a| match a {
+            AttributeValue::F64(v) => Some(*v as f32),
+            AttributeValue::F32(v) => Some(*v),
+            AttributeValue::I32(v) => Some(*v as f32),
+            AttributeValue::I64(v) => Some(*v as f32),
+            _ => None,
+        })
+        .collect();
+    let n = nums.len();
+    if n >= 3 {
+        Some([nums[n - 3], nums[n - 2], nums[n - 1]])
+    } else {
+        None
+    }
 }
 
 fn parse_fbx_animations(doc: &fbxcel_dom::v7400::Document) -> Vec<FbxAnimClip> {

@@ -139,6 +139,7 @@ export type AssetByKind = {
 export type AssetKind = keyof<AssetByKind>
 export type Asset_API = {
 	GetAsset: <K>(kind: AssetKind & K, path: string) -> index<AssetByKind, K>,
+	LoadFragmented: (path: string) -> { [string]: ModelAsset },
 	FromString: <K>(kind: AssetKind & K, data: string, label: string?) -> index<AssetByKind, K>,
 	ImportAsset: (<K>(kind: AssetKind & K, path: string) -> index<AssetByKind, K>)
 		& ((kind: "Auto", path: string) -> any),
@@ -441,6 +442,8 @@ declare class ModelAsset
 	function VertexCount(self): number
 	function TriangleCount(self): number
 	function Source(self): string
+	function Origin(self): Vector
+	function Pivot(self): Vector
 	function LocalBounds(self): { Min: Vector, Max: Vector, Size: Vector, Center: Vector }
 	function Free(self): ()
 end

@@ -96,6 +96,33 @@
     </div>
     <div class="member">
         <div class="member-header">
+            <span class="member-name">Asset.LoadFragmented(path)</span>
+            <span class="member-type">&rarr; { [string]: ModelAsset }</span>
+        </div>
+        <p class="member-desc">
+            Load a model and split it into one
+            <a href="#model">ModelAsset</a> per mesh, instead of merging
+            everything into a single mesh like
+            <code>GetAsset("Model", &hellip;)</code> does. Returns a
+            dictionary keyed by each mesh's name (taken from its FBX Model
+            node). Meshes that share a name are disambiguated with a
+            <code>&nbsp;(n)</code> suffix &mdash; e.g. two nodes both named
+            <code>Wheel</code> come back as <code>Wheel</code> and
+            <code>Wheel (1)</code>. Each fragment is a fully independent
+            asset (its own <code>:Free()</code>,
+            <a href="#model"><code>:Origin()</code>/<code>:Pivot()</code></a>,
+            etc.). Only FBX carries multiple named meshes; an OBJ yields a
+            single entry keyed by the file stem. Not cached &mdash; each
+            call re-decodes and produces fresh assets.
+        </p>
+        <pre><code><span class="hl-kw">local</span> parts = Asset.<span class="hl-fn">LoadFragmented</span>(<span class="hl-str">"vehicles.car"</span>)
+<span class="hl-kw">for</span> name, mesh <span class="hl-kw">in</span> parts <span class="hl-kw">do</span>
+    <span class="hl-kw">local</span> part = Renderable.<span class="hl-fn">BaseModel</span>(mesh)
+    part.Position = mesh:<span class="hl-fn">Origin</span>()
+<span class="hl-kw">end</span></code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
             <span class="member-name">Asset.FromString(kind, data, label?)</span>
             <span class="member-type">-> kind-specific</span>
         </div>
@@ -345,6 +372,28 @@ mesh:Free()</code></pre>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">model:Source()</span><span class="member-type">&rarr; string</span></div>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">model:Origin()</span><span class="member-type">&rarr; Vector</span></div>
+        <p class="member-desc">
+            The model node's local translation
+            (<code>Lcl&nbsp;Translation</code> in FBX) &mdash; where the
+            mesh's local origin sits. Vertices are kept in mesh-local space,
+            so this tells you where to place the fragment to reassemble the
+            original model (most useful with
+            <a href="#api"><code>Asset.LoadFragmented</code></a>).
+            <code>(0,&nbsp;0,&nbsp;0)</code> for OBJ and ASCII FBX, which
+            carry no node transform.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">model:Pivot()</span><span class="member-type">&rarr; Vector</span></div>
+        <p class="member-desc">
+            The model node's rotation pivot
+            (<code>RotationPivot</code> in FBX) &mdash; the point the mesh
+            rotates around. <code>(0,&nbsp;0,&nbsp;0)</code> when the export
+            carries no pivot.
+        </p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">model:LocalBounds()</span><span class="member-type">&rarr; { Min, Max, Size, Center }</span></div>
