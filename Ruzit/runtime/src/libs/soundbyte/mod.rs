@@ -970,9 +970,7 @@ impl Iterator for SpatialAdapter {
         let raw = self.inner.next()?;
         let st = *self.state.lock().unwrap();
         let (atten, pan) = if st.use_3d {
-            // Listener via cross-thread atomics (camera_snapshot is thread-local and would
-            // read the origin on the audio thread).
-            let (campos, camyaw) = crate::libs::renderable::audio_listener();
+            let (campos, right) = crate::libs::renderable::audio_listener();
             let dx = st.position.x - campos[0];
             let dy = st.position.y - campos[1];
             let dz = st.position.z - campos[2];
@@ -986,8 +984,8 @@ impl Iterator for SpatialAdapter {
                 let t = (dist - st.falloff_min) / span;
                 (1.0 - t).clamp(0.0, 1.0).powf(1.6)
             };
-            let yaw = camyaw;
-            let local_x = yaw.cos() * dx + yaw.sin() * dz;
+            // Pan = how far right of the listener the source is (dot with camera right).
+            let local_x = dx * right[0] + dz * right[1];
             let p = if dist > 0.001 { (local_x / dist).clamp(-1.0, 1.0) } else { 0.0 };
             (a, p)
         } else {

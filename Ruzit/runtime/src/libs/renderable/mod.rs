@@ -610,27 +610,33 @@ pub fn camera_snapshot() -> CameraState {
     })
 }
 
-// CAMERA above is thread-local, so the audio thread can't see the real camera. Mirror
-// the listener (position + yaw) into cross-thread atomics so spatial audio can read it.
-static LISTENER: [AtomicU32; 4] = [
-    AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0),
+static LISTENER: [AtomicU32; 5] = [
+    AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0),
+    AtomicU32::new(0), AtomicU32::new(0),
 ];
-pub fn audio_listener() -> ([f32; 3], f32) {
+pub fn audio_listener() -> ([f32; 3], [f32; 2]) {
     (
         [
             f32::from_bits(LISTENER[0].load(Ordering::Relaxed)),
             f32::from_bits(LISTENER[1].load(Ordering::Relaxed)),
             f32::from_bits(LISTENER[2].load(Ordering::Relaxed)),
         ],
-        f32::from_bits(LISTENER[3].load(Ordering::Relaxed)),
+        [
+            f32::from_bits(LISTENER[3].load(Ordering::Relaxed)),
+            f32::from_bits(LISTENER[4].load(Ordering::Relaxed)),
+        ],
     )
 }
 
 pub fn set_camera_cframe(cf: CFrame) {
+    let m = euler_to_matrix_local(cf.rotation);
+    let right_x = m[0][0]; // camera +X (right) in world = column 0 of the orientation
+    let right_z = m[2][0];
     LISTENER[0].store(cf.position.x.to_bits(), Ordering::Relaxed);
     LISTENER[1].store(cf.position.y.to_bits(), Ordering::Relaxed);
     LISTENER[2].store(cf.position.z.to_bits(), Ordering::Relaxed);
-    LISTENER[3].store(cf.rotation.y.to_bits(), Ordering::Relaxed);
+    LISTENER[3].store(right_x.to_bits(), Ordering::Relaxed);
+    LISTENER[4].store(right_z.to_bits(), Ordering::Relaxed);
     CAMERA.with(|c| c.borrow_mut().cframe = cf);
     bump_camera_dirty();
 }
@@ -1903,8 +1909,7 @@ impl UserData for CameraHandle {
             let cf = *value
                 .borrow::<CFrame>()
                 .map_err(|_| mlua::Error::RuntimeError("CFrame expects a CFrame".into()))?;
-            CAMERA.with(|c| c.borrow_mut().cframe = cf);
-            bump_camera_dirty();
+            set_camera_cframe(cf); // updates CAMERA + the cross-thread audio LISTENER + dirties
             Ok(())
         });
         f.add_field_method_get("FOV", |_, _| Ok(CAMERA.with(|c| c.borrow().fov_deg)));
