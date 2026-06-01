@@ -169,7 +169,39 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
 
     t.set("Link", lua.create_function(link)?)?;
 
+    // Pause/resume every active player's output sink (used to suspend all game audio while
+    // the game is paused, then pick it back up exactly where it left off).
+    t.set(
+        "PauseAll",
+        lua.create_function(|_, _: ()| -> mlua::Result<()> {
+            set_all_paused(true);
+            Ok(())
+        })?,
+    )?;
+    t.set(
+        "ResumeAll",
+        lua.create_function(|_, _: ()| -> mlua::Result<()> {
+            set_all_paused(false);
+            Ok(())
+        })?,
+    )?;
+
     Ok(t)
+}
+
+fn set_all_paused(paused: bool) {
+    let players: Vec<Arc<Mutex<PlayerState>>> =
+        PLAYER_REGISTRY.with(|r| r.borrow().iter().cloned().collect());
+    for p in &players {
+        let s = p.lock().unwrap();
+        for r in s.routes.iter() {
+            if let Some(out) = &r.output {
+                if let Some(sink) = out.sink.lock().unwrap().as_ref() {
+                    if paused { sink.pause() } else { sink.play() }
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
