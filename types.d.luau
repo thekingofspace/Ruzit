@@ -490,9 +490,7 @@ export type Dim_API = {
 export type Color3_API = {
 	new: (r: number, g: number, b: number) -> Color3,
 	FromRGB: (r: number, g: number, b: number) -> Color3,
-	fromRGB: (r: number, g: number, b: number) -> Color3,
 	FromHex: (hex: string) -> Color3,
-	fromHex: (hex: string) -> Color3,
 }
 export type Vector_API = {
 	new: ((x: number?, y: number?, z: number?) -> Vector),
