@@ -828,8 +828,125 @@ fn triangulator(
     Ok(())
 }
 
+// ---- FBX node transforms (so multi-mesh models -- e.g. multi-tile rooms whose
+// pieces are positioned by per-node Lcl Translation -- assemble correctly) -------
+type Mat3 = [[f32; 3]; 3];
+
+fn mat3_mul(a: &Mat3, b: &Mat3) -> Mat3 {
+    let mut r = [[0.0f32; 3]; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            r[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j];
+        }
+    }
+    r
+}
+
+fn mat3_vec(m: &Mat3, v: [f32; 3]) -> [f32; 3] {
+    [
+        m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+        m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+        m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
+    ]
+}
+
+// Euler (degrees, XYZ order: R = Rz*Ry*Rx) to a rotation matrix.
+fn euler_deg_mat(r: [f32; 3]) -> Mat3 {
+    let (x, y, z) = (r[0].to_radians(), r[1].to_radians(), r[2].to_radians());
+    let (cx, sx) = (x.cos(), x.sin());
+    let (cy, sy) = (y.cos(), y.sin());
+    let (cz, sz) = (z.cos(), z.sin());
+    let rx: Mat3 = [[1.0, 0.0, 0.0], [0.0, cx, -sx], [0.0, sx, cx]];
+    let ry: Mat3 = [[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]];
+    let rz: Mat3 = [[cz, -sz, 0.0], [sz, cz, 0.0], [0.0, 0.0, 1.0]];
+    mat3_mul(&mat3_mul(&rz, &ry), &rx)
+}
+
+// Last 3 numeric values on the line holding `P: "<key>", ...,x,y,z`.
+fn parse_prop_vec3(block: &str, key: &str) -> Option<[f32; 3]> {
+    let needle = format!("\"{key}\"");
+    let i = block.find(&needle)?;
+    let end = block[i..].find('\n').map(|e| i + e).unwrap_or(block.len());
+    let nums: Vec<f32> = block[i..end]
+        .split(',')
+        .filter_map(|s| s.trim().parse::<f32>().ok())
+        .collect();
+    let n = nums.len();
+    if n >= 3 { Some([nums[n - 3], nums[n - 2], nums[n - 1]]) } else { None }
+}
+
 fn load_fbx_ascii(bytes: &[u8]) -> Result<Mesh, String> {
+    use std::collections::HashMap;
     let text = std::str::from_utf8(bytes).map_err(|e| format!("ASCII FBX: not UTF-8: {e}"))?;
+
+    // Object connections: child id -> parent id (OO links). A geometry's parent is
+    // its Model node; a Model's parent is another Model or the root (0).
+    let mut parents: HashMap<i64, i64> = HashMap::new();
+    if let Some(ci) = text.find("Connections:") {
+        for line in text[ci..].lines() {
+            let l = line.trim();
+            if l.starts_with("C:") && l.contains("\"OO\"") {
+                let nums: Vec<i64> = l
+                    .split(',')
+                    .filter_map(|s| s.trim().trim_matches('"').parse::<i64>().ok())
+                    .collect();
+                if nums.len() >= 2 {
+                    parents.insert(nums[0], nums[1]); // child -> parent
+                }
+            }
+        }
+    }
+
+    // Per-Model-node local transform (linear = R*S, plus translation).
+    let mut models: HashMap<i64, (Mat3, [f32; 3])> = HashMap::new();
+    let objects = if let Some(oi) = text.find("Objects:") {
+        match text[oi..].find('{') {
+            Some(b) => { let bs = oi + b + 1; &text[bs..find_matching_brace(text, bs)] }
+            None => text,
+        }
+    } else {
+        text
+    };
+    {
+        let mut c = 0usize;
+        while let Some(p) = objects[c..].find("Model:") {
+            let abs = c + p;
+            let id: Option<i64> = objects[abs + 6..]
+                .trim_start()
+                .chars()
+                .take_while(|ch| ch.is_ascii_digit() || *ch == '-')
+                .collect::<String>()
+                .parse()
+                .ok();
+            let bstart = match objects[abs..].find('{') { Some(b) => abs + b + 1, None => break };
+            let bend = find_matching_brace(objects, bstart);
+            if let Some(id) = id {
+                let block = &objects[bstart..bend];
+                let t = parse_prop_vec3(block, "Lcl Translation").unwrap_or([0.0, 0.0, 0.0]);
+                let rot = parse_prop_vec3(block, "Lcl Rotation").unwrap_or([0.0, 0.0, 0.0]);
+                let s = parse_prop_vec3(block, "Lcl Scaling").unwrap_or([1.0, 1.0, 1.0]);
+                let scale: Mat3 = [[s[0], 0.0, 0.0], [0.0, s[1], 0.0], [0.0, 0.0, s[2]]];
+                models.insert(id, (mat3_mul(&euler_deg_mat(rot), &scale), t));
+            }
+            c = bend;
+        }
+    }
+
+    // Walk a geometry's model chain to world space: p -> T + (R*S) * p, up to root.
+    let to_world = |model_id: i64, p: [f32; 3]| -> [f32; 3] {
+        let mut pt = p;
+        let mut cur = model_id;
+        let mut guard = 0;
+        while cur != 0 && guard < 64 {
+            if let Some((lin, t)) = models.get(&cur) {
+                let r = mat3_vec(lin, pt);
+                pt = [r[0] + t[0], r[1] + t[1], r[2] + t[2]];
+            }
+            cur = parents.get(&cur).copied().unwrap_or(0);
+            guard += 1;
+        }
+        pt
+    };
 
     let mut vertices: Vec<Vertex3D> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
@@ -856,10 +973,19 @@ fn load_fbx_ascii(bytes: &[u8]) -> Result<Mesh, String> {
             continue;
         }
 
-        // Control points (shared vertex positions).
+        // Control points (shared vertex positions), transformed by this geometry's
+        // Model node (so multi-mesh / multi-tile FBX assemble in the right place).
+        let geom_id: i64 = text[abs + "Geometry:".len()..]
+            .trim_start()
+            .chars()
+            .take_while(|ch| ch.is_ascii_digit() || *ch == '-')
+            .collect::<String>()
+            .parse()
+            .unwrap_or(0);
+        let model_id = parents.get(&geom_id).copied().unwrap_or(0);
         let cps: Vec<[f32; 3]> = positions
             .chunks_exact(3)
-            .map(|c| [c[0] as f32, c[1] as f32, c[2] as f32])
+            .map(|c| to_world(model_id, [c[0] as f32, c[1] as f32, c[2] as f32]))
             .collect();
 
         // Optional UV layer. FBX maps UVs either per control-point or per
