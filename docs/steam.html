@@ -18,13 +18,13 @@
     <meta name="twitter:description" content="User identity, friends, achievements, stats, lobbies, game-server hosting, the in-game overlay, Cloud saves, Workshop, Remote Play, and rich presence. All wrapped over the Steamworks SDK.">
     <meta name="twitter:image" content="IconThing.png">
     <!-- og-meta:end -->
-    <link rel="stylesheet" href="style.css?v=26.5.23">
-    <script src="theme.js?v=26.5.23"></script>
+    <link rel="stylesheet" href="style.css?v=26.6.1">
+    <script src="theme.js?v=26.6.1"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=26.5.23" defer></script>
+<script src="sidebar.js?v=26.6.1" defer></script>
 
 <main>
 
@@ -114,7 +114,7 @@
     <code>steam_api64.dll</code> didn't match the SDK version Ruzit
     was built against, a Windows-level delayload failure
     (<code>STATUS_DELAYLOAD_PROC_NOT_FOUND</code>) crashed the whole
-    runtime before any Rust code could intercept it. As of 26.5.23
+    runtime before any Rust code could intercept it. As of 26.6.1
     the SDK is only loaded when you call
     <code>Steam.Initialize()</code> &mdash; so a bad DLL only
     breaks Steam, not the whole game.
@@ -243,7 +243,7 @@
     runtime binary so it could be written next to the launcher at
     startup, and v3.7 shipped a <code>ruzit fetch-deps</code> helper
     that downloaded it from a user-configured URL. Both are removed
-    as of 26.5.23 — the redistributable now lives next to your
+    as of 26.6.1 — the redistributable now lives next to your
     binaries by hand or via <code>build.toml</code>'s
     <code>include = [...]</code>. This keeps the runtime binary
     small and avoids redistributing the SDK without a clear
@@ -1066,7 +1066,7 @@ Steam.Lobby.<span class="hl-fn">Create</span>(<span class="hl-num">8</span>, <sp
 
 <!-- right-toc:begin -->
 <aside class="right-toc"></aside>
-<script src="right-toc.js?v=26.5.23" defer></script>
+<script src="right-toc.js?v=26.6.1" defer></script>
 <!-- right-toc:end -->
 
 
