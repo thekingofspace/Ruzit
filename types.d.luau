@@ -313,9 +313,12 @@ declare class SoundBytePlayer
 	Stopped: Signal<>
 	DidLoop: Signal<>
 	IsPlaying: boolean
+	IsPaused: boolean
 	Looped: boolean
 	function Play(self): ()
 	function Stop(self): ()
+	function Pause(self): ()
+	function Resume(self): ()
 end
 declare class SoundByteOutput
 	Volume: number
@@ -369,6 +372,8 @@ export type SoundByte_API = {
 	GetModifier: (kind: ModifierKind) -> SoundByteModifier,
 	GetVoiceChannel: () -> SoundByteVoiceChannel,
 	Link: (...any) -> SoundByteLink,
+	PauseAll: () -> (),
+	ResumeAll: () -> (),
 }
 declare class Package
 	ID: string

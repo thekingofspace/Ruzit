@@ -167,6 +167,28 @@ player:<span class="hl-fn">Destroy</span>()</code></pre>
         </p>
         <pre><code>SoundByte.<span class="hl-fn">Link</span>(player, lowpass, distortion, reverb, output)</code></pre>
     </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">SoundByte.PauseAll()</span>
+        </div>
+        <p class="member-desc">
+            Pause every active <a href="#player">Player</a>'s speaker output
+            at once &mdash; a global suspend for all game audio. Each paused
+            stream freezes in place; <code>ResumeAll</code> (or a per-player
+            <a href="#player"><code>:Resume()</code></a>) picks it back up
+            exactly where it left off. Streaming sinks (ByteSink) are
+            unaffected. Handy to wire to a pause menu.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">SoundByte.ResumeAll()</span>
+        </div>
+        <p class="member-desc">
+            The inverse of <code>PauseAll</code> &mdash; resume every
+            Player's output sink. No-op for players that weren't paused.
+        </p>
+    </div>
 </div>
 
 <h2 id="player">Player</h2>
@@ -210,6 +232,15 @@ player:<span class="hl-fn">Destroy</span>()</code></pre>
         <div class="member-header"><span class="member-name">.IsPlaying</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
     </div>
     <div class="member">
+        <div class="member-header"><span class="member-name">.IsPaused</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            <code>true</code> while playback is suspended by
+            <code>:Pause()</code> (or a global <code>SoundByte.PauseAll()</code>
+            followed by a per-player pause). Cleared by <code>:Resume()</code>,
+            <code>:Play()</code>, and <code>:Stop()</code>.
+        </p>
+    </div>
+    <div class="member">
         <div class="member-header"><span class="member-name">.IsAlive</span><span class="member-type">boolean</span><span class="tag tag-readonly">read-only</span></div>
         <p class="member-desc">Flips false after <code>:Destroy()</code>.</p>
     </div>
@@ -242,6 +273,29 @@ player:<span class="hl-fn">Destroy</span>()</code></pre>
     <div class="member">
         <div class="member-header"><span class="member-name">player:Stop()</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">Halt all sinks immediately.</p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">player:Pause()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Suspend this player's output where it stands &mdash; the speaker
+            stream freezes and <code>TimePosition</code> stops advancing,
+            but the route and decode state are kept. No-op if not playing or
+            already paused. Resume with <code>:Resume()</code>. Unlike
+            <code>:Stop()</code>, the <code>Stopped</code> signal does not
+            fire and <code>IsPlaying</code> stays <code>true</code>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">player:Resume()</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Continue playback from a <code>:Pause()</code>, picking up at the
+            exact sample it froze on. No-op if the player isn't paused.
+        </p>
+        <pre><code>player:<span class="hl-fn">Play</span>()
+<span class="hl-com">-- open a menu:</span>
+player:<span class="hl-fn">Pause</span>()
+<span class="hl-com">-- close it:</span>
+player:<span class="hl-fn">Resume</span>()</code></pre>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">player:LinkToUpdate(interval)</span><span class="member-type">&rarr; Signal&lt;number&gt;</span><span class="tag tag-method">method</span></div>

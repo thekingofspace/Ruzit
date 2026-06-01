@@ -616,6 +616,7 @@ pub struct PlayerState {
     pub loop_count: Arc<AtomicU64>,
     pub last_loop_count: u64,
     pub playing: Arc<AtomicBool>,
+    pub paused: bool,
     pub started_key: Arc<RegistryKey>,
     pub stopped_key: Arc<RegistryKey>,
     pub did_loop_key: Arc<RegistryKey>,
@@ -660,6 +661,7 @@ impl Player {
             loop_count: Arc::new(AtomicU64::new(0)),
             last_loop_count: 0,
             playing: Arc::new(AtomicBool::new(false)),
+            paused: false,
             started_key,
             stopped_key,
             did_loop_key,
@@ -705,6 +707,9 @@ impl UserData for Player {
         });
         f.add_field_method_get("IsAlive", |_, this| {
             Ok(this.state.lock().unwrap().alive.load(Ordering::Relaxed))
+        });
+        f.add_field_method_get("IsPaused", |_, this| {
+            Ok(this.state.lock().unwrap().paused)
         });
         f.add_field_method_get("Duration", |_, this| {
             Ok(this
@@ -787,6 +792,7 @@ impl UserData for Player {
 
             let mut s = this.state.lock().unwrap();
             s.playing.store(true, Ordering::Relaxed);
+            s.paused = false;
             s.started_fired_for_active = false;
             s.last_loop_count = loop_count.load(Ordering::Relaxed);
             s.play_started_at = Some(std::time::Instant::now());
@@ -806,7 +812,51 @@ impl UserData for Player {
                 }
             }
             s.playing.store(false, Ordering::Relaxed);
+            s.paused = false;
             s.play_started_at = None;
+            Ok(())
+        });
+
+        m.add_method("Pause", |_, this, _: ()| -> mlua::Result<()> {
+            let mut s = this.state.lock().unwrap();
+            // Only a live, not-already-paused playback can be paused.
+            if !s.playing.load(Ordering::Relaxed) || s.paused {
+                return Ok(());
+            }
+            // Freeze the playhead: fold elapsed time into pending_offset so
+            // TimePosition reports the paused position and Resume continues
+            // from exactly there.
+            let elapsed = s
+                .play_started_at
+                .map(|t| t.elapsed())
+                .unwrap_or(Duration::ZERO);
+            s.pending_offset += elapsed;
+            s.play_started_at = None;
+            s.paused = true;
+            for r in s.routes.iter() {
+                if let Some(out) = &r.output {
+                    if let Some(sink) = out.sink.lock().unwrap().as_ref() {
+                        sink.pause();
+                    }
+                }
+            }
+            Ok(())
+        });
+
+        m.add_method("Resume", |_, this, _: ()| -> mlua::Result<()> {
+            let mut s = this.state.lock().unwrap();
+            if !s.paused {
+                return Ok(());
+            }
+            s.paused = false;
+            s.play_started_at = Some(std::time::Instant::now());
+            for r in s.routes.iter() {
+                if let Some(out) = &r.output {
+                    if let Some(sink) = out.sink.lock().unwrap().as_ref() {
+                        sink.play();
+                    }
+                }
+            }
             Ok(())
         });
 
@@ -818,6 +868,7 @@ impl UserData for Player {
             let mut s = this.state.lock().unwrap();
             s.alive.store(false, Ordering::Relaxed);
             s.playing.store(false, Ordering::Relaxed);
+            s.paused = false;
             for r in s.routes.iter() {
                 if let Some(out) = &r.output {
                     if let Some(sink) = out.sink.lock().unwrap().as_ref() {
