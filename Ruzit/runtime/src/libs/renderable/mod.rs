@@ -2300,6 +2300,7 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                     source: format!("{} (LOD {:.0}%)", ma.source, r * 100.0),
                     origin: ma.origin,
                     pivot: ma.pivot,
+                    rotation: ma.rotation,
                 };
                 lua.create_userdata(new_asset)
             },

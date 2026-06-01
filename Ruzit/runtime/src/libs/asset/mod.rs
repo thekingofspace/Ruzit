@@ -641,6 +641,7 @@ fn load_fragmented(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<
             mesh,
             origin: [0.0, 0.0, 0.0],
             pivot: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
         }]
     };
 
@@ -669,6 +670,7 @@ fn load_fragmented(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<
             source: format!("{source}#{key}"),
             origin: frag.origin,
             pivot: frag.pivot,
+            rotation: frag.rotation,
         };
         result.set(key, Value::UserData(lua.create_userdata(asset)?))?;
     }
@@ -679,16 +681,16 @@ fn parse_model(lua: &Lua, bytes: Vec<u8>, source: String) -> mlua::Result<Value>
     let is_fbx =
         bytes.starts_with(b"Kaydara FBX Binary") || source.to_ascii_lowercase().ends_with(".fbx");
 
-    let (mesh, origin, pivot) = if is_fbx {
+    let (mesh, origin, pivot, rotation) = if is_fbx {
         let loaded = crate::libs::renderable::mesh::load_fbx_full(&bytes)
             .map_err(|e| mlua::Error::RuntimeError(format!("Model parse '{source}': {e}")))?;
-        (loaded.mesh, loaded.origin, loaded.pivot)
+        (loaded.mesh, loaded.origin, loaded.pivot, loaded.rotation)
     } else {
         let text = String::from_utf8(bytes)
             .map_err(|e| mlua::Error::RuntimeError(format!("Model '{source}' not UTF-8: {e}")))?;
         let mesh = crate::libs::renderable::mesh::load_obj(&text)
             .map_err(|e| mlua::Error::RuntimeError(format!("Model parse '{source}': {e}")))?;
-        (mesh, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        (mesh, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
     };
     let asset = ModelAsset {
         id: next_shader_id(),
@@ -697,6 +699,7 @@ fn parse_model(lua: &Lua, bytes: Vec<u8>, source: String) -> mlua::Result<Value>
         source,
         origin,
         pivot,
+        rotation,
     };
     Ok(Value::UserData(lua.create_userdata(asset)?))
 }
@@ -989,6 +992,7 @@ pub struct ModelAsset {
     pub source: String,
     pub origin: [f32; 3],
     pub pivot: [f32; 3],
+    pub rotation: [f32; 3],
 }
 
 impl UserData for ModelAsset {
@@ -1013,6 +1017,31 @@ impl UserData for ModelAsset {
                 this.pivot[1],
                 this.pivot[2],
             ))
+        });
+        m.add_method("Rotation", |_, this, _: ()| {
+            Ok(crate::libs::primitives::Vector::new(
+                this.rotation[0],
+                this.rotation[1],
+                this.rotation[2],
+            ))
+        });
+        // Model node's local transform as a CFrame:
+        //   position = Lcl Translation (parent-relative origin)
+        //   rotation = Lcl Rotation    (radians, XYZ Euler)
+        // Pair this with the geometry-local vertices to place the part where
+        // the source DCC put it, without re-baking the transform yourself.
+        m.add_method("GetPivot", |_, this, _: ()| {
+            let position = crate::libs::primitives::Vector::new(
+                this.origin[0],
+                this.origin[1],
+                this.origin[2],
+            );
+            let rotation = crate::libs::primitives::Vector::new(
+                this.rotation[0],
+                this.rotation[1],
+                this.rotation[2],
+            );
+            Ok(crate::libs::primitives::CFrame::new(position, rotation))
         });
         m.add_method("LocalBounds", |lua, this, _: ()| -> mlua::Result<Table> {
             if this.vertices.is_empty() {

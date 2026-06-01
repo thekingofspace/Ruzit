@@ -523,6 +523,9 @@ pub struct LoadedFbx {
     pub animations: Vec<FbxAnimClip>,
     pub origin: [f32; 3],
     pub pivot: [f32; 3],
+    /// Local rotation (Lcl Rotation) of the model node, **radians** XYZ.
+    /// `[0, 0, 0]` when vertices are baked-to-world (ASCII full loader).
+    pub rotation: [f32; 3],
 }
 
 pub struct MeshFragment {
@@ -530,6 +533,8 @@ pub struct MeshFragment {
     pub mesh: Mesh,
     pub origin: [f32; 3],
     pub pivot: [f32; 3],
+    /// Local rotation (Lcl Rotation) of the model node, **radians** XYZ.
+    pub rotation: [f32; 3],
 }
 
 pub fn load_fbx_full(bytes: &[u8]) -> Result<LoadedFbx, String> {
@@ -540,6 +545,7 @@ pub fn load_fbx_full(bytes: &[u8]) -> Result<LoadedFbx, String> {
             animations: Vec::new(),
             origin: [0.0, 0.0, 0.0],
             pivot: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
         });
     }
     load_fbx_binary_full(bytes)
@@ -645,12 +651,13 @@ fn load_fbx_binary_full(bytes: &[u8]) -> Result<LoadedFbx, String> {
     }
 
     let animations = parse_fbx_animations(&doc);
-    let (origin, pivot) = first_model_transform(&doc);
+    let (origin, pivot, rotation) = first_model_transform(&doc);
     Ok(LoadedFbx {
         mesh: Mesh { vertices, indices },
         animations,
         origin,
         pivot,
+        rotation,
     })
 }
 
@@ -691,15 +698,16 @@ fn load_fbx_binary_fragments(bytes: &[u8]) -> Result<Vec<MeshFragment>, String> 
                 format!("Mesh{fallback_idx}")
             });
 
-        let (origin, pivot) = model
+        let (origin, pivot, rotation) = model
             .map(|m| model_transform(&m))
-            .unwrap_or(([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]));
+            .unwrap_or(([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]));
 
         fragments.push(MeshFragment {
             name,
             mesh,
             origin,
             pivot,
+            rotation,
         });
     }
 
@@ -742,15 +750,23 @@ fn build_geom_mesh(
 
 fn model_transform(
     model: &fbxcel_dom::v7400::object::model::MeshHandle,
-) -> ([f32; 3], [f32; 3]) {
+) -> ([f32; 3], [f32; 3], [f32; 3]) {
     let props = model.properties_by_native_typename("FbxNode");
     let origin = read_prop_vec3(&props, "Lcl Translation").unwrap_or([0.0, 0.0, 0.0]);
     let pivot = read_prop_vec3(&props, "RotationPivot").unwrap_or([0.0, 0.0, 0.0]);
-    (origin, pivot)
+    let rot_deg = read_prop_vec3(&props, "Lcl Rotation").unwrap_or([0.0, 0.0, 0.0]);
+    let rotation = [
+        rot_deg[0].to_radians(),
+        rot_deg[1].to_radians(),
+        rot_deg[2].to_radians(),
+    ];
+    (origin, pivot, rotation)
 }
 
-/// Transform (origin, pivot) of the first mesh model node in the document.
-fn first_model_transform(doc: &fbxcel_dom::v7400::Document) -> ([f32; 3], [f32; 3]) {
+/// Transform (origin, pivot, rotation) of the first mesh model node.
+fn first_model_transform(
+    doc: &fbxcel_dom::v7400::Document,
+) -> ([f32; 3], [f32; 3], [f32; 3]) {
     use fbxcel_dom::v7400::object::TypedObjectHandle;
     use fbxcel_dom::v7400::object::model::TypedModelHandle;
     for obj in doc.objects() {
@@ -758,7 +774,7 @@ fn first_model_transform(doc: &fbxcel_dom::v7400::Document) -> ([f32; 3], [f32; 
             return model_transform(&m);
         }
     }
-    ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+    ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
 }
 
 fn read_prop_vec3(
@@ -1280,7 +1296,7 @@ fn load_fbx_ascii_fragments(bytes: &[u8]) -> Result<Vec<MeshFragment>, String> {
         }
     }
 
-    let mut models: HashMap<i64, (String, [f32; 3], [f32; 3])> = HashMap::new();
+    let mut models: HashMap<i64, (String, [f32; 3], [f32; 3], [f32; 3])> = HashMap::new();
     let (objects, objects_offset) = if let Some(oi) = text.find("Objects:") {
         match text[oi..].find('{') {
             Some(b) => {
@@ -1316,7 +1332,13 @@ fn load_fbx_ascii_fragments(bytes: &[u8]) -> Result<Vec<MeshFragment>, String> {
                 let block = &objects[bstart..bend];
                 let origin = parse_prop_vec3(block, "Lcl Translation").unwrap_or([0.0, 0.0, 0.0]);
                 let pivot = parse_prop_vec3(block, "RotationPivot").unwrap_or([0.0, 0.0, 0.0]);
-                models.insert(id, (name.unwrap_or_default(), origin, pivot));
+                let rot_deg = parse_prop_vec3(block, "Lcl Rotation").unwrap_or([0.0, 0.0, 0.0]);
+                let rotation = [
+                    rot_deg[0].to_radians(),
+                    rot_deg[1].to_radians(),
+                    rot_deg[2].to_radians(),
+                ];
+                models.insert(id, (name.unwrap_or_default(), origin, pivot, rotation));
             }
             c = bend;
         }
@@ -1463,10 +1485,10 @@ fn load_fbx_ascii_fragments(bytes: &[u8]) -> Result<Vec<MeshFragment>, String> {
             };
         }
 
-        let (base_name, origin, pivot) = models
+        let (base_name, origin, pivot, rotation) = models
             .get(&model_id)
             .cloned()
-            .unwrap_or_else(|| (String::new(), [0.0; 3], [0.0; 3]));
+            .unwrap_or_else(|| (String::new(), [0.0; 3], [0.0; 3], [0.0; 3]));
         let base = if base_name.is_empty() {
             fallback_idx += 1;
             format!("Mesh{fallback_idx}")
@@ -1482,6 +1504,7 @@ fn load_fbx_ascii_fragments(bytes: &[u8]) -> Result<Vec<MeshFragment>, String> {
             mesh: Mesh { vertices, indices },
             origin,
             pivot,
+            rotation,
         });
     }
 
