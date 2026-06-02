@@ -245,10 +245,11 @@ include = [
 
 <p>
     With <code>shard-assets = true</code> in <code>build.toml</code>, the
-    asset bundle splits into ~64&nbsp;MB shards keyed by content. Patches
-    only have to re-download the shards whose content changed; the manifest
-    file lists which assets are in which shard, so the player's launcher
-    can decide what to fetch.
+    asset bundle splits into shards (32&nbsp;MB each by default; tune with
+    <code>shard-size-mb</code>) keyed by content. Patches only have to
+    re-download the shards whose content changed; the manifest file lists
+    which assets are in which shard, so the player's launcher can decide
+    what to fetch.
 </p>
 
 <p>

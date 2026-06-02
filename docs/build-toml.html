@@ -49,6 +49,7 @@ exe-windowed = <span class="hl-kw">true</span>
 compress-scripts = <span class="hl-kw">true</span>
 compress-assets  = <span class="hl-kw">true</span>
 shard-assets     = <span class="hl-kw">false</span>
+shard-size-mb    = <span class="hl-num">32</span>
 
 steam-app-id = <span class="hl-num">480</span>
 
@@ -167,11 +168,29 @@ include = [
             <span class="member-type">boolean</span>
         </div>
         <p class="member-desc">
-            Split the asset bundle into ~64&nbsp;MB shards. Recommended
-            for large games where patches should re-download only the
-            shards that changed. Produces
+            Split the asset bundle into multiple shards. Recommended for
+            large games where patches should re-download only the shards
+            that changed. Produces
             <code>&lt;id&gt;.assets.shard0001.managed</code> files plus a
-            <code>&lt;id&gt;.assets.manifest.managed</code> index.
+            <code>&lt;id&gt;.assets.manifest.managed</code> index. Default
+            shard size is 32&nbsp;MB; override with
+            <a href="#shard-size-mb"><code>shard-size-mb</code></a>.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name" id="shard-size-mb">shard-size-mb</span>
+            <span class="member-type">number</span>
+        </div>
+        <p class="member-desc">
+            Target shard size in megabytes when
+            <code>shard-assets</code> is on. Default <code>32</code>.
+            Assets pack greedily up to this size; an asset larger than one
+            shard still gets its own shard regardless. Smaller shards
+            mean smaller patches but more files on disk and more
+            <code>.managed</code> handles open at runtime; larger shards
+            mean fewer files but bigger patches when content changes.
+            32&nbsp;MB is a good default for Steam Pipe / typical CDNs.
         </p>
     </div>
     <div class="member">
@@ -275,6 +294,7 @@ include = [
         <tr><td>compress-scripts</td><td><code>true</code></td></tr>
         <tr><td>compress-assets</td><td><code>true</code></td></tr>
         <tr><td>shard-assets</td><td><code>false</code></td></tr>
+        <tr><td>shard-size-mb</td><td><code>32</code></td></tr>
         <tr><td>bytecode</td><td><code>false</code></td></tr>
         <tr><td>steam-app-id</td><td>none (Steam features error if accessed)</td></tr>
         <tr><td>include</td><td>empty list</td></tr>

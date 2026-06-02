@@ -233,29 +233,20 @@ pub fn write_assets_managed(
     fs::write(path, encrypted).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
-fn dynamic_shard_target(asset_count: usize, total_bytes: u64) -> u64 {
-    const MIN_SHARD: u64 = 4 * 1024 * 1024;
-    const MAX_SHARD: u64 = 256 * 1024 * 1024;
-    if asset_count == 0 || total_bytes <= MIN_SHARD {
-        return MIN_SHARD;
-    }
-    let target_shards = ((asset_count as f64).sqrt().ceil() as u64).clamp(2, 256);
-    let per_shard = total_bytes / target_shards;
-    per_shard.clamp(MIN_SHARD, MAX_SHARD)
-}
-
 pub fn write_assets_sharded(
     managed_dir: &Path,
     id: &str,
     name: &str,
     assets: &HashMap<String, Vec<u8>>,
     compress: bool,
+    shard_size_mb: u32,
 ) -> Result<usize, String> {
     if assets.is_empty() {
         return Ok(0);
     }
-    let total_bytes: u64 = assets.values().map(|v| v.len() as u64).sum();
-    let target_bytes = dynamic_shard_target(assets.len(), total_bytes);
+    // `shard_size_mb` is the build.toml target. Floor at 1 MB; assets larger
+    // than the chosen target still spill into their own shard (handled below).
+    let target_bytes: u64 = (shard_size_mb.max(1) as u64) * 1024 * 1024;
 
     let mut keys: Vec<&String> = assets.keys().collect();
     keys.sort();

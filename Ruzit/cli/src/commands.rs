@@ -309,6 +309,7 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
                 &config.name,
                 &assets,
                 config.compress_assets,
+                config.shard_size_mb,
             )?;
             if assets_path.exists() {
                 let _ = fs::remove_file(&assets_path);
@@ -359,6 +360,7 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
             config.compress_scripts,
             config.compress_assets,
             config.shard_assets,
+            config.shard_size_mb,
         ) {
             Ok((id, n_files, n_assets)) => {
                 println!(
@@ -407,6 +409,7 @@ fn copy_external_packages(
                 config.compress_scripts,
                 config.compress_assets,
                 config.shard_assets,
+                config.shard_size_mb,
             ) {
                 Ok((id, n_files, n_assets)) => {
                     println!(
@@ -462,6 +465,7 @@ fn build_dlc(
     compress_scripts: bool,
     compress_assets: bool,
     shard_assets: bool,
+    shard_size_mb: u32,
 ) -> Result<(String, usize, usize), String> {
     let info = ManagedInfo::load(folder)?;
     let (files, assets) = package::collect_project(folder)?;
@@ -497,6 +501,7 @@ fn build_dlc(
                 &info.name,
                 &assets,
                 compress_assets,
+                shard_size_mb,
             )?;
             if assets_path.exists() {
                 let _ = fs::remove_file(&assets_path);

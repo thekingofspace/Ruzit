@@ -44,6 +44,10 @@ pub struct BuildConfig {
     pub compress_scripts: bool,
     pub compress_assets: bool,
     pub shard_assets: bool,
+    /// Target shard size in megabytes when `shard_assets` is on. Default 32.
+    /// Each shard packs assets greedily up to this size; an asset larger than
+    /// one shard still gets its own shard regardless.
+    pub shard_size_mb: u32,
     pub compile_bytecode: bool,
     pub include: Vec<String>,
 }
@@ -62,6 +66,7 @@ impl Default for BuildConfig {
             compress_scripts: false,
             compress_assets: false,
             shard_assets: false,
+            shard_size_mb: 32,
             compile_bytecode: false,
             include: Vec::new(),
         }
@@ -149,6 +154,11 @@ impl BuildConfig {
             }
             if let Some(b) = exe.get("shard_assets").and_then(|x| x.as_bool()) {
                 cfg.shard_assets = b;
+            }
+            if let Some(n) = exe.get("shard_size_mb").and_then(|x| x.as_integer()) {
+                if n > 0 && n <= u32::MAX as i64 {
+                    cfg.shard_size_mb = n as u32;
+                }
             }
             if let Some(b) = exe.get("bytecode").and_then(|x| x.as_bool()) {
                 cfg.compile_bytecode = b;

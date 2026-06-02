@@ -33,12 +33,16 @@ include = [
                             # decompression per access.
 # shard_assets = true       # split assets across `<id>.assets.shardNNNN.managed`
                             # files instead of one monolithic `<id>.assets.managed`,
-                            # plus a small `.assets.manifest.managed` index. Shard
-                            # size is auto-tuned (~ceil(sqrt(asset_count)) shards,
-                            # 4-256 MB each) so patches only re-download the shards
-                            # that actually changed, huge win for content updates
-                            # over Steam Pipe / CDNs without drowning the OS in
-                            # thousands of tiny files.
+                            # plus a small `.assets.manifest.managed` index. So
+                            # patches only re-download the shards that actually
+                            # changed - huge win for content updates over Steam
+                            # Pipe / CDNs without drowning the OS in thousands of
+                            # tiny files.
+# shard_size_mb = 32        # target shard size in MB (default 32). Assets pack
+                            # greedily up to this size; assets larger than one
+                            # shard still get their own shard. Smaller shards =
+                            # smaller patches but more files; larger shards =
+                            # fewer files but bigger patches.
 # bytecode = true           # compile every .luau / .lua to Luau bytecode at build
                             # time and ship the bytecode in place of source. Faster
                             # startup (no parse/compile at runtime), smaller
