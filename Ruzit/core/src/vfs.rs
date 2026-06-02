@@ -419,7 +419,13 @@ fn disk_resolve(
     default_id: Option<&str>,
 ) -> Option<String> {
     if let Some(rest) = name.strip_prefix('@') {
-        let (alias, inner) = rest.split_once('/')?;
+        // `@Alias` (no slash) is shorthand for `@Alias/` -- resolve the
+        // package's / alias's root, which `disk_lookup` and `bundle_lookup`
+        // then turn into `init.luau` (matching Luau convention).
+        let (alias, inner) = match rest.split_once('/') {
+            Some((a, i)) => (a, i),
+            None => (rest, ""),
+        };
         let inner_clean = strip_anchors(inner);
 
         if let (Some(packages), Some(default_id)) = (packages, default_id) {
@@ -495,7 +501,10 @@ fn bundle_resolve(
     name: &str,
 ) -> Option<String> {
     if let Some(rest) = name.strip_prefix('@') {
-        let (alias, inner) = rest.split_once('/')?;
+        let (alias, inner) = match rest.split_once('/') {
+            Some((a, i)) => (a, i),
+            None => (rest, ""),
+        };
         let (caller_pkg_id, caller_inner) = split_owner(caller, default_id);
         let target_id: &str = match alias {
             "self" => caller_pkg_id,
