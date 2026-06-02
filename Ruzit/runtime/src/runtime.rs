@@ -28,6 +28,7 @@ pub fn run_entry(fs: Fs, entry_key: &str) -> Result<(), String> {
     libs::signal::install(&lua).map_err(|e| format!("signal install: {e}"))?;
     libs::input::install(&lua).map_err(|e| format!("input install: {e}"))?;
     libs::runservice::install(&lua).map_err(|e| format!("runservice install: {e}"))?;
+    install_stats_proxy(&lua).map_err(|e| format!("stats proxy: {e}"))?;
 
     let entry_owned = entry_key.to_string();
     run_entry_in_thread(&lua, &fs, entry_key)
@@ -347,6 +348,106 @@ fn describe_owner(fs: &Fs, owner: &str) -> String {
 
 use std::sync::atomic::{AtomicBool, Ordering as AOrdering};
 
+thread_local! {
+    static LAUNCH_STATS: RefCell<Vec<LaunchStatsEntry>> = const { RefCell::new(Vec::new()) };
+}
+
+struct LaunchStatsEntry {
+    thread: RegistryKey,
+    stats: RegistryKey,
+}
+
+fn register_launch_stats(
+    lua: &Lua,
+    thread: &mlua::Thread,
+    stats: &Table,
+) -> mlua::Result<()> {
+    let t_key = lua.create_registry_value(thread.clone())?;
+    let s_key = lua.create_registry_value(stats.clone())?;
+    LAUNCH_STATS.with(|m| {
+        m.borrow_mut().push(LaunchStatsEntry {
+            thread: t_key,
+            stats: s_key,
+        });
+    });
+    Ok(())
+}
+
+fn unregister_launch_stats(lua: &Lua, thread: &mlua::Thread) {
+    LAUNCH_STATS.with(|m| {
+        let mut entries = m.borrow_mut();
+        entries.retain(|e| {
+            if let Ok(t) = lua.registry_value::<mlua::Thread>(&e.thread) {
+                if t == *thread {
+                    return false;
+                }
+            }
+            true
+        });
+    });
+}
+
+
+fn current_launch_stats(lua: &Lua) -> mlua::Result<Option<Table>> {
+    let current = lua.current_thread();
+    let mut result: Option<Table> = None;
+    LAUNCH_STATS.with(|m| -> mlua::Result<()> {
+        let mut entries = m.borrow_mut();
+        for entry in entries.iter().rev() {
+            if let Ok(t) = lua.registry_value::<mlua::Thread>(&entry.thread) {
+                if t == current {
+                    result = Some(lua.registry_value::<Table>(&entry.stats)?);
+                    break;
+                }
+            }
+        }
+
+        entries.retain(|e| {
+            match lua.registry_value::<mlua::Thread>(&e.thread) {
+                Ok(t) => !matches!(t.status(), mlua::ThreadStatus::Finished),
+                Err(_) => false,
+            }
+        });
+        Ok(())
+    })?;
+    Ok(result)
+}
+
+fn install_stats_proxy(lua: &Lua) -> mlua::Result<()> {
+    let stats_table = lua.create_table()?;
+    let mt = lua.create_table()?;
+
+    let idx = lua.create_function(
+        |lua, (_proxy, key): (Table, Value)| -> mlua::Result<Value> {
+            match current_launch_stats(lua)? {
+                Some(stats) => stats.get::<Value>(key),
+                None => Ok(Value::Nil),
+            }
+        },
+    )?;
+    let newidx = lua.create_function(
+        |lua, (_proxy, key, value): (Table, Value, Value)| -> mlua::Result<()> {
+            match current_launch_stats(lua)? {
+                Some(stats) => {
+                    stats.set(key, value)?;
+                    Ok(())
+                }
+                None => Err(mlua::Error::RuntimeError(
+                    "stats can only be written from a thread spawned via `launch(...)`"
+                        .into(),
+                )),
+            }
+        },
+    )?;
+
+    mt.set("__index", idx)?;
+    mt.set("__newindex", newidx)?;
+    mt.set("__metatable", "stats")?;
+    stats_table.set_metatable(Some(mt))?;
+    lua.globals().set("stats", stats_table)?;
+    Ok(())
+}
+
 pub struct SubProcess {
     pub env_key: RegistryKey,
     pub thread_key: RegistryKey,
@@ -371,6 +472,7 @@ impl mlua::UserData for SubProcess {
         m.add_method("Kill", |lua, this, _: ()| -> mlua::Result<()> {
             this.alive.store(false, AOrdering::Relaxed);
             if let Ok(thread) = lua.registry_value::<mlua::Thread>(&this.thread_key) {
+                unregister_launch_stats(lua, &thread);
                 let noop = lua.create_function(|_, _: MultiValue| -> mlua::Result<()> { Ok(()) })?;
                 let _ = thread.reset(noop);
             }
@@ -437,7 +539,11 @@ fn install_launch(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
         for (i, v) in rest.iter().enumerate() {
             stats.set(i as i64 + 1, v.clone())?;
         }
-        new_env.set("stats", stats.clone())?;
+        // `stats` is not set on the launched env directly any more. The
+        // global `stats` proxy (installed at startup) routes reads/writes to
+        // the correct launch's stats based on the currently-running coroutine,
+        // so any function in any `require`d module that touches `stats` while
+        // executing inside the launched thread reaches this same table.
 
         let chunk_name = format!("@{resolved}");
         let entry_fn = lua
@@ -446,15 +552,12 @@ fn install_launch(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             .set_environment(new_env.clone())
             .into_function()?;
         let thread = lua.create_thread(entry_fn)?;
-        // Defer the initial run to the next task pump tick. The script's top
-        // level then executes inside the scheduler's resume boundary (a clean
-        // C frame called from the heart loop), so task.Wait, coroutine.yield,
-        // and any other yielding builtin work from the launched script's top
-        // level. Running thread.resume synchronously here lets yields propagate
-        // into this C closure, which Luau rejects with "attempt to yield
-        // across metamethod/C-call boundary" the moment the script bounces
-        // through any Lua-callable C function (most of the task / signal /
-        // I/O surface).
+        // Register the (thread, stats) pair before the script starts running
+        // so the very first `stats` access resolves correctly. Newest entry
+        // wins on lookup, so nested launches naturally shadow their parents
+        // for the duration of the inner coroutine.
+        register_launch_stats(lua, &thread, &stats)?;
+
         crate::libs::task::defer_thread(lua, thread.clone())?;
 
         let env_key = lua.create_registry_value(new_env)?;
