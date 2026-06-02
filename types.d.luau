@@ -964,7 +964,6 @@ export type Tween = {
 	Pause: (self: Tween) -> (),
 	Resume: (self: Tween) -> (),
 	Cancel: (self: Tween) -> (),
-	Wait: (self: Tween) -> (),
 }
 export type TweenService_API = {
 	new: (
