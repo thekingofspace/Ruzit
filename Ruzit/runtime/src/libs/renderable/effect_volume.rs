@@ -384,7 +384,11 @@ pub fn effect_volume_snapshot() -> Vec<EffectVolumeRender> {
                 Some(EffectVolumeRender {
                     id: s.id,
                     texture: s.texture.clone(),
-                    active_shaders: s.attached.clone(),
+                    active_shaders: {
+                        let mut v = s.attached.clone();
+                        v.sort_by_key(|sh| sh.priority);
+                        v
+                    },
                     face_camera: s.face_camera,
                     particles,
                 })
@@ -882,8 +886,9 @@ impl UserData for EffectVolumeHandle {
 
         m.add_method(
             "AttachShader",
-            |_, this, asset: AnyUserData| -> mlua::Result<()> {
-                let attached = crate::libs::gui::build_attached(&asset)?;
+            |_, this, (asset, priority): (AnyUserData, Option<i32>)| -> mlua::Result<()> {
+                let attached =
+                    crate::libs::gui::build_attached(&asset, priority.unwrap_or(0))?;
                 let mut s = this.inner.lock().unwrap();
                 if s.attached.iter().any(|e| e.id == attached.id) {
                     return Err(mlua::Error::RuntimeError(
@@ -948,8 +953,8 @@ impl UserData for EffectVolumeHandle {
 
         m.add_method(
             "AttachAudioShader",
-            |_, this, asset: AnyUserData| -> mlua::Result<()> {
-                let attached = shader_attach_spec(&asset)?;
+            |_, this, (asset, priority): (AnyUserData, Option<i32>)| -> mlua::Result<()> {
+                let attached = shader_attach_spec(&asset, priority.unwrap_or(0))?;
                 let mut s = this.inner.lock().unwrap();
                 if s.audio_attached.iter().any(|e| e.id == attached.id) {
                     return Err(mlua::Error::RuntimeError(

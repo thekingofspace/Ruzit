@@ -12,6 +12,10 @@ pub struct AttachedShader {
     pub id: u64,
     pub kind: String,
     pub params: Params,
+    /// Position in the audio DSP chain. Lower = earlier (closer to source);
+    /// higher = later (closer to output). Defaults to 0; ties preserve the
+    /// order AttachShader was called in.
+    pub priority: i32,
 }
 
 pub fn read_param(params: &Params, key: &str, default: f32) -> f32 {
@@ -58,13 +62,17 @@ pub fn shader_id(asset: &AnyUserData) -> mlua::Result<u64> {
     ))
 }
 
-pub fn shader_attach_spec(asset: &AnyUserData) -> mlua::Result<AttachedShader> {
+pub fn shader_attach_spec(
+    asset: &AnyUserData,
+    priority: i32,
+) -> mlua::Result<AttachedShader> {
     if let Ok(s) = asset.borrow::<ShaderAsset>() {
         let (kind, params) = parse_shader(&s.code, &s.source)?;
         return Ok(AttachedShader {
             id: s.id,
             kind,
             params: Arc::new(Mutex::new(params)),
+            priority,
         });
     }
     if let Ok(f) = asset.borrow::<FragmentAsset>() {
@@ -73,6 +81,7 @@ pub fn shader_attach_spec(asset: &AnyUserData) -> mlua::Result<AttachedShader> {
             id: f.id,
             kind,
             params: Arc::new(Mutex::new(params)),
+            priority,
         });
     }
     Err(mlua::Error::RuntimeError(

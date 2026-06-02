@@ -287,7 +287,7 @@ line:<span class="hl-fn">SetNodes</span>{
         <p class="member-desc">Replace a single node in place.</p>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">spline:AttachShader(asset)</span><span class="tag tag-method">method</span></div>
+        <div class="member-header"><span class="member-name">spline:AttachShader(asset, priority?)</span><span class="tag tag-method">method</span></div>
         <p class="member-desc">
             Attach a <a href="asset.html#fragment">FragmentAsset</a>
             (or ShaderAsset) as the fragment stage. The shader
@@ -580,8 +580,18 @@ tw:<span class="hl-fn">Play</span>()</code></pre>
         <div class="member-header"><span class="member-name">prim:Destroy()</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
-        <div class="member-header"><span class="member-name">prim:AttachShader(asset)</span><span class="tag tag-method">method</span></div>
-        <p class="member-desc">Attach a 2D fragment shader to this primitive's draw call.</p>
+        <div class="member-header"><span class="member-name">prim:AttachShader(asset, priority?)</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            Attach a 2D fragment shader to this primitive's draw call.
+            <code>priority</code> (integer, default <code>0</code>) controls
+            draw order when multiple shaders are attached: lower values
+            are drawn first (become the base layer); higher values are
+            drawn later (appear on top). Ties keep the attach order. For
+            an effect that overlays an underlying one, give the
+            underneath shader a lower priority &mdash;
+            <code>prim:AttachShader(base, 0); prim:AttachShader(overlay, 1)</code>
+            draws <code>base</code> first then <code>overlay</code> over it.
+        </p>
     </div>
     <div class="member">
         <div class="member-header"><span class="member-name">prim:DetachShader(asset)</span><span class="tag tag-method">method</span></div>

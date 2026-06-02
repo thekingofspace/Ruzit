@@ -251,7 +251,11 @@ pub fn ui_effect_volume_snapshot() -> Vec<UIEffectVolumeRender> {
                 Some(UIEffectVolumeRender {
                     id: s.id,
                     texture: s.texture.clone(),
-                    active_shaders: s.attached.clone(),
+                    active_shaders: {
+                        let mut v = s.attached.clone();
+                        v.sort_by_key(|sh| sh.priority);
+                        v
+                    },
                     z_index: s.z_index,
                     particles,
                 })
@@ -577,8 +581,8 @@ impl UserData for UIEffectVolumeHandle {
 
         m.add_method(
             "AttachShader",
-            |_, this, asset: AnyUserData| -> mlua::Result<()> {
-                let attached = build_attached(&asset)?;
+            |_, this, (asset, priority): (AnyUserData, Option<i32>)| -> mlua::Result<()> {
+                let attached = build_attached(&asset, priority.unwrap_or(0))?;
                 let mut s = this.inner.lock().unwrap();
                 if s.attached.iter().any(|e| e.id == attached.id) {
                     return Err(mlua::Error::RuntimeError(

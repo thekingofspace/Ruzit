@@ -75,6 +75,10 @@ pub struct AttachedShader {
     pub slot_of_name: Arc<std::collections::HashMap<String, u8>>,
 
     pub params: Arc<Mutex<[f32; 16]>>,
+    /// Draw-order weight. Lower = drawn first (becomes the base); higher =
+    /// drawn later (appears on top). Defaults to 0; ties preserve the order
+    /// AttachShader was called in.
+    pub priority: i32,
 }
 
 pub struct PrimitiveState {
@@ -418,7 +422,11 @@ fn build_snapshot() -> Vec<RenderItem> {
                     color: s.color,
                     transparency: s.transparency,
                     z_index: s.z_index,
-                    active_shaders: s.attached.clone(),
+                    active_shaders: {
+                        let mut v = s.attached.clone();
+                        v.sort_by_key(|sh| sh.priority);
+                        v
+                    },
                     image,
                     clip,
                     billboard_anchor,
@@ -941,7 +949,10 @@ pub fn current_version() -> u64 {
     GUI_VERSION.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-pub(crate) fn build_attached(asset: &AnyUserData) -> mlua::Result<AttachedShader> {
+pub(crate) fn build_attached(
+    asset: &AnyUserData,
+    priority: i32,
+) -> mlua::Result<AttachedShader> {
     let (id, source, code) = if let Ok(s) = asset.borrow::<ShaderAsset>() {
         (s.id, s.source.clone(), s.code.clone())
     } else if let Ok(f) = asset.borrow::<FragmentAsset>() {
@@ -962,6 +973,7 @@ pub(crate) fn build_attached(asset: &AnyUserData) -> mlua::Result<AttachedShader
         wgsl: Arc::new(wgsl),
         slot_of_name: Arc::new(slot_of_name),
         params: Arc::new(Mutex::new([0.0_f32; 16])),
+        priority,
     })
 }
 
@@ -1417,9 +1429,9 @@ impl UserData for GuiPrimitive {
 
         m.add_method(
             "AttachShader",
-            |_, this, asset: AnyUserData| -> mlua::Result<()> {
+            |_, this, (asset, priority): (AnyUserData, Option<i32>)| -> mlua::Result<()> {
                 this.ensure_alive("AttachShader")?;
-                let attached = build_attached(&asset)?;
+                let attached = build_attached(&asset, priority.unwrap_or(0))?;
                 let mut s = this.state.lock().unwrap();
                 if s.attached.iter().any(|e| e.id == attached.id) {
                     return Err(mlua::Error::RuntimeError(

@@ -785,8 +785,8 @@ impl UserData for Sound {
         });
         m.add_method(
             "AttachShader",
-            |_, this, asset: AnyUserData| -> mlua::Result<()> {
-                let attached = shader_attach_spec(&asset)?;
+            |_, this, (asset, priority): (AnyUserData, Option<i32>)| -> mlua::Result<()> {
+                let attached = shader_attach_spec(&asset, priority.unwrap_or(0))?;
                 let mut list = this.attached.lock().unwrap();
                 if list.iter().any(|e| e.id == attached.id) {
                     return Err(mlua::Error::RuntimeError(
@@ -882,7 +882,12 @@ fn build_source(
             Shader::Tremolo { rate, depth } => Box::new(StaticTremolo::new(source, rate, depth)),
         };
     }
-    for a in attached {
+    // Apply in priority order: lowest priority runs first (closer to the raw
+    // source); higher priority sits later in the chain. Stable sort keeps the
+    // attach order on ties.
+    let mut ordered: Vec<AttachedShader> = attached.to_vec();
+    ordered.sort_by_key(|a| a.priority);
+    for a in &ordered {
         source = apply_attached(source, a)?;
     }
     Ok(source)

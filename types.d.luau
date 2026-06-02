@@ -249,7 +249,7 @@ declare class Sound
 	function ClearPosition(self): ()
 	function ApplyShader(self, shader: SoundShader): ()
 	function ClearShaders(self): ()
-	function AttachShader(self, asset: ShaderAsset | FragmentAsset): ()
+	function AttachShader(self, asset: ShaderAsset | FragmentAsset, priority: number?): ()
 	function DetachShader(self, asset: ShaderAsset | FragmentAsset): ()
 	function SetData(self, asset: ShaderAsset | FragmentAsset, name: string, value: number): ()
 	function GetData(self, asset: ShaderAsset | FragmentAsset, name: string): number?
@@ -562,7 +562,7 @@ declare class BasePart
 	Changed: Signal<string>
 	function GetPropertyChanged(self, propName: string): Signal<any>
 	function Destroy(self): ()
-	function AttachShader(self, asset: ShaderAsset | FragmentAsset): ()
+	function AttachShader(self, asset: ShaderAsset | FragmentAsset, priority: number?): ()
 	function DetachShader(self, asset: ShaderAsset | FragmentAsset): ()
 	function ClearShaders(self): ()
 	function SetData(self, asset: ShaderAsset | FragmentAsset, name: string, value: number): ()
@@ -653,7 +653,7 @@ declare class EffectVolume
 	function Emit(self, n: number?): ()
 	function Clear(self): ()
 	function Destroy(self): ()
-	function AttachShader(self, asset: ShaderAsset | FragmentAsset): ()
+	function AttachShader(self, asset: ShaderAsset | FragmentAsset, priority: number?): ()
 	function DetachShader(self, asset: ShaderAsset | FragmentAsset): ()
 	function ClearShaders(self): ()
 	function SetData(self, asset: ShaderAsset | FragmentAsset, name: string, value: number): ()
@@ -687,7 +687,7 @@ declare class Primitive
 	function GetPropertyChanged(self, propName: string): Signal<any>
 	function ListFontStyles(self): { string }
 	function Destroy(self): ()
-	function AttachShader(self, asset: ShaderAsset | FragmentAsset): ()
+	function AttachShader(self, asset: ShaderAsset | FragmentAsset, priority: number?): ()
 	function DetachShader(self, asset: ShaderAsset | FragmentAsset): ()
 	function ClearShaders(self): ()
 	function SetData(self, asset: ShaderAsset | FragmentAsset, name: string, value: number): ()
@@ -800,7 +800,7 @@ declare class Spline
 	function InsertNode(self, index: number, node: SplineNode): ()
 	function RemoveNode(self, index: number): ()
 	function SetNode(self, index: number, node: SplineNode): ()
-	function AttachShader(self, asset: FragmentAsset | ShaderAsset): ()
+	function AttachShader(self, asset: FragmentAsset | ShaderAsset, priority: number?): ()
 	function ClearShaders(self): ()
 	function GetPropertyChangedSignal(self, name: string): Signal<...any>
 	function Destroy(self): ()

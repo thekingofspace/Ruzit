@@ -760,6 +760,7 @@ fn clone_attached_3d(s: &AttachedShader3D) -> AttachedShader3D {
         wgsl: s.wgsl.clone(),
         slot_of_name: s.slot_of_name.clone(),
         params: Arc::new(Mutex::new(params)),
+        priority: s.priority,
     }
 }
 
@@ -771,6 +772,7 @@ fn clone_attached_2d(s: &AttachedShader) -> AttachedShader {
         wgsl: s.wgsl.clone(),
         slot_of_name: s.slot_of_name.clone(),
         params: Arc::new(Mutex::new(params)),
+        priority: s.priority,
     }
 }
 

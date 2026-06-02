@@ -187,7 +187,11 @@ pub fn snapshot() -> Vec<SplineRender> {
                     color: s.color,
                     transparency: s.transparency,
                     z_index: s.z_index,
-                    active_shaders: s.attached.clone(),
+                    active_shaders: {
+                        let mut v = s.attached.clone();
+                        v.sort_by_key(|sh| sh.priority);
+                        v
+                    },
                     aabb,
                     style: s.style,
                     length: s.length,
@@ -718,7 +722,7 @@ impl UserData for Spline {
         });
         m.add_method(
             "AttachShader",
-            |_, this, ud: AnyUserData| -> mlua::Result<()> {
+            |_, this, (ud, priority): (AnyUserData, Option<i32>)| -> mlua::Result<()> {
                 let frag = ud.borrow::<crate::libs::asset::FragmentAsset>().ok();
                 let id = frag
                     .as_ref()
@@ -745,6 +749,7 @@ impl UserData for Spline {
                     wgsl: Arc::new(wgsl),
                     slot_of_name: Arc::new(std::collections::HashMap::new()),
                     params: Arc::new(Mutex::new([0.0_f32; 16])),
+                    priority: priority.unwrap_or(0),
                 };
                 this.state.lock().unwrap().attached.push(attached);
                 bump_dirty();

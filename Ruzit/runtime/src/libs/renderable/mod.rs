@@ -40,6 +40,9 @@ pub struct AttachedShader3D {
     pub wgsl: Arc<String>,
     pub slot_of_name: Arc<HashMap<String, u8>>,
     pub params: Arc<Mutex<[f32; 16]>>,
+    /// Draw-order weight. Lower = drawn first (becomes the base); higher =
+    /// drawn later (appears on top). Defaults to 0.
+    pub priority: i32,
 }
 
 #[derive(Clone)]
@@ -706,7 +709,11 @@ fn build_parts_snapshot() -> Vec<PartRender> {
                     cframe: s.current_cframe(),
                     size: s.size,
                     color: s.color,
-                    active_shaders: s.attached.clone(),
+                    active_shaders: {
+                        let mut v = s.attached.clone();
+                        v.sort_by_key(|sh| sh.priority);
+                        v
+                    },
 
                     model: s.deformed.clone().or_else(|| s.model.clone()),
                     texture: s.texture.clone(),
@@ -944,7 +951,10 @@ fn parse_param_decls(src: &str) -> HashMap<String, u8> {
     map
 }
 
-pub(crate) fn build_attached_3d(asset: &AnyUserData) -> mlua::Result<AttachedShader3D> {
+pub(crate) fn build_attached_3d(
+    asset: &AnyUserData,
+    priority: i32,
+) -> mlua::Result<AttachedShader3D> {
     let (id, code) = if let Ok(s) = asset.borrow::<ShaderAsset>() {
         (s.id, s.code.clone())
     } else if let Ok(f) = asset.borrow::<FragmentAsset>() {
@@ -974,6 +984,7 @@ pub(crate) fn build_attached_3d(asset: &AnyUserData) -> mlua::Result<AttachedSha
         wgsl: Arc::new(wgsl),
         slot_of_name: Arc::new(slot_of_name),
         params: Arc::new(Mutex::new([0.0_f32; 16])),
+        priority,
     })
 }
 
@@ -1225,9 +1236,9 @@ impl UserData for PartHandle {
 
         m.add_method(
             "AttachShader",
-            |_, this, asset: AnyUserData| -> mlua::Result<()> {
+            |_, this, (asset, priority): (AnyUserData, Option<i32>)| -> mlua::Result<()> {
                 this.ensure_alive("AttachShader")?;
-                let attached = build_attached_3d(&asset)?;
+                let attached = build_attached_3d(&asset, priority.unwrap_or(0))?;
                 let mut s = this.state.lock().unwrap();
                 if s.attached.iter().any(|e| e.id == attached.id) {
                     return Err(mlua::Error::RuntimeError(

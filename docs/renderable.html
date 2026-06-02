@@ -202,7 +202,7 @@ emitter.Transparency = <span class="hl-num">0.4</span></code></pre>
     </div>
     <div class="member">
         <div class="member-header">
-            <span class="member-name">emitter:AttachShader / DetachShader / ClearShaders / SetData / GetData</span>
+            <span class="member-name">emitter:AttachShader(asset, priority?) / DetachShader / ClearShaders / SetData / GetData</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
@@ -650,12 +650,16 @@ lid_l.Size = Vector.<span class="hl-fn">new</span>(<span class="hl-num">0.08</sp
     </div>
     <div class="member">
         <div class="member-header">
-            <span class="member-name">part:AttachShader(asset)</span>
+            <span class="member-name">part:AttachShader(asset, priority?)</span>
             <span class="tag tag-method">method</span>
         </div>
         <p class="member-desc">
             Attach a <code>ShaderAsset</code> or <code>FragmentAsset</code>.
             See <a href="shaders.html">Shaders</a> for the WGSL contract.
+            With multiple shaders attached, <code>priority</code> (integer,
+            default <code>0</code>) controls draw order: lower priorities
+            draw first (base layer); higher priorities draw later (on top).
+            Ties keep the attach order.
         </p>
     </div>
     <div class="member">
