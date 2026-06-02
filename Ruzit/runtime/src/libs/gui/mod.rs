@@ -1174,20 +1174,25 @@ impl UserData for GuiPrimitive {
         f.add_field_method_set("Text", |lua, this, value: String| {
             this.ensure_alive("set Text")?;
             let new_value = value.clone();
-            let (signal_table, prop_sig) = {
+            let (signal_table, prop_sig, changed) = {
                 let mut s = this.state.lock().unwrap();
                 let ts = s.text.as_mut().ok_or_else(|| {
                     mlua::Error::RuntimeError("Text is only valid on Font primitives".into())
                 })?;
-                if ts.content != value {
+                let changed = ts.content != value;
+                if changed {
                     ts.content = value;
                     ts.invalidate();
                 }
                 (
                     s.changed_signal.clone(),
                     s.prop_signals.get("Text").cloned(),
+                    changed,
                 )
             };
+            if changed {
+                bump_dirty();
+            }
             fire_changed(lua, signal_table, "Text")?;
             fire_prop_changed(lua, prop_sig, Value::String(lua.create_string(&new_value)?));
             Ok(())
@@ -1199,20 +1204,28 @@ impl UserData for GuiPrimitive {
         f.add_field_method_set("TextSize", |lua, this, value: f32| {
             this.ensure_alive("set TextSize")?;
             let new_size = value.clamp(1.0, 1024.0);
-            let (signal_table, prop_sig) = {
+            let (signal_table, prop_sig, changed) = {
                 let mut s = this.state.lock().unwrap();
                 let ts = s.text.as_mut().ok_or_else(|| {
                     mlua::Error::RuntimeError("TextSize is only valid on Font primitives".into())
                 })?;
-                if ts.size_px != new_size {
+                let changed = ts.size_px != new_size;
+                if changed {
                     ts.size_px = new_size;
                     ts.invalidate();
                 }
                 (
                     s.changed_signal.clone(),
                     s.prop_signals.get("TextSize").cloned(),
+                    changed,
                 )
             };
+            if changed {
+                // Snapshot is cached by current_version(); without bumping it
+                // the renderer keeps serving the old baked text even though
+                // ts.size_px and ts.baked have been updated.
+                bump_dirty();
+            }
             fire_changed(lua, signal_table, "TextSize")?;
             fire_prop_changed(lua, prop_sig, Value::Number(new_size as f64));
             Ok(())
@@ -1232,22 +1245,27 @@ impl UserData for GuiPrimitive {
                 ))
             })?;
             let style_str = parsed.as_str().to_string();
-            let (signal_table, prop_sig) = {
+            let (signal_table, prop_sig, changed) = {
                 let mut s = this.state.lock().unwrap();
                 let ts = s.text.as_mut().ok_or_else(|| {
                     mlua::Error::RuntimeError(
                         "FontStyle is only valid on Font primitives".into(),
                     )
                 })?;
-                if ts.style != parsed {
+                let changed = ts.style != parsed;
+                if changed {
                     ts.style = parsed;
                     ts.invalidate();
                 }
                 (
                     s.changed_signal.clone(),
                     s.prop_signals.get("FontStyle").cloned(),
+                    changed,
                 )
             };
+            if changed {
+                bump_dirty();
+            }
             fire_changed(lua, signal_table, "FontStyle")?;
             fire_prop_changed(
                 lua,
@@ -1263,22 +1281,27 @@ impl UserData for GuiPrimitive {
         });
         f.add_field_method_set("Underline", |lua, this, value: bool| {
             this.ensure_alive("set Underline")?;
-            let (signal_table, prop_sig) = {
+            let (signal_table, prop_sig, changed) = {
                 let mut s = this.state.lock().unwrap();
                 let ts = s.text.as_mut().ok_or_else(|| {
                     mlua::Error::RuntimeError(
                         "Underline is only valid on Font primitives".into(),
                     )
                 })?;
-                if ts.underline != value {
+                let changed = ts.underline != value;
+                if changed {
                     ts.underline = value;
                     ts.invalidate();
                 }
                 (
                     s.changed_signal.clone(),
                     s.prop_signals.get("Underline").cloned(),
+                    changed,
                 )
             };
+            if changed {
+                bump_dirty();
+            }
             fire_changed(lua, signal_table, "Underline")?;
             fire_prop_changed(lua, prop_sig, Value::Boolean(value));
             Ok(())
@@ -1290,22 +1313,27 @@ impl UserData for GuiPrimitive {
         });
         f.add_field_method_set("Strikethrough", |lua, this, value: bool| {
             this.ensure_alive("set Strikethrough")?;
-            let (signal_table, prop_sig) = {
+            let (signal_table, prop_sig, changed) = {
                 let mut s = this.state.lock().unwrap();
                 let ts = s.text.as_mut().ok_or_else(|| {
                     mlua::Error::RuntimeError(
                         "Strikethrough is only valid on Font primitives".into(),
                     )
                 })?;
-                if ts.strikethrough != value {
+                let changed = ts.strikethrough != value;
+                if changed {
                     ts.strikethrough = value;
                     ts.invalidate();
                 }
                 (
                     s.changed_signal.clone(),
                     s.prop_signals.get("Strikethrough").cloned(),
+                    changed,
                 )
             };
+            if changed {
+                bump_dirty();
+            }
             fire_changed(lua, signal_table, "Strikethrough")?;
             fire_prop_changed(lua, prop_sig, Value::Boolean(value));
             Ok(())

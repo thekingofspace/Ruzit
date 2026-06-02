@@ -84,6 +84,24 @@ fn cancel_pending_for(lua: &Lua, target: &Thread) -> bool {
     canceled
 }
 
+/// Queue a pre-built coroutine to be resumed on the next task pump tick.
+/// Used by `launch` so the launched script's first execution happens inside
+/// the scheduler's resume boundary (a clean C-call frame from the heart loop)
+/// instead of inside the `launch` Lua-to-C callback. That keeps `task.Wait`
+/// and other yielding builtins working from the script's top-level code -
+/// otherwise the yield would have to cross the launch closure's C frame and
+/// Luau errors with "attempt to yield across metamethod/C-call boundary".
+pub fn defer_thread(lua: &Lua, thread: Thread) -> mlua::Result<()> {
+    let key = lua.create_registry_value(thread)?;
+    STATE.with(|s| {
+        s.borrow_mut().deferred.push(DeferredThread {
+            thread: key,
+            canceled: false,
+        });
+    });
+    Ok(())
+}
+
 fn register_wait(lua: &Lua, seconds: f64) -> mlua::Result<()> {
     let thread = lua.current_thread();
     let key = lua.create_registry_value(thread)?;
@@ -371,8 +389,19 @@ pub fn pump(lua: &Lua, dt: f64) {
         let entry = STATE.with(|s| s.borrow_mut().scheduled.remove(&id));
         if let Some(entry) = entry {
             if let Ok(func) = lua.registry_value::<Function>(&entry.cb) {
-                if let Err(e) = func.call::<()>(()) {
-                    eprintln!("[Task] Schedule '{id}' callback error: {e}");
+                // Run the callback inside a fresh coroutine so it can task.Wait
+                // / coroutine.yield freely. Calling func.call() directly would
+                // execute it on the main thread, where Luau rejects any yield
+                // with "attempt to yield across metamethod/C-call boundary".
+                match lua.create_thread(func) {
+                    Ok(thread) => {
+                        if let Err(e) = thread.resume::<mlua::MultiValue>(()) {
+                            eprintln!("[Task] Schedule '{id}' callback error: {e}");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[Task] Schedule '{id}' thread create error: {e}");
+                    }
                 }
             }
             let _ = lua.remove_registry_value(entry.cb);
@@ -407,8 +436,18 @@ pub fn pump(lua: &Lua, dt: f64) {
             }
         });
         if let Some(func) = func_opt {
-            if let Err(e) = func.call::<()>(()) {
-                eprintln!("[Task] Repeat '{id}' callback error: {e}");
+            // Each tick fires in its own coroutine so the callback can yield
+            // (task.Wait, etc.) without the "yield across C-call boundary"
+            // error from running on the main thread.
+            match lua.create_thread(func) {
+                Ok(thread) => {
+                    if let Err(e) = thread.resume::<mlua::MultiValue>(()) {
+                        eprintln!("[Task] Repeat '{id}' callback error: {e}");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[Task] Repeat '{id}' thread create error: {e}");
+                }
             }
         }
     }

@@ -446,7 +446,16 @@ fn install_launch(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             .set_environment(new_env.clone())
             .into_function()?;
         let thread = lua.create_thread(entry_fn)?;
-        let _: MultiValue = thread.resume::<MultiValue>(())?;
+        // Defer the initial run to the next task pump tick. The script's top
+        // level then executes inside the scheduler's resume boundary (a clean
+        // C frame called from the heart loop), so task.Wait, coroutine.yield,
+        // and any other yielding builtin work from the launched script's top
+        // level. Running thread.resume synchronously here lets yields propagate
+        // into this C closure, which Luau rejects with "attempt to yield
+        // across metamethod/C-call boundary" the moment the script bounces
+        // through any Lua-callable C function (most of the task / signal /
+        // I/O surface).
+        crate::libs::task::defer_thread(lua, thread.clone())?;
 
         let env_key = lua.create_registry_value(new_env)?;
         let thread_key = lua.create_registry_value(thread)?;
