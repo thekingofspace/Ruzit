@@ -539,11 +539,6 @@ fn install_launch(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
         for (i, v) in rest.iter().enumerate() {
             stats.set(i as i64 + 1, v.clone())?;
         }
-        // `stats` is not set on the launched env directly any more. The
-        // global `stats` proxy (installed at startup) routes reads/writes to
-        // the correct launch's stats based on the currently-running coroutine,
-        // so any function in any `require`d module that touches `stats` while
-        // executing inside the launched thread reaches this same table.
 
         let chunk_name = format!("@{resolved}");
         let entry_fn = lua
@@ -552,10 +547,6 @@ fn install_launch(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             .set_environment(new_env.clone())
             .into_function()?;
         let thread = lua.create_thread(entry_fn)?;
-        // Register the (thread, stats) pair before the script starts running
-        // so the very first `stats` access resolves correctly. Newest entry
-        // wins on lookup, so nested launches naturally shadow their parents
-        // for the duration of the inner coroutine.
         register_launch_stats(lua, &thread, &stats)?;
 
         crate::libs::task::defer_thread(lua, thread.clone())?;
