@@ -1,0 +1,113 @@
+Ruzit Engine License
+Version 1.0
+
+Copyright (c) 2026 Gage Ruben ("the Author")
+
+"Ruzit" refers to the Ruzit game engine and all of its source code,
+binaries, libraries, tools, documentation, and accompanying files
+distributed under this license (collectively, "the Software").
+
+A "Product" means any game, application, tool, or other work that is
+built with, runs on, embeds, links against, or otherwise incorporates
+the Software in whole or in part, whether or not the Software is
+modified.
+
+
+1. GRANT OF RIGHTS
+
+Permission is hereby granted, free of charge and in perpetuity, to any
+person or organization obtaining a copy of the Software, to use the
+Software for any purpose whatsoever, including without limitation the
+rights to:
+
+  (a) use, run, and study the Software;
+  (b) copy and reproduce the Software;
+  (c) modify, adapt, translate, and create derivative works of the
+      Software;
+  (d) merge the Software into other works and combine it with other
+      code or assets;
+  (e) publish, distribute, sublicense, lend, rent, and sell copies of
+      the Software and of any Product built with it; and
+  (f) do all of the above for commercial or non-commercial purposes,
+      privately or publicly, with no royalty, fee, or payment of any
+      kind owed to the Author.
+
+These rights are granted worldwide, irrevocably, and without any
+obligation to share, publish, or disclose your own source code, assets,
+or modifications.
+
+
+2. THE ONLY CONDITION: ATTRIBUTION
+
+The rights granted above are conditioned on a single requirement: every
+Product must visibly credit the Ruzit engine.
+
+  (a) The credit must include the word "Ruzit" and make clear that the
+      Product was made with, built on, or powered by the Ruzit engine.
+      Wording such as "Made with Ruzit", "Powered by Ruzit", or "Built
+      with the Ruzit engine" satisfies this requirement.
+
+  (b) The credit may appear in any one reasonable, human-readable
+      location that an ordinary user of the Product can find, including
+      but not limited to: a credits screen or credits list, an "About"
+      screen or dialog, the title or splash screen, an end-of-game
+      credits roll, documentation, a settings/info menu, or an
+      accompanying readme or license file shipped with the Product. You
+      are not required to display it in more than one place.
+
+  (c) The credit must be in a legible form and must not be hidden,
+      obfuscated, or made deliberately difficult to find.
+
+No other condition applies. You do not need to ask permission, register,
+report your usage, or pay anything.
+
+
+3. TRADEMARKS
+
+This license does not grant you any rights to the Author's trademarks,
+service marks, or logos, except for the limited and required use of the
+name "Ruzit" solely to provide the attribution described in Section 2.
+You may not use the name "Ruzit" in a way that suggests your Product is
+officially endorsed by, affiliated with, or produced by the Author,
+beyond stating truthfully that the Product was made with the Ruzit
+engine.
+
+
+4. NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
+NONINFRINGEMENT. THE AUTHOR DOES NOT WARRANT THAT THE SOFTWARE WILL BE
+ERROR-FREE OR THAT ITS OPERATION WILL BE UNINTERRUPTED OR SECURE.
+
+
+5. LIMITATION OF LIABILITY
+
+IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING
+FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE, INCLUDING WITHOUT LIMITATION ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES. YOU
+ASSUME THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE SOFTWARE.
+
+
+6. TERMINATION
+
+This license and the rights granted to you terminate automatically if
+you materially breach its terms — that is, if you distribute a Product
+without the attribution required by Section 2 — and you fail to correct
+the breach within 30 days of becoming aware of it. If you correct the
+breach within that period, your license is reinstated. Termination does
+not affect the rights of end users who have already received a Product
+in good faith.
+
+
+7. MISCELLANEOUS
+
+If any provision of this license is held to be unenforceable, the
+remaining provisions shall remain in full force and effect. This license
+constitutes the entire agreement concerning the Software and supersedes
+any prior understandings regarding it. The Author may publish revised
+versions of this license; you may continue to use any version under
+which you received the Software.
