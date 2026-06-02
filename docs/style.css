@@ -197,6 +197,8 @@ a:hover { border-color: var(--accent); }
 }
 
 .sidebar-foot a {
+    display: block;
+    margin-bottom: 6px;
     color: var(--fg-soft);
     border-bottom: none;
 }
