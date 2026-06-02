@@ -1,7 +1,11 @@
 Ruzit Engine License
-Version 1.0
+Version 1.1
 
-Copyright (c) 2026 Gage Ruben ("the Author")
+Ruzit was created by Gage Ruben ("the Author"). The Author does not
+assert or reserve copyright over the Software and claims no ownership
+restrictions on its use, modification, or distribution beyond the single
+attribution requirement described in Section 2. The Software is offered
+freely to everyone, for any purpose.
 
 "Ruzit" refers to the Ruzit game engine and all of its source code,
 binaries, libraries, tools, documentation, and accompanying files
@@ -22,8 +26,9 @@ rights to:
 
   (a) use, run, and study the Software;
   (b) copy and reproduce the Software;
-  (c) modify, adapt, translate, and create derivative works of the
-      Software;
+  (c) modify, adapt, translate, change, and create derivative works of
+      the Software, including altering, adding, or removing any part of
+      the engine;
   (d) merge the Software into other works and combine it with other
       code or assets;
   (e) publish, distribute, sublicense, lend, rent, and sell copies of
@@ -58,22 +63,59 @@ Product must visibly credit the Ruzit engine.
   (c) The credit must be in a legible form and must not be hidden,
       obfuscated, or made deliberately difficult to find.
 
+  (d) You may modify the engine and change anything about it; a modified
+      version of the Software is still the Software for the purpose of
+      this Section, and Products built on a modified version must still
+      carry the Ruzit credit.
+
 No other condition applies. You do not need to ask permission, register,
 report your usage, or pay anything.
 
 
-3. TRADEMARKS
+3. INDEPENDENT AND CLEAN-ROOM WORKS
 
-This license does not grant you any rights to the Author's trademarks,
-service marks, or logos, except for the limited and required use of the
-name "Ruzit" solely to provide the attribution described in Section 2.
-You may not use the name "Ruzit" in a way that suggests your Product is
-officially endorsed by, affiliated with, or produced by the Author,
+The attribution requirement in Section 2 applies only to Products that
+actually include, embed, or run on the Software. It does not apply to an
+independent work that you create by studying, learning from, or being
+inspired by the Software, as long as that independent work does not copy
+or incorporate the Software's own code, assets, or files.
+
+In plain terms: if you build your own engine or tools by studying how
+Ruzit works, that independent engine is entirely yours, owes no credit
+under this license, and is in no way restricted by it.
+
+
+4. BRAND IMAGES AND TRADEMARKS
+
+You are permitted to use the Ruzit name, logo, and other brand images
+owned by the Author for the purpose of crediting the engine, including
+on splash screens, loading screens, and credits screens. You may use the
+official Ruzit imagery for this purpose without seeking further
+permission.
+
+Apart from that, this license does not grant you rights to the Author's
+trademarks, service marks, or logos for unrelated purposes. You may not
+use the name "Ruzit" or its imagery in a way that suggests your Product
+is officially endorsed by, affiliated with, or produced by the Author,
 beyond stating truthfully that the Product was made with the Ruzit
 engine.
 
 
-4. NO WARRANTY
+5. ARTIFICIAL INTELLIGENCE
+
+Ruzit does not officially support artificial intelligence features,
+AI-generated content, or AI-assisted workflows. The Author provides no
+warranty, guarantee, or support for any such use, and nothing in the
+Software should be relied upon as an AI-capable or AI-safe system.
+
+However, using AI tools to build, modify, generate content for, or
+otherwise work with the Software or a Product does not by itself violate
+this license and will not, on that basis alone, cause your rights under
+this license to be revoked. This clause exists to protect users: you
+will not lose your license simply for using AI.
+
+
+6. NO WARRANTY
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
 OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
@@ -82,7 +124,7 @@ NONINFRINGEMENT. THE AUTHOR DOES NOT WARRANT THAT THE SOFTWARE WILL BE
 ERROR-FREE OR THAT ITS OPERATION WILL BE UNINTERRUPTED OR SECURE.
 
 
-5. LIMITATION OF LIABILITY
+7. LIMITATION OF LIABILITY
 
 IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING
@@ -92,7 +134,7 @@ INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES. YOU
 ASSUME THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE SOFTWARE.
 
 
-6. TERMINATION
+8. TERMINATION
 
 This license and the rights granted to you terminate automatically if
 you materially breach its terms — that is, if you distribute a Product
@@ -100,10 +142,11 @@ without the attribution required by Section 2 — and you fail to correct
 the breach within 30 days of becoming aware of it. If you correct the
 breach within that period, your license is reinstated. Termination does
 not affect the rights of end users who have already received a Product
-in good faith.
+in good faith. For the avoidance of doubt, using AI as described in
+Section 5 is not a breach and is not grounds for termination.
 
 
-7. MISCELLANEOUS
+9. MISCELLANEOUS
 
 If any provision of this license is held to be unenforceable, the
 remaining provisions shall remain in full force and effect. This license
