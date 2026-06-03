@@ -722,8 +722,8 @@
                 <span class="tree-comment">entry point, runs top to bottom</span>
             </li>
             <li class="tree-file">
-                <span class="tree-name">build.toml</span>
-                <span class="tree-comment">name, version, build flags, icon</span>
+                <span class="tree-name">build.luau</span>
+                <span class="tree-comment">name, version, build flags, icon (build-time script)</span>
             </li>
             <li class="tree-file">
                 <span class="tree-name">types.d.luau</span>
@@ -771,9 +771,16 @@
 </p>
 
 <p>
-    <code>build.toml</code> plays the role Roblox's Game Settings menu
-    plays: name, version, icon, build flags, Steam app id, etc. See
-    <a href="build-toml.html">build.toml</a>.
+    <code>build.luau</code> plays the role Roblox's Game Settings menu
+    plays: name, version, icon, build flags, Steam app id, etc.
+    The twist is it's a real Luau script that runs at build time
+    instead of a static config file &mdash; you assign
+    <code>build.name = "..."</code>, <code>build.version = "..."</code>
+    and so on, then iterate <code>build:GetPackages()</code> to route
+    each asset into a named shard with its own compression and
+    encryption. See <a href="build-luau.html">build.luau</a>. The legacy
+    <a href="build-toml.html"><code>build.toml</code></a> still works as
+    a silent fallback for projects that haven't migrated yet.
 </p>
 
 <h2 id="terminal">Running commands from your terminal
@@ -814,7 +821,7 @@
         <p>
             Open <strong>File Explorer</strong> and browse to the folder
             that contains your project (the one with
-            <code>Main.luau</code> and <code>build.toml</code> in it).
+            <code>Main.luau</code> and <code>build.luau</code> in it).
         </p>
     </li>
     <li>
@@ -883,7 +890,7 @@ ruzit test</code></pre>
     <li>
         <p>
             Open your file manager and browse to the folder containing
-            <code>Main.luau</code> and <code>build.toml</code>.
+            <code>Main.luau</code> and <code>build.luau</code>.
         </p>
     </li>
     <li>
@@ -994,7 +1001,7 @@ $ ruzit test</code></pre>
             <td>File &rarr; New Place</td>
             <td><code>ruzit init MyGame</code></td>
             <td>Scaffold a new project folder with
-                <code>Main.luau</code>, <code>build.toml</code>,
+                <code>Main.luau</code>, <code>build.luau</code>,
                 <code>assets/</code>, and a fresh
                 <code>types.d.luau</code>.</td>
         </tr>
@@ -1287,10 +1294,26 @@ rack:<span class="hl-fn">AddChild</span>(part)</code></pre>
 
 <p>
     From any script in the project you can now write
-    <code>require("@CoolDLC/init")</code> and the LSP will autocomplete
+    <code>require("@CoolDLC")</code> (the bare alias resolves to the
+    package's <code>init.luau</code>) and the LSP will autocomplete
     against it. The DLC's own <code>init.luau</code> is whatever it
     chooses to expose; same module convention as everywhere else.
 </p>
+
+<div class="callout note">
+    <strong>One Roblox-shaped surprise: packages are not auto-loaded.</strong>
+    Roblox loads every place / asset eagerly. Ruzit's built games keep
+    only <code>@Game</code> (the project itself) live at startup &mdash;
+    DLC and external <code>Packages/</code> entries are inert until you
+    call <code>manifest.LoadManaged("@CoolDLC")</code> from your code.
+    That gates both <code>require</code> and
+    <code>Asset.GetAsset</code> on activation, so a player who hasn't
+    bought a DLC can't accidentally load its contents. <code>ruzit
+    test</code> auto-activates every package so you don't have to
+    sprinkle <code>LoadManaged</code> calls through development code;
+    only built games enforce the gate. See
+    <a href="globals.html#manifest"><code>manifest</code></a>.
+</div>
 
 <h3>A typical project layout</h3>
 
@@ -1309,7 +1332,7 @@ rack:<span class="hl-fn">AddChild</span>(part)</code></pre>
                 <span class="tree-name">Main.luau</span>
                 <span class="tree-comment">engine entry, opens the window</span>
             </li>
-            <li class="tree-file"><span class="tree-name">build.toml</span></li>
+            <li class="tree-file"><span class="tree-name">build.luau</span></li>
             <li class="tree-file">
                 <span class="tree-name">.luaurc</span>
                 <span class="tree-comment">aliases: { Game = "./" }</span>
@@ -2142,9 +2165,9 @@ CFrame.<span class="hl-fn">new</span>(p, lookAt)
         <p class="member-desc">
             The terminal you ran <code>ruzit test</code> in. Errors and
             Lua tracebacks go to stderr in red. If you're running a
-            packaged build, attach a console with the
-            <code>exe-windowed = false</code> setting in
-            <code>build.toml</code>, or pipe the launcher's output to
+            packaged build, attach a console with
+            <code>build.Windowed = false</code> in
+            <code>build.luau</code>, or pipe the launcher's output to
             a file.
         </p>
     </div>

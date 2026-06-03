@@ -1,0 +1,13 @@
+# Luau base std extended with the Ruzit engine globals (see ruzit.yml).
+std = "ruzit"
+
+# Don't lint generated/vendored or type-definition files.
+exclude = [
+    "types.d.luau",
+    "Generated/**",
+    "Packages/**",
+]
+
+[lints]
+# Allow multiple statements on one line, e.g. `if x then foo() end`.
+multiple_statements = "allow"

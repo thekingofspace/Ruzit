@@ -1,0 +1,44 @@
+# Selene standard-library extension for the Ruzit engine.
+# Adds the extra globals Ruzit injects on top of plain Luau so that
+# `selene` does not report them as `undefined_variable`.
+# Referenced from selene.toml via `std = "ruzit"` (extends the luau base).
+base: luau
+
+globals:
+  # read-only globals
+  __dirname:
+    property: read-only
+  stats:
+    property: read-only
+
+  # import("ModuleName") -> module
+  import:
+    args:
+      - type: string
+
+  # load("path") -> any
+  load:
+    args:
+      - type: string
+
+  # launch("path", ...) -> SubProcess
+  launch:
+    args:
+      - type: string
+      - type: "..."
+        required: false
+
+  # manifest: loads managed packages at boot (Main.luau)
+  manifest.LoadManaged:
+    args:
+      - type: string
+  manifest.IsLoaded:
+    args:
+      - type: string
+  manifest.List:
+    args: []
+
+  # build: the build configuration object (build.luau). Fields are assigned and
+  # methods called on it, so it is fully writable.
+  build:
+    property: full-write
