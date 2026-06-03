@@ -7,14 +7,32 @@ use std::path::{Path, PathBuf};
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use serde_json::{Value as JsonValue, json};
 
-use crate::config::FileType;
+use crate::config::{AssetDisposition, FileType, PackagePlan};
 
 pub const MAGIC: &[u8; 8] = b"RUZITPKG";
 
 pub const PACKAGES_DIR_NAME: &str = "Packages";
 
-pub fn encode_assets_b64(raw: HashMap<String, Vec<u8>>) -> HashMap<String, String> {
-    raw.into_iter().map(|(k, v)| (k, B64.encode(v))).collect()
+#[derive(Debug, Clone)]
+pub struct PackageAssetEntry {
+    pub data_b64: String,
+    pub compressed: bool,
+    pub encryption: String,
+}
+
+pub fn encode_assets_b64(raw: HashMap<String, Vec<u8>>) -> HashMap<String, PackageAssetEntry> {
+    raw.into_iter()
+        .map(|(k, v)| {
+            (
+                k,
+                PackageAssetEntry {
+                    data_b64: B64.encode(v),
+                    compressed: false,
+                    encryption: String::new(),
+                },
+            )
+        })
+        .collect()
 }
 
 pub struct LauncherInfo {
@@ -34,10 +52,11 @@ pub struct LoadedPackage {
     pub file_type: FileType,
     pub physical_root: Option<std::path::PathBuf>,
     pub files: HashMap<String, String>,
-    pub assets: HashMap<String, String>,
+    pub assets: HashMap<String, PackageAssetEntry>,
     pub scripts_compressed: bool,
-    pub assets_compressed: bool,
     pub scripts_bytecode: bool,
+    pub encryption_token: String,
+    pub sources: Vec<ManagedSource>,
 }
 
 pub fn collect_project(
@@ -233,6 +252,119 @@ pub fn write_assets_managed(
     fs::write(path, encrypted).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
+fn encode_asset_entry(bytes: &[u8], disp: &AssetDisposition, token: &str) -> Result<JsonValue, String> {
+    let mut buf: Vec<u8> = bytes.to_vec();
+    if disp.compress {
+        buf = zstd::stream::encode_all(buf.as_slice(), 3).map_err(|e| format!("compress: {e}"))?;
+    }
+    let enc_method = disp.encryption.to_ascii_lowercase();
+    if enc_method == "xor" {
+        buf = crate::managed::xor_with_token(&buf, token);
+    }
+    Ok(json!({
+        "data": B64.encode(&buf),
+        "compressed": disp.compress,
+        "encryption": if enc_method.is_empty() { "none".to_string() } else { enc_method },
+    }))
+}
+
+pub fn write_assets_managed_v2(
+    path: &Path,
+    id: &str,
+    name: &str,
+    token: &str,
+    entries: &HashMap<String, (Vec<u8>, AssetDisposition)>,
+) -> Result<(), String> {
+    let mut json_assets = serde_json::Map::new();
+    for (k, (bytes, disp)) in entries {
+        json_assets.insert(k.clone(), encode_asset_entry(bytes, disp, token)?);
+    }
+    let body = json!({
+        "kind": "assets",
+        "id": id,
+        "name": name,
+        "encryption_token": token,
+        "compressed": false,
+        "assets": json_assets,
+    });
+    let plain = serde_json::to_vec(&body).map_err(|e| e.to_string())?;
+    let encrypted = crate::managed::encrypt_payload(&plain)?;
+    fs::write(path, encrypted).map_err(|e| format!("write {}: {e}", path.display()))
+}
+
+pub fn write_package_shards(
+    managed_dir: &Path,
+    plan: &PackagePlan,
+    asset_bytes: &HashMap<String, Vec<u8>>,
+) -> Result<Vec<(u32, String, usize)>, String> {
+    let mut by_shard: HashMap<u32, HashMap<String, (Vec<u8>, AssetDisposition)>> = HashMap::new();
+    for (key, disp) in &plan.assets {
+        let bytes = match asset_bytes.get(key) {
+            Some(b) => b.clone(),
+            None => {
+                eprintln!(
+                    "[Ruzit] warn: package '{}' references missing asset '{}' \u{2014} skipping",
+                    plan.id, key
+                );
+                continue;
+            }
+        };
+        by_shard
+            .entry(disp.shard_id)
+            .or_default()
+            .insert(key.clone(), (bytes, disp.clone()));
+    }
+
+    let mut shard_ids: Vec<u32> = plan.shards.iter().copied().collect();
+    shard_ids.sort();
+
+    let mut summaries: Vec<(u32, String, usize)> = Vec::new();
+    let mut manifest_shards: Vec<JsonValue> = Vec::new();
+    for shard_id in &shard_ids {
+        let entries = by_shard.remove(shard_id).unwrap_or_default();
+        let count = entries.len();
+        let shard_name = format!("{}.assets.shard{:04}.managed", plan.id, shard_id);
+        let shard_path = managed_dir.join(&shard_name);
+        write_assets_managed_v2(&shard_path, &plan.id, &plan.name, &plan.encryption_token, &entries)?;
+        let size = fs::metadata(&shard_path).map(|m| m.len()).unwrap_or(0);
+        let mut keys: Vec<&String> = entries.keys().collect();
+        keys.sort();
+        manifest_shards.push(json!({
+            "name": shard_name,
+            "asset_count": count,
+            "size_bytes": size,
+            "assets": keys,
+            "shard_id": shard_id,
+        }));
+        summaries.push((*shard_id, shard_name, count));
+    }
+
+    if !by_shard.is_empty() {
+        let mut orphan: Vec<u32> = by_shard.keys().copied().collect();
+        orphan.sort();
+        return Err(format!(
+            "package '{}': assets routed to undeclared shard ids {:?}",
+            plan.id, orphan
+        ));
+    }
+
+    let manifest_path = managed_dir.join(format!("{}.assets.manifest.managed", plan.id));
+    let body = json!({
+        "kind": "assets_manifest",
+        "id": plan.id,
+        "name": plan.name,
+        "encryption_token": plan.encryption_token,
+        "compressed": false,
+        "shards": manifest_shards,
+    });
+    let plain = serde_json::to_vec(&body).map_err(|e| e.to_string())?;
+    let encrypted = crate::managed::encrypt_payload(&plain)?;
+    fs::write(&manifest_path, encrypted)
+        .map_err(|e| format!("write {}: {e}", manifest_path.display()))?;
+
+    Ok(summaries)
+}
+
 pub fn write_assets_sharded(
     managed_dir: &Path,
     id: &str,
@@ -329,6 +461,7 @@ pub fn discover_managed_files(dir: &Path) -> Result<HashMap<String, Vec<PathBuf>
     Ok(groups)
 }
 
+#[derive(Clone)]
 pub enum ManagedSource {
     Disk(PathBuf),
     Memory { label: String, bytes: Vec<u8> },
@@ -368,14 +501,38 @@ pub fn load_single_managed_package(
         files: HashMap::new(),
         assets: HashMap::new(),
         scripts_compressed: false,
-        assets_compressed: false,
         scripts_bytecode: false,
+        encryption_token: String::new(),
+        sources: sources.to_vec(),
     };
     for source in sources {
         let (label, encrypted) = source.read()?;
         merge_managed_bytes_into(&mut pkg, &label, &encrypted)?;
     }
     Ok(pkg)
+}
+
+pub fn load_assets_only(sources: &[ManagedSource]) -> Result<HashMap<String, PackageAssetEntry>, String> {
+    let mut tmp = LoadedPackage {
+        id: String::new(),
+        name: String::new(),
+        version: String::new(),
+        creator: String::new(),
+        entry: String::new(),
+        file_type: FileType::Relative,
+        physical_root: None,
+        files: HashMap::new(),
+        assets: HashMap::new(),
+        scripts_compressed: false,
+        scripts_bytecode: false,
+        encryption_token: String::new(),
+        sources: Vec::new(),
+    };
+    for source in sources {
+        let (label, encrypted) = source.read()?;
+        merge_managed_bytes_into(&mut tmp, &label, &encrypted)?;
+    }
+    Ok(tmp.assets)
 }
 
 pub fn merge_managed_bytes_into(
@@ -433,14 +590,44 @@ pub fn merge_managed_bytes_into(
             }
         }
         "assets" | "assets_manifest" => {
-            pkg.assets_compressed = header_compressed;
+            if let Some(s) = parsed.get("encryption_token").and_then(|v| v.as_str()) {
+                if !s.is_empty() {
+                    pkg.encryption_token = s.to_string();
+                }
+            }
             if let Some(obj) = parsed.get("assets").and_then(|v| v.as_object()) {
                 for (k, v) in obj {
-                    if let Some(b64) = v.as_str() {
-                        let normalized =
-                            k.strip_prefix("assets/").unwrap_or(k.as_str()).to_string();
-                        pkg.assets.insert(normalized, b64.to_string());
-                    }
+                    let normalized = k.strip_prefix("assets/").unwrap_or(k.as_str()).to_string();
+                    let entry = match v {
+                        JsonValue::String(b64) => PackageAssetEntry {
+                            data_b64: b64.clone(),
+                            compressed: header_compressed,
+                            encryption: String::new(),
+                        },
+                        JsonValue::Object(map) => {
+                            let data_b64 = map
+                                .get("data")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let compressed = map
+                                .get("compressed")
+                                .and_then(|x| x.as_bool())
+                                .unwrap_or(header_compressed);
+                            let encryption = map
+                                .get("encryption")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            PackageAssetEntry {
+                                data_b64,
+                                compressed,
+                                encryption,
+                            }
+                        }
+                        _ => continue,
+                    };
+                    pkg.assets.insert(normalized, entry);
                 }
             }
         }
@@ -449,39 +636,76 @@ pub fn merge_managed_bytes_into(
     Ok(())
 }
 
-pub fn locate_runtime_template() -> Result<PathBuf, String> {
-    let self_exe = env::current_exe().map_err(|e| e.to_string())?;
-    let dir = self_exe
-        .parent()
-        .ok_or_else(|| format!("could not derive parent of {}", self_exe.display()))?;
-    let candidate_names: &[&str] = if cfg!(target_os = "windows") {
-        &["ruzitrun.exe"]
-    } else {
-        &["ruzitrun"]
-    };
-    for name in candidate_names {
-        let p = dir.join(name);
-        if p.is_file() && p != self_exe {
-            return Ok(p);
-        }
-    }
-    Err(format!(
-        "build: could not find ruzitrun{} alongside {}. \
-         The runtime binary must be installed next to the CLI for `build` to copy it as a launcher template.",
-        if cfg!(target_os = "windows") {
-            ".exe"
-        } else {
-            ""
-        },
-        self_exe.display()
-    ))
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetOs {
+    Windows,
+    Unix,
 }
 
-pub fn write_launcher_exe(
+impl TargetOs {
+    pub fn native() -> TargetOs {
+        if cfg!(target_os = "windows") {
+            TargetOs::Windows
+        } else {
+            TargetOs::Unix
+        }
+    }
+
+    pub fn binary_name(&self) -> &'static str {
+        match self {
+            TargetOs::Windows => "ruzitrun.exe",
+            TargetOs::Unix => "ruzitrun",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            TargetOs::Windows => "windows",
+            TargetOs::Unix => {
+                if cfg!(target_os = "macos") {
+                    "macos"
+                } else {
+                    "linux"
+                }
+            }
+        }
+    }
+
+    pub fn all() -> &'static [TargetOs] {
+        &[TargetOs::Windows, TargetOs::Unix]
+    }
+}
+
+pub fn locate_runtime_template_for(target: TargetOs) -> Option<PathBuf> {
+    let self_exe = env::current_exe().ok()?;
+    let dir = self_exe.parent()?;
+    let p = dir.join(target.binary_name());
+    if p.is_file() && p != self_exe {
+        Some(p)
+    } else {
+        None
+    }
+}
+
+pub fn locate_runtime_template() -> Result<PathBuf, String> {
+    let self_exe = env::current_exe().map_err(|e| e.to_string())?;
+    locate_runtime_template_for(TargetOs::native()).ok_or_else(|| {
+        format!(
+            "build: could not find {} alongside {}. \
+             The runtime binary must be installed next to the CLI for `build` to copy it as a launcher template.",
+            TargetOs::native().binary_name(),
+            self_exe.display()
+        )
+    })
+}
+
+pub fn write_launcher_exe_target(
     out_path: &Path,
     info: &LauncherInfo,
     icon_bytes: Option<&[u8]>,
     windowed: bool,
+    target: TargetOs,
+    runtime_binary: &Path,
 ) -> Result<(), String> {
     let trailer = json!({
         "kind": "launcher",
@@ -493,22 +717,19 @@ pub fn write_launcher_exe(
     });
     let trailer_bytes = serde_json::to_vec(&trailer).map_err(|e| e.to_string())?;
 
-    let self_exe = locate_runtime_template()?;
-    let mut exe_bytes =
-        fs::read(&self_exe).map_err(|e| format!("read {}: {e}", self_exe.display()))?;
+    let mut exe_bytes = fs::read(runtime_binary)
+        .map_err(|e| format!("read {}: {e}", runtime_binary.display()))?;
 
-    #[cfg(windows)]
-    {
+    if target == TargetOs::Windows {
         if windowed {
             patch_subsystem_to_gui(&mut exe_bytes)?;
         } else {
             patch_subsystem_to_console(&mut exe_bytes)?;
         }
-    }
-    #[cfg(not(windows))]
-    {
+    } else {
         let _ = windowed;
     }
+
     {
         let mut f = fs::File::create(out_path)
             .map_err(|e| format!("create {}: {e}", out_path.display()))?;
@@ -519,24 +740,33 @@ pub fn write_launcher_exe(
     }
     drop(exe_bytes);
 
+    if target == TargetOs::Windows && icon_bytes.is_some() && !cfg!(target_os = "windows") {
+        eprintln!(
+            "[Ruzit] warn: icon embedding for the Windows launcher is only supported when building on Windows \u{2014} skipping icon for {}",
+            out_path.display()
+        );
+    }
+
     #[cfg(windows)]
-    if let Some(ico) = icon_bytes {
-        let mut last_err = String::new();
-        let mut ok = false;
-        for delay_ms in [0u64, 100, 300, 700] {
-            if delay_ms > 0 {
-                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
-            }
-            match crate::icon::embed_icon(out_path, ico) {
-                Ok(()) => {
-                    ok = true;
-                    break;
+    if target == TargetOs::Windows {
+        if let Some(ico) = icon_bytes {
+            let mut last_err = String::new();
+            let mut ok = false;
+            for delay_ms in [0u64, 100, 300, 700] {
+                if delay_ms > 0 {
+                    std::thread::sleep(std::time::Duration::from_millis(delay_ms));
                 }
-                Err(e) => last_err = e,
+                match crate::icon::embed_icon(out_path, ico) {
+                    Ok(()) => {
+                        ok = true;
+                        break;
+                    }
+                    Err(e) => last_err = e,
+                }
             }
-        }
-        if !ok {
-            return Err(format!("icon embed (after retries): {last_err}"));
+            if !ok {
+                return Err(format!("icon embed (after retries): {last_err}"));
+            }
         }
     }
     #[cfg(not(windows))]
@@ -553,6 +783,16 @@ pub fn write_launcher_exe(
         .map_err(|e| e.to_string())?;
     f.write_all(MAGIC).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+pub fn write_launcher_exe(
+    out_path: &Path,
+    info: &LauncherInfo,
+    icon_bytes: Option<&[u8]>,
+    windowed: bool,
+) -> Result<(), String> {
+    let runtime = locate_runtime_template()?;
+    write_launcher_exe_target(out_path, info, icon_bytes, windowed, TargetOs::native(), &runtime)
 }
 
 pub fn try_self_launcher() -> Option<LauncherInfo> {

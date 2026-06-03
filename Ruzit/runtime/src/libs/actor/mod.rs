@@ -25,12 +25,21 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
         })?,
     )?;
 
-    let fs_for_file = fs;
-    let owner_for_file = owner;
+    let fs_for_file = fs.clone();
+    let owner_for_file = owner.clone();
     t.set(
         "FromFile",
         lua.create_function(move |_lua, args: MultiValue| -> mlua::Result<ActorHandle> {
             actor_from_file(_lua, args, &fs_for_file, &owner_for_file)
+        })?,
+    )?;
+
+    let fs_for_script = fs;
+    let owner_for_script = owner;
+    t.set(
+        "FromScript",
+        lua.create_function(move |_lua, args: MultiValue| -> mlua::Result<ActorHandle> {
+            actor_from_file(_lua, args, &fs_for_script, &owner_for_script)
         })?,
     )?;
 
@@ -91,12 +100,19 @@ fn actor_from_file(
     let thread_arg = iter.next();
 
     let resolved = vfs::resolve(fs, owner, &path).ok_or_else(|| {
+        let hint = if path.starts_with('@') {
+            " (if this is a DLC/package, call manifest.LoadManaged first)"
+        } else {
+            ""
+        };
         mlua::Error::RuntimeError(format!(
-            "Actor.FromFile: file '{path}' not found (resolved from '{owner}')"
+            "Actor.FromFile: file '{path}' not found (resolved from '{owner}'){hint}"
         ))
     })?;
     let source = read_module(fs, &resolved).ok_or_else(|| {
-        mlua::Error::RuntimeError(format!("Actor.FromFile: could not read '{resolved}'"))
+        mlua::Error::RuntimeError(format!(
+            "Actor.FromFile: could not read '{resolved}' (package may not be loaded \u{2014} try manifest.LoadManaged)"
+        ))
     })?;
 
     let threads = parse_thread_arg("Actor.FromFile", thread_arg)?;

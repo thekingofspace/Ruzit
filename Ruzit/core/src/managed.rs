@@ -46,6 +46,27 @@ pub fn encrypt_payload(plaintext: &[u8]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+pub fn xor_with_token(bytes: &[u8], token: &str) -> Vec<u8> {
+    let key = derive_token_key(token);
+    bytes
+        .iter()
+        .enumerate()
+        .map(|(i, b)| b ^ key[i % key.len()])
+        .collect()
+}
+
+fn derive_token_key(token: &str) -> [u8; 32] {
+    let mut k = derive_key();
+    if token.is_empty() {
+        return k;
+    }
+    let tb = token.as_bytes();
+    for i in 0..32 {
+        k[i] ^= tb[i % tb.len()];
+    }
+    k
+}
+
 pub fn decrypt_payload(blob: &[u8]) -> Result<Vec<u8>, String> {
     if blob.len() < 4 + 1 + NONCE_LEN + 16 {
         return Err("managed payload too small".into());

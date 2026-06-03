@@ -18,18 +18,26 @@
     <meta name="twitter:description" content="Project metadata and build settings. Lives at the root of every project next to Main.luau. Read by ruzit test and ruzit build; ignored at runtime in packaged games.">
     <meta name="twitter:image" content="IconThing.png">
     <!-- og-meta:end -->
-    <link rel="stylesheet" href="style.css?v=26.6.1">
-    <script src="theme.js?v=26.6.1"></script>
+    <link rel="stylesheet" href="style.css?v=26.6.2">
+    <script src="theme.js?v=26.6.2"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=26.6.1" defer></script>
+<script src="sidebar.js?v=26.6.2" defer></script>
 
 <main>
 
-<h1>build.toml</h1>
+<h1>build.toml <span class="deprecated-tag">deprecated</span></h1>
 <p class="lede">
+    <strong>Deprecated as of 26.6.2.</strong> New projects should use
+    <a href="build-luau.html"><code>build.luau</code></a> &mdash; a scriptable
+    replacement that lets you assign each asset to a shard, set per-package
+    encryption tokens, and configure packages imperatively. Existing
+    <code>build.toml</code> projects still build; if both files are present
+    <code>build.luau</code> wins.
+</p>
+<p>
     Project metadata and build settings. Lives at the root of every project
     next to <code>Main.luau</code>. Read by <code>ruzit test</code> and
     <code>ruzit build</code>; ignored at runtime in packaged games.
@@ -330,7 +338,7 @@ include = [
 
 <!-- right-toc:begin -->
 <aside class="right-toc"></aside>
-<script src="right-toc.js?v=26.6.1" defer></script>
+<script src="right-toc.js?v=26.6.2" defer></script>
 <!-- right-toc:end -->
 
 

@@ -76,29 +76,30 @@ fn run_disk_project(root: PathBuf, entry: Option<String>) -> Result<(), String> 
     });
     let default_id = exe_stem.clone();
 
-    let mut registry = LazyPackageRegistry::new();
+    let mut registry = LazyPackageRegistry::new_test_mode();
     let (def_files, def_assets) = package::collect_project(&root)?;
-    registry.insert_ready(
-        default_id.clone(),
-        Arc::new(Package {
-            id: default_id.clone(),
-            name: if config.name.is_empty() {
-                default_id.clone()
-            } else {
-                config.name.clone()
-            },
-            version: config.version.clone(),
-            creator: config.creator.clone(),
-            entry: entry_rel.clone(),
-            file_type: config.file_type,
-            physical_root: Some(root.clone()),
-            files: def_files,
-            assets: package::encode_assets_b64(def_assets),
-            scripts_compressed: false,
-            assets_compressed: false,
-            scripts_bytecode: false,
-        }),
-    );
+    let default_pkg = Package {
+        id: default_id.clone(),
+        name: if config.name.is_empty() {
+            default_id.clone()
+        } else {
+            config.name.clone()
+        },
+        version: config.version.clone(),
+        creator: config.creator.clone(),
+        entry: entry_rel.clone(),
+        file_type: config.file_type,
+        physical_root: Some(root.clone()),
+        files: def_files,
+        assets: std::sync::RwLock::new(Some(package::encode_assets_b64(def_assets))),
+        scripts_compressed: false,
+        scripts_bytecode: false,
+        encryption_token: String::new(),
+        sources: Vec::new(),
+        activated: std::sync::atomic::AtomicBool::new(true),
+        is_default: true,
+    };
+    registry.insert_ready(default_id.clone(), Arc::new(default_pkg));
 
     for dlc in &dlc_folders {
         let info = ManagedInfo::load(dlc)?;
@@ -109,23 +110,24 @@ fn run_disk_project(root: PathBuf, entry: Option<String>) -> Result<(), String> 
                 info.id, info.entry
             ));
         }
-        registry.insert_ready(
-            info.id.clone(),
-            Arc::new(Package {
-                id: info.id.clone(),
-                name: info.name.clone(),
-                version: info.version.clone(),
-                creator: info.creator.clone(),
-                entry: info.entry.clone(),
-                file_type: info.file_type,
-                physical_root: Some(dlc.clone()),
-                files: dlc_files,
-                assets: package::encode_assets_b64(dlc_assets),
-                scripts_compressed: false,
-                assets_compressed: false,
-                scripts_bytecode: false,
-            }),
-        );
+        let pkg = Package {
+            id: info.id.clone(),
+            name: info.name.clone(),
+            version: info.version.clone(),
+            creator: info.creator.clone(),
+            entry: info.entry.clone(),
+            file_type: info.file_type,
+            physical_root: Some(dlc.clone()),
+            files: dlc_files,
+            assets: std::sync::RwLock::new(Some(package::encode_assets_b64(dlc_assets))),
+            scripts_compressed: false,
+            scripts_bytecode: false,
+            encryption_token: String::new(),
+            sources: Vec::new(),
+            activated: std::sync::atomic::AtomicBool::new(true),
+            is_default: false,
+        };
+        registry.insert_ready(info.id.clone(), Arc::new(pkg));
     }
 
     let packages_dir = root.join(package::PACKAGES_DIR_NAME);
@@ -229,10 +231,10 @@ fn run_launcher(info: LauncherInfo) -> Result<(), String> {
     );
 
     let mut registry = LazyPackageRegistry::new();
-    registry.insert_ready(
-        info.default_id.clone(),
-        Arc::new(Package::from_loaded(default_pkg)),
-    );
+    let mut def_pkg = Package::from_loaded(default_pkg);
+    def_pkg.is_default = true;
+    def_pkg.activate();
+    registry.insert_ready(info.default_id.clone(), Arc::new(def_pkg));
     for (id, paths) in groups {
         if id == info.default_id {
             continue;

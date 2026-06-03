@@ -18,13 +18,13 @@
     <meta name="twitter:description" content="Every Luau script in a Ruzit project starts with a small set of runtime-injected globals on top of the standard Lua library. import, require, __dirname, load, and print, covered below.">
     <meta name="twitter:image" content="IconThing.png">
     <!-- og-meta:end -->
-    <link rel="stylesheet" href="style.css?v=26.6.1">
-    <script src="theme.js?v=26.6.1"></script>
+    <link rel="stylesheet" href="style.css?v=26.6.2">
+    <script src="theme.js?v=26.6.2"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=26.6.1" defer></script>
+<script src="sidebar.js?v=26.6.2" defer></script>
 
 <main>
 
@@ -629,11 +629,90 @@ dialog:<span class="hl-fn">Kill</span>()                                       <
     passing, isolated Lua state).
 </div>
 
+<h2 id="manifest">manifest</h2>
+<p class="api-sig">
+    <code>manifest.LoadManaged(id) -&gt; ManifestPackage</code>
+</p>
+<p>
+    Activates a non-default package so its scripts and assets become
+    visible to <code>require</code> and <code>Asset.GetAsset</code>. The
+    project's own package (referenced as <code>@Game</code>) is always
+    auto-loaded — every other package, DLC, and entry under
+    <code>Packages/</code> stays inert until you call this.
+</p>
+<p>
+    Throws if <code>id</code> is unknown to the build, or if the package
+    is already loaded. In <code>ruzit test</code> (disk-mode), every
+    package is auto-active and <code>LoadManaged</code> just returns a
+    handle — useful for development, you don't need to scatter manifest
+    calls through your iteration code.
+</p>
+
+<pre><code><span class="hl-kw">local</span> common = manifest.<span class="hl-fn">LoadManaged</span>(<span class="hl-str">"@Common"</span>)
+<span class="hl-kw">local</span> Module = <span class="hl-fn">require</span>(<span class="hl-str">"@Common"</span>)
+
+<span class="hl-com">-- ... do work ...</span>
+
+common:<span class="hl-fn">Free</span>()  <span class="hl-com">-- drops the .managed file from RAM; loaded textures/sounds stay alive</span>
+</code></pre>
+
+<h3>ManifestPackage methods</h3>
+<div class="member-list">
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Free(self)</span>
+            <span class="member-type">() -&gt; ()</span>
+        </div>
+        <p class="member-desc">
+            Drops the encrypted asset payload of this package from memory.
+            Assets that have already been decoded via <code>Asset.GetAsset</code>
+            (textures, sounds, models) stay alive — Free only unloads the
+            <strong>file</strong>, not the assets themselves. Scripts are
+            cached separately and remain available forever.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">ID(self)</span>
+            <span class="member-type">() -&gt; string</span>
+        </div>
+        <p class="member-desc">The package id this handle refers to.</p>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">IsAssetsLoaded(self)</span>
+            <span class="member-type">() -&gt; boolean</span>
+        </div>
+        <p class="member-desc">
+            Whether the encrypted asset file is still in memory. Returns
+            <code>false</code> after <code>Free</code>; new
+            <code>GetAsset</code> calls for unfetched paths will error
+            until the package is reloaded.
+        </p>
+    </div>
+</div>
+
+<h3>Other manifest helpers</h3>
+<ul>
+    <li><code>manifest.IsLoaded(id) -&gt; boolean</code> — true if the package has been activated (or if running under <code>ruzit test</code>).</li>
+    <li><code>manifest.List() -&gt; { string }</code> — all package ids the build knows about, loaded or not.</li>
+</ul>
+
+<div class="callout note">
+    <strong>Test mode bypass.</strong>
+    Disk-mode runs (<code>ruzit test</code>) auto-activate every package
+    so you can iterate without sprinkling <code>LoadManaged</code> calls.
+    Built games (<code>ruzit build</code>) enforce the gate — calls to
+    <code>require</code> / <code>Asset.GetAsset</code> for an inactive
+    package error explicitly, hinting at the missing
+    <code>LoadManaged</code>.
+</div>
+
 </main>
 
 <!-- right-toc:begin -->
 <aside class="right-toc"></aside>
-<script src="right-toc.js?v=26.6.1" defer></script>
+<script src="right-toc.js?v=26.6.2" defer></script>
 <!-- right-toc:end -->
 
 

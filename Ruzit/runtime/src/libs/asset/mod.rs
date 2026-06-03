@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use base64::Engine;
 use image::ImageReader;
 use mlua::{Lua, MultiValue, RegistryKey, Table, UserData, UserDataMethods, Value};
 
@@ -577,29 +576,14 @@ fn read_file_bytes(fs: &Fs, owner: &str, path: &str) -> mlua::Result<Vec<u8>> {
                 let (caller_pkg, _) = split_owner(owner, default_id);
                 (caller_pkg.to_string(), path.to_string())
             };
-            let pkg = packages.get(&target_id).ok_or_else(|| {
+            let pkg = packages.get_activated(&target_id).ok_or_else(|| {
                 mlua::Error::RuntimeError(format!(
-                    "Asset.GetAsset: package '{target_id}' is not loaded"
+                    "Asset.GetAsset: package '{target_id}' is not loaded (call manifest.LoadManaged first)"
                 ))
             })?;
             let key = rest_path.replace('\\', "/");
-            let b64 = pkg.assets.get(&key).ok_or_else(|| {
-                mlua::Error::RuntimeError(format!(
-                    "Asset.GetAsset: File '{key}' not found in package '{target_id}'"
-                ))
-            })?;
-            let raw = base64::engine::general_purpose::STANDARD
-                .decode(b64)
-                .map_err(|e| {
-                    mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' base64 decode: {e}"))
-                })?;
-            if pkg.assets_compressed {
-                zstd::stream::decode_all(raw.as_slice()).map_err(|e| {
-                    mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' zstd: {e}"))
-                })
-            } else {
-                Ok(raw)
-            }
+            pkg.read_asset(&key)
+                .map_err(|e| mlua::Error::RuntimeError(format!("Asset.GetAsset: {e}")))
         }
     }
 }
@@ -832,35 +816,43 @@ fn read_bytes(
                 (caller_pkg.to_string(), path.to_string())
             };
 
-            let pkg = packages.get(&target_id).ok_or_else(|| {
+            let pkg = packages.get_activated(&target_id).ok_or_else(|| {
                 mlua::Error::RuntimeError(format!(
-                    "Asset.GetAsset: package '{target_id}' is not loaded"
+                    "Asset.GetAsset: package '{target_id}' is not loaded (call manifest.LoadManaged first)"
                 ))
             })?;
-            let key = resolve_bundle(&pkg.assets, &rest_path, exts).ok_or_else(|| {
+            let key = resolve_bundle_from_pkg(&pkg, &rest_path, exts).ok_or_else(|| {
                 mlua::Error::RuntimeError(format!(
                     "Asset.GetAsset: {kind} '{rest_path}' not found in package '{target_id}'"
                 ))
             })?;
-
-            let b64 = pkg.assets.get(&key).ok_or_else(|| {
-                mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' missing"))
-            })?;
-            let raw = base64::engine::general_purpose::STANDARD
-                .decode(b64)
-                .map_err(|e| {
-                    mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' base64 decode: {e}"))
-                })?;
-            let bytes = if pkg.assets_compressed {
-                zstd::stream::decode_all(raw.as_slice()).map_err(|e| {
-                    mlua::Error::RuntimeError(format!("Asset.GetAsset: '{key}' zstd: {e}"))
-                })?
-            } else {
-                raw
-            };
+            let bytes = pkg
+                .read_asset(&key)
+                .map_err(|e| mlua::Error::RuntimeError(format!("Asset.GetAsset: {e}")))?;
             Ok((bytes, format!("@{target_id}/{key}")))
         }
     }
+}
+
+fn resolve_bundle_from_pkg(pkg: &crate::vfs::Package, path: &str, exts: &[&str]) -> Option<String> {
+    if let Some(idx) = path.rfind('.') {
+        let ext = &path[idx + 1..];
+        if exts.iter().any(|e| e.eq_ignore_ascii_case(ext)) {
+            let stem = path[..idx].replace('.', "/");
+            let key = format!("{stem}.{ext}");
+            if pkg.has_asset(&key) {
+                return Some(key);
+            }
+        }
+    }
+    let base = path.replace('.', "/");
+    for ext in exts {
+        let key = format!("{base}.{ext}");
+        if pkg.has_asset(&key) {
+            return Some(key);
+        }
+    }
+    None
 }
 
 fn resolve_disk(root: &Path, path: &str, exts: &[&str]) -> Option<PathBuf> {
@@ -879,27 +871,6 @@ fn resolve_disk(root: &Path, path: &str, exts: &[&str]) -> Option<PathBuf> {
         let candidate = base.with_extension(ext);
         if candidate.is_file() {
             return Some(candidate);
-        }
-    }
-    None
-}
-
-fn resolve_bundle(assets: &HashMap<String, String>, path: &str, exts: &[&str]) -> Option<String> {
-    if let Some(idx) = path.rfind('.') {
-        let ext = &path[idx + 1..];
-        if exts.iter().any(|e| e.eq_ignore_ascii_case(ext)) {
-            let stem = path[..idx].replace('.', "/");
-            let key = format!("{stem}.{ext}");
-            if assets.contains_key(&key) {
-                return Some(key);
-            }
-        }
-    }
-    let base = path.replace('.', "/");
-    for ext in exts {
-        let key = format!("{base}.{ext}");
-        if assets.contains_key(&key) {
-            return Some(key);
         }
     }
     None

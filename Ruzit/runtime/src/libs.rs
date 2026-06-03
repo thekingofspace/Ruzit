@@ -15,6 +15,7 @@ pub mod io;
 pub mod keyboard;
 pub mod lighting;
 pub mod managed;
+pub mod manifest;
 pub mod mouse;
 pub mod net;
 pub mod objects;

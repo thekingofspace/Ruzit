@@ -387,12 +387,14 @@ declare class Package
 	function HasAsset(self, key: string): boolean
 	function Files(self): { string }
 	function Assets(self): { string }
+	function IsAssetsLoaded(self): boolean
 end
 export type Managed_API = {
 	IsPackage: (id: string) -> boolean,
 	GetPackage: (id: string) -> Package?,
 	List: () -> { string },
 	Default: () -> Package?,
+	IsLoaded: (id: string) -> boolean,
 }
 declare class Dim
 	X: number
@@ -1458,6 +1460,7 @@ end
 export type Actor_API = {
 	new: (source: string, threads: number?) -> Actor,
 	FromFile: (path: string, threads: number?) -> Actor,
+	FromScript: (path: string, threads: number?) -> Actor,
 }
 declare class DebugFlag
 	function Begin(self): ()
@@ -1999,3 +2002,46 @@ declare class SubProcess
 end
 declare launch: (path: string, ...any) -> SubProcess
 declare stats: { [any]: any }
+
+export type BuildShard = {
+	ID: number,
+	PackageID: string,
+}
+
+export type BuildPackage = {
+	id: string,
+	EncryptionToken: string,
+	CompressScripts: boolean,
+	ConvertToByte: boolean,
+	CreateShard: (self: BuildPackage, id: number) -> BuildShard,
+	ParseAssets: (self: BuildPackage, callback: (asset: string, size: number) -> (BuildShard?, boolean?, string?)) -> (),
+}
+
+export type Build = {
+	name: string,
+	version: string,
+	creator: string,
+	ExeName: string,
+	Icon: string?,
+	Windowed: boolean,
+	FileType: "Relative" | "Global",
+	SteamID: number?,
+	include: { string },
+	GetPackages: (self: Build) -> { BuildPackage },
+}
+
+declare build: Build
+
+export type ManifestPackage = {
+	Free: (self: ManifestPackage) -> (),
+	ID: (self: ManifestPackage) -> string,
+	IsAssetsLoaded: (self: ManifestPackage) -> boolean,
+}
+
+export type Manifest = {
+	LoadManaged: (id: string) -> ManifestPackage,
+	IsLoaded: (id: string) -> boolean,
+	List: () -> { string },
+}
+
+declare manifest: Manifest

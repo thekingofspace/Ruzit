@@ -18,13 +18,13 @@
     <meta name="twitter:description" content="Ruzit ships as a Cargo workspace with two binaries: ruzit (the dev tool for scaffolding, testing, building, and packaging) and ruzitrun (the runtime / launcher template — runs games, serves as the EXE shipped games are cut from). Drop both on your PATH; the CLI calls the…">
     <meta name="twitter:image" content="IconThing.png">
     <!-- og-meta:end -->
-    <link rel="stylesheet" href="style.css?v=26.6.1">
-    <script src="theme.js?v=26.6.1"></script>
+    <link rel="stylesheet" href="style.css?v=26.6.2">
+    <script src="theme.js?v=26.6.2"></script>
 </head>
 <body>
 
 <aside class="sidebar"></aside>
-<script src="sidebar.js?v=26.6.1" defer></script>
+<script src="sidebar.js?v=26.6.2" defer></script>
 
 <main>
 
@@ -241,13 +241,48 @@ ruzit test ./MyGame/scenes/level1.luau</code></pre>
     </tbody>
 </table>
 
+<h3>Cross-platform builds</h3>
+<p>
+    As of 26.6.2, <code>ruzit build</code> can emit launchers for
+    <em>multiple</em> platforms in a single invocation. The CLI looks for
+    runtime binaries sitting next to itself and stamps out one launcher
+    per binary it finds:
+</p>
+<table class="api">
+<thead><tr><th>Binary next to <code>ruzit</code></th><th>Target produced</th><th>Output filename</th></tr></thead>
+<tbody>
+<tr><td><code>ruzitrun.exe</code></td><td>Windows</td><td><code>&lt;ExeName&gt;.exe</code></td></tr>
+<tr><td><code>ruzitrun</code> (Linux / macOS)</td><td>Unix</td><td><code>&lt;ExeName&gt;</code> (no extension)</td></tr>
+</tbody>
+</table>
+<p>
+    If you have both binaries installed, you get both launchers from one
+    <code>ruzit build</code> run. The <code>Managed/</code> folder,
+    <code>bin/</code> directory, and Steam redists are shared between
+    them &mdash; only the launcher executable is platform-specific. This
+    lets you produce a Windows + Linux drop from a single machine: build
+    Ruzit on each target once, drop both <code>ruzitrun</code> binaries
+    next to the CLI, then run <code>ruzit build</code> wherever it's
+    convenient.
+</p>
+<div class="callout note">
+    <strong>Caveats.</strong>
+    The Windows PE subsystem flag (<code>Windowed = true/false</code>) is
+    patched into the launcher regardless of host &mdash; it's just byte
+    manipulation. <strong>Icon embedding</strong>, however, requires a
+    Windows host since it uses the Win32 resource API; on Linux/macOS the
+    Windows launcher is still emitted but without the embedded icon, and
+    a warning is printed. macOS bundles aren't synthesized either &mdash;
+    the Unix launcher is a plain ELF/Mach-O ready to drop into a
+    <code>.app</code> if you want one.
+</div>
+
 <div class="callout warn">
-    <strong>Per-platform launchers.</strong>
-    <code>ruzit build</code> always produces a launcher for the OS Ruzit
-    is running on, it's a copy of the running binary plus a JSON
-    trailer. To ship Windows + Linux + macOS, build Ruzit on each OS (or
-    use the GitHub Actions matrix), then run <code>ruzit build</code> on
-    each.
+    <strong>Per-platform launchers (legacy note).</strong>
+    Before 26.6.2, <code>ruzit build</code> only produced a launcher for
+    the OS Ruzit itself ran on. That mode still works &mdash; if only
+    one runtime binary is installed next to the CLI, that's the only
+    launcher you'll get.
 </div>
 
 <h2 id="package">ruzit package</h2>
@@ -452,7 +487,7 @@ ruzit update</code></pre>
 
 <!-- right-toc:begin -->
 <aside class="right-toc"></aside>
-<script src="right-toc.js?v=26.6.1" defer></script>
+<script src="right-toc.js?v=26.6.2" defer></script>
 <!-- right-toc:end -->
 
 

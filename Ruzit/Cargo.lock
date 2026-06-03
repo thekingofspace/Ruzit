@@ -3236,7 +3236,7 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
 name = "ruzit"
-version = "26.6.1"
+version = "26.6.2"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -3286,7 +3286,7 @@ dependencies = [
 
 [[package]]
 name = "ruzit-cli"
-version = "26.6.1"
+version = "26.6.2"
 dependencies = [
  "base64",
  "mlua",
@@ -3299,7 +3299,7 @@ dependencies = [
 
 [[package]]
 name = "ruzit-core"
-version = "26.6.1"
+version = "26.6.2"
 dependencies = [
  "aes-gcm",
  "base64",

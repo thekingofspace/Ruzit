@@ -1,5 +1,6 @@
+use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileType {
@@ -271,5 +272,86 @@ impl ManagedInfo {
         let text =
             std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
         Self::from_toml_str(&text)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct BuildPlan {
+    pub name: String,
+    pub version: String,
+    pub creator: String,
+    pub exe_name: Option<String>,
+    pub exe_icon: Option<String>,
+    pub exe_windowed: bool,
+    pub file_type: FileType,
+    pub steam_app_id: Option<u32>,
+    pub include: Vec<String>,
+    pub compile_bytecode_default: bool,
+    pub packages: Vec<PackagePlan>,
+    /// True when this plan came from a `build.luau` script (vs. lifted from
+    /// the legacy `build.toml`). Build output uses this to decide which
+    /// per-asset path to take — toml falls back to whole-file compression,
+    /// luau uses the per-asset disposition map.
+    pub from_luau: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct PackagePlan {
+    pub id: String,
+    pub root: PathBuf,
+    pub name: String,
+    pub version: String,
+    pub creator: String,
+    pub entry: String,
+    pub file_type: FileType,
+    pub include: Vec<String>,
+    pub encryption_token: String,
+    pub compress_scripts: bool,
+    pub convert_to_byte: bool,
+    pub shards: Vec<u32>,
+    pub assets: HashMap<String, AssetDisposition>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AssetDisposition {
+    pub shard_id: u32,
+    pub compress: bool,
+    pub encryption: String,
+}
+
+impl BuildPlan {
+    pub fn from_legacy_toml(config: &BuildConfig, default_id: &str, root: &Path) -> Self {
+        BuildPlan {
+            name: config.name.clone(),
+            version: config.version.clone(),
+            creator: config.creator.clone(),
+            exe_name: config.exe_name.clone(),
+            exe_icon: config.exe_icon.clone(),
+            exe_windowed: config.exe_windowed,
+            file_type: config.file_type,
+            steam_app_id: config.steam_app_id,
+            include: config.include.clone(),
+            compile_bytecode_default: config.compile_bytecode,
+            packages: vec![PackagePlan {
+                id: default_id.to_string(),
+                root: root.to_path_buf(),
+                name: if config.name.is_empty() {
+                    default_id.to_string()
+                } else {
+                    config.name.clone()
+                },
+                version: config.version.clone(),
+                creator: config.creator.clone(),
+                entry: String::new(),
+                file_type: config.file_type,
+                include: config.include.clone(),
+                encryption_token: String::new(),
+                compress_scripts: config.compress_scripts,
+                convert_to_byte: config.compile_bytecode,
+                shards: Vec::new(),
+                assets: HashMap::new(),
+            }],
+            from_luau: false,
+        }
     }
 }

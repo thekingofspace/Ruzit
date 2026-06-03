@@ -1,11 +1,14 @@
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread;
 
+use base64::{Engine, engine::general_purpose::STANDARD as B64};
+
 use crate::config::FileType;
-use crate::package::{load_single_managed_package, LoadedPackage, ManagedSource};
+use crate::package::{load_assets_only, load_single_managed_package, LoadedPackage, ManagedSource, PackageAssetEntry};
 
 pub struct Package {
     pub id: String,
@@ -19,10 +22,13 @@ pub struct Package {
     pub physical_root: Option<PathBuf>,
     pub files: HashMap<String, String>,
 
-    pub assets: HashMap<String, String>,
+    pub assets: RwLock<Option<HashMap<String, PackageAssetEntry>>>,
     pub scripts_compressed: bool,
-    pub assets_compressed: bool,
     pub scripts_bytecode: bool,
+    pub encryption_token: String,
+    pub sources: Vec<ManagedSource>,
+    pub activated: AtomicBool,
+    pub is_default: bool,
 }
 
 impl Package {
@@ -36,11 +42,94 @@ impl Package {
             file_type: lp.file_type,
             physical_root: lp.physical_root,
             files: lp.files,
-            assets: lp.assets,
+            assets: RwLock::new(Some(lp.assets)),
             scripts_compressed: lp.scripts_compressed,
-            assets_compressed: lp.assets_compressed,
             scripts_bytecode: lp.scripts_bytecode,
+            encryption_token: lp.encryption_token,
+            sources: lp.sources,
+            activated: AtomicBool::new(false),
+            is_default: false,
         }
+    }
+
+    pub fn is_activated(&self) -> bool {
+        self.is_default || self.activated.load(Ordering::Acquire)
+    }
+
+    pub fn activate(&self) {
+        self.activated.store(true, Ordering::Release);
+    }
+
+    pub fn deactivate(&self) {
+        self.activated.store(false, Ordering::Release);
+    }
+
+    pub fn assets_loaded(&self) -> bool {
+        self.assets.read().map(|g| g.is_some()).unwrap_or(false)
+    }
+
+    pub fn asset_keys(&self) -> Vec<String> {
+        let g = match self.assets.read() {
+            Ok(g) => g,
+            Err(_) => return Vec::new(),
+        };
+        match g.as_ref() {
+            Some(m) => {
+                let mut v: Vec<String> = m.keys().cloned().collect();
+                v.sort();
+                v
+            }
+            None => Vec::new(),
+        }
+    }
+
+    pub fn has_asset(&self, key: &str) -> bool {
+        let g = match self.assets.read() {
+            Ok(g) => g,
+            Err(_) => return false,
+        };
+        g.as_ref().map(|m| m.contains_key(key)).unwrap_or(false)
+    }
+
+    pub fn read_asset(&self, key: &str) -> Result<Vec<u8>, String> {
+        let g = self.assets.read().map_err(|e| format!("asset lock: {e}"))?;
+        let map = g
+            .as_ref()
+            .ok_or_else(|| format!("package '{}' assets are not loaded (call manifest.LoadManaged first)", self.id))?;
+        let entry = map
+            .get(key)
+            .ok_or_else(|| format!("asset '{}' not in package '{}'", key, self.id))?;
+        let raw = B64
+            .decode(entry.data_b64.as_bytes())
+            .map_err(|e| format!("asset '{key}' base64: {e}"))?;
+        let decrypted = if entry.encryption.eq_ignore_ascii_case("xor") {
+            crate::managed::xor_with_token(&raw, &self.encryption_token)
+        } else {
+            raw
+        };
+        if entry.compressed {
+            zstd::stream::decode_all(decrypted.as_slice())
+                .map_err(|e| format!("asset '{key}' zstd: {e}"))
+        } else {
+            Ok(decrypted)
+        }
+    }
+
+    pub fn free_assets(&self) {
+        if let Ok(mut g) = self.assets.write() {
+            *g = None;
+        }
+    }
+
+    pub fn reload_assets(&self) -> Result<(), String> {
+        if self.sources.is_empty() {
+            return Ok(());
+        }
+        let map = load_assets_only(&self.sources)?;
+        if let Ok(mut g) = self.assets.write() {
+            *g = Some(map);
+        }
+        Ok(())
     }
 }
 
@@ -61,6 +150,7 @@ struct PackageEntry {
 pub struct LazyPackageRegistry {
     entries: HashMap<String, Arc<PackageEntry>>,
     queue: Arc<(Mutex<VecDeque<String>>, Condvar)>,
+    force_active: bool,
 }
 
 impl LazyPackageRegistry {
@@ -68,7 +158,20 @@ impl LazyPackageRegistry {
         Self {
             entries: HashMap::new(),
             queue: Arc::new((Mutex::new(VecDeque::new()), Condvar::new())),
+            force_active: false,
         }
+    }
+
+    pub fn new_test_mode() -> Self {
+        Self {
+            entries: HashMap::new(),
+            queue: Arc::new((Mutex::new(VecDeque::new()), Condvar::new())),
+            force_active: true,
+        }
+    }
+
+    pub fn is_test_mode(&self) -> bool {
+        self.force_active
     }
 
     pub fn insert_ready(&mut self, id: String, pkg: Arc<Package>) {
@@ -136,6 +239,32 @@ impl LazyPackageRegistry {
                 )
             })
             .count()
+    }
+
+    pub fn get_activated(&self, id: &str) -> Option<Arc<Package>> {
+        let pkg = self.get(id)?;
+        if self.force_active || pkg.is_activated() {
+            Some(pkg)
+        } else {
+            None
+        }
+    }
+
+    pub fn activate(&self, id: &str) -> Result<Arc<Package>, String> {
+        let pkg = self
+            .get(id)
+            .ok_or_else(|| format!("manifest: package '{id}' is not registered"))?;
+        if !pkg.assets_loaded() {
+            pkg.reload_assets()?;
+        }
+        pkg.activate();
+        Ok(pkg)
+    }
+
+    pub fn free_assets(&self, id: &str) -> Option<Arc<Package>> {
+        let pkg = self.get(id)?;
+        pkg.free_assets();
+        Some(pkg)
     }
 }
 
@@ -326,14 +455,11 @@ fn read_from_packages(
     default_id: &str,
     key: &str,
 ) -> Option<Vec<u8>> {
-    use base64::Engine;
     let (pkg_id, inner) = split_owner(key, default_id);
-    let pkg = packages.get(pkg_id)?;
+    let pkg = packages.get_activated(pkg_id)?;
     let stored = pkg.files.get(inner)?;
     if pkg.scripts_compressed {
-        let compressed = base64::engine::general_purpose::STANDARD
-            .decode(stored.as_bytes())
-            .ok()?;
+        let compressed = B64.decode(stored.as_bytes()).ok()?;
         let bytes = zstd::stream::decode_all(compressed.as_slice()).ok()?;
         Some(if pkg.scripts_bytecode {
             bytes
@@ -341,9 +467,7 @@ fn read_from_packages(
             strip_bom_bytes(bytes)
         })
     } else if pkg.scripts_bytecode {
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(stored.as_bytes())
-            .ok()?;
+        let bytes = B64.decode(stored.as_bytes()).ok()?;
         Some(bytes)
     } else {
         Some(strip_bom_bytes(stored.as_bytes().to_vec()))
@@ -435,7 +559,7 @@ fn disk_resolve(
                 other => Some(other.to_string()),
             };
             if let Some(target_id) = target_id {
-                let pkg = packages.get(&target_id)?;
+                let pkg = packages.get_activated(&target_id)?;
                 let key = bundle_lookup(&pkg.files, Path::new(inner_clean))?;
                 return Some(if target_id == default_id {
                     format!("@{default_id}/{key}")
@@ -511,7 +635,11 @@ fn bundle_resolve(
             "Game" | "game" => default_id,
             other => other,
         };
-        let pkg = packages.get(target_id)?;
+        let pkg = if alias == "self" {
+            packages.get(target_id)?
+        } else {
+            packages.get_activated(target_id)?
+        };
         let inner_clean = strip_anchors(inner);
         let base = if alias == "self" {
             let anchor = init_anchor(caller_inner);

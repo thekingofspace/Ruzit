@@ -20,12 +20,25 @@ pub fn create(lua: &Lua, fs: Fs) -> mlua::Result<Table> {
         "GetPackage",
         lua.create_function(move |lua, id: String| -> mlua::Result<Value> {
             if let Fs::Bundle { packages, .. } = &fs_b {
-                if let Some(pkg) = packages.get(&id) {
+                if let Some(pkg) = packages.get_activated(&id) {
                     let ud = lua.create_userdata(PackageRef(pkg.clone()))?;
                     return Ok(Value::UserData(ud));
                 }
             }
             Ok(Value::Nil)
+        })?,
+    )?;
+
+    let fs_loaded = fs.clone();
+    t.set(
+        "IsLoaded",
+        lua.create_function(move |_, id: String| -> mlua::Result<bool> {
+            if let Fs::Bundle { packages, .. } = &fs_loaded {
+                if let Some(pkg) = packages.get(&id) {
+                    return Ok(packages.is_test_mode() || pkg.is_activated());
+                }
+            }
+            Ok(false)
         })?,
     )?;
 
@@ -91,7 +104,7 @@ impl UserData for PackageRef {
             Ok(this.0.files.contains_key(&key))
         });
         m.add_method("HasAsset", |_, this, key: String| {
-            Ok(this.0.assets.contains_key(&key))
+            Ok(this.0.has_asset(&key))
         });
         m.add_method("Files", |lua, this, _: ()| -> mlua::Result<Table> {
             let arr = lua.create_table()?;
@@ -104,12 +117,14 @@ impl UserData for PackageRef {
         });
         m.add_method("Assets", |lua, this, _: ()| -> mlua::Result<Table> {
             let arr = lua.create_table()?;
-            let mut keys: Vec<&String> = this.0.assets.keys().collect();
-            keys.sort();
+            let keys = this.0.asset_keys();
             for (i, k) in keys.iter().enumerate() {
-                arr.set((i + 1) as i64, (*k).clone())?;
+                arr.set((i + 1) as i64, k.clone())?;
             }
             Ok(arr)
+        });
+        m.add_method("IsAssetsLoaded", |_, this, _: ()| {
+            Ok(this.0.assets_loaded())
         });
     }
 }

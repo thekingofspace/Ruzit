@@ -29,6 +29,7 @@ pub fn run_entry(fs: Fs, entry_key: &str) -> Result<(), String> {
     libs::input::install(&lua).map_err(|e| format!("input install: {e}"))?;
     libs::runservice::install(&lua).map_err(|e| format!("runservice install: {e}"))?;
     install_stats_proxy(&lua).map_err(|e| format!("stats proxy: {e}"))?;
+    libs::manifest::install(&lua, &fs).map_err(|e| format!("manifest install: {e}"))?;
 
     let entry_owned = entry_key.to_string();
     run_entry_in_thread(&lua, &fs, entry_key)
@@ -524,13 +525,20 @@ fn install_launch(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
         };
         let lookup = unrebase_name(&fs, &path);
         let resolved = resolve(&fs, &owner, &lookup).ok_or_else(|| {
+            let hint = if path.starts_with('@') {
+                " (if this is a DLC/package, call manifest.LoadManaged first)"
+            } else {
+                ""
+            };
             mlua::Error::RuntimeError(format!(
-                "launch: module '{path}' not found (called from {})",
+                "launch: module '{path}' not found (called from {}){hint}",
                 describe_owner(&fs, &owner)
             ))
         })?;
         let source = read_module(&fs, &resolved).ok_or_else(|| {
-            mlua::Error::RuntimeError(format!("launch: could not read module: {resolved}"))
+            mlua::Error::RuntimeError(format!(
+                "launch: could not read module '{resolved}' (package may not be loaded \u{2014} try manifest.LoadManaged)"
+            ))
         })?;
 
         let new_env = build_env(lua, fs.clone(), resolved.clone())?;

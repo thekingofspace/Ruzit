@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>build.luau - Ruzit Docs</title>
+    <!-- og-meta:begin -->
+    <meta name="description" content="Scriptable build configuration. Replaces build.toml. Runs at build time; lets you set name/version, declare per-asset shard placement, compression, and encryption.">
+    <meta name="theme-color" content="#7289da">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Ruzit Docs">
+    <meta property="og:title" content="build.luau">
+    <meta property="og:description" content="Scriptable build configuration. Replaces build.toml. Runs at build time; lets you set name/version, declare per-asset shard placement, compression, and encryption.">
+    <meta property="og:image" content="IconThing.png">
+    <meta property="og:image:alt" content="Ruzit logo">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="build.luau">
+    <meta name="twitter:description" content="Scriptable build configuration. Replaces build.toml. Runs at build time; lets you set name/version, declare per-asset shard placement, compression, and encryption.">
+    <meta name="twitter:image" content="IconThing.png">
+    <!-- og-meta:end -->
+    <link rel="stylesheet" href="style.css?v=26.6.2">
+    <script src="theme.js?v=26.6.2"></script>
+</head>
+<body>
+
+<aside class="sidebar"></aside>
+<script src="sidebar.js?v=26.6.2" defer></script>
+
+<main>
+
+<h1>build.luau</h1>
+<p class="lede">
+    Scriptable build configuration. Lives at the root of every project next to
+    <code>Main.luau</code>. Runs at build time only &mdash; ignored by the
+    runtime in packaged games. Replaces
+    <a href="build-toml.html"><code>build.toml</code></a>; if both files exist
+    <code>build.luau</code> wins.
+</p>
+
+<h2>Example</h2>
+
+<pre><code><span class="hl-com">--!strict</span>
+
+build.name = <span class="hl-str">"My Game"</span>
+build.version = <span class="hl-str">"0.1.0"</span>
+build.creator = <span class="hl-str">"me"</span>
+
+build.ExeName = <span class="hl-str">"MyGame"</span>
+build.Windowed = <span class="hl-kw">true</span>
+build.FileType = <span class="hl-str">"Relative"</span>
+
+<span class="hl-kw">for</span> _, pkg <span class="hl-kw">in</span> ipairs(build:GetPackages()) <span class="hl-kw">do</span>
+    pkg.CompressScripts = <span class="hl-kw">true</span>
+    pkg.ConvertToByte = <span class="hl-kw">false</span>
+    pkg.EncryptionToken = <span class="hl-str">""</span>
+
+    <span class="hl-kw">local</span> main = pkg:CreateShard(<span class="hl-num">1</span>)
+    <span class="hl-kw">local</span> heavy = pkg:CreateShard(<span class="hl-num">2</span>)
+
+    pkg:ParseAssets(<span class="hl-kw">function</span>(asset, size)
+        <span class="hl-kw">if</span> size > <span class="hl-num">32</span> * <span class="hl-num">1024</span> * <span class="hl-num">1024</span> <span class="hl-kw">then</span>
+            <span class="hl-kw">return</span> heavy, <span class="hl-kw">true</span>, <span class="hl-str">"xor"</span>
+        <span class="hl-kw">end</span>
+        <span class="hl-kw">return</span> main, <span class="hl-kw">true</span>
+    <span class="hl-kw">end</span>)
+<span class="hl-kw">end</span>
+</code></pre>
+
+<h2>build</h2>
+<p>
+    <code>build</code> is a global injected by the build harness. Assign to its
+    fields up front, then iterate <code>build:GetPackages()</code> to configure
+    each package &mdash; the project itself plus any DLC folders and external
+    <code>Packages/</code> entries.
+</p>
+
+<table class="api">
+<thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>name</code></td><td>string</td><td>Display name written into the launcher trailer.</td></tr>
+<tr><td><code>version</code></td><td>string</td><td>Free-form version string.</td></tr>
+<tr><td><code>creator</code></td><td>string</td><td>Author / studio name.</td></tr>
+<tr><td><code>ExeName</code></td><td>string</td><td>Stem for the output executable (default: entry script stem). Also becomes the default package id.</td></tr>
+<tr><td><code>Icon</code></td><td>string?</td><td>Looks for <code>&lt;Icon&gt;.ico</code> next to <code>build.luau</code> and embeds it as the Windows exe icon. No-op on Linux/macOS builds.</td></tr>
+<tr><td><code>Windowed</code></td><td>boolean</td><td>Default <code>true</code>. When false, the launcher is built with a console subsystem (Windows) or stdout-attached binary (Linux/macOS).</td></tr>
+<tr><td><code>FileType</code></td><td>"Relative" \| "Global"</td><td>Default require/Asset path mode for the project. See <a href="globals.html">globals</a>.</td></tr>
+<tr><td><code>SteamID</code></td><td>number?</td><td>Steam app id baked into the launcher.</td></tr>
+<tr><td><code>include</code></td><td>{string}</td><td>Extra files/folders copied verbatim next to the exe at build time. <code>bin/</code> is auto-copied; don't list it.</td></tr>
+<tr><td><code>GetPackages(self)</code></td><td>() -&gt; {package}</td><td>Returns one handle per package on disk: the project plus every DLC folder and external <code>Packages/</code> entry.</td></tr>
+</tbody>
+</table>
+
+<h2>package</h2>
+<p>
+    Each entry from <code>build:GetPackages()</code> exposes settings that
+    apply at <em>build time</em> for that package's <code>.scripts.managed</code>
+    and <code>.assets.managed</code> shards.
+</p>
+
+<table class="api">
+<thead><tr><th>Field / Method</th><th>Type</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>id</code></td><td>string</td><td>Read-only. The package id (e.g. the project's <code>ExeName</code> or each DLC's <code>ManagedInfo.toml</code> ID).</td></tr>
+<tr><td><code>EncryptionToken</code></td><td>string</td><td>Per-package secret mixed into the per-asset XOR key. Built into the <code>.managed</code> file when written.</td></tr>
+<tr><td><code>CompressScripts</code></td><td>boolean</td><td>zstd-compress every <code>.luau</code>/<code>.lua</code> before encryption.</td></tr>
+<tr><td><code>ConvertToByte</code></td><td>boolean</td><td>Pre-compile scripts to Luau bytecode at build time. Faster startup, smaller files, source no longer recoverable.</td></tr>
+<tr><td><code>CreateShard(self, id)</code></td><td>(self, number) -&gt; shard</td><td>Declares a shard with a given numeric id and returns a handle. Shard ids must form a contiguous run starting at <code>1</code> &mdash; you can declare them out of order (3, 1, 2 is fine; 4, 1, 2 errors).</td></tr>
+<tr><td><code>ParseAssets(self, cb)</code></td><td>(self, fn) -&gt; ()</td><td>Walks the package's <code>assets/</code> folder, calling <code>cb(asset, size)</code> for each file. The callback returns <code>(shard, compress, encryption)</code>; returning <code>nil</code> drops the asset from the build with a warning.</td></tr>
+</tbody>
+</table>
+
+<h2>ParseAssets callback</h2>
+<pre><code>pkg:ParseAssets(<span class="hl-kw">function</span>(asset, size)
+    <span class="hl-com">-- asset: "@PackageID/relative/path.ext"</span>
+    <span class="hl-com">-- size:  file size in bytes</span>
+    <span class="hl-kw">return</span> shard, compress, encryption
+<span class="hl-kw">end</span>)
+</code></pre>
+<ul>
+    <li><code>shard</code> &mdash; the handle returned by <code>pkg:CreateShard</code>. Must belong to the same package. Return <code>nil</code> to skip.</li>
+    <li><code>compress</code> &mdash; <code>true</code> to zstd-compress this asset before encryption. Optional, defaults to <code>false</code>.</li>
+    <li><code>encryption</code> &mdash; <code>""</code>/<code>"none"</code> stores plaintext; <code>"xor"</code> applies the per-package <code>EncryptionToken</code> XOR after compression. Optional, defaults to <code>""</code>.</li>
+</ul>
+
+<h2>shard</h2>
+<p>
+    Opaque handle returned by <code>pkg:CreateShard</code>. Carries the parent
+    package id and shard number; return it from <code>ParseAssets</code> to
+    route an asset into the corresponding <code>&lt;id&gt;.assets.shardNNNN.managed</code>
+    file.
+</p>
+
+<h2>Cross-platform output</h2>
+<p>
+    A single <code>ruzit build</code> invocation can emit Windows and
+    Unix launchers in one go. The CLI scans its own directory for runtime
+    binaries and produces one launcher per binary it finds &mdash; the
+    <code>build.luau</code> script itself doesn't need to change.
+</p>
+<table class="api">
+<thead><tr><th>Binary present</th><th>Produces</th><th>In <code>Generated/</code></th></tr></thead>
+<tbody>
+<tr><td><code>ruzitrun.exe</code></td><td>Windows launcher</td><td><code>&lt;ExeName&gt;.exe</code></td></tr>
+<tr><td><code>ruzitrun</code></td><td>Linux/macOS launcher</td><td><code>&lt;ExeName&gt;</code></td></tr>
+</tbody>
+</table>
+<p>
+    The <code>Managed/</code> folder (shards, scripts, manifest) is
+    shared between launchers &mdash; only the executable is
+    platform-specific. Drop both binaries next to the CLI and you get a
+    Windows + Linux drop from a single build. See
+    <a href="cli.html#build">ruzit build</a> for the platform caveats
+    (icon embedding still needs a Windows host).
+</p>
+
+<h2>Notes</h2>
+<ul>
+    <li>build.luau is build-time only; the runtime never executes it.</li>
+    <li>If both <code>build.luau</code> and <code>build.toml</code> exist, <code>build.luau</code> is preferred and <code>build.toml</code> is silently ignored.</li>
+    <li>External Packages (under <code>Packages/</code>) and DLC folders show up in <code>GetPackages()</code> alongside the project. You can give each its own shard layout / encryption.</li>
+    <li>Manifest activation at runtime &mdash; only the default <code>@Game</code> package is auto-loaded. See <a href="globals.html#manifest"><code>manifest.LoadManaged</code></a>.</li>
+</ul>
+
+</main>
+
+</body>
+</html>

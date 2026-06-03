@@ -1,3 +1,4 @@
+mod build_luau;
 mod commands;
 mod templates;
 mod update;

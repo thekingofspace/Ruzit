@@ -215,6 +215,15 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         .to_string_lossy()
         .replace('\\', "/");
 
+    let default_stem_for_luau = entry
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Main".to_string());
+
+    if let Some(plan) = crate::build_luau::evaluate(root, &default_stem_for_luau, &entry_rel)? {
+        return cmd_build_from_plan(root, &entry_rel, plan, output);
+    }
+
     let config = BuildConfig::load(root)?;
 
     let (files, assets) = package::collect_project(root)?;
@@ -252,34 +261,20 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
         None => None,
     };
 
-    let exe_filename = if cfg!(target_os = "windows") {
-        format!("{exe_stem}.exe")
-    } else {
-        exe_stem.clone()
+    let launcher_info = package::LauncherInfo {
+        default_id: pkg_id.clone(),
+        name: config.name.clone(),
+        version: config.version.clone(),
+        creator: config.creator.clone(),
+        steam_app_id: config.steam_app_id,
     };
-    let exe_path = generated_dir.join(&exe_filename);
-    package::write_launcher_exe(
-        &exe_path,
-        &package::LauncherInfo {
-            default_id: pkg_id.clone(),
-            name: config.name.clone(),
-            version: config.version.clone(),
-            creator: config.creator.clone(),
-            steam_app_id: config.steam_app_id,
-        },
+    let built_targets = write_launchers_for_all_targets(
+        &generated_dir,
+        &exe_stem,
+        &launcher_info,
         icon_bytes.as_deref(),
         config.exe_windowed,
     )?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = fs::metadata(&exe_path) {
-            let mut perms = meta.permissions();
-            perms.set_mode(0o755);
-            let _ = fs::set_permissions(&exe_path, perms);
-        }
-    }
 
     copy_steam_redist(&generated_dir);
     copy_bin_folder(root, &generated_dir, "");
@@ -334,7 +329,9 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
     config.print_banner();
     let scripts_size = fs::metadata(&scripts_path).map(|m| m.len()).unwrap_or(0);
     println!("[Ruzit] Build → {}", generated_dir.display());
-    println!("        {}  (launcher)", exe_filename);
+    for (target, name) in &built_targets {
+        println!("        {name}  (launcher, {})", target.label());
+    }
     println!(
         "        Managed/{}.scripts.managed  ({} files, {} KB)",
         pkg_id,
@@ -380,6 +377,221 @@ pub fn cmd_build(arg: Option<&String>, output: Option<&String>) -> Result<(), St
 
     copy_external_packages(root, &managed_dir, &generated_dir, &config)?;
 
+    Ok(())
+}
+
+fn write_launchers_for_all_targets(
+    generated_dir: &Path,
+    exe_stem: &str,
+    info: &package::LauncherInfo,
+    icon_bytes: Option<&[u8]>,
+    windowed: bool,
+) -> Result<Vec<(package::TargetOs, String)>, String> {
+    let native = package::TargetOs::native();
+    let native_runtime = package::locate_runtime_template()?;
+    let mut produced: Vec<(package::TargetOs, String)> = Vec::new();
+
+    let native_name = launcher_filename(exe_stem, native);
+    let native_path = generated_dir.join(&native_name);
+    package::write_launcher_exe_target(
+        &native_path,
+        info,
+        icon_bytes,
+        windowed,
+        native,
+        &native_runtime,
+    )?;
+    make_executable(&native_path);
+    produced.push((native, native_name));
+
+    for &target in package::TargetOs::all() {
+        if target == native {
+            continue;
+        }
+        if let Some(runtime) = package::locate_runtime_template_for(target) {
+            let name = launcher_filename(exe_stem, target);
+            let path = generated_dir.join(&name);
+            match package::write_launcher_exe_target(
+                &path,
+                info,
+                icon_bytes,
+                windowed,
+                target,
+                &runtime,
+            ) {
+                Ok(()) => {
+                    make_executable(&path);
+                    produced.push((target, name));
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[Ruzit] warn: cross-build for {} failed: {e}",
+                        target.label()
+                    );
+                }
+            }
+        }
+    }
+    Ok(produced)
+}
+
+fn launcher_filename(stem: &str, target: package::TargetOs) -> String {
+    match target {
+        package::TargetOs::Windows => format!("{stem}.exe"),
+        package::TargetOs::Unix => stem.to_string(),
+    }
+}
+
+fn make_executable(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = fs::metadata(path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            let _ = fs::set_permissions(path, perms);
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
+}
+
+fn cmd_build_from_plan(
+    root: &Path,
+    entry_rel: &str,
+    plan: ruzit_core::config::BuildPlan,
+    output: Option<&String>,
+) -> Result<(), String> {
+    let exe_stem = plan
+        .exe_name
+        .clone()
+        .unwrap_or_else(|| {
+            plan.packages
+                .iter()
+                .find(|p| p.root == root)
+                .map(|p| p.id.clone())
+                .unwrap_or_else(|| "Main".to_string())
+        });
+
+    let generated_dir = match output {
+        Some(o) => PathBuf::from(o),
+        None => package::default_generated_dir()?,
+    };
+    if generated_dir.is_dir() {
+        fs::remove_dir_all(&generated_dir)
+            .map_err(|e| format!("clear {}: {e}", generated_dir.display()))?;
+    }
+    let managed_dir = generated_dir.join("Managed");
+    fs::create_dir_all(&managed_dir)
+        .map_err(|e| format!("mkdir {}: {e}", managed_dir.display()))?;
+
+    let icon_bytes = match &plan.exe_icon {
+        Some(name) => Some(load_icon(root, name)?),
+        None => None,
+    };
+
+    let launcher_info = package::LauncherInfo {
+        default_id: exe_stem.clone(),
+        name: plan.name.clone(),
+        version: plan.version.clone(),
+        creator: plan.creator.clone(),
+        steam_app_id: plan.steam_app_id,
+    };
+    let built_targets = write_launchers_for_all_targets(
+        &generated_dir,
+        &exe_stem,
+        &launcher_info,
+        icon_bytes.as_deref(),
+        plan.exe_windowed,
+    )?;
+
+    copy_steam_redist(&generated_dir);
+    copy_bin_folder(root, &generated_dir, "");
+    copy_include_paths(root, &generated_dir, &plan.include, "");
+
+    println!("[Ruzit] Build (build.luau) \u{2192} {}", generated_dir.display());
+    for (target, name) in &built_targets {
+        println!("        {name}  (launcher, {})", target.label());
+    }
+
+    for pkg in &plan.packages {
+        let is_default_pkg = pkg.root == root;
+        let pkg_entry = if is_default_pkg {
+            entry_rel.to_string()
+        } else {
+            pkg.entry.clone()
+        };
+        write_package_from_plan(&managed_dir, &generated_dir, pkg, &pkg_entry, is_default_pkg)?;
+    }
+
+    Ok(())
+}
+
+fn write_package_from_plan(
+    managed_dir: &Path,
+    generated_dir: &Path,
+    pkg: &ruzit_core::config::PackagePlan,
+    entry_rel: &str,
+    is_default: bool,
+) -> Result<(), String> {
+    let (files, asset_bytes) = package::collect_project(&pkg.root)?;
+    if is_default {
+        if !files.contains_key(entry_rel) {
+            return Err(format!(
+                "entry '{entry_rel}' not found while collecting sources for package '{}'",
+                pkg.id
+            ));
+        }
+    }
+    let label = if is_default {
+        String::new()
+    } else {
+        format!("from {}", pkg.id)
+    };
+    copy_bin_folder(&pkg.root, generated_dir, &label);
+    copy_include_paths(&pkg.root, generated_dir, &pkg.include, &label);
+
+    let script_bytes = prepare_script_bytes(&files, pkg.convert_to_byte)?;
+    let scripts_path = managed_dir.join(format!("{}.scripts.managed", pkg.id));
+    package::write_scripts_managed(
+        &scripts_path,
+        &pkg.id,
+        &pkg.name,
+        &pkg.version,
+        &pkg.creator,
+        entry_rel,
+        pkg.file_type,
+        &script_bytes,
+        pkg.compress_scripts,
+        pkg.convert_to_byte,
+    )?;
+    let scripts_size = fs::metadata(&scripts_path).map(|m| m.len()).unwrap_or(0);
+    let kind_tag = if is_default {
+        ""
+    } else {
+        " (package)"
+    };
+    println!(
+        "        Managed/{}.scripts.managed  ({} files, {} KB){kind_tag}",
+        pkg.id,
+        files.len(),
+        scripts_size / 1024
+    );
+
+    if !pkg.shards.is_empty() {
+        let summaries = package::write_package_shards(managed_dir, pkg, &asset_bytes)?;
+        for (id, name, count) in summaries {
+            println!("        Managed/{name}  (shard {id}, {count} assets)");
+        }
+    } else if !pkg.assets.is_empty() {
+        return Err(format!(
+            "package '{}' assigned {} asset(s) but declared no shards (call CreateShard first)",
+            pkg.id,
+            pkg.assets.len()
+        ));
+    }
     Ok(())
 }
 
@@ -702,7 +914,7 @@ pub fn cmd_init(arg: Option<&String>) -> Result<(), String> {
         .to_string();
 
     let entries: &[(&str, &str)] = &[
-        ("build.toml", templates::BUILD_TOML),
+        ("build.luau", templates::BUILD_LUAU),
         ("Main.luau", templates::MAIN_LUAU),
         (".vscode/settings.json", templates::VSCODE_SETTINGS),
         (".luaurc", templates::LUAURC),

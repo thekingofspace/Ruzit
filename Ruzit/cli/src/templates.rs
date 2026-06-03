@@ -1,3 +1,27 @@
+pub const BUILD_LUAU: &str = r#"--!strict
+
+build.name = "{name}"
+build.version = "0.1.0"
+build.creator = ""
+
+build.ExeName = "{name}"
+build.Windowed = true
+build.FileType = "Relative"
+
+for _, pkg in ipairs(build:GetPackages()) do
+    pkg.CompressScripts = true
+    pkg.ConvertToByte = false
+    pkg.EncryptionToken = ""
+
+    local main = pkg:CreateShard(1)
+
+    pkg:ParseAssets(function(asset, size)
+        return main, true
+    end)
+end
+"#;
+
+#[allow(dead_code)]
 pub const BUILD_TOML: &str = r#"Name = "{name}"
 Version = "0.1.0"
 Creator = ""
