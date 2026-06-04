@@ -692,6 +692,45 @@ common:<span class="hl-fn">Free</span>()  <span class="hl-com">-- drops the .man
     </div>
 </div>
 
+<h3>manifest.CallFlag(flag)</h3>
+<p>
+    Activates any shard or package that was wired up with
+    <a href="build-luau.html#flags"><code>ListenToFlag</code></a> at
+    build time. Use this to lazy-load chunks of content on demand &mdash;
+    chapter assets, optional high-res texture sets, language packs, mode-
+    specific shards. By default <code>LoadManaged</code> only loads a
+    package's <em>unflagged</em> shards into memory; flagged shards stay
+    dormant until their flag is called, and assets that live inside an
+    unloaded shard behave as if they don't exist (any
+    <code>Asset.GetAsset</code> for them errors as "not found").
+</p>
+
+<pre><code>manifest.<span class="hl-fn">LoadManaged</span>(<span class="hl-str">"@Game"</span>)   <span class="hl-com">-- loads shard 1 (unflagged)</span>
+
+<span class="hl-com">-- player picks chapter 2 from the menu</span>
+manifest.<span class="hl-fn">CallFlag</span>(<span class="hl-str">"chapter_2"</span>)   <span class="hl-com">-- now chapter 2's shard is live</span>
+
+<span class="hl-kw">local</span> sword = Asset.<span class="hl-fn">GetAsset</span>(<span class="hl-str">"Model"</span>, <span class="hl-str">"@Game/levels/ch2_sword"</span>)
+</code></pre>
+
+<p>
+    Returns a result table:
+</p>
+<ul>
+    <li><code>activated</code> &mdash; list of package ids that were just LoadManaged-equivalent activated because they had a package-level <code>ListenToFlag</code> match.</li>
+    <li><code>loaded</code> &mdash; list of <code>{ package, shards }</code> pairs reporting how many flag-gated shards got deserialized into each package.</li>
+    <li><code>errors</code> &mdash; any per-package failure strings (does not throw; you decide what to do).</li>
+</ul>
+
+<p>
+    The same flag can be wired up to multiple shards in one package, to
+    shards across different packages, and to whole packages
+    simultaneously &mdash; one <code>CallFlag</code> fans out across all
+    matches. After <code>pkg:Free()</code> drops the package's assets,
+    flag-loaded shards revert to dormant and must be re-activated by
+    calling <code>CallFlag</code> again.
+</p>
+
 <h3>Other manifest helpers</h3>
 <ul>
     <li><code>manifest.IsLoaded(id) -&gt; boolean</code> — true if the package has been activated (or if running under <code>ruzit test</code>).</li>

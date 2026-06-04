@@ -130,6 +130,106 @@ build.FileType = <span class="hl-str">"Relative"</span>
     file.
 </p>
 
+<h2>Flags &mdash; gating shards and packages at runtime</h2>
+<p>
+    By default, calling <code>manifest.LoadManaged(id)</code> at runtime
+    pulls <em>every</em> shard from the package into memory. For large
+    DLCs with many shards (per-chapter assets, optional language packs,
+    high-res texture variants), that's wasteful. Flags let you mark
+    individual shards &mdash; or whole packages &mdash; as
+    <strong>opt-in</strong>: they ship in the build but stay dormant
+    until the running game calls <code>manifest.CallFlag(name)</code>.
+</p>
+
+<pre><code><span class="hl-kw">for</span> _, pkg <span class="hl-kw">in</span> ipairs(build:GetPackages()) <span class="hl-kw">do</span>
+    <span class="hl-kw">local</span> always = pkg:CreateShard(<span class="hl-num">1</span>)
+    <span class="hl-kw">local</span> chapter_2 = pkg:CreateShard(<span class="hl-num">2</span>)
+    <span class="hl-kw">local</span> chapter_3 = pkg:CreateShard(<span class="hl-num">3</span>)
+    <span class="hl-kw">local</span> hires_skins = pkg:CreateShard(<span class="hl-num">4</span>)
+
+    chapter_2:ListenToFlag(<span class="hl-str">"chapter_2"</span>)
+    chapter_3:ListenToFlag(<span class="hl-str">"chapter_3"</span>)
+    hires_skins:ListenToFlag(<span class="hl-str">"hd_textures"</span>)
+
+    pkg:ParseAssets(<span class="hl-kw">function</span>(asset, size)
+        <span class="hl-kw">if</span> asset:match(<span class="hl-str">"^@Game/levels/ch2_"</span>) <span class="hl-kw">then</span> <span class="hl-kw">return</span> chapter_2, <span class="hl-kw">true</span> <span class="hl-kw">end</span>
+        <span class="hl-kw">if</span> asset:match(<span class="hl-str">"^@Game/levels/ch3_"</span>) <span class="hl-kw">then</span> <span class="hl-kw">return</span> chapter_3, <span class="hl-kw">true</span> <span class="hl-kw">end</span>
+        <span class="hl-kw">if</span> asset:match(<span class="hl-str">"_hd%.png$"</span>) <span class="hl-kw">then</span> <span class="hl-kw">return</span> hires_skins, <span class="hl-kw">true</span> <span class="hl-kw">end</span>
+        <span class="hl-kw">return</span> always, <span class="hl-kw">true</span>
+    <span class="hl-kw">end</span>)
+<span class="hl-kw">end</span>
+</code></pre>
+
+<p>
+    With the build above, <code>manifest.LoadManaged("@Game")</code>
+    loads shard 1 immediately. Shards 2, 3, and 4 only load when the
+    game calls <code>manifest.CallFlag("chapter_2")</code> /
+    <code>"chapter_3"</code> / <code>"hd_textures"</code> respectively.
+    Until then, any <code>Asset.GetAsset</code> for an asset that lives
+    inside one of those shards behaves as if the asset doesn't exist.
+</p>
+
+<h3>shard:ListenToFlag(flag)</h3>
+<p>
+    Mark this shard as flag-gated. The shard is built into the final
+    <code>.managed</code> drop but won't be deserialized at
+    <code>LoadManaged</code> time. Multiple flags on the same shard
+    means <em>any</em> of those flags activates it. Multiple shards can
+    share the same flag &mdash; one <code>CallFlag</code> loads all of
+    them.
+</p>
+
+<h3>pkg:ListenToFlag(flag)</h3>
+<p>
+    Package-level gating. Calling <code>manifest.CallFlag(flag)</code>
+    will <em>auto-activate</em> the entire package (runs the equivalent
+    of <code>manifest.LoadManaged</code>) and then load its unflagged
+    shards plus any of its shards that also listen to the flag. Useful
+    when you want one game-side call to bring up a whole DLC &mdash;
+    e.g. a "chapter 2" flag that pulls in the chapter's package and
+    that package's optional high-res shard in one go.
+</p>
+
+<h3>Sharing one flag across many shards and packages</h3>
+<p>
+    Flags fan out. The same flag string can be attached to any number
+    of shards across any number of packages &mdash; one
+    <code>CallFlag</code> activates all of them. This is the load-
+    bearing primitive for content packs:
+</p>
+<pre><code><span class="hl-com">-- in @PackageA/build.luau (or each DLC's own build evaluation)</span>
+pkg:ListenToFlag(<span class="hl-str">"commonutils"</span>)
+
+<span class="hl-com">-- in @PackageB/build.luau</span>
+pkg:ListenToFlag(<span class="hl-str">"commonutils"</span>)
+
+<span class="hl-com">-- in @PackageC/build.luau</span>
+<span class="hl-kw">local</span> opt_shard = pkg:CreateShard(<span class="hl-num">2</span>)
+opt_shard:ListenToFlag(<span class="hl-str">"commonutils"</span>)
+</code></pre>
+<p>
+    Then from your game code:
+</p>
+<pre><code>manifest.<span class="hl-fn">CallFlag</span>(<span class="hl-str">"commonutils"</span>)
+<span class="hl-com">-- → activates PackageA + PackageB</span>
+<span class="hl-com">-- → loads shard 2 from PackageC</span>
+<span class="hl-com">-- → loads any matching shards from packages already active</span>
+</code></pre>
+<p>
+    Mix freely: one flag can hit package-level handlers and
+    shard-level handlers in the same call. The
+    <code>CallFlag</code> return value tells you exactly what fired
+    (<code>activated</code>, <code>loaded</code>, <code>errors</code>).
+</p>
+
+<h3>Notes</h3>
+<ul>
+    <li>An unflagged shard always loads when its package activates &mdash; flags only opt <em>out</em> of eager loading, never <em>in</em>.</li>
+    <li><code>@Game</code> (the default project package) behaves the same as any other package: unflagged shards load at boot, flagged shards wait for <code>CallFlag</code>.</li>
+    <li>After <code>pkg:Free()</code>, all of that package's loaded assets get dropped &mdash; flag-loaded shards revert to dormant and must be re-activated with another <code>CallFlag</code>.</li>
+    <li>Calling a flag that nothing listens to is a silent no-op. Same flag called twice is idempotent &mdash; already-loaded shards aren't reloaded.</li>
+</ul>
+
 <h2>Cross-platform output</h2>
 <p>
     A single <code>ruzit build</code> invocation can emit Windows and

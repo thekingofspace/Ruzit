@@ -98,6 +98,8 @@ fn run_disk_project(root: PathBuf, entry: Option<String>) -> Result<(), String> 
         sources: Vec::new(),
         activated: std::sync::atomic::AtomicBool::new(true),
         is_default: true,
+        package_flags: Vec::new(),
+        pending_shards: std::sync::RwLock::new(Vec::new()),
     };
     registry.insert_ready(default_id.clone(), Arc::new(default_pkg));
 
@@ -126,6 +128,8 @@ fn run_disk_project(root: PathBuf, entry: Option<String>) -> Result<(), String> 
             sources: Vec::new(),
             activated: std::sync::atomic::AtomicBool::new(true),
             is_default: false,
+            package_flags: Vec::new(),
+            pending_shards: std::sync::RwLock::new(Vec::new()),
         };
         registry.insert_ready(info.id.clone(), Arc::new(pkg));
     }
@@ -234,15 +238,21 @@ fn run_launcher(info: LauncherInfo) -> Result<(), String> {
     let mut def_pkg = Package::from_loaded(default_pkg);
     def_pkg.is_default = true;
     def_pkg.activate();
+    let def_flags = def_pkg.package_flags.clone();
     registry.insert_ready(info.default_id.clone(), Arc::new(def_pkg));
+    registry.set_package_flags(info.default_id.clone(), def_flags);
     for (id, paths) in groups {
         if id == info.default_id {
             continue;
         }
-        registry.insert_pending(
-            id,
-            paths.into_iter().map(package::ManagedSource::Disk).collect(),
-        );
+        let sources: Vec<package::ManagedSource> = paths
+            .iter()
+            .cloned()
+            .map(package::ManagedSource::Disk)
+            .collect();
+        let flags = package::peek_package_flags(&sources);
+        registry.insert_pending(id.clone(), sources);
+        registry.set_package_flags(id, flags);
     }
 
     let registry = Arc::new(registry);

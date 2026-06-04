@@ -10,7 +10,7 @@ use mlua::{
 };
 
 use ruzit_core::config::{
-    AssetDisposition, BuildPlan, FileType, ManagedInfo, PackagePlan,
+    AssetDisposition, BuildPlan, FileType, ManagedInfo, PackagePlan, ShardSpec,
 };
 use ruzit_core::package::PACKAGES_DIR_NAME;
 
@@ -33,7 +33,8 @@ struct PackageMutable {
     encryption_token: String,
     compress_scripts: bool,
     convert_to_byte: bool,
-    shards: Vec<u32>,
+    flags: Vec<String>,
+    shards: Vec<ShardSpec>,
     assets: HashMap<String, AssetDisposition>,
     parsed: bool,
 }
@@ -58,6 +59,32 @@ impl UserData for ShardHandle {
     fn add_fields<F: UserDataFields<Self>>(f: &mut F) {
         f.add_field_method_get("ID", |_, this| Ok(this.shard_id as i64));
         f.add_field_method_get("PackageID", |_, this| Ok(this.package_id.clone()));
+    }
+
+    fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
+        m.add_method("ListenToFlag", |_, this, flag: String| -> mlua::Result<()> {
+            let flag = flag.trim().to_string();
+            if flag.is_empty() {
+                return Err(mlua::Error::RuntimeError(
+                    "ListenToFlag: flag name cannot be empty".into(),
+                ));
+            }
+            let mut st = this.state.lock().unwrap();
+            let entry = st
+                .shards
+                .iter_mut()
+                .find(|s| s.id == this.shard_id)
+                .ok_or_else(|| {
+                    mlua::Error::RuntimeError(format!(
+                        "ListenToFlag: shard {} no longer declared",
+                        this.shard_id
+                    ))
+                })?;
+            if !entry.flags.contains(&flag) {
+                entry.flags.push(flag);
+            }
+            Ok(())
+        });
     }
 }
 
@@ -96,19 +123,36 @@ impl UserData for PackageHandle {
             }
             let id = id as u32;
             let mut st = this.state.lock().unwrap();
-            if st.shards.contains(&id) {
+            if st.shards.iter().any(|s| s.id == id) {
                 return Err(mlua::Error::RuntimeError(format!(
                     "CreateShard: shard id {id} already declared for package '{}'",
                     st.id
                 )));
             }
-            st.shards.push(id);
+            st.shards.push(ShardSpec {
+                id,
+                flags: Vec::new(),
+            });
             let handle = ShardHandle {
                 package_id: st.id.clone(),
                 shard_id: id,
                 state: this.state.clone(),
             };
             lua.create_userdata(handle)
+        });
+
+        m.add_method("ListenToFlag", |_, this, flag: String| -> mlua::Result<()> {
+            let flag = flag.trim().to_string();
+            if flag.is_empty() {
+                return Err(mlua::Error::RuntimeError(
+                    "ListenToFlag: flag name cannot be empty".into(),
+                ));
+            }
+            let mut st = this.state.lock().unwrap();
+            if !st.flags.contains(&flag) {
+                st.flags.push(flag);
+            }
+            Ok(())
         });
 
         m.add_method(
@@ -252,6 +296,7 @@ pub fn evaluate(root: &Path, default_id: &str, default_entry: &str) -> Result<Op
                 encryption_token: String::new(),
                 compress_scripts: false,
                 convert_to_byte: false,
+                flags: Vec::new(),
                 shards: Vec::new(),
                 assets: HashMap::new(),
                 parsed: false,
@@ -328,7 +373,7 @@ pub fn evaluate(root: &Path, default_id: &str, default_entry: &str) -> Result<Op
             disc.id.clone()
         };
         for disp in st.assets.values() {
-            if !st.shards.contains(&disp.shard_id) {
+            if !st.shards.iter().any(|s| s.id == disp.shard_id) {
                 return Err(format!(
                     "package '{}': asset routed to shard {} which was never CreateShard'd",
                     disc.id, disp.shard_id
@@ -366,9 +411,10 @@ pub fn evaluate(root: &Path, default_id: &str, default_entry: &str) -> Result<Op
             encryption_token: st.encryption_token.clone(),
             compress_scripts: st.compress_scripts,
             convert_to_byte: st.convert_to_byte,
+            flags: st.flags.clone(),
             shards: {
                 let mut s = st.shards.clone();
-                s.sort();
+                s.sort_by_key(|sh| sh.id);
                 s
             },
             assets: st.assets.clone(),
@@ -391,11 +437,11 @@ pub fn evaluate(root: &Path, default_id: &str, default_entry: &str) -> Result<Op
     }))
 }
 
-fn validate_shards(pkg_id: &str, ids: &[u32]) -> Result<(), String> {
-    if ids.is_empty() {
+fn validate_shards(pkg_id: &str, shards: &[ShardSpec]) -> Result<(), String> {
+    if shards.is_empty() {
         return Ok(());
     }
-    let mut sorted: Vec<u32> = ids.to_vec();
+    let mut sorted: Vec<u32> = shards.iter().map(|s| s.id).collect();
     sorted.sort();
     for (i, v) in sorted.iter().enumerate() {
         let expected = (i as u32) + 1;

@@ -65,6 +65,36 @@ pub fn install(lua: &Lua, fs: &Fs) -> mlua::Result<()> {
         })?,
     )?;
 
+    let fs_flag = fs.clone();
+    manifest.set(
+        "CallFlag",
+        lua.create_function(move |lua, flag: String| -> mlua::Result<Table> {
+            let result = lua.create_table()?;
+            let activated = lua.create_table()?;
+            let loaded = lua.create_table()?;
+            let errors = lua.create_table()?;
+            if let Fs::Bundle { packages, .. } = &fs_flag {
+                let summary = packages.call_flag(&flag);
+                for (i, id) in summary.packages_activated.iter().enumerate() {
+                    activated.set((i + 1) as i64, id.clone())?;
+                }
+                for (i, (id, n)) in summary.shards_loaded.iter().enumerate() {
+                    let row = lua.create_table()?;
+                    row.set("package", id.clone())?;
+                    row.set("shards", *n as i64)?;
+                    loaded.set((i + 1) as i64, row)?;
+                }
+                for (i, e) in summary.errors.iter().enumerate() {
+                    errors.set((i + 1) as i64, e.clone())?;
+                }
+            }
+            result.set("activated", activated)?;
+            result.set("loaded", loaded)?;
+            result.set("errors", errors)?;
+            Ok(result)
+        })?,
+    )?;
+
     lua.globals().set("manifest", manifest)?;
     Ok(())
 }

@@ -57,6 +57,15 @@ pub struct LoadedPackage {
     pub scripts_bytecode: bool,
     pub encryption_token: String,
     pub sources: Vec<ManagedSource>,
+    pub package_flags: Vec<String>,
+    pub pending_shards: Vec<PendingShard>,
+}
+
+#[derive(Clone)]
+pub struct PendingShard {
+    pub source: ManagedSource,
+    pub flags: Vec<String>,
+    pub shard_id: u32,
 }
 
 pub fn collect_project(
@@ -192,6 +201,24 @@ pub fn write_scripts_managed(
     compress: bool,
     bytecode: bool,
 ) -> Result<(), String> {
+    write_scripts_managed_with_flags(
+        path, id, name, version, creator, entry, file_type, files, compress, bytecode, &[],
+    )
+}
+
+pub fn write_scripts_managed_with_flags(
+    path: &Path,
+    id: &str,
+    name: &str,
+    version: &str,
+    creator: &str,
+    entry: &str,
+    file_type: FileType,
+    files: &HashMap<String, Vec<u8>>,
+    compress: bool,
+    bytecode: bool,
+    package_flags: &[String],
+) -> Result<(), String> {
     let mut json_files = serde_json::Map::new();
     for (k, v) in files {
         let value = if compress {
@@ -216,6 +243,7 @@ pub fn write_scripts_managed(
         "file_type": file_type.as_str(),
         "compressed": compress,
         "bytecode": bytecode,
+        "package_flags": package_flags,
         "files": json_files,
     });
     let plain = serde_json::to_vec(&body).map_err(|e| e.to_string())?;
@@ -315,15 +343,15 @@ pub fn write_package_shards(
             .insert(key.clone(), (bytes, disp.clone()));
     }
 
-    let mut shard_ids: Vec<u32> = plan.shards.iter().copied().collect();
-    shard_ids.sort();
+    let mut shards_sorted: Vec<&crate::config::ShardSpec> = plan.shards.iter().collect();
+    shards_sorted.sort_by_key(|s| s.id);
 
     let mut summaries: Vec<(u32, String, usize)> = Vec::new();
     let mut manifest_shards: Vec<JsonValue> = Vec::new();
-    for shard_id in &shard_ids {
-        let entries = by_shard.remove(shard_id).unwrap_or_default();
+    for shard in &shards_sorted {
+        let entries = by_shard.remove(&shard.id).unwrap_or_default();
         let count = entries.len();
-        let shard_name = format!("{}.assets.shard{:04}.managed", plan.id, shard_id);
+        let shard_name = format!("{}.assets.shard{:04}.managed", plan.id, shard.id);
         let shard_path = managed_dir.join(&shard_name);
         write_assets_managed_v2(&shard_path, &plan.id, &plan.name, &plan.encryption_token, &entries)?;
         let size = fs::metadata(&shard_path).map(|m| m.len()).unwrap_or(0);
@@ -334,9 +362,10 @@ pub fn write_package_shards(
             "asset_count": count,
             "size_bytes": size,
             "assets": keys,
-            "shard_id": shard_id,
+            "shard_id": shard.id,
+            "flags": shard.flags,
         }));
-        summaries.push((*shard_id, shard_name, count));
+        summaries.push((shard.id, shard_name, count));
     }
 
     if !by_shard.is_empty() {
@@ -355,6 +384,7 @@ pub fn write_package_shards(
         "name": plan.name,
         "encryption_token": plan.encryption_token,
         "compressed": false,
+        "package_flags": plan.flags,
         "shards": manifest_shards,
     });
     let plain = serde_json::to_vec(&body).map_err(|e| e.to_string())?;
@@ -486,6 +516,49 @@ impl From<PathBuf> for ManagedSource {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SourceKind {
+    Scripts,
+    AssetsBulk,
+    AssetsManifest,
+    AssetsShard,
+    Unknown,
+}
+
+fn classify_source(label: &str) -> SourceKind {
+    let s = label.to_ascii_lowercase();
+    if s.ends_with(".scripts.managed") {
+        SourceKind::Scripts
+    } else if s.ends_with(".assets.manifest.managed") {
+        SourceKind::AssetsManifest
+    } else if s.contains(".assets.shard") && s.ends_with(".managed") {
+        SourceKind::AssetsShard
+    } else if s.ends_with(".assets.managed") {
+        SourceKind::AssetsBulk
+    } else {
+        SourceKind::Unknown
+    }
+}
+
+fn source_filename(s: &ManagedSource) -> String {
+    match s {
+        ManagedSource::Disk(p) => p
+            .file_name()
+            .map(|f| f.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        ManagedSource::Memory { label, .. } => label.clone(),
+    }
+}
+
+fn parse_shard_id_from_name(name: &str) -> Option<u32> {
+    let lower = name.to_ascii_lowercase();
+    let needle = ".assets.shard";
+    let idx = lower.find(needle)?;
+    let after = &name[idx + needle.len()..];
+    let end = after.find('.').unwrap_or(after.len());
+    after[..end].parse::<u32>().ok()
+}
+
 pub fn load_single_managed_package(
     id: &str,
     sources: &[ManagedSource],
@@ -504,35 +577,188 @@ pub fn load_single_managed_package(
         scripts_bytecode: false,
         encryption_token: String::new(),
         sources: sources.to_vec(),
+        package_flags: Vec::new(),
+        pending_shards: Vec::new(),
     };
+
+    let mut shard_flag_lookup: HashMap<String, Vec<String>> = HashMap::new();
     for source in sources {
-        let (label, encrypted) = source.read()?;
-        merge_managed_bytes_into(&mut pkg, &label, &encrypted)?;
+        let filename = source_filename(source);
+        if classify_source(&filename) == SourceKind::AssetsManifest {
+            let (label, encrypted) = source.read()?;
+            let plain = crate::managed::decrypt_payload(&encrypted)
+                .map_err(|e| format!("decrypt {label}: {e}"))?;
+            let parsed: JsonValue = serde_json::from_slice(&plain)
+                .map_err(|e| format!("parse {label}: {e}"))?;
+            if let Some(arr) = parsed.get("shards").and_then(|v| v.as_array()) {
+                for shard in arr {
+                    let name = shard
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
+                    let flags: Vec<String> = shard
+                        .get("flags")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    if !name.is_empty() {
+                        shard_flag_lookup.insert(name, flags);
+                    }
+                }
+            }
+        }
     }
+
+    for source in sources {
+        let filename = source_filename(source);
+        let kind = classify_source(&filename);
+        match kind {
+            SourceKind::AssetsShard => {
+                let flags = shard_flag_lookup.get(&filename).cloned().unwrap_or_default();
+                let shard_id = parse_shard_id_from_name(&filename).unwrap_or(0);
+                if flags.is_empty() {
+                    let (label, encrypted) = source.read()?;
+                    merge_managed_bytes_into(&mut pkg, &label, &encrypted)?;
+                } else {
+                    pkg.pending_shards.push(PendingShard {
+                        source: source.clone(),
+                        flags,
+                        shard_id,
+                    });
+                }
+            }
+            _ => {
+                let (label, encrypted) = source.read()?;
+                merge_managed_bytes_into(&mut pkg, &label, &encrypted)?;
+            }
+        }
+    }
+
     Ok(pkg)
 }
 
-pub fn load_assets_only(sources: &[ManagedSource]) -> Result<HashMap<String, PackageAssetEntry>, String> {
-    let mut tmp = LoadedPackage {
-        id: String::new(),
-        name: String::new(),
-        version: String::new(),
-        creator: String::new(),
-        entry: String::new(),
-        file_type: FileType::Relative,
-        physical_root: None,
-        files: HashMap::new(),
-        assets: HashMap::new(),
-        scripts_compressed: false,
-        scripts_bytecode: false,
-        encryption_token: String::new(),
-        sources: Vec::new(),
-    };
-    for source in sources {
-        let (label, encrypted) = source.read()?;
-        merge_managed_bytes_into(&mut tmp, &label, &encrypted)?;
+pub fn load_assets_only(
+    sources: &[ManagedSource],
+) -> Result<(HashMap<String, PackageAssetEntry>, Vec<PendingShard>, Vec<String>), String> {
+    let lp = load_single_managed_package("", sources)?;
+    Ok((lp.assets, lp.pending_shards, lp.package_flags))
+}
+
+pub fn merge_pending_shard_into(
+    assets: &mut HashMap<String, PackageAssetEntry>,
+    source: &ManagedSource,
+) -> Result<(), String> {
+    let (label, encrypted) = source.read()?;
+    let plain = crate::managed::decrypt_payload(&encrypted)
+        .map_err(|e| format!("decrypt {label}: {e}"))?;
+    let parsed: JsonValue =
+        serde_json::from_slice(&plain).map_err(|e| format!("parse {label}: {e}"))?;
+    let header_compressed = parsed
+        .get("compressed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if let Some(obj) = parsed.get("assets").and_then(|v| v.as_object()) {
+        for (k, v) in obj {
+            let normalized = k.strip_prefix("assets/").unwrap_or(k.as_str()).to_string();
+            let entry = match v {
+                JsonValue::String(b64) => PackageAssetEntry {
+                    data_b64: b64.clone(),
+                    compressed: header_compressed,
+                    encryption: String::new(),
+                },
+                JsonValue::Object(map) => {
+                    let data_b64 = map
+                        .get("data")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let compressed = map
+                        .get("compressed")
+                        .and_then(|x| x.as_bool())
+                        .unwrap_or(header_compressed);
+                    let encryption = map
+                        .get("encryption")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    PackageAssetEntry {
+                        data_b64,
+                        compressed,
+                        encryption,
+                    }
+                }
+                _ => continue,
+            };
+            assets.insert(normalized, entry);
+        }
     }
-    Ok(tmp.assets)
+    Ok(())
+}
+
+pub fn peek_package_flags(sources: &[ManagedSource]) -> Vec<String> {
+    let mut flags: Vec<String> = Vec::new();
+    let mut found_via_manifest = false;
+    for source in sources {
+        let filename = source_filename(source);
+        if classify_source(&filename) == SourceKind::AssetsManifest {
+            let bytes = match source.read() {
+                Ok((_, b)) => b,
+                Err(_) => continue,
+            };
+            let plain = match crate::managed::decrypt_payload(&bytes) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let parsed: JsonValue = match serde_json::from_slice(&plain) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if let Some(arr) = parsed.get("package_flags").and_then(|v| v.as_array()) {
+                for v in arr {
+                    if let Some(s) = v.as_str() {
+                        if !flags.iter().any(|f| f == s) {
+                            flags.push(s.to_string());
+                        }
+                    }
+                }
+                found_via_manifest = true;
+            }
+        }
+    }
+    if !found_via_manifest {
+        for source in sources {
+            let filename = source_filename(source);
+            if classify_source(&filename) == SourceKind::Scripts {
+                let bytes = match source.read() {
+                    Ok((_, b)) => b,
+                    Err(_) => continue,
+                };
+                let plain = match crate::managed::decrypt_payload(&bytes) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                let parsed: JsonValue = match serde_json::from_slice(&plain) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                if let Some(arr) = parsed.get("package_flags").and_then(|v| v.as_array()) {
+                    for v in arr {
+                        if let Some(s) = v.as_str() {
+                            if !flags.iter().any(|f| f == s) {
+                                flags.push(s.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    flags
 }
 
 pub fn merge_managed_bytes_into(
@@ -562,6 +788,16 @@ pub fn merge_managed_bytes_into(
     }
     if let Some(s) = parsed.get("creator").and_then(|v| v.as_str()) {
         pkg.creator = s.to_string();
+    }
+
+    if let Some(arr) = parsed.get("package_flags").and_then(|v| v.as_array()) {
+        for v in arr {
+            if let Some(s) = v.as_str() {
+                if !pkg.package_flags.iter().any(|f| f == s) {
+                    pkg.package_flags.push(s.to_string());
+                }
+            }
+        }
     }
 
     match kind {

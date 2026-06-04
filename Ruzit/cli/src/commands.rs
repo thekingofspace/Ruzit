@@ -555,7 +555,7 @@ fn write_package_from_plan(
 
     let script_bytes = prepare_script_bytes(&files, pkg.convert_to_byte)?;
     let scripts_path = managed_dir.join(format!("{}.scripts.managed", pkg.id));
-    package::write_scripts_managed(
+    package::write_scripts_managed_with_flags(
         &scripts_path,
         &pkg.id,
         &pkg.name,
@@ -566,6 +566,7 @@ fn write_package_from_plan(
         &script_bytes,
         pkg.compress_scripts,
         pkg.convert_to_byte,
+        &pkg.flags,
     )?;
     let scripts_size = fs::metadata(&scripts_path).map(|m| m.len()).unwrap_or(0);
     let kind_tag = if is_default {

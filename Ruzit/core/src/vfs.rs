@@ -8,7 +8,10 @@ use std::thread;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 
 use crate::config::FileType;
-use crate::package::{load_assets_only, load_single_managed_package, LoadedPackage, ManagedSource, PackageAssetEntry};
+use crate::package::{
+    load_assets_only, load_single_managed_package, merge_pending_shard_into, LoadedPackage,
+    ManagedSource, PackageAssetEntry, PendingShard,
+};
 
 pub struct Package {
     pub id: String,
@@ -29,6 +32,8 @@ pub struct Package {
     pub sources: Vec<ManagedSource>,
     pub activated: AtomicBool,
     pub is_default: bool,
+    pub package_flags: Vec<String>,
+    pub pending_shards: RwLock<Vec<PendingShard>>,
 }
 
 impl Package {
@@ -49,7 +54,48 @@ impl Package {
             sources: lp.sources,
             activated: AtomicBool::new(false),
             is_default: false,
+            package_flags: lp.package_flags,
+            pending_shards: RwLock::new(lp.pending_shards),
         }
+    }
+
+    pub fn package_flags(&self) -> &[String] {
+        &self.package_flags
+    }
+
+    pub fn listens_for_flag(&self, flag: &str) -> bool {
+        self.package_flags.iter().any(|f| f == flag)
+    }
+
+    pub fn pending_shard_flags(&self) -> Vec<Vec<String>> {
+        self.pending_shards
+            .read()
+            .map(|g| g.iter().map(|s| s.flags.clone()).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn load_shards_for_flag(&self, flag: &str) -> Result<usize, String> {
+        let sources_to_load: Vec<ManagedSource> = {
+            let g = self.pending_shards.read().map_err(|e| format!("{e}"))?;
+            g.iter()
+                .filter(|s| s.flags.iter().any(|f| f == flag))
+                .map(|s| s.source.clone())
+                .collect()
+        };
+        if sources_to_load.is_empty() {
+            return Ok(0);
+        }
+        let mut g = self.assets.write().map_err(|e| format!("{e}"))?;
+        if g.is_none() {
+            *g = Some(HashMap::new());
+        }
+        let map = g.as_mut().unwrap();
+        let mut count = 0usize;
+        for src in &sources_to_load {
+            merge_pending_shard_into(map, src)?;
+            count += 1;
+        }
+        Ok(count)
     }
 
     pub fn is_activated(&self) -> bool {
@@ -125,9 +171,12 @@ impl Package {
         if self.sources.is_empty() {
             return Ok(());
         }
-        let map = load_assets_only(&self.sources)?;
+        let (map, pending, _flags) = load_assets_only(&self.sources)?;
         if let Ok(mut g) = self.assets.write() {
             *g = Some(map);
+        }
+        if let Ok(mut p) = self.pending_shards.write() {
+            *p = pending;
         }
         Ok(())
     }
@@ -151,6 +200,7 @@ pub struct LazyPackageRegistry {
     entries: HashMap<String, Arc<PackageEntry>>,
     queue: Arc<(Mutex<VecDeque<String>>, Condvar)>,
     force_active: bool,
+    package_flag_index: HashMap<String, Vec<String>>,
 }
 
 impl LazyPackageRegistry {
@@ -159,6 +209,7 @@ impl LazyPackageRegistry {
             entries: HashMap::new(),
             queue: Arc::new((Mutex::new(VecDeque::new()), Condvar::new())),
             force_active: false,
+            package_flag_index: HashMap::new(),
         }
     }
 
@@ -167,6 +218,13 @@ impl LazyPackageRegistry {
             entries: HashMap::new(),
             queue: Arc::new((Mutex::new(VecDeque::new()), Condvar::new())),
             force_active: true,
+            package_flag_index: HashMap::new(),
+        }
+    }
+
+    pub fn set_package_flags(&mut self, id: String, flags: Vec<String>) {
+        if !flags.is_empty() {
+            self.package_flag_index.insert(id, flags);
         }
     }
 
@@ -266,6 +324,63 @@ impl LazyPackageRegistry {
         pkg.free_assets();
         Some(pkg)
     }
+
+    pub fn call_flag(&self, flag: &str) -> CallFlagSummary {
+        let mut summary = CallFlagSummary::default();
+        let ids: Vec<String> = self.package_flag_index.keys().cloned().collect();
+        for id in ids {
+            let flags = match self.package_flag_index.get(&id) {
+                Some(f) => f.clone(),
+                None => continue,
+            };
+            if flags.iter().any(|f| f == flag) {
+                let already_activated = self
+                    .entries
+                    .get(&id)
+                    .and_then(|e| {
+                        let s = e.state.lock().unwrap();
+                        if let EntryState::Ready(p) = &*s {
+                            Some(p.is_activated())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(false);
+                if !already_activated {
+                    match self.activate(&id) {
+                        Ok(_) => summary.packages_activated.push(id.clone()),
+                        Err(e) => summary.errors.push(format!("{id}: {e}")),
+                    }
+                }
+            }
+        }
+
+        for (id, entry) in &self.entries {
+            let pkg = {
+                let s = entry.state.lock().unwrap();
+                match &*s {
+                    EntryState::Ready(p) => p.clone(),
+                    _ => continue,
+                }
+            };
+            if !pkg.is_activated() && !self.force_active {
+                continue;
+            }
+            match pkg.load_shards_for_flag(flag) {
+                Ok(0) => {}
+                Ok(n) => summary.shards_loaded.push((id.clone(), n)),
+                Err(e) => summary.errors.push(format!("{id}: {e}")),
+            }
+        }
+        summary
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct CallFlagSummary {
+    pub packages_activated: Vec<String>,
+    pub shards_loaded: Vec<(String, usize)>,
+    pub errors: Vec<String>,
 }
 
 pub fn spawn_lazy_loaders(registry: Arc<LazyPackageRegistry>, worker_count: usize) {

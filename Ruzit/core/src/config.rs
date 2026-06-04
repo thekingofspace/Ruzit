@@ -296,6 +296,12 @@ pub struct BuildPlan {
 }
 
 #[derive(Debug, Clone)]
+pub struct ShardSpec {
+    pub id: u32,
+    pub flags: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct PackagePlan {
     pub id: String,
     pub root: PathBuf,
@@ -308,7 +314,8 @@ pub struct PackagePlan {
     pub encryption_token: String,
     pub compress_scripts: bool,
     pub convert_to_byte: bool,
-    pub shards: Vec<u32>,
+    pub flags: Vec<String>,
+    pub shards: Vec<ShardSpec>,
     pub assets: HashMap<String, AssetDisposition>,
 }
 
@@ -348,6 +355,7 @@ impl BuildPlan {
                 encryption_token: String::new(),
                 compress_scripts: config.compress_scripts,
                 convert_to_byte: config.compile_bytecode,
+                flags: Vec::new(),
                 shards: Vec::new(),
                 assets: HashMap::new(),
             }],

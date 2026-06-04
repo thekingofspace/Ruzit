@@ -2006,6 +2006,7 @@ declare stats: { [any]: any }
 export type BuildShard = {
 	ID: number,
 	PackageID: string,
+	ListenToFlag: (self: BuildShard, flag: string) -> (),
 }
 
 export type BuildPackage = {
@@ -2015,6 +2016,7 @@ export type BuildPackage = {
 	ConvertToByte: boolean,
 	CreateShard: (self: BuildPackage, id: number) -> BuildShard,
 	ParseAssets: (self: BuildPackage, callback: (asset: string, size: number) -> (BuildShard?, boolean?, string?)) -> (),
+	ListenToFlag: (self: BuildPackage, flag: string) -> (),
 }
 
 export type Build = {
@@ -2038,10 +2040,17 @@ export type ManifestPackage = {
 	IsAssetsLoaded: (self: ManifestPackage) -> boolean,
 }
 
+export type CallFlagResult = {
+	activated: { string },
+	loaded: { { package: string, shards: number } },
+	errors: { string },
+}
+
 export type Manifest = {
 	LoadManaged: (id: string) -> ManifestPackage,
 	IsLoaded: (id: string) -> boolean,
 	List: () -> { string },
+	CallFlag: (flag: string) -> CallFlagResult,
 }
 
 declare manifest: Manifest
