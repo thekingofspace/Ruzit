@@ -276,6 +276,15 @@ win:BindToClose(<span class="hl-kw">function</span>() <span class="hl-fn">print<
         <div class="member-header"><span class="member-name">win:IsFullscreen()</span><span class="member-type">-> boolean</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">
+        <div class="member-header"><span class="member-name">win:IsFocused()</span><span class="member-type">-> boolean</span><span class="tag tag-method">method</span></div>
+        <p class="member-desc">
+            <code>true</code> when the player's window is currently
+            focused (i.e. accepting keyboard input). Flips alongside the
+            <code>FocusChanged</code> signal &mdash; cheap to poll each
+            frame if you'd rather not connect a signal.
+        </p>
+    </div>
+    <div class="member">
         <div class="member-header"><span class="member-name">win:IsOpen()</span><span class="member-type">-> boolean</span><span class="tag tag-method">method</span></div>
     </div>
     <div class="member">

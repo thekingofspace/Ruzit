@@ -653,6 +653,9 @@ impl UserData for WindowHandle {
         m.add_method("IsFullscreen", |_, _, _: ()| {
             Ok(with_window_get(|w| w.fullscreen().is_some()).unwrap_or(false))
         });
+        m.add_method("IsFocused", |_, _, _: ()| {
+            Ok(with_window_get(|w| w.has_focus()).unwrap_or(false))
+        });
         m.add_method("IsOpen", |_, _, _: ()| Ok(is_open()));
     }
 }

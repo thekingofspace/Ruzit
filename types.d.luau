@@ -210,6 +210,7 @@ declare class WindowHandle
 	function Height(self): number
 	function Title(self): string
 	function IsFullscreen(self): boolean
+	function IsFocused(self): boolean
 	function IsOpen(self): boolean
 	function GetViewport(self): Camera
 end
@@ -988,6 +989,8 @@ export type Keyboard_API = {
 	InputChanged: Signal<number, string, "Begin" | "End">,
 	IsKeyDown: (self: Keyboard_API, key: string | number) -> boolean,
 	GetKeyId: (self: Keyboard_API, name: string) -> number,
+	Copy: (self: Keyboard_API, text: string) -> (),
+	Paste: (self: Keyboard_API) -> string,
 }
 declare class VoiceShader end
 declare class VoiceCapture

@@ -83,6 +83,34 @@ Keyboard.InputChanged:Connect(<span class="hl-kw">function</span>(id, name, stat
             in a hot loop.
         </p>
     </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Keyboard:Copy(text)</span>
+            <span class="member-type">-> ()</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Write a UTF-8 string to the system clipboard. Cross-platform
+            (Windows, X11/Wayland Linux, macOS). Errors with a clear
+            message if the platform's clipboard isn't reachable &mdash;
+            e.g. on a headless Linux box without an X server. Pair with
+            <code>Keyboard:Paste()</code> to round-trip.
+        </p>
+        <pre><code>Keyboard:<span class="hl-fn">Copy</span>(<span class="hl-str">"hello world"</span>)</code></pre>
+    </div>
+    <div class="member">
+        <div class="member-header">
+            <span class="member-name">Keyboard:Paste()</span>
+            <span class="member-type">-> string</span>
+            <span class="tag tag-method">method</span>
+        </div>
+        <p class="member-desc">
+            Read the current UTF-8 string from the system clipboard.
+            Errors with the same conditions as <code>Copy</code>.
+            Returns an empty string if the clipboard is empty or holds
+            non-text data (e.g. an image).
+        </p>
+    </div>
 </div>
 
 <h2 id="deprecated">Deprecated</h2>

@@ -29,6 +29,27 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
                         Ok(input::key_id_for_name(&name) as i64)
                     },
                 )?)),
+                "Copy" => Ok(Value::Function(lua.create_function(
+                    |_, (_self, text): (Value, String)| -> mlua::Result<()> {
+                        let mut cb = arboard::Clipboard::new().map_err(|e| {
+                            mlua::Error::RuntimeError(format!("Keyboard.Copy: clipboard init: {e}"))
+                        })?;
+                        cb.set_text(text).map_err(|e| {
+                            mlua::Error::RuntimeError(format!("Keyboard.Copy: set_text: {e}"))
+                        })?;
+                        Ok(())
+                    },
+                )?)),
+                "Paste" => Ok(Value::Function(lua.create_function(
+                    |_, _self: Value| -> mlua::Result<String> {
+                        let mut cb = arboard::Clipboard::new().map_err(|e| {
+                            mlua::Error::RuntimeError(format!("Keyboard.Paste: clipboard init: {e}"))
+                        })?;
+                        cb.get_text().map_err(|e| {
+                            mlua::Error::RuntimeError(format!("Keyboard.Paste: get_text: {e}"))
+                        })
+                    },
+                )?)),
                 _ => Ok(Value::Nil),
             }
         })?,
