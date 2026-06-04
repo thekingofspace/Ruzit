@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::io::Cursor;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -192,15 +192,36 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
 fn set_all_paused(paused: bool) {
     let players: Vec<Arc<Mutex<PlayerState>>> =
         PLAYER_REGISTRY.with(|r| r.borrow().iter().cloned().collect());
+    let mut deferred_pauses: Vec<(Arc<OutputState>, Arc<RampController>, u32)> = Vec::new();
     for p in &players {
         let s = p.lock().unwrap();
         for r in s.routes.iter() {
-            if let Some(out) = &r.output {
-                if let Some(sink) = out.sink.lock().unwrap().as_ref() {
-                    if paused { sink.pause() } else { sink.play() }
+            let ramp = r.ramp_slot.lock().unwrap().clone();
+            if let (Some(out), Some(ramp)) = (r.output.clone(), ramp) {
+                if paused {
+                    let generation = ramp.fade_to(0.0, false);
+                    deferred_pauses.push((out, ramp, generation));
+                } else {
+                    if let Some(sink) = out.sink.lock().unwrap().as_ref() {
+                        sink.play();
+                    }
+                    ramp.fade_to(1.0, false);
                 }
             }
         }
+    }
+    if !deferred_pauses.is_empty() {
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis((FADE_DURATION_MS + 4) as u64));
+            for (out, ramp, generation) in deferred_pauses {
+                if ramp.current_generation() != generation {
+                    continue;
+                }
+                if let Some(sink) = out.sink.lock().unwrap().as_ref() {
+                    sink.pause();
+                }
+            }
+        });
     }
 }
 
@@ -426,6 +447,9 @@ pub struct OutputState {
     pub custom_handle: Mutex<Option<OutputStreamHandle>>,
 }
 
+unsafe impl Send for OutputState {}
+unsafe impl Sync for OutputState {}
+
 #[derive(Clone)]
 pub struct OutputNode {
     pub state: Arc<OutputState>,
@@ -597,6 +621,7 @@ pub struct Route {
     pub output: Option<Arc<OutputState>>,
     pub byte: Option<Arc<Mutex<ByteSinkState>>>,
     pub modifiers: Vec<Arc<Mutex<ModifierState>>>,
+    pub ramp_slot: Arc<Mutex<Option<Arc<RampController>>>>,
 }
 
 pub struct UpdateLink {
@@ -781,11 +806,23 @@ impl UserData for Player {
             let looped = s.looped.clone();
             let loop_count = s.loop_count.clone();
             let offset = s.pending_offset;
-            let routes: Vec<(Option<Arc<OutputState>>, Option<Arc<Mutex<ByteSinkState>>>, Vec<Arc<Mutex<ModifierState>>>)> =
-                s.routes
-                    .iter()
-                    .map(|r| (r.output.clone(), r.byte.clone(), r.modifiers.clone()))
-                    .collect();
+            let routes: Vec<(
+                Option<Arc<OutputState>>,
+                Option<Arc<Mutex<ByteSinkState>>>,
+                Vec<Arc<Mutex<ModifierState>>>,
+                Arc<Mutex<Option<Arc<RampController>>>>,
+            )> = s
+                .routes
+                .iter()
+                .map(|r| {
+                    (
+                        r.output.clone(),
+                        r.byte.clone(),
+                        r.modifiers.clone(),
+                        r.ramp_slot.clone(),
+                    )
+                })
+                .collect();
             drop(s);
 
             play_routes(bytes, looped, loop_count.clone(), offset, &routes)?;
@@ -805,10 +842,9 @@ impl UserData for Player {
         m.add_method("Stop", |_, this, _: ()| -> mlua::Result<()> {
             let mut s = this.state.lock().unwrap();
             for r in s.routes.iter() {
-                if let Some(out) = &r.output {
-                    if let Some(sink) = out.sink.lock().unwrap().as_ref() {
-                        sink.stop();
-                    }
+                let ramp = r.ramp_slot.lock().unwrap().clone();
+                if let Some(ramp) = ramp {
+                    ramp.fade_to(0.0, true);
                 }
             }
             s.playing.store(false, Ordering::Relaxed);
@@ -819,13 +855,9 @@ impl UserData for Player {
 
         m.add_method("Pause", |_, this, _: ()| -> mlua::Result<()> {
             let mut s = this.state.lock().unwrap();
-            // Only a live, not-already-paused playback can be paused.
             if !s.playing.load(Ordering::Relaxed) || s.paused {
                 return Ok(());
             }
-            // Freeze the playhead: fold elapsed time into pending_offset so
-            // TimePosition reports the paused position and Resume continues
-            // from exactly there.
             let elapsed = s
                 .play_started_at
                 .map(|t| t.elapsed())
@@ -833,12 +865,29 @@ impl UserData for Player {
             s.pending_offset += elapsed;
             s.play_started_at = None;
             s.paused = true;
+
+            let mut deferred: Vec<(Arc<OutputState>, Arc<RampController>, u32)> = Vec::new();
             for r in s.routes.iter() {
-                if let Some(out) = &r.output {
-                    if let Some(sink) = out.sink.lock().unwrap().as_ref() {
-                        sink.pause();
-                    }
+                let ramp = r.ramp_slot.lock().unwrap().clone();
+                if let (Some(out), Some(ramp)) = (r.output.clone(), ramp) {
+                    let generation = ramp.fade_to(0.0, false);
+                    deferred.push((out, ramp, generation));
                 }
+            }
+            drop(s);
+
+            if !deferred.is_empty() {
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis((FADE_DURATION_MS + 4) as u64));
+                    for (out, ramp, generation) in deferred {
+                        if ramp.current_generation() != generation {
+                            continue;
+                        }
+                        if let Some(sink) = out.sink.lock().unwrap().as_ref() {
+                            sink.pause();
+                        }
+                    }
+                });
             }
             Ok(())
         });
@@ -855,6 +904,10 @@ impl UserData for Player {
                     if let Some(sink) = out.sink.lock().unwrap().as_ref() {
                         sink.play();
                     }
+                }
+                let ramp = r.ramp_slot.lock().unwrap().clone();
+                if let Some(ramp) = ramp {
+                    ramp.fade_to(1.0, false);
                 }
             }
             Ok(())
@@ -911,13 +964,16 @@ fn play_routes(
         Option<Arc<OutputState>>,
         Option<Arc<Mutex<ByteSinkState>>>,
         Vec<Arc<Mutex<ModifierState>>>,
+        Arc<Mutex<Option<Arc<RampController>>>>,
     )],
 ) -> mlua::Result<()> {
-    for (out_opt, byte_opt, modifiers) in routes.iter() {
+    for (out_opt, byte_opt, modifiers, ramp_slot) in routes.iter() {
         if let Some(out) = out_opt {
             let decoder = Decoder::new(Cursor::new((*bytes).clone())).map_err(|e| {
                 mlua::Error::RuntimeError(format!("SoundByte decode: {e}"))
             })?;
+            let sample_rate = decoder.sample_rate();
+            let channels = decoder.channels();
             let mut source: Box<dyn Source<Item = f32> + Send> =
                 Box::new(decoder.convert_samples::<f32>());
             source = Box::new(LoopingSource {
@@ -937,6 +993,10 @@ fn play_routes(
                 last_l: 0.0,
                 last_r: 0.0,
             });
+
+            let ramp = Arc::new(RampController::new(1.0, sample_rate, channels));
+            *ramp_slot.lock().unwrap() = Some(ramp.clone());
+            source = Box::new(RampGain::new(source, ramp));
 
             let mut sink_lock = out.sink.lock().unwrap();
             if sink_lock.is_none() {
@@ -980,12 +1040,24 @@ fn restart_player_at_offset(player: &Player) -> mlua::Result<()> {
     let looped = s.looped.clone();
     let loop_count = s.loop_count.clone();
     let offset = s.pending_offset;
-    let routes: Vec<(Option<Arc<OutputState>>, Option<Arc<Mutex<ByteSinkState>>>, Vec<Arc<Mutex<ModifierState>>>)> =
-        s.routes
-            .iter()
-            .map(|r| (r.output.clone(), r.byte.clone(), r.modifiers.clone()))
-            .collect();
-    for (out_opt, _, _) in routes.iter() {
+    let routes: Vec<(
+        Option<Arc<OutputState>>,
+        Option<Arc<Mutex<ByteSinkState>>>,
+        Vec<Arc<Mutex<ModifierState>>>,
+        Arc<Mutex<Option<Arc<RampController>>>>,
+    )> = s
+        .routes
+        .iter()
+        .map(|r| {
+            (
+                r.output.clone(),
+                r.byte.clone(),
+                r.modifiers.clone(),
+                r.ramp_slot.clone(),
+            )
+        })
+        .collect();
+    for (out_opt, _, _, _) in routes.iter() {
         if let Some(out) = out_opt {
             if let Some(sink) = out.sink.lock().unwrap().as_ref() {
                 sink.stop();
@@ -995,6 +1067,121 @@ fn restart_player_at_offset(player: &Player) -> mlua::Result<()> {
     }
     drop(s);
     play_routes(bytes, looped, loop_count, offset, &routes)
+}
+
+pub const FADE_DURATION_MS: u32 = 18;
+
+pub struct RampController {
+    current_bits: AtomicU32,
+    target_bits: AtomicU32,
+    fade_remaining: AtomicU32,
+    fade_total: AtomicU32,
+    end_after_fade: AtomicBool,
+    generation: AtomicU32,
+}
+
+impl RampController {
+    pub fn new(start: f32, sample_rate: u32, channels: u16) -> Self {
+        let frames_per_sec = sample_rate.max(8000);
+        let samples_per_sec = (frames_per_sec as u64) * (channels.max(1) as u64);
+        let total = ((samples_per_sec * FADE_DURATION_MS as u64) / 1000) as u32;
+        Self {
+            current_bits: AtomicU32::new(start.to_bits()),
+            target_bits: AtomicU32::new(start.to_bits()),
+            fade_remaining: AtomicU32::new(0),
+            fade_total: AtomicU32::new(total.max(1)),
+            end_after_fade: AtomicBool::new(false),
+            generation: AtomicU32::new(0),
+        }
+    }
+
+    pub fn fade_to(&self, target: f32, end_after_fade: bool) -> u32 {
+        let total = self.fade_total.load(Ordering::Relaxed);
+        self.target_bits.store(target.to_bits(), Ordering::Relaxed);
+        self.fade_remaining.store(total, Ordering::Relaxed);
+        self.end_after_fade.store(end_after_fade, Ordering::Relaxed);
+        self.generation.fetch_add(1, Ordering::Relaxed) + 1
+    }
+
+    pub fn snap_to(&self, target: f32) -> u32 {
+        self.current_bits
+            .store(target.to_bits(), Ordering::Relaxed);
+        self.target_bits.store(target.to_bits(), Ordering::Relaxed);
+        self.fade_remaining.store(0, Ordering::Relaxed);
+        self.end_after_fade.store(false, Ordering::Relaxed);
+        self.generation.fetch_add(1, Ordering::Relaxed) + 1
+    }
+
+    pub fn current_generation(&self) -> u32 {
+        self.generation.load(Ordering::Relaxed)
+    }
+}
+
+struct RampGain<S> {
+    inner: S,
+    controller: Arc<RampController>,
+    ended: bool,
+}
+
+impl<S: Source<Item = f32>> RampGain<S> {
+    fn new(inner: S, controller: Arc<RampController>) -> Self {
+        Self {
+            inner,
+            controller,
+            ended: false,
+        }
+    }
+}
+
+impl<S: Source<Item = f32>> Iterator for RampGain<S> {
+    type Item = f32;
+    fn next(&mut self) -> Option<f32> {
+        if self.ended {
+            return None;
+        }
+        let remaining = self.controller.fade_remaining.load(Ordering::Relaxed);
+        let gain;
+        if remaining > 0 {
+            let current = f32::from_bits(self.controller.current_bits.load(Ordering::Relaxed));
+            let target = f32::from_bits(self.controller.target_bits.load(Ordering::Relaxed));
+            let step = (target - current) / (remaining as f32);
+            let next = current + step;
+            self.controller
+                .current_bits
+                .store(next.to_bits(), Ordering::Relaxed);
+            self.controller
+                .fade_remaining
+                .store(remaining - 1, Ordering::Relaxed);
+            gain = next;
+        } else {
+            let target = f32::from_bits(self.controller.target_bits.load(Ordering::Relaxed));
+            self.controller
+                .current_bits
+                .store(target.to_bits(), Ordering::Relaxed);
+            gain = target;
+            if self.controller.end_after_fade.load(Ordering::Relaxed) && target.abs() < 1e-4 {
+                self.ended = true;
+                return None;
+            }
+        }
+        let sample = self.inner.next()?;
+        Some(sample * gain)
+    }
+}
+
+impl<S: Source<Item = f32>> Source for RampGain<S> {
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
+    }
+    fn channels(&self) -> u16 {
+        self.inner.channels()
+    }
+    fn sample_rate(&self) -> u32 {
+        self.inner.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
 }
 
 struct LoopingSource {
@@ -1806,6 +1993,7 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
             output: sink_output.clone(),
             byte: sink_byte.clone(),
             modifiers: modifier_states.clone(),
+            ramp_slot: Arc::new(Mutex::new(None)),
         });
         let player_id = sp.id;
         drop(sp);

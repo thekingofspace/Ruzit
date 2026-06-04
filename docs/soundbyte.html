@@ -196,6 +196,24 @@ player:<span class="hl-fn">Destroy</span>()</code></pre>
     A playable audio source backed by a loaded <code>SoundData</code>.
     Must be linked to at least one sink before <code>:Play()</code>.
 </p>
+<p>
+    <strong>Accepted formats:</strong> WAV, MP3, OGG (Vorbis), FLAC.
+    Format is auto-detected from the file's contents; the file
+    extension is only used during asset path resolution. OGG support
+    is enabled through the Symphonia <code>ogg</code> + <code>vorbis</code>
+    features compiled into the runtime.
+</p>
+<div class="callout note">
+    <strong>Click-free pause / stop.</strong>
+    <code>Pause</code> and <code>Stop</code> apply a short
+    (~18&nbsp;ms) volume ramp before the sink suspends or the source
+    ends, so cutting the playback never produces an audible pop or
+    click. <code>Resume</code> ramps back up the same way. The fade is
+    handled entirely on the audio thread &mdash; no extra latency on
+    the Lua side. If the user pauses and resumes quickly (faster than
+    the fade duration) the deferred sink-pause is cancelled to avoid
+    chopping the resumed audio.
+</div>
 
 <h3>Properties &amp; signals</h3>
 
