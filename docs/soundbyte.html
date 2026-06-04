@@ -239,11 +239,35 @@ player:<span class="hl-fn">Destroy</span>()</code></pre>
         </p>
     </div>
     <div class="member">
+        <div class="member-header"><span class="member-name">.TimeLength</span><span class="member-type">number (seconds)</span><span class="tag tag-readonly">read-only</span></div>
+        <p class="member-desc">
+            Total source length in seconds, decoded from the asset at
+            construction. Returns <code>0</code> for streaming formats
+            with no known total. Assigning to it raises an error.
+        </p>
+    </div>
+    <div class="member">
+        <div class="member-header"><span class="member-name">.TimePosition</span><span class="member-type">number (seconds)</span></div>
+        <p class="member-desc">
+            Current playhead position in seconds. Reading mid-playback
+            gives the live position, including any pending offset from
+            <code>:Pause()</code>. Writing seeks the playhead &mdash;
+            if the sound is currently playing, the running source is
+            torn down and restarted at the new offset (uses the same
+            click-free fade path as <code>:Stop()</code> /
+            <code>:Play()</code>). If not playing, the value is stashed
+            and the next <code>:Play()</code> starts from there. Loops:
+            <code>TimePosition</code> reads wrap modulo
+            <code>TimeLength</code> when <code>Looped = true</code>.
+        </p>
+        <pre><code>player.TimePosition = <span class="hl-num">12.5</span>  <span class="hl-com">-- seek to 12.5s</span>
+<span class="hl-kw">print</span>(player.TimePosition, <span class="hl-str">"/"</span>, player.TimeLength)</code></pre>
+    </div>
+    <div class="member">
         <div class="member-header"><span class="member-name">.Duration</span><span class="member-type">number (seconds)</span><span class="tag tag-readonly">read-only</span></div>
         <p class="member-desc">
-            Total source length, decoded from the asset at construction.
-            Returns <code>0</code> for streaming formats with no known
-            total.
+            Alias for <code>.TimeLength</code>, kept for older code.
+            Prefer <code>TimeLength</code> in new scripts.
         </p>
     </div>
     <div class="member">

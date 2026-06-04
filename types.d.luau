@@ -316,7 +316,11 @@ declare class SoundBytePlayer
 	DidLoop: Signal<>
 	IsPlaying: boolean
 	IsPaused: boolean
+	IsAlive: boolean
 	Looped: boolean
+	TimeLength: number
+	TimePosition: number
+	Duration: number
 	function Play(self): ()
 	function Stop(self): ()
 	function Pause(self): ()

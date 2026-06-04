@@ -745,6 +745,20 @@ impl UserData for Player {
                 .map(|d| d.as_secs_f64())
                 .unwrap_or(0.0))
         });
+        f.add_field_method_get("TimeLength", |_, this| {
+            Ok(this
+                .state
+                .lock()
+                .unwrap()
+                .total_duration
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0))
+        });
+        f.add_field_method_set("TimeLength", |_, _this, _v: f64| {
+            Err::<(), _>(mlua::Error::RuntimeError(
+                "Player.TimeLength is read-only".into(),
+            ))
+        });
         f.add_field_method_get("TimePosition", |_, this| -> mlua::Result<f64> {
             let s = this.state.lock().unwrap();
             if s.playing.load(Ordering::Relaxed) {
