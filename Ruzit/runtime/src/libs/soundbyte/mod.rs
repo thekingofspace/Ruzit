@@ -1904,12 +1904,6 @@ fn unlink_route(link: &LinkHandle) {
     }
 }
 
-impl Drop for LinkHandle {
-    fn drop(&mut self) {
-        unlink_route(self);
-    }
-}
-
 impl UserData for LinkHandle {
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
         m.add_method("Unlink", |_, this, _: ()| -> mlua::Result<()> {
