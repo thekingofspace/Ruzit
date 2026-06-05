@@ -35,7 +35,8 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         "GetPredominantColor",
         lua.create_function(|_, ud: AnyUserData| -> mlua::Result<Color3> {
             let img = ud.borrow::<ImageAsset>()?;
-            Ok(predominant_color(&img.data))
+            let d = img.data_or_err("Image.GetPredominantColor")?;
+            Ok(predominant_color(&d))
         })?,
     )?;
 
@@ -43,7 +44,8 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         "AverageColor",
         lua.create_function(|_, ud: AnyUserData| -> mlua::Result<Color3> {
             let img = ud.borrow::<ImageAsset>()?;
-            Ok(average_color(&img.data))
+            let d = img.data_or_err("Image.AverageColor")?;
+            Ok(average_color(&d))
         })?,
     )?;
 
@@ -51,7 +53,8 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
         "ToSeed",
         lua.create_function(|_, ud: AnyUserData| -> mlua::Result<i64> {
             let img = ud.borrow::<ImageAsset>()?;
-            let h = fnv1a64(&img.data) ^ ((img.width as u64) << 32) ^ (img.height as u64);
+            let d = img.data_or_err("Image.ToSeed")?;
+            let h = fnv1a64(&d) ^ ((img.width as u64) << 32) ^ (img.height as u64);
             Ok(h as i64)
         })?,
     )?;
@@ -87,12 +90,13 @@ fn sample_pixel(img: &ImageAsset, x: i64, y: i64) -> mlua::Result<(f32, f32, f32
             img.width, img.height
         )));
     }
+    let d = img.data_or_err("Image.sample_pixel")?;
     let i = ((y as u32 * img.width + x as u32) * 4) as usize;
     Ok((
-        img.data[i] as f32 / 255.0,
-        img.data[i + 1] as f32 / 255.0,
-        img.data[i + 2] as f32 / 255.0,
-        img.data[i + 3] as f32 / 255.0,
+        d[i] as f32 / 255.0,
+        d[i + 1] as f32 / 255.0,
+        d[i + 2] as f32 / 255.0,
+        d[i + 3] as f32 / 255.0,
     ))
 }
 

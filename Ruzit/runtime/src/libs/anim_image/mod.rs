@@ -305,7 +305,15 @@ fn build_frame_pixels(src: &[u8], src_w: u32, src_h: u32, f: &Frame) -> Vec<u8> 
 pub fn tick(lua: &Lua, dt: f32) {
     let snapshot: Vec<Arc<Mutex<AnimatedImageInner>>> = ACTIVE.with(|c| {
         let mut reg = c.borrow_mut();
-        reg.retain(|s| s.lock().unwrap().alive);
+        reg.retain(|s| {
+            if Arc::strong_count(s) <= 1 {
+                if let Ok(mut st) = s.lock() {
+                    st.alive = false;
+                }
+                return false;
+            }
+            s.lock().unwrap().alive
+        });
         reg.iter().cloned().collect()
     });
 
@@ -669,8 +677,9 @@ pub fn make_animated_image(lua: &Lua, args: MultiValue) -> mlua::Result<Animated
     let source = match src_v {
         Value::UserData(ud) => {
             if let Ok(asset) = ud.borrow::<ImageAsset>() {
+                let bytes = asset.data_or_err("AnimImage source")?;
                 SourceKind::Static {
-                    bytes: asset.data.clone(),
+                    bytes,
                     width: asset.width,
                     height: asset.height,
                 }

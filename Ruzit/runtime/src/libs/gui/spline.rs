@@ -168,7 +168,15 @@ pub struct SplineRender {
 pub fn snapshot() -> Vec<SplineRender> {
     SPLINE_REGISTRY.with(|cell| {
         let mut reg = cell.borrow_mut();
-        reg.retain(|p| p.lock().unwrap().alive);
+        reg.retain(|p| {
+            if Arc::strong_count(p) <= 1 {
+                if let Ok(mut s) = p.lock() {
+                    s.alive = false;
+                }
+                return false;
+            }
+            p.lock().unwrap().alive
+        });
         reg.iter()
             .filter_map(|p| {
                 let s = p.lock().unwrap();

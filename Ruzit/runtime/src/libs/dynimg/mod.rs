@@ -168,7 +168,15 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
 pub fn tick() {
     let snapshot: Vec<Arc<Mutex<DynImgState>>> = DYNIMG_REGISTRY.with(|c| {
         let mut reg = c.borrow_mut();
-        reg.retain(|s| s.lock().unwrap().alive);
+        reg.retain(|s| {
+            if Arc::strong_count(s) <= 1 {
+                if let Ok(mut st) = s.lock() {
+                    st.alive = false;
+                }
+                return false;
+            }
+            s.lock().unwrap().alive
+        });
         reg.iter().cloned().collect()
     });
 

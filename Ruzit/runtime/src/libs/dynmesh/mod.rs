@@ -423,6 +423,12 @@ pub fn tick() {
     let snapshot: Vec<Arc<Mutex<DynMeshState>>> = DYNMESH_REGISTRY.with(|c| {
         let mut reg = c.borrow_mut();
         reg.retain(|s| {
+            if Arc::strong_count(s) <= 1 {
+                if let Ok(mut st) = s.lock() {
+                    st.alive = false;
+                }
+                return false;
+            }
             let st = s.lock().unwrap();
             if !st.alive {
                 return false;

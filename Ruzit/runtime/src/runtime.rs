@@ -356,12 +356,14 @@ thread_local! {
 struct LaunchStatsEntry {
     thread: RegistryKey,
     stats: RegistryKey,
+    alive: std::sync::Arc<AtomicBool>,
 }
 
 fn register_launch_stats(
     lua: &Lua,
     thread: &mlua::Thread,
     stats: &Table,
+    alive: std::sync::Arc<AtomicBool>,
 ) -> mlua::Result<()> {
     let t_key = lua.create_registry_value(thread.clone())?;
     let s_key = lua.create_registry_value(stats.clone())?;
@@ -369,6 +371,7 @@ fn register_launch_stats(
         m.borrow_mut().push(LaunchStatsEntry {
             thread: t_key,
             stats: s_key,
+            alive,
         });
     });
     Ok(())
@@ -384,6 +387,25 @@ fn unregister_launch_stats(lua: &Lua, thread: &mlua::Thread) {
                 }
             }
             true
+        });
+    });
+}
+
+pub fn prune_dead_launches(lua: &Lua) {
+    LAUNCH_STATS.with(|m| {
+        let mut entries = m.borrow_mut();
+        entries.retain(|e| {
+            match lua.registry_value::<mlua::Thread>(&e.thread) {
+                Ok(t) => {
+                    if matches!(t.status(), mlua::ThreadStatus::Finished) {
+                        e.alive.store(false, AOrdering::Release);
+                        false
+                    } else {
+                        true
+                    }
+                }
+                Err(_) => false,
+            }
         });
     });
 }
@@ -457,9 +479,35 @@ pub struct SubProcess {
     pub source_label: String,
 }
 
+impl Drop for SubProcess {
+    fn drop(&mut self) {
+        self.alive.store(false, AOrdering::Release);
+        LAUNCH_STATS.with(|m| {
+            if let Ok(mut entries) = m.try_borrow_mut() {
+                entries.retain(|e| !std::sync::Arc::ptr_eq(&e.alive, &self.alive));
+            }
+        });
+    }
+}
+
 impl mlua::UserData for SubProcess {
     fn add_fields<F: mlua::UserDataFields<Self>>(f: &mut F) {
-        f.add_field_method_get("Alive", |_, this| Ok(this.alive.load(AOrdering::Relaxed)));
+        f.add_field_method_get("Alive", |lua, this| -> mlua::Result<bool> {
+            if !this.alive.load(AOrdering::Relaxed) {
+                return Ok(false);
+            }
+            match lua.registry_value::<mlua::Thread>(&this.thread_key) {
+                Ok(t) => {
+                    if matches!(t.status(), mlua::ThreadStatus::Finished) {
+                        this.alive.store(false, AOrdering::Release);
+                        Ok(false)
+                    } else {
+                        Ok(true)
+                    }
+                }
+                Err(_) => Ok(false),
+            }
+        });
         f.add_field_method_get("Source", |_, this| Ok(this.source_label.clone()));
         f.add_field_method_get("Coroutine", |lua, this| -> mlua::Result<mlua::Thread> {
             lua.registry_value::<mlua::Thread>(&this.thread_key)
@@ -555,7 +603,8 @@ fn install_launch(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             .set_environment(new_env.clone())
             .into_function()?;
         let thread = lua.create_thread(entry_fn)?;
-        register_launch_stats(lua, &thread, &stats)?;
+        let alive = std::sync::Arc::new(AtomicBool::new(true));
+        register_launch_stats(lua, &thread, &stats, alive.clone())?;
 
         crate::libs::task::defer_thread(lua, thread.clone())?;
 
@@ -566,7 +615,7 @@ fn install_launch(lua: &Lua, env: &Table, fs: &Fs, owner: &str) -> mlua::Result<
             env_key,
             thread_key,
             stats_key,
-            alive: std::sync::Arc::new(AtomicBool::new(true)),
+            alive,
             source_label: resolved,
         })
     })?;

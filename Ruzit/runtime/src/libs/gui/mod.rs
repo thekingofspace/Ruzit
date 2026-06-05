@@ -357,7 +357,15 @@ pub fn snapshot() -> Arc<Vec<RenderItem>> {
 fn build_snapshot() -> Vec<RenderItem> {
     REGISTRY.with(|cell| {
         let mut reg = cell.borrow_mut();
-        reg.retain(|p| p.lock().unwrap().alive);
+        reg.retain(|p| {
+            if Arc::strong_count(p) <= 1 {
+                if let Ok(mut s) = p.lock() {
+                    s.alive = false;
+                }
+                return false;
+            }
+            p.lock().unwrap().alive
+        });
         let mut out: Vec<RenderItem> = reg
             .iter()
             .filter_map(|p| {
@@ -837,11 +845,12 @@ impl GuiPrimitive {
     }
 
     fn new_image(lua: &Lua, asset: &ImageAsset) -> mlua::Result<Self> {
+        let data = asset.data_or_err("GUI.Image")?;
         let image = ImageRef {
             id: asset.id,
             width: asset.width,
             height: asset.height,
-            data: asset.data.clone(),
+            data,
         };
 
         let size = Dim::new(asset.width as f32, asset.height as f32);

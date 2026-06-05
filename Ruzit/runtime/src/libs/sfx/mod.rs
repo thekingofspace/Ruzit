@@ -119,15 +119,36 @@ pub fn create(lua: &Lua) -> mlua::Result<Table> {
 
 pub struct SoundData {
     pub id: u64,
-    pub bytes: Arc<Vec<u8>>,
+    pub bytes: Mutex<Option<Arc<Vec<u8>>>>,
     pub source: String,
+}
+
+impl SoundData {
+    pub fn bytes(&self) -> Option<Arc<Vec<u8>>> {
+        self.bytes.lock().ok().and_then(|g| g.clone())
+    }
+
+    pub fn bytes_or_err(&self, ctx: &str) -> mlua::Result<Arc<Vec<u8>>> {
+        self.bytes().ok_or_else(|| {
+            mlua::Error::RuntimeError(format!("{ctx}: sound '{}' has been freed", self.source))
+        })
+    }
+
+    pub fn release(&self) {
+        if let Ok(mut g) = self.bytes.lock() {
+            *g = None;
+        }
+    }
 }
 
 impl UserData for SoundData {
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
         m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
-        m.add_method("ByteCount", |_, this, _: ()| Ok(this.bytes.len() as i64));
+        m.add_method("ByteCount", |_, this, _: ()| {
+            Ok(this.bytes().map(|b| b.len() as i64).unwrap_or(0))
+        });
         m.add_method("Free", |lua, this, _: ()| {
+            this.release();
             crate::libs::asset::free_asset_by_id(lua, "Sound", this.id);
             Ok(())
         });
@@ -255,7 +276,8 @@ fn output_handle() -> mlua::Result<OutputStreamHandle> {
 }
 
 fn load_from_data(lua: &Lua, data: &SoundData) -> mlua::Result<AnyUserData> {
-    let probe = Decoder::new(Cursor::new((*data.bytes).clone())).map_err(|e| {
+    let bytes_arc = data.bytes_or_err("SFX.LoadSound")?;
+    let probe = Decoder::new(Cursor::new((*bytes_arc).clone())).map_err(|e| {
         mlua::Error::RuntimeError(format!("SFX.LoadSound: decode '{}': {e}", data.source))
     })?;
     let total = probe.total_duration();
@@ -283,7 +305,7 @@ fn load_from_data(lua: &Lua, data: &SoundData) -> mlua::Result<AnyUserData> {
     lua.create_userdata(Sound {
         source_id: data.id,
         alive,
-        bytes: data.bytes.clone(),
+        bytes: bytes_arc,
         source_path: data.source.clone(),
         started_key,
         stopped_key,

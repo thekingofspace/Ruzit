@@ -409,7 +409,7 @@ pub fn create(lua: &Lua, fs: Fs, owner: String) -> mlua::Result<Table> {
                     id: next_shader_id(),
                     width,
                     height,
-                    data: Arc::new(bytes.to_vec()),
+                    data: Mutex::new(Some(Arc::new(bytes.to_vec()))),
                     source: format!("<pixels:{width}x{height}>"),
                 };
                 Ok(Value::UserData(lua.create_userdata(asset)?))
@@ -429,7 +429,7 @@ pub fn from_bytes(lua: &Lua, kind: &str, bytes: Vec<u8>, source: String) -> mlua
         "Image" => parse_image(lua, bytes, source),
         "Sound" => Ok(Value::UserData(lua.create_userdata(SoundData {
             id: next_shader_id(),
-            bytes: Arc::new(bytes),
+            bytes: Mutex::new(Some(Arc::new(bytes))),
             source,
         })?)),
         "Shader" => parse_text::<ShaderAsset>(lua, bytes, source),
@@ -487,7 +487,7 @@ pub fn make_image_from_rgba(
         id: next_shader_id(),
         width,
         height,
-        data: Arc::new(rgba),
+        data: Mutex::new(Some(Arc::new(rgba))),
         source,
     };
     Ok(Value::UserData(lua.create_userdata(asset)?))
@@ -715,7 +715,7 @@ fn load_sound(lua: &Lua, fs: &Fs, owner: &str, path: &str) -> mlua::Result<Value
     let (bytes, source) = read_bytes(fs, owner, path, sfx::SOUND_EXTS, "Sound")?;
     let data = SoundData {
         id: next_shader_id(),
-        bytes: Arc::new(bytes),
+        bytes: Mutex::new(Some(Arc::new(bytes))),
         source,
     };
     Ok(Value::UserData(lua.create_userdata(data)?))
@@ -767,7 +767,7 @@ fn parse_image(lua: &Lua, bytes: Vec<u8>, source: String) -> mlua::Result<Value>
         id: next_shader_id(),
         width,
         height,
-        data: Arc::new(data),
+        data: Mutex::new(Some(Arc::new(data))),
         source,
     };
     Ok(Value::UserData(lua.create_userdata(asset)?))
@@ -885,8 +885,26 @@ pub struct ImageAsset {
     pub width: u32,
     pub height: u32,
 
-    pub data: Arc<Vec<u8>>,
+    pub data: Mutex<Option<Arc<Vec<u8>>>>,
     pub source: String,
+}
+
+impl ImageAsset {
+    pub fn data(&self) -> Option<Arc<Vec<u8>>> {
+        self.data.lock().ok().and_then(|g| g.clone())
+    }
+
+    pub fn data_or_err(&self, ctx: &str) -> mlua::Result<Arc<Vec<u8>>> {
+        self.data().ok_or_else(|| {
+            mlua::Error::RuntimeError(format!("{ctx}: image '{}' has been freed", self.source))
+        })
+    }
+
+    pub fn release(&self) {
+        if let Ok(mut g) = self.data.lock() {
+            *g = None;
+        }
+    }
 }
 
 impl UserData for ImageAsset {
@@ -894,10 +912,12 @@ impl UserData for ImageAsset {
         m.add_method("Width", |_, this, _: ()| Ok(this.width as i64));
         m.add_method("Height", |_, this, _: ()| Ok(this.height as i64));
         m.add_method("Source", |_, this, _: ()| Ok(this.source.clone()));
-        m.add_method("Pixels", |lua, this, _: ()| {
-            lua.create_string(this.data.as_slice())
+        m.add_method("Pixels", |lua, this, _: ()| -> mlua::Result<mlua::String> {
+            let d = this.data_or_err("ImageAsset:Pixels")?;
+            lua.create_string(d.as_slice())
         });
         m.add_method("Free", |lua, this, _: ()| {
+            this.release();
             free_asset_by_id(lua, "Image", this.id);
             Ok(())
         });

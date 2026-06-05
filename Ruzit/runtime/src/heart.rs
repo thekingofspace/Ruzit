@@ -44,6 +44,7 @@ pub fn run_loop(lua: &Lua) -> mlua::Result<()> {
         crate::libs::ffi::pump(lua);
         crate::libs::debug::pump(lua);
         crate::libs::gpu::record_frame();
+        crate::runtime::prune_dead_launches(lua);
 
         let snapshot = snapshot_handlers(lua)?;
         let window_open = crate::libs::window::is_open();

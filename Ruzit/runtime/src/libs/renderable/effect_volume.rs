@@ -304,7 +304,15 @@ fn spawn_one(s: &mut EffectVolumeState) {
 pub fn tick_effect_volumes(dt: f32) {
     EFFECT_VOLUMES.with(|c| {
         let mut reg = c.borrow_mut();
-        reg.retain(|v| v.lock().unwrap().alive);
+        reg.retain(|v| {
+            if Arc::strong_count(v) <= 1 {
+                if let Ok(mut s) = v.lock() {
+                    s.alive = false;
+                }
+                return false;
+            }
+            v.lock().unwrap().alive
+        });
         for arc in reg.iter() {
             let mut s = arc.lock().unwrap();
             let drag = s.drag.max(0.0);
@@ -414,11 +422,11 @@ fn texture_from_value(v: &Value) -> mlua::Result<Option<PartTextureRef>> {
         Value::Nil => Ok(None),
         Value::UserData(ud) => {
             if let Ok(img) = ud.borrow::<ImageAsset>() {
-                Ok(Some(PartTextureRef {
+                Ok(img.data().map(|data| PartTextureRef {
                     id: img.id,
                     width: img.width,
                     height: img.height,
-                    data: img.data.clone(),
+                    data,
                     version: 0,
                     live: None,
                 }))

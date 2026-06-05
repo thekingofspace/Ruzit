@@ -549,7 +549,20 @@ impl Default for CameraState {
 pub fn list_part_states() -> Vec<Arc<Mutex<PartState>>> {
     PARTS.with(|cell| {
         let mut reg = cell.borrow_mut();
-        reg.retain(|p| p.lock().unwrap().alive);
+        reg.retain(|p| {
+            if Arc::strong_count(p) <= 1 {
+                if let Ok(mut s) = p.lock() {
+                    s.alive = false;
+                    s.render = false;
+                    s.attached.clear();
+                    s.texture = None;
+                    s.model = None;
+                    s.deformed = None;
+                }
+                return false;
+            }
+            p.lock().unwrap().alive
+        });
         reg.clone()
     })
 }
@@ -1176,11 +1189,11 @@ impl UserData for PartHandle {
                 Value::Nil => None,
                 Value::UserData(ud) => {
                     if let Ok(img) = ud.borrow::<ImageAsset>() {
-                        Some(PartTextureRef {
+                        img.data().map(|data| PartTextureRef {
                             id: img.id,
                             width: img.width,
                             height: img.height,
-                            data: img.data.clone(),
+                            data,
                             version: 0,
                             live: None,
                         })

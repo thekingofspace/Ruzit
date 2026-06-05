@@ -125,7 +125,7 @@ impl UserData for VideoAsset {
                     id: next_shader_id(),
                     width: this.width,
                     height: this.height,
-                    data,
+                    data: std::sync::Mutex::new(Some(data)),
                     source: format!("<video-frame:{}:{}>", this.source, frame_idx),
                 };
                 lua.create_userdata(img)
@@ -434,7 +434,7 @@ pub fn create_get_video_function(
         if let Some(audio) = audio_bytes {
             let sound = SoundData {
                 id: next_shader_id(),
-                bytes: Arc::new(audio),
+                bytes: std::sync::Mutex::new(Some(Arc::new(audio))),
                 source: format!("{source}#audio"),
             };
             out.push_back(Value::UserData(lua.create_userdata(sound)?));

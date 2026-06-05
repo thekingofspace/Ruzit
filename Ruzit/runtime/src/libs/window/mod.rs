@@ -270,7 +270,8 @@ fn parse_opts(t: Option<&Table>) -> mlua::Result<Opts> {
 
 fn build_icon_from_userdata(ud: &AnyUserData) -> Option<Icon> {
     let img = ud.borrow::<ImageAsset>().ok()?;
-    Icon::from_rgba((*img.data).clone(), img.width, img.height).ok()
+    let data = img.data()?;
+    Icon::from_rgba((*data).clone(), img.width, img.height).ok()
 }
 
 fn open(lua: &Lua, opts_arg: Option<Table>) -> mlua::Result<WindowHandle> {

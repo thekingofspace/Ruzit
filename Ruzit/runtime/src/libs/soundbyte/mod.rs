@@ -671,7 +671,8 @@ impl Player {
         let stopped_key = Arc::new(lua.create_registry_value(stopped.clone())?);
         let did_loop_key = Arc::new(lua.create_registry_value(did_loop.clone())?);
 
-        let total_duration = Decoder::new(Cursor::new((*sd.bytes).clone()))
+        let sd_bytes = sd.bytes_or_err("SoundByte.NewPlayer")?;
+        let total_duration = Decoder::new(Cursor::new((*sd_bytes).clone()))
             .ok()
             .and_then(|d| d.total_duration());
 
@@ -679,7 +680,7 @@ impl Player {
         let state = Arc::new(Mutex::new(PlayerState {
             id,
             source_id: sd.id,
-            bytes: sd.bytes.clone(),
+            bytes: sd_bytes,
             source_path: sd.source.clone(),
             alive: Arc::new(AtomicBool::new(true)),
             looped: Arc::new(AtomicBool::new(false)),
@@ -1830,67 +1831,89 @@ pub struct LinkHandle {
     pub sink_output_id: Option<u64>,
     pub sink_byte_id: Option<u64>,
     pub modifier_ids: Vec<u64>,
+    pub unlinked: AtomicBool,
+}
+
+fn unlink_route(link: &LinkHandle) {
+    if link.unlinked.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let link_id = link.id;
+    if let Some(player_id) = link.source_player_id {
+        PLAYER_REGISTRY.with(|r| {
+            for arc in r.borrow().iter() {
+                let mut s = arc.lock().unwrap();
+                if s.id != player_id {
+                    continue;
+                }
+                for route in s.routes.iter() {
+                    if route.link_id == link_id {
+                        let ramp = route.ramp_slot.lock().unwrap().clone();
+                        if let Some(ramp) = ramp {
+                            ramp.fade_to(0.0, true);
+                        }
+                    }
+                }
+                s.routes.retain(|r| r.link_id != link_id);
+            }
+        });
+    }
+    #[cfg(feature = "voice")]
+    if let Some(_voice_id) = link.source_voice_id {
+        VOICE_REGISTRY.with(|r| {
+            for arc in r.borrow().iter() {
+                let s = arc.lock().unwrap();
+                let mut sinks = s.active_sinks.lock().unwrap();
+                sinks.retain(|(id, sink)| {
+                    if *id == link_id {
+                        sink.stop();
+                        false
+                    } else {
+                        true
+                    }
+                });
+                let sinks_empty = sinks.is_empty();
+                drop(sinks);
+                let mut routes = s.byte_routes.lock().unwrap();
+                routes.retain(|r| r.link_id != link_id);
+                let routes_empty = routes.is_empty();
+                drop(routes);
+                if sinks_empty && routes_empty {
+                    let _ = s.stream.lock().unwrap().take();
+                }
+            }
+        });
+    }
+    if let Some(_bs_id) = link.source_byte_source_id {
+        BYTE_SOURCE_REGISTRY.with(|r| {
+            for arc in r.borrow().iter() {
+                let s = arc.lock().unwrap();
+                let mut sinks = s.active_sinks.lock().unwrap();
+                sinks.retain(|(id, sink)| {
+                    if *id == link_id {
+                        sink.stop();
+                        false
+                    } else {
+                        true
+                    }
+                });
+                drop(sinks);
+                s.byte_routes.lock().unwrap().retain(|r| r.link_id != link_id);
+            }
+        });
+    }
+}
+
+impl Drop for LinkHandle {
+    fn drop(&mut self) {
+        unlink_route(self);
+    }
 }
 
 impl UserData for LinkHandle {
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
         m.add_method("Unlink", |_, this, _: ()| -> mlua::Result<()> {
-            let link_id = this.id;
-            if let Some(player_id) = this.source_player_id {
-                PLAYER_REGISTRY.with(|r| {
-                    for arc in r.borrow().iter() {
-                        let mut s = arc.lock().unwrap();
-                        if s.id != player_id {
-                            continue;
-                        }
-                        s.routes.retain(|r| r.link_id != link_id);
-                    }
-                });
-            }
-            #[cfg(feature = "voice")]
-            if let Some(_voice_id) = this.source_voice_id {
-                VOICE_REGISTRY.with(|r| {
-                    for arc in r.borrow().iter() {
-                        let s = arc.lock().unwrap();
-                        let mut sinks = s.active_sinks.lock().unwrap();
-                        sinks.retain(|(id, sink)| {
-                            if *id == link_id {
-                                sink.stop();
-                                false
-                            } else {
-                                true
-                            }
-                        });
-                        let sinks_empty = sinks.is_empty();
-                        drop(sinks);
-                        let mut routes = s.byte_routes.lock().unwrap();
-                        routes.retain(|r| r.link_id != link_id);
-                        let routes_empty = routes.is_empty();
-                        drop(routes);
-                        if sinks_empty && routes_empty {
-                            let _ = s.stream.lock().unwrap().take();
-                        }
-                    }
-                });
-            }
-            if let Some(_bs_id) = this.source_byte_source_id {
-                BYTE_SOURCE_REGISTRY.with(|r| {
-                    for arc in r.borrow().iter() {
-                        let s = arc.lock().unwrap();
-                        let mut sinks = s.active_sinks.lock().unwrap();
-                        sinks.retain(|(id, sink)| {
-                            if *id == link_id {
-                                sink.stop();
-                                false
-                            } else {
-                                true
-                            }
-                        });
-                        drop(sinks);
-                        s.byte_routes.lock().unwrap().retain(|r| r.link_id != link_id);
-                    }
-                });
-            }
+            unlink_route(this);
             Ok(())
         });
     }
@@ -2020,6 +2043,7 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
             sink_output_id: sink_output.as_ref().map(|o| o.id),
             sink_byte_id: sink_byte.as_ref().map(|b| b.lock().unwrap().id),
             modifier_ids: modifier_states.iter().map(|m| m.lock().unwrap().id).collect(),
+            unlinked: AtomicBool::new(false),
         });
     }
 
@@ -2072,6 +2096,7 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
             sink_output_id: sink_output.as_ref().map(|o| o.id),
             sink_byte_id: sink_byte.as_ref().map(|b| b.lock().unwrap().id),
             modifier_ids: modifier_states.iter().map(|m| m.lock().unwrap().id).collect(),
+            unlinked: AtomicBool::new(false),
         });
     }
 
@@ -2129,6 +2154,7 @@ fn link(_lua: &Lua, args: MultiValue) -> mlua::Result<LinkHandle> {
             sink_output_id: sink_output.as_ref().map(|o| o.id),
             sink_byte_id: sink_byte.as_ref().map(|b| b.lock().unwrap().id),
             modifier_ids: modifier_states.iter().map(|m| m.lock().unwrap().id).collect(),
+            unlinked: AtomicBool::new(false),
         });
     }
 
